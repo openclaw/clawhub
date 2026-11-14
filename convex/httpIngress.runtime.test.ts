@@ -5,6 +5,7 @@ import { convexTest } from "convex-test";
 import { strFromU8, unzipSync } from "fflate";
 import { exportJWK, exportPKCS8, generateKeyPair, SignJWT } from "jose";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
 import {
   ARCHIVE_METRIC_AUDIENCE,
   ARCHIVE_METRIC_JWS_TYPE,
@@ -113,18 +114,13 @@ describe("hosted HTTP ingress with endpoint-owned credentials", () => {
       const ownerUserId = await ctx.db.insert("users", { handle: "inspector-fixture" });
       const storageId = await ctx.storage.store(new Blob(["fixture plugin"]));
       const packageId = await ctx.db.insert("packages", {
+        ...createPackageSeedDefaults(),
         name: "inspector-fixture",
         normalizedName: "inspector-fixture",
         displayName: "Inspector fixture",
         ownerUserId,
-        family: "code-plugin",
-        channel: "community",
-        isOfficial: false,
         scanStatus: "clean",
-        tags: {},
         stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
-        createdAt: 1,
-        updatedAt: 1,
       });
       const id = await ctx.db.insert("packageReleases", {
         packageId,

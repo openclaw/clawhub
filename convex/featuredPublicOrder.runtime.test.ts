@@ -4,6 +4,7 @@ import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { convexTest } from "convex-test";
 import { expect, it, vi } from "vitest";
 import { createActiveSkillSeedDefaults } from "../src/__tests__/helpers/activeSkillSeed";
+import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
 import { api } from "./_generated/api";
 import { syncPackageSearchDigestForPackageId } from "./functions";
 import schema from "./schema";
@@ -31,6 +32,7 @@ it("public Featured reads put new and re-added selections first despite an older
     const items = [];
     for (const name of ["telemetry", "editorial", "manual"]) {
       const packageId = await ctx.db.insert("packages", {
+        ...createPackageSeedDefaults(),
         name,
         normalizedName: name,
         displayName: name,
@@ -39,13 +41,8 @@ it("public Featured reads put new and re-added selections first despite an older
         family: name === "editorial" ? "bundle-plugin" : "code-plugin",
         ownerUserId,
         ownerPublisherId: publisher,
-        channel: "community",
-        isOfficial: false,
         categories: ["developer-tools"],
-        tags: {},
         stats: { downloads: 1, installs: 1, stars: 0, versions: 1 },
-        createdAt: 1,
-        updatedAt: 1,
       });
       const skillId = await ctx.db.insert("skills", {
         ...createActiveSkillSeedDefaults(),

@@ -6,6 +6,7 @@ import { convexTest } from "convex-test";
 import { unzipSync } from "fflate";
 import { describe, expect, it, vi } from "vitest";
 import { createActiveSkillSeedDefaults } from "../src/__tests__/helpers/activeSkillSeed";
+import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
@@ -41,18 +42,13 @@ async function fixture() {
     });
     const storageId = await ctx.storage.store(new Blob(["visible bytes"]));
     const pkg = await ctx.db.insert("packages", {
+      ...createPackageSeedDefaults(),
       name,
       normalizedName: name,
       displayName: name,
       ownerUserId: owner,
-      family: "code-plugin",
-      channel: "community",
-      isOfficial: false,
       scanStatus: "clean",
-      tags: {},
       stats: { downloads: 0, installs: 0, stars: 0, versions: 2 },
-      createdAt: 1,
-      updatedAt: 1,
     });
     const values = {
       packageId: pkg,
@@ -75,18 +71,14 @@ async function fixture() {
       publicationStatus: "published",
     });
     const foreignPackage = await ctx.db.insert("packages", {
+      ...createPackageSeedDefaults(),
       name: "foreign-plugin",
       normalizedName: "foreign-plugin",
       displayName: "foreign",
       ownerUserId: owner,
-      family: "code-plugin",
       channel: "private",
-      isOfficial: false,
       scanStatus: "clean",
-      tags: {},
       stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
-      createdAt: 1,
-      updatedAt: 1,
     });
     const foreign = await ctx.db.insert("packageReleases", {
       ...values,

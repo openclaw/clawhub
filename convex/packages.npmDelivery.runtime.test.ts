@@ -4,6 +4,7 @@
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { convexTest } from "convex-test";
 import { describe, expect, it, vi } from "vitest";
+import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
 import type { Doc } from "./_generated/dataModel";
 import { hashToken } from "./lib/tokens";
 import schema from "./schema";
@@ -25,18 +26,13 @@ async function fixture(t: TestRuntime, versions = 1, manifestBytes = 40_000) {
   return await t.run(async (ctx) => {
     const ownerUserId = await ctx.db.insert("users", { handle: "npm-owner" });
     const packageId = await ctx.db.insert("packages", {
+      ...createPackageSeedDefaults(),
       name: "@community/history",
       normalizedName: "@community/history",
       displayName: "History",
       ownerUserId,
-      family: "code-plugin",
-      channel: "community",
-      isOfficial: false,
       scanStatus: "suspicious",
-      tags: {},
       stats: { downloads: 0, installs: 0, stars: 0, versions },
-      createdAt: 1,
-      updatedAt: 1,
     });
     let releaseId;
     let firstReleaseId;

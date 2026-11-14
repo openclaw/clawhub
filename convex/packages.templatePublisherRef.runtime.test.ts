@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("./lib/verifiedClientIp", () => ({
   getVerifiedClientIp: async () => "203.0.113.1",
 }));
+import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
 import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
@@ -25,19 +26,15 @@ async function fixture() {
   }) =>
     await t.run(async (ctx) => {
       const packageId = await ctx.db.insert("packages", {
+        ...createPackageSeedDefaults(),
         name: options.name,
         normalizedName: options.name,
         displayName: options.name,
         family: options.family,
         ownerUserId: options.ownerUserId,
         ownerPublisherId: options.ownerPublisherId,
-        channel: "community",
-        isOfficial: false,
         scanStatus: "clean",
-        tags: {},
         stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
-        createdAt: 1,
-        updatedAt: 1,
       });
       const releaseId = await ctx.db.insert("packageReleases", {
         packageId,

@@ -3,6 +3,7 @@
 import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { createActiveSkillSeedDefaults } from "../src/__tests__/helpers/activeSkillSeed";
+import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
 import { api, internal } from "./_generated/api";
 import schema from "./schema";
 
@@ -25,19 +26,14 @@ async function fixture() {
     for (let i = 0; i < 17; i++) {
       const name = `workflow-${i}`;
       const packageId = await ctx.db.insert("packages", {
+        ...createPackageSeedDefaults(),
         name,
         normalizedName: name,
         displayName: name,
-        family: "code-plugin",
         ownerUserId: actorUserId,
         ownerPublisherId: publisherId,
-        channel: "community",
-        isOfficial: false,
         categories: ["developer-tools"],
-        tags: {},
         stats: { downloads: 1, installs: 1, stars: 0, versions: 1 },
-        createdAt: 1,
-        updatedAt: 1,
       });
       const skillId = await ctx.db.insert("skills", {
         ...createActiveSkillSeedDefaults(),
