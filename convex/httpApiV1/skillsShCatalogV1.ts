@@ -6,6 +6,7 @@ import { runActionRef, runMutationRef, runQueryRef } from "../lib/functionRefs";
 import { verifyGitHubActionsSkillsShSyncJwt } from "../lib/githubActionsOidc";
 import { buildGitHubApiHeaders } from "../lib/githubAuth";
 import { computeGitHubSkillFolderContentHash } from "../lib/githubSkillSync";
+import { sha256Hex } from "../lib/hash";
 import { applyRateLimit } from "../lib/httpRateLimit";
 import {
   buildSkillInstallResolution,
@@ -291,11 +292,6 @@ function requireStringArray(record: Record<string, unknown>, key: string, maxIte
     throw new Error(`${key} must contain between 1 and ${maxItems} strings`);
   }
   return value as string[];
-}
-
-async function sha256Hex(bytes: Uint8Array) {
-  const digest = await crypto.subtle.digest("SHA-256", new Uint8Array(bytes).buffer);
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 function decodeBase64(value: string) {

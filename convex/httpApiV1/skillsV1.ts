@@ -46,6 +46,7 @@ import {
   type GitHubHandoffTarget,
   type ReadyGitHubHandoffTarget,
 } from "../lib/githubHandoff";
+import { toHex } from "../lib/hash";
 import { mergeHeaders } from "../lib/httpHeaders";
 import { applyRateLimit } from "../lib/httpRateLimit";
 import { parseBooleanQueryParam, resolveBooleanQueryParam } from "../lib/httpUtils";
@@ -2987,9 +2988,7 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
         return text("Uploaded file size does not match its upload ticket", 400, rate.headers);
       }
       const digest = await crypto.subtle.digest("SHA-256", bytes);
-      const sha256 = Array.from(new Uint8Array(digest), (byte) =>
-        byte.toString(16).padStart(2, "0"),
-      ).join("");
+      const sha256 = toHex(new Uint8Array(digest));
       if (sha256 !== expected.sha256) {
         return text("Uploaded file SHA-256 does not match its upload ticket", 400, rate.headers);
       }

@@ -8,6 +8,7 @@ import { ConvexError, type Infer, v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, internalQuery } from "./functions";
+import { toHex } from "./lib/hash";
 import { getMirrorFirstSearchToken } from "./lib/skillSearchDigest";
 import { assertSkillsShMirrorEnvironmentAllowed } from "./lib/skillsShCatalogEnvironment";
 import { skillsShMirrorFreshObservationFlags } from "./lib/skillsShPublicVisibility";
@@ -155,11 +156,7 @@ function normalizedSourceSnapshotHash(value: string) {
 
 async function sha256Hex(value: string) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  let hex = "";
-  for (const byte of new Uint8Array(digest)) {
-    hex += byte.toString(16).padStart(2, "0");
-  }
-  return hex;
+  return toHex(new Uint8Array(digest));
 }
 
 function compactSourceSnapshotId(snapshotId: string) {
