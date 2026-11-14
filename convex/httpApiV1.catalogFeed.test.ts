@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { internal } from "./_generated/api";
 import { getLatestPublication } from "./catalogFeed";
 import { catalogTemplatesFeedV1Handler, catalogFeedV1Handler } from "./httpApiV1/catalogFeedV1";
@@ -18,11 +19,7 @@ const publication = {
   publishedAt: Date.parse("2026-06-23T00:00:00.000Z"),
 };
 
-const getLatestPublicationHandler = (
-  getLatestPublication as unknown as {
-    _handler: (ctx: unknown, args: { feedId: string }) => Promise<unknown>;
-  }
-)._handler;
+const getLatestPublicationHandler = getTestHandler<{ feedId: string }>(getLatestPublication);
 
 function makeStoredTemplateFeedCtx(
   storedPublication: Record<string, unknown>,

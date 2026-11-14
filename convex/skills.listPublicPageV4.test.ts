@@ -1,5 +1,6 @@
 /* @vitest-environment node */
 import { describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import {
   computeRecommendationScore,
   RECOMMENDATION_SCORE_VERSION,
@@ -13,14 +14,10 @@ vi.mock("@convex-dev/auth/server", () => ({
 
 const { __test, listPublicPageV4 } = await import("./skills");
 
-const listPublicPageV4Handler = (
-  listPublicPageV4 as unknown as {
-    _handler: (
-      ctx: unknown,
-      args: unknown,
-    ) => Promise<{ page: Array<{ skill: { slug: string } }> }>;
-  }
-)._handler;
+const listPublicPageV4Handler = getTestHandler<
+  unknown,
+  { page: Array<{ skill: { slug: string } }> }
+>(listPublicPageV4);
 
 describe("skills.listPublicPageV4", () => {
   it("defines recommended indexes in contract order", () => {
