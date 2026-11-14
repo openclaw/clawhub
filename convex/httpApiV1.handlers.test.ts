@@ -205,6 +205,35 @@ function makeSkillArtifactFixture(tags: Record<string, string> = {}) {
   };
 }
 
+function makeSkillVersionFixture(
+  overrides: Partial<{
+    _id: string;
+    skillId: string;
+    version: string;
+    createdAt: number;
+    changelog: string;
+    changelogSource: string;
+    files: Array<{
+      path: string;
+      size: number;
+      storageId: string;
+      sha256: string;
+      contentType: string;
+    }>;
+  }> = {},
+) {
+  return {
+    _id: "skillVersions:1",
+    skillId: "skills:1",
+    version: "1.0.0",
+    createdAt: 1,
+    changelog: "c",
+    changelogSource: "auto",
+    files: [],
+    ...overrides,
+  };
+}
+
 function makeSkillScanQuery<TSkill, TVersion>(
   selectedSkill: TSkill,
   selectedVersion0: TVersion,
@@ -5370,13 +5399,7 @@ describe("httpApiV1 handlers", () => {
 
   it("returns version detail", async () => {
     const selectedSkill = { _id: "skills:1", slug: "demo", displayName: "Demo" };
-    const selectedVersion0 = {
-      _id: "skillVersions:1",
-      skillId: "skills:1",
-      version: "1.0.0",
-      createdAt: 1,
-      changelog: "c",
-      changelogSource: "auto",
+    const selectedVersion0 = makeSkillVersionFixture({
       files: [
         {
           path: "SKILL.md",
@@ -5386,7 +5409,7 @@ describe("httpApiV1 handlers", () => {
           contentType: "text/plain",
         },
       ],
-    };
+    });
     const runQuery = makeVersionDetailQuery(selectedSkill, selectedVersion0);
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
@@ -5410,15 +5433,7 @@ describe("httpApiV1 handlers", () => {
       moderationFlags: [],
       moderationSourceVersionId: "skillVersions:1",
     };
-    const selectedVersion0 = {
-      _id: "skillVersions:1",
-      skillId: "skills:1",
-      version: "1.0.0",
-      createdAt: 1,
-      changelog: "c",
-      changelogSource: "auto",
-      files: [],
-    };
+    const selectedVersion0 = makeSkillVersionFixture();
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
@@ -5469,19 +5484,13 @@ describe("httpApiV1 handlers", () => {
   it("omits retired VirusTotal data from version detail security", async () => {
     const selectedSkill = { _id: "skills:1", slug: "demo", displayName: "Demo" };
     const selectedVersion0 = {
-      _id: "skillVersions:1",
-      skillId: "skills:1",
-      version: "1.0.0",
-      createdAt: 1,
-      changelog: "c",
-      changelogSource: "auto",
+      ...makeSkillVersionFixture(),
       sha256hash: "a".repeat(64),
       vtAnalysis: {
         status: "suspicious",
         source: "legacy-ai",
         checkedAt: 123,
       },
-      files: [],
     };
     const runQuery = makeVersionDetailQuery(selectedSkill, selectedVersion0);
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -5500,12 +5509,7 @@ describe("httpApiV1 handlers", () => {
   it("keeps static-scan suspicious status out of version security snapshot verdicts", async () => {
     const selectedSkill = { _id: "skills:1", slug: "demo", displayName: "Demo" };
     const selectedVersion0 = {
-      _id: "skillVersions:1",
-      skillId: "skills:1",
-      version: "1.0.0",
-      createdAt: 1,
-      changelog: "c",
-      changelogSource: "auto",
+      ...makeSkillVersionFixture(),
       sha256hash: "a".repeat(64),
       staticScan: {
         status: "suspicious",
@@ -5524,7 +5528,6 @@ describe("httpApiV1 handlers", () => {
         verdict: "benign",
         checkedAt: 222,
       },
-      files: [],
     };
     const runQuery = makeVersionDetailQuery(selectedSkill, selectedVersion0);
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -5546,12 +5549,7 @@ describe("httpApiV1 handlers", () => {
   it("keeps static-scan malicious status advisory when ClawScan is benign", async () => {
     const selectedSkill = { _id: "skills:1", slug: "demo", displayName: "Demo" };
     const selectedVersion0 = {
-      _id: "skillVersions:1",
-      skillId: "skills:1",
-      version: "1.0.0",
-      createdAt: 1,
-      changelog: "c",
-      changelogSource: "auto",
+      ...makeSkillVersionFixture(),
       sha256hash: "a".repeat(64),
       staticScan: {
         status: "malicious",
@@ -5570,7 +5568,6 @@ describe("httpApiV1 handlers", () => {
         verdict: "benign",
         checkedAt: 222,
       },
-      files: [],
     };
     const runQuery = makeVersionDetailQuery(selectedSkill, selectedVersion0);
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -5590,12 +5587,7 @@ describe("httpApiV1 handlers", () => {
   it("omits version security when only static scan evidence exists", async () => {
     const selectedSkill = { _id: "skills:1", slug: "demo", displayName: "Demo" };
     const selectedVersion0 = {
-      _id: "skillVersions:1",
-      skillId: "skills:1",
-      version: "1.0.0",
-      createdAt: 1,
-      changelog: "c",
-      changelogSource: "auto",
+      ...makeSkillVersionFixture(),
       staticScan: {
         status: "clean",
         reasonCodes: [],
@@ -5603,7 +5595,6 @@ describe("httpApiV1 handlers", () => {
         engineVersion: "v2.4.0",
         checkedAt: 555,
       },
-      files: [],
     };
     const runQuery = makeVersionDetailQuery(selectedSkill, selectedVersion0);
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -5619,12 +5610,7 @@ describe("httpApiV1 handlers", () => {
   it("keeps hasWarnings true when llm dimensions include non-ok ratings", async () => {
     const selectedSkill = { _id: "skills:1", slug: "demo", displayName: "Demo" };
     const selectedVersion0 = {
-      _id: "skillVersions:1",
-      skillId: "skills:1",
-      version: "1.0.0",
-      createdAt: 1,
-      changelog: "c",
-      changelogSource: "auto",
+      ...makeSkillVersionFixture(),
       sha256hash: "a".repeat(64),
       llmAnalysis: {
         status: "completed",
@@ -5639,7 +5625,6 @@ describe("httpApiV1 handlers", () => {
           },
         ],
       },
-      files: [],
     };
     const runQuery = makeVersionDetailQuery(selectedSkill, selectedVersion0);
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -5658,12 +5643,7 @@ describe("httpApiV1 handlers", () => {
       tags: { latest: "versions:1" },
     });
     const selectedVersion0 = {
-      _id: "skillVersions:1",
-      skillId: "skills:1",
-      version: "1.0.0",
-      createdAt: 1,
-      changelog: "c",
-      changelogSource: "auto",
+      ...makeSkillVersionFixture(),
       sha256hash: "b".repeat(64),
       capabilityTags: ["crypto", "requires-wallet", "can-make-purchases"],
       vtAnalysis: {
@@ -5677,7 +5657,6 @@ describe("httpApiV1 handlers", () => {
         summary: "s",
         checkedAt: 222,
       },
-      files: [],
     };
     const runQuery = makeSkillScanQuery(selectedSkill, selectedVersion0, true);
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -5705,19 +5684,13 @@ describe("httpApiV1 handlers", () => {
       tags: { latest: "versions:1" },
     });
     const selectedVersion0 = {
-      _id: "skillVersions:1",
-      skillId: "skills:1",
-      version: "1.0.0",
-      createdAt: 1,
-      changelog: "c",
-      changelogSource: "auto",
+      ...makeSkillVersionFixture(),
       sha256hash: "c".repeat(64),
       llmAnalysis: {
         status: "completed",
         summary: "missing verdict",
         checkedAt: 222,
       },
-      files: [],
     };
     const runQuery = makeSkillScanQuery(selectedSkill, selectedVersion0, false);
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -5746,14 +5719,8 @@ describe("httpApiV1 handlers", () => {
       moderationSourceVersionId: "skillVersions:1",
     };
     const selectedVersion0 = {
-      _id: "skillVersions:1",
-      skillId: "skills:1",
-      version: "1.0.0",
-      createdAt: 1,
-      changelog: "c",
-      changelogSource: "auto",
+      ...makeSkillVersionFixture(),
       capabilityTags: ["posts-externally", "requires-oauth-token"],
-      files: [],
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
@@ -5801,15 +5768,7 @@ describe("httpApiV1 handlers", () => {
           return {
             status: "available",
             skill: selectedSkill,
-            version: {
-              _id: "skillVersions:1",
-              skillId: "skills:1",
-              version: "1.0.0",
-              createdAt: 1,
-              changelog: "c",
-              changelogSource: "auto",
-              files: [],
-            },
+            version: makeSkillVersionFixture(),
           };
         }
         return null;
@@ -5829,14 +5788,8 @@ describe("httpApiV1 handlers", () => {
       tags: { latest: "skillVersions:1" },
     });
     const selectedVersion0 = {
-      _id: "skillVersions:1",
-      skillId: "skills:1",
-      version: "1.0.0",
-      createdAt: 1,
-      changelog: "c",
-      changelogSource: "auto",
+      ...makeSkillVersionFixture(),
       capabilityTags: ["posts-externally", "requires-oauth-token"],
-      files: [],
     };
     const runQuery = makeSkillScanQuery(selectedSkill, selectedVersion0, false);
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -5864,15 +5817,9 @@ describe("httpApiV1 handlers", () => {
       moderationFlags: ["blocked.malware"],
       moderationSourceVersionId: "skillVersions:1",
     };
-    const selectedVersion0 = {
-      _id: "skillVersions:1",
-      skillId: "skills:1",
-      version: "1.0.0",
-      createdAt: 1,
+    const selectedVersion0 = makeSkillVersionFixture({
       changelog: "c1",
-      changelogSource: "auto",
-      files: [],
-    };
+    });
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
@@ -5881,15 +5828,12 @@ describe("httpApiV1 handlers", () => {
       if ("slug" in args) {
         return {
           skill: selectedSkill,
-          latestVersion: {
+          latestVersion: makeSkillVersionFixture({
             _id: "skillVersions:2",
-            skillId: "skills:1",
             version: "2.0.0",
             createdAt: 2,
             changelog: "c2",
-            changelogSource: "auto",
-            files: [],
-          },
+          }),
           owner: { _id: "users:1", handle: "owner", displayName: "Owner" },
           moderationInfo: {
             isPendingScan: false,
@@ -5926,15 +5870,9 @@ describe("httpApiV1 handlers", () => {
       moderationFlags: [],
       moderationSourceVersionId: "skillVersions:1",
     };
-    const selectedVersion0 = {
-      _id: "skillVersions:1",
-      skillId: "skills:1",
-      version: "1.0.0",
-      createdAt: 1,
+    const selectedVersion0 = makeSkillVersionFixture({
       changelog: "c1",
-      changelogSource: "auto",
-      files: [],
-    };
+    });
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
@@ -5970,15 +5908,9 @@ describe("httpApiV1 handlers", () => {
       moderationFlags: [],
       moderationSourceVersionId: "skillVersions:1",
     };
-    const selectedVersion0 = {
-      _id: "skillVersions:1",
-      skillId: "skills:1",
-      version: "1.0.0",
-      createdAt: 1,
+    const selectedVersion0 = makeSkillVersionFixture({
       changelog: "c1",
-      changelogSource: "auto",
-      files: [],
-    };
+    });
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "available", skill: selectedSkill, version: selectedVersion0 };
@@ -6016,12 +5948,9 @@ describe("httpApiV1 handlers", () => {
       moderationFlags: ["blocked.malware"],
     };
     const selectedVersion0 = {
-      _id: "skillVersions:1",
-      skillId: "skills:1",
-      version: "1.0.0",
-      createdAt: 1,
-      changelog: "c1",
-      changelogSource: "auto",
+      ...makeSkillVersionFixture({
+        changelog: "c1",
+      }),
       sha256hash: "f".repeat(64),
       vtAnalysis: {
         status: "clean",
@@ -6032,17 +5961,13 @@ describe("httpApiV1 handlers", () => {
         verdict: "benign",
         checkedAt: 124,
       },
-      files: [],
     };
-    const moderationVersion = {
+    const moderationVersion = makeSkillVersionFixture({
       _id: "skillVersions:2",
-      skillId: "skills:1",
       version: "2.0.0",
       createdAt: 2,
       changelog: "c2",
-      changelogSource: "auto",
-      files: [],
-    };
+    });
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         if (args.versionId === moderationVersion._id)
@@ -6094,19 +6019,15 @@ describe("httpApiV1 handlers", () => {
       moderationSourceVersionId: "skillVersions:1",
     };
     const selectedVersion0 = {
-      _id: "skillVersions:1",
-      skillId: "skills:1",
-      version: "1.0.0",
-      createdAt: 1,
-      changelog: "c1",
-      changelogSource: "auto",
+      ...makeSkillVersionFixture({
+        changelog: "c1",
+      }),
       sha256hash: "f".repeat(64),
       llmAnalysis: {
         status: "completed",
         verdict: "suspicious",
         checkedAt: 123,
       },
-      files: [],
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
@@ -6116,15 +6037,12 @@ describe("httpApiV1 handlers", () => {
       if ("slug" in args) {
         return {
           skill: selectedSkill,
-          latestVersion: {
+          latestVersion: makeSkillVersionFixture({
             _id: "skillVersions:2",
-            skillId: "skills:1",
             version: "2.0.0",
             createdAt: 2,
             changelog: "c2",
-            changelogSource: "auto",
-            files: [],
-          },
+          }),
           owner: { _id: "users:1", handle: "owner", displayName: "Owner" },
           moderationInfo: {
             isPendingScan: false,
@@ -6155,12 +6073,11 @@ describe("httpApiV1 handlers", () => {
       tags: { latest: "versions:2" },
     });
     const selectedVersion0 = {
-      _id: "skillVersions:2",
-      skillId: "skills:1",
-      version: "2.0.0",
-      createdAt: 2,
-      changelog: "c",
-      changelogSource: "auto",
+      ...makeSkillVersionFixture({
+        _id: "skillVersions:2",
+        version: "2.0.0",
+        createdAt: 2,
+      }),
       sha256hash: "d".repeat(64),
       vtAnalysis: {
         status: "clean",
@@ -6171,7 +6088,6 @@ describe("httpApiV1 handlers", () => {
         summary: "scanner failed",
         checkedAt: 222,
       },
-      files: [],
     };
     const runQuery = makeSkillScanQuery(selectedSkill, selectedVersion0, false);
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -6193,33 +6109,28 @@ describe("httpApiV1 handlers", () => {
       tags: { latest: "skillVersions:2", old: "skillVersions:1" },
     });
     const selectedVersion0 = {
-      _id: "skillVersions:1",
-      skillId: "skills:1",
-      version: "1.0.0",
-      createdAt: 1,
-      changelog: "c1",
-      changelogSource: "auto",
+      ...makeSkillVersionFixture({
+        changelog: "c1",
+      }),
       sha256hash: "f".repeat(64),
       llmAnalysis: {
         status: "completed",
         verdict: "suspicious",
         checkedAt: 123,
       },
-      files: [],
     };
     const moderationVersion = {
-      _id: "skillVersions:2",
-      skillId: "skills:1",
-      version: "2.0.0",
-      createdAt: 2,
-      changelog: "c2",
-      changelogSource: "auto",
+      ...makeSkillVersionFixture({
+        _id: "skillVersions:2",
+        version: "2.0.0",
+        createdAt: 2,
+        changelog: "c2",
+      }),
       sha256hash: "e".repeat(64),
       vtAnalysis: {
         status: "clean",
         checkedAt: 222,
       },
-      files: [],
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
@@ -6269,32 +6180,27 @@ describe("httpApiV1 handlers", () => {
       tags: { latest: "skillVersions:2", old: "skillVersions:1" },
     });
     const selectedVersion0 = {
-      _id: "skillVersions:1",
-      skillId: "skills:1",
-      version: "1.0.0",
-      createdAt: 1,
-      changelog: "c1",
-      changelogSource: "auto",
+      ...makeSkillVersionFixture({
+        changelog: "c1",
+      }),
       sha256hash: "2".repeat(64),
       vtAnalysis: {
         status: "malicious",
         checkedAt: 123,
       },
-      files: [],
     };
     const moderationVersion = {
-      _id: "skillVersions:2",
-      skillId: "skills:1",
-      version: "2.0.0",
-      createdAt: 2,
-      changelog: "c2",
-      changelogSource: "auto",
+      ...makeSkillVersionFixture({
+        _id: "skillVersions:2",
+        version: "2.0.0",
+        createdAt: 2,
+        changelog: "c2",
+      }),
       sha256hash: "1".repeat(64),
       vtAnalysis: {
         status: "clean",
         checkedAt: 222,
       },
-      files: [],
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
