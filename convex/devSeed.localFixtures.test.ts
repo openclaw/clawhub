@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { chainEq } from "../src/__tests__/helpers/convexQuery";
+import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
 import type { Id } from "./_generated/dataModel";
 import {
   backfillExistingPublicCorpusBatchRows,
@@ -669,19 +670,16 @@ describe("devSeed local fixtures", () => {
       updatedAt: 1,
     })) as Id<"publishers">;
     const packageId = (await db.insert("packages", {
+      ...createPackageSeedDefaults(),
       name: "gmail-agent-plugin",
       normalizedName: "gmail-agent-plugin",
       displayName: "Gmail Agent Plugin",
       summary: "Existing public corpus plugin fixture.",
       ownerUserId: userId,
       ownerPublisherId: publisherId,
-      family: "code-plugin",
-      channel: "community",
-      isOfficial: false,
       runtimeId: "gmail-agent-plugin",
       latestReleaseId: undefined,
       latestVersionSummary: undefined,
-      tags: {},
       compatibility: { pluginApiRange: ">=0.1.0" },
       verification: {
         tier: "structural",
@@ -691,8 +689,6 @@ describe("devSeed local fixtures", () => {
       },
       scanStatus: "clean",
       stats: { downloads: 57, installs: 13, stars: 2, versions: 1 },
-      createdAt: 1,
-      updatedAt: 1,
     })) as Id<"packages">;
     const releaseId = (await db.insert("packageReleases", {
       packageId,
@@ -766,19 +762,16 @@ describe("devSeed local fixtures", () => {
       updatedAt: 1,
     })) as Id<"publishers">;
     const packageId = (await db.insert("packages", {
+      ...createPackageSeedDefaults(),
       name: "gmail-agent-plugin",
       normalizedName: "gmail-agent-plugin",
       displayName: "Gmail Agent Plugin",
       summary: "A real package that happens to collide with the corpus fixture.",
       ownerUserId: userId,
       ownerPublisherId: publisherId,
-      family: "code-plugin",
-      channel: "community",
-      isOfficial: false,
       runtimeId: "gmail-agent-plugin",
       latestReleaseId: undefined,
       latestVersionSummary: undefined,
-      tags: {},
       categories: ["models"],
       topics: ["Original Topic"],
       compatibility: { pluginApiRange: ">=0.1.0" },
@@ -790,8 +783,6 @@ describe("devSeed local fixtures", () => {
       },
       scanStatus: "clean",
       stats: { downloads: 57, installs: 13, stars: 2, versions: 1 },
-      createdAt: 1,
-      updatedAt: 1,
     })) as Id<"packages">;
     const releaseId = (await db.insert("packageReleases", {
       packageId,
@@ -1630,20 +1621,15 @@ describe("devSeed local fixtures", () => {
       },
     });
     const packageId = (await db.insert("packages", {
+      ...createPackageSeedDefaults(),
       name: "presentation-plugin",
       normalizedName: "presentation-plugin",
       displayName: "Presentation Plugin",
       ownerUserId: userId,
       ownerPublisherId: sourcePublisherId,
-      family: "code-plugin",
-      channel: "community",
-      isOfficial: false,
       runtimeId: "presentation-plugin",
-      tags: {},
       stats: { downloads: 14, installs: 7, stars: 4, versions: 1 },
       softDeletedAt: undefined,
-      createdAt: 1,
-      updatedAt: 1,
     })) as Id<"packages">;
     const args = {
       orgs: [

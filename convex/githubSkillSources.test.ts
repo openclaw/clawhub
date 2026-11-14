@@ -1,5 +1,6 @@
 import { ConvexError } from "convex/values";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createActiveSkillSeedDefaults } from "../src/__tests__/helpers/activeSkillSeed";
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { chainEq } from "../src/__tests__/helpers/convexQuery";
 
@@ -175,6 +176,7 @@ function makeSkillsShAliasRows(skills: Row[]) {
 
 function makeAliasSkill(id: string, githubPath = "skills/html"): Row {
   return {
+    ...createActiveSkillSeedDefaults(),
     _id: id,
     _creationTime: 1,
     slug: "html",
@@ -188,12 +190,7 @@ function makeAliasSkill(id: string, githubPath = "skills/html"): Row {
     githubCurrentContentHash: "c".repeat(64),
     githubCurrentStatus: "present",
     githubScanStatus: "clean",
-    moderationStatus: "active",
-    tags: {},
-    badges: {},
     stats: {},
-    createdAt: 1,
-    updatedAt: 1,
   };
 }
 
@@ -278,6 +275,7 @@ describe("githubSkillSources.deleteForPublisherHandler", () => {
       ],
       skills: [
         {
+          ...createActiveSkillSeedDefaults(),
           _id: "skills:github",
           slug: "source-backed",
           displayName: "Source Backed",
@@ -291,9 +289,7 @@ describe("githubSkillSources.deleteForPublisherHandler", () => {
           ownerUserId: "users:owner",
           ownerPublisherId: "publishers:openclaw",
           forkOf: undefined,
-          tags: {},
           capabilityTags: undefined,
-          badges: {},
           stats: {
             comments: 0,
             downloads: 0,
@@ -302,10 +298,8 @@ describe("githubSkillSources.deleteForPublisherHandler", () => {
             stars: 0,
             versions: 0,
           },
-          moderationStatus: "active",
           moderationFlags: [],
           isSuspicious: false,
-          createdAt: 1,
           updatedAt: 2,
           softDeletedAt: undefined,
         },

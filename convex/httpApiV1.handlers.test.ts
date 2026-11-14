@@ -15,6 +15,7 @@ import { prepareClawPackInternal } from "./packageClawpackNode";
 vi.mock("./lib/verifiedClientIp", () => ({
   getVerifiedClientIp: async () => "203.0.113.1",
 }));
+import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
 import { api, internal } from "./_generated/api";
 import { RATE_LIMITS } from "./lib/httpRateLimit";
 import { MAX_PUBLISH_FILE_BYTES } from "./lib/publishLimits";
@@ -13245,14 +13246,11 @@ describe("httpApiV1 handlers", () => {
       if ("name" in args) {
         return {
           package: {
+            ...createPackageSeedDefaults(),
             _id: "packages:demo-plugin",
             name: "demo-plugin",
             displayName: "Demo Plugin",
-            family: "code-plugin",
-            tags: {},
             latestReleaseId: "packageReleases:1",
-            channel: "community",
-            isOfficial: false,
             summary: "Plugin summary",
             latestVersion: "1.2.3",
             capabilityTags: ["tools"],
@@ -13263,7 +13261,6 @@ describe("httpApiV1 handlers", () => {
               capabilityTags: ["tools"],
             },
             stats: { downloads: 7, installs: 3, stars: 2, versions: 4 },
-            createdAt: 1,
             updatedAt: 2,
           },
           latestRelease: null,
@@ -13301,18 +13298,14 @@ describe("httpApiV1 handlers", () => {
         expect(args.name).toBe("@openclaw/demo-plugin");
         return {
           package: {
+            ...createPackageSeedDefaults(),
             _id: "packages:demo-plugin",
             name: "@openclaw/demo-plugin",
             displayName: "Demo Plugin",
-            family: "code-plugin",
-            tags: {},
             latestReleaseId: "packageReleases:1",
-            channel: "community",
-            isOfficial: false,
             summary: "Plugin summary",
             latestVersion: "1.2.3",
             stats: { downloads: 7, installs: 3, stars: 2, versions: 4 },
-            createdAt: 1,
             updatedAt: 2,
           },
           latestRelease: null,
@@ -14630,15 +14623,13 @@ describe("httpApiV1 handlers", () => {
       if ("name" in args) {
         return {
           package: {
+            ...createPackageSeedDefaults(),
             _id: "packages:demo-plugin",
             name: "demo-plugin",
             displayName: "Demo Plugin",
-            family: "code-plugin",
             tags: { latest: "packageReleases:1" },
             latestReleaseId: "packageReleases:1",
             latestVersion: "1.0.0",
-            channel: "community",
-            isOfficial: false,
             compatibility: {
               pluginApiRange: "^1.0.0",
               builtWithOpenClawVersion: "2026.3.14",
@@ -14660,8 +14651,6 @@ describe("httpApiV1 handlers", () => {
               sha256: "a".repeat(64),
               format: "zip",
             },
-            createdAt: 1,
-            updatedAt: 1,
           },
           latestRelease: null,
           owner: { _id: "publishers:demo", handle: "demo" },
@@ -17360,15 +17349,10 @@ describe("httpApiV1 handlers", () => {
       if ("name" in args) {
         return {
           package: {
+            ...createPackageSeedDefaults(),
             _id: "packages:1",
             name: "@openclaw/demo-plugin",
             displayName: "Demo Plugin",
-            family: "code-plugin",
-            tags: {},
-            channel: "community",
-            isOfficial: false,
-            createdAt: 1,
-            updatedAt: 1,
           },
           latestRelease: null,
           owner: null,
