@@ -22,6 +22,7 @@ import { delimiter, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { strToU8, zipSync } from "fflate";
 import { afterEach, describe, expect, it } from "vitest";
+import { makeApiSkill } from "../test/apiFixtures.js";
 import { runGit } from "../test/git.js";
 
 const require = createRequire(import.meta.url);
@@ -168,15 +169,11 @@ async function startLocalRegistry(catalogItems?: unknown[]) {
 
     if (request.method === "GET" && url.pathname === "/api/v1/skills/demo") {
       writeJson(response, 200, {
-        skill: {
-          slug: "demo",
-          displayName: "Demo",
+        skill: makeApiSkill({
           summary: "Local fixture",
-          tags: {},
-          stats: {},
           createdAt: 1,
           updatedAt: 2,
-        },
+        }),
         latestVersion: {
           version: "1.0.0",
           createdAt: 2,
@@ -407,15 +404,12 @@ describe("built CLI artifact", () => {
   });
 
   it("explores same-slug owners, null versions, and an older custom registry", async () => {
-    const item = {
+    const item = makeApiSkill({
       slug: "shared-fixture",
       displayName: "Fixture skill",
-      summary: null,
-      tags: {},
-      stats: {},
       createdAt: 1,
       updatedAt: 2,
-    };
+    });
     const current = await startLocalRegistry([
       {
         ...item,
