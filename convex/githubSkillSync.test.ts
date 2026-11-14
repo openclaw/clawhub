@@ -38,6 +38,28 @@ afterEach(() => {
 
 type Row = Record<string, unknown> & { _id: string };
 
+function createNvidiaSource() {
+  return {
+    _id: "githubSkillSources:nvidia",
+    repo: "NVIDIA/skills",
+    ownerPublisherId: "publishers:nvidia",
+    createdAt: 1,
+    updatedAt: 1,
+  };
+}
+
+function createPatrickPublisher() {
+  return {
+    _id: "publishers:patrick",
+    kind: "user",
+    handle: "patrick",
+    displayName: "Patrick",
+    linkedUserId: "users:patrick",
+    createdAt: 1,
+    updatedAt: 1,
+  };
+}
+
 function matches(doc: Row, constraints: Record<string, unknown>) {
   return Object.entries(constraints).every(([key, value]) => doc[key] === value);
 }
@@ -2261,17 +2283,7 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
     });
     const contentHash = snapshot.skills[0]?.contentHash ?? "";
     const { db, tables } = createDb({
-      publishers: [
-        {
-          _id: "publishers:patrick",
-          kind: "user",
-          handle: "patrick",
-          displayName: "Patrick",
-          linkedUserId: "users:patrick",
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
+      publishers: [createPatrickPublisher()],
       skills: [
         {
           _id: "skills:html",
@@ -2377,17 +2389,7 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
           updatedAt: 1,
         },
       ],
-      publishers: [
-        {
-          _id: "publishers:patrick",
-          kind: "user",
-          handle: "patrick",
-          displayName: "Patrick",
-          linkedUserId: "users:patrick",
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
+      publishers: [createPatrickPublisher()],
       skills: [
         {
           _id: "skills:html",
@@ -3573,17 +3575,7 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
           updatedAt: 1,
         },
       ],
-      publishers: [
-        {
-          _id: "publishers:patrick",
-          kind: "user",
-          handle: "patrick",
-          displayName: "Patrick",
-          linkedUserId: "users:patrick",
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
+      publishers: [createPatrickPublisher()],
       skills: [
         {
           _id: "skills:html",
@@ -3844,17 +3836,7 @@ description: Build HTML artifacts.
       },
     });
     const { db, tables } = createDb({
-      publishers: [
-        {
-          _id: "publishers:patrick",
-          kind: "user",
-          handle: "patrick",
-          displayName: "Patrick",
-          linkedUserId: "users:patrick",
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
+      publishers: [createPatrickPublisher()],
       skills: [
         {
           _id: "skills:html",
@@ -4055,15 +4037,7 @@ description: Build HTML artifacts.
     });
     const contentHash = snapshot.skills[0]?.contentHash;
     const { db, tables } = createDb({
-      githubSkillSources: [
-        {
-          _id: "githubSkillSources:nvidia",
-          repo: "NVIDIA/skills",
-          ownerPublisherId: "publishers:nvidia",
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
+      githubSkillSources: [createNvidiaSource()],
       skills: [
         {
           _id: "skills:aiq-deploy",
@@ -4290,15 +4264,7 @@ description: Build HTML artifacts.
       entries: {},
     });
     const { db, tables } = createDb({
-      githubSkillSources: [
-        {
-          _id: "githubSkillSources:nvidia",
-          repo: "NVIDIA/skills",
-          ownerPublisherId: "publishers:nvidia",
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
+      githubSkillSources: [createNvidiaSource()],
       skills: [
         {
           _id: "skills:aiq-deploy",
@@ -4354,15 +4320,7 @@ description: Build HTML artifacts.
       },
     });
     const { db, tables } = createDb({
-      githubSkillSources: [
-        {
-          _id: "githubSkillSources:nvidia",
-          repo: "NVIDIA/skills",
-          ownerPublisherId: "publishers:nvidia",
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
+      githubSkillSources: [createNvidiaSource()],
       globalStats: [
         {
           _id: "globalStats:default",
@@ -4534,15 +4492,7 @@ description: Build HTML artifacts.
       },
     });
     const { db, tables } = createDb({
-      githubSkillSources: [
-        {
-          _id: "githubSkillSources:nvidia",
-          repo: "NVIDIA/skills",
-          ownerPublisherId: "publishers:nvidia",
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
+      githubSkillSources: [createNvidiaSource()],
     });
 
     await expect(
@@ -4573,15 +4523,7 @@ description: Build HTML artifacts.
       },
     });
     const { db, tables } = createDb({
-      githubSkillSources: [
-        {
-          _id: "githubSkillSources:nvidia",
-          repo: "NVIDIA/skills",
-          ownerPublisherId: "publishers:nvidia",
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
+      githubSkillSources: [createNvidiaSource()],
     });
     const scheduler = {
       runAfter: vi.fn(
@@ -4666,15 +4608,7 @@ description: Build HTML artifacts.
     });
     const contentHash = snapshot.skills[0]?.contentHash;
     const { db } = createDb({
-      githubSkillSources: [
-        {
-          _id: "githubSkillSources:nvidia",
-          repo: "NVIDIA/skills",
-          ownerPublisherId: "publishers:nvidia",
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
+      githubSkillSources: [createNvidiaSource()],
       skills: [
         {
           _id: "skills:aiq-deploy",
@@ -4749,15 +4683,7 @@ description: Build HTML artifacts.
     });
     const contentHash = snapshot.skills[0]?.contentHash;
     const { db } = createDb({
-      githubSkillSources: [
-        {
-          _id: "githubSkillSources:nvidia",
-          repo: "NVIDIA/skills",
-          ownerPublisherId: "publishers:nvidia",
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
+      githubSkillSources: [createNvidiaSource()],
       skills: [
         {
           _id: "skills:aiq-deploy",
@@ -4832,15 +4758,7 @@ description: Build HTML artifacts.
     });
     const contentHash = snapshot.skills[0]?.contentHash;
     const { db, tables } = createDb({
-      githubSkillSources: [
-        {
-          _id: "githubSkillSources:nvidia",
-          repo: "NVIDIA/skills",
-          ownerPublisherId: "publishers:nvidia",
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
+      githubSkillSources: [createNvidiaSource()],
       skills: [
         {
           _id: "skills:aiq-deploy",
@@ -4913,15 +4831,7 @@ description: Build HTML artifacts.
       },
     });
     const { db, tables } = createDb({
-      githubSkillSources: [
-        {
-          _id: "githubSkillSources:nvidia",
-          repo: "NVIDIA/skills",
-          ownerPublisherId: "publishers:nvidia",
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
+      githubSkillSources: [createNvidiaSource()],
       skills: [
         {
           _id: "skills:aiq-deploy",
