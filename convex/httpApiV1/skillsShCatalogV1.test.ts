@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makePublicSkillsShDigest } from "../../src/__tests__/helpers/skillsShDigest";
+import { internal } from "../_generated/api";
 
 vi.mock("../lib/httpRateLimit", () => ({
   applyRateLimit: vi.fn(async () => ({ ok: true, headers: {} })),
@@ -812,37 +813,41 @@ describe("skills.sh catalog Test HTTP API", () => {
     expect(runQuery).toHaveBeenCalledTimes(2);
   });
 
-  it("reads a bounded mirror facet proof page", async () => {
-    const runQuery = vi
-      .fn()
-      .mockResolvedValueOnce({
-        environment: "test",
-        deploymentName: "academic-chihuahua-392",
-        buildSha: "test-sha",
-        control: {},
-      })
-      .mockResolvedValueOnce({
+  describe.each([
+    ["mirror-page", internal.skillsShMirror.listDigestsPageInternal],
+    ["mirror-detail-page", internal.skillsShMirror.listDetailsPageInternal],
+    ["mirror-facet-page", internal.skillsShMirror.listFacetsPageInternal],
+  ] as const)("%s", (operation, queryRef) => {
+    it.each([
+      ["initial page", { cursor: null, limit: 500 }, null],
+      ["continued page", { cursor: "next", limit: 10 }, null],
+      ["missing cursor", { limit: 500 }, "cursor is required"],
+      ["invalid cursor before limit", { cursor: 42 }, "cursor is required"],
+      ["missing limit", { cursor: null }, "limit is required"],
+      ["invalid limit", { cursor: "next", limit: "10" }, "limit is required"],
+    ] as const)("validates %s", async (_label, body, error) => {
+      const page = {
         page: [{ kind: "category", term: "development" }],
         isDone: true,
         continueCursor: "",
-      });
-    const ctx = { runQuery } as never;
-    const response = await skillsShCatalogTestV1Handler(
-      ctx,
-      new Request("https://academic-chihuahua-392.convex.site/api/v1/ops", {
-        method: "POST",
-        body: JSON.stringify({
-          operation: "mirror-facet-page",
-          cursor: null,
-          limit: 500,
+      };
+      const runQuery = vi.fn().mockResolvedValueOnce({ control: {} }).mockResolvedValueOnce(page);
+      const response = await skillsShCatalogTestV1Handler(
+        { runQuery } as never,
+        new Request("https://example.com/api/v1/ops", {
+          method: "POST",
+          body: JSON.stringify({ operation, ...body }),
         }),
-      }),
-    );
+      );
 
-    expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({
-      page: [{ kind: "category", term: "development" }],
-      isDone: true,
+      expect(response.status).toBe(error ? 400 : 200);
+      expect(runQuery).toHaveBeenCalledTimes(error ? 1 : 2);
+      if (error) {
+        expect(await response.text()).toBe(error);
+      } else {
+        expect(await response.json()).toEqual(page);
+        expect(runQuery).toHaveBeenNthCalledWith(2, queryRef, body);
+      }
     });
   });
 
