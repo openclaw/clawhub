@@ -5,6 +5,7 @@ import { type FunctionReference, getFunctionName } from "convex/server";
 import { convexToJson, jsonToConvex, type Value } from "convex/values";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
+import { indexedUnique } from "../src/__tests__/helpers/convexQuery";
 import { sha256Hex } from "./lib/clawpack";
 import { verifyOpenClawPublishAuthorization } from "./lib/openClawPublishAuthorization";
 import { MAX_PUBLISH_FILE_BYTES } from "./lib/publishLimits";
@@ -494,14 +495,10 @@ function makeCleanPackageInspectorResult() {
 function makeModerationDigestQueryMock() {
   return vi.fn((table: string) => {
     if (table === "packageSearchDigest") {
-      return {
-        withIndex: vi.fn(() => ({
-          unique: vi.fn().mockResolvedValue({
-            _id: "packageSearchDigest:demo",
-            packageId: "packages:demo",
-          }),
-        })),
-      };
+      return indexedUnique(() => ({
+        _id: "packageSearchDigest:demo",
+        packageId: "packages:demo",
+      }));
     }
     if (
       table === "packageCapabilitySearchDigest" ||
@@ -1161,11 +1158,7 @@ function makeCanDeleteVersionsCtx(options: {
       }),
       query: vi.fn((table: string) => {
         if (table === "users") {
-          return {
-            withIndex: vi.fn(() => ({
-              unique: vi.fn().mockResolvedValue(null),
-            })),
-          };
+          return indexedUnique(() => null);
         }
         if (table === "packages") {
           return {
@@ -2595,11 +2588,7 @@ function makeReservePackageNameCtx(options?: {
         }),
         query: vi.fn((table: string) => {
           if (table !== "packages") throw new Error(`Unexpected table ${table}`);
-          return {
-            withIndex: vi.fn(() => ({
-              unique: vi.fn().mockResolvedValue(options?.existing ?? null),
-            })),
-          };
+          return indexedUnique(() => options?.existing ?? null);
         }),
         insert,
         patch: vi.fn(),
@@ -2659,11 +2648,7 @@ function makeTransferPackageOwnerCtx(options?: {
             };
           }
           if (table === "packageSearchDigest") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(packageSearchDigest),
-              })),
-            };
+            return indexedUnique(() => packageSearchDigest);
           }
           if (table === "officialPublishers") {
             return {
@@ -2776,18 +2761,10 @@ function makeUserTransferPackageOwnerCtx(options?: {
         }),
         query: vi.fn((table: string) => {
           if (table === "packages") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(pkg),
-              })),
-            };
+            return indexedUnique(() => pkg);
           }
           if (table === "packageSearchDigest") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(packageSearchDigest),
-              })),
-            };
+            return indexedUnique(() => packageSearchDigest);
           }
           if (
             table === "packageCapabilitySearchDigest" ||
@@ -2851,11 +2828,7 @@ function makeUserTransferPackageOwnerCtx(options?: {
             };
           }
           if (table === "officialPublishers") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(null),
-              })),
-            };
+            return indexedUnique(() => null);
           }
           throw new Error(`Unexpected table ${table}`);
         }),
@@ -2909,11 +2882,7 @@ function makePackageCtx(options: {
         }),
         query: vi.fn((table: string) => {
           if (table === "packages") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(pkg),
-              })),
-            };
+            return indexedUnique(() => pkg);
           }
           if (table === "packageReleases") {
             const filteredVersionsPage = {
@@ -2956,20 +2925,16 @@ function makePackageCtx(options: {
             };
           }
           if (table === "publisherMembers") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(
-                  options.viewerMembershipRole
-                    ? {
-                        _id: "publisherMembers:1",
-                        publisherId: pkg?.ownerPublisherId,
-                        userId: "users:member",
-                        role: options.viewerMembershipRole,
-                      }
-                    : null,
-                ),
-              })),
-            };
+            return indexedUnique(() =>
+              options.viewerMembershipRole
+                ? {
+                    _id: "publisherMembers:1",
+                    publisherId: pkg?.ownerPublisherId,
+                    userId: "users:member",
+                    role: options.viewerMembershipRole,
+                  }
+                : null,
+            );
           }
           if (table === "officialPublishers") {
             return {
@@ -3021,11 +2986,7 @@ function makeSoftDeletePackageCtx(options?: {
         }),
         query: vi.fn((table: string) => {
           if (table === "packages") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(pkg),
-              })),
-            };
+            return indexedUnique(() => pkg);
           }
           if (table === "packageReleases") {
             return {
@@ -3035,18 +2996,10 @@ function makeSoftDeletePackageCtx(options?: {
             };
           }
           if (table === "publisherMembers") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(membership),
-              })),
-            };
+            return indexedUnique(() => membership);
           }
           if (table === "packageSearchDigest") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(packageSearchDigest),
-              })),
-            };
+            return indexedUnique(() => packageSearchDigest);
           }
           if (
             table === "packageCapabilitySearchDigest" ||
@@ -3095,27 +3048,19 @@ function makePackagePreviewAccessCtx(options: {
       }),
       query: vi.fn((table: string) => {
         if (table === "packages") {
-          return {
-            withIndex: vi.fn(() => ({
-              unique: vi.fn().mockResolvedValue(options.pkg),
-            })),
-          };
+          return indexedUnique(() => options.pkg);
         }
         if (table === "publisherMembers") {
-          return {
-            withIndex: vi.fn(() => ({
-              unique: vi.fn().mockResolvedValue(
-                options.membershipRole && publisher
-                  ? {
-                      _id: "publisherMembers:preview",
-                      publisherId: publisher._id,
-                      userId: options.actorUserId,
-                      role: options.membershipRole,
-                    }
-                  : null,
-              ),
-            })),
-          };
+          return indexedUnique(() =>
+            options.membershipRole && publisher
+              ? {
+                  _id: "publisherMembers:preview",
+                  publisherId: publisher._id,
+                  userId: options.actorUserId,
+                  role: options.membershipRole,
+                }
+              : null,
+          );
         }
         throw new Error(`Unexpected table ${table}`);
       }),
@@ -4158,16 +4103,12 @@ describe("packages public queries", () => {
             };
           }
           if (table === "packageSearchDigest") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue({
-                  _id: "packageSearchDigest:memory",
-                  packageId: staleOfficialPlugin._id,
-                  channel: "community",
-                  isOfficial: false,
-                }),
-              })),
-            };
+            return indexedUnique(() => ({
+              _id: "packageSearchDigest:memory",
+              packageId: staleOfficialPlugin._id,
+              channel: "community",
+              isOfficial: false,
+            }));
           }
           if (
             table === "packageCapabilitySearchDigest" ||
@@ -7575,11 +7516,7 @@ describe("packages public queries", () => {
         ),
         query: vi.fn((table: string) => {
           if (table === "packages") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(makePackageDoc()),
-              })),
-            };
+            return indexedUnique(() => makePackageDoc());
           }
           if (table === "packageReleases") {
             return {
@@ -9478,23 +9415,15 @@ describe("packages public queries", () => {
         get: vi.fn(),
         query: vi.fn((table: string) => {
           if (table === "packages") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(
-                  makePackageDoc({
-                    ownerUserId: "users:owner",
-                    ownerPublisherId: "publishers:owner",
-                  }),
-                ),
-              })),
-            };
+            return indexedUnique(() =>
+              makePackageDoc({
+                ownerUserId: "users:owner",
+                ownerPublisherId: "publishers:owner",
+              }),
+            );
           }
           if (table === "packageReleases") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(release),
-              })),
-            };
+            return indexedUnique(() => release);
           }
           throw new Error(`Unexpected table ${table}`);
         }),
@@ -9565,23 +9494,15 @@ describe("packages public queries", () => {
         get: vi.fn(),
         query: vi.fn((table: string) => {
           if (table === "packages") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(
-                  makePackageDoc({
-                    ownerUserId: "users:owner",
-                    ownerPublisherId: "publishers:owner",
-                  }),
-                ),
-              })),
-            };
+            return indexedUnique(() =>
+              makePackageDoc({
+                ownerUserId: "users:owner",
+                ownerPublisherId: "publishers:owner",
+              }),
+            );
           }
           if (table === "packageReleases") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(release),
-              })),
-            };
+            return indexedUnique(() => release);
           }
           throw new Error(`Unexpected table ${table}`);
         }),
@@ -9604,16 +9525,12 @@ describe("packages public queries", () => {
       db: {
         query: vi.fn((table: string) => {
           if (table === "packages") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(
-                  makePackageDoc({
-                    ownerUserId: "users:other",
-                    ownerPublisherId: "publishers:other",
-                  }),
-                ),
-              })),
-            };
+            return indexedUnique(() =>
+              makePackageDoc({
+                ownerUserId: "users:other",
+                ownerPublisherId: "publishers:other",
+              }),
+            );
           }
           if (table === "packageReleases") {
             throw new Error("release query should be skipped for owner mismatch");
@@ -14961,17 +14878,13 @@ describe("packages public queries", () => {
         }),
         query: vi.fn((table: string) => {
           if (table === "packages") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue({
-                  _id: "packages:demo",
-                  name: "demo-plugin",
-                  normalizedName: "demo-plugin",
-                  family: "code-plugin",
-                  latestReleaseId: "packageReleases:demo-1",
-                }),
-              })),
-            };
+            return indexedUnique(() => ({
+              _id: "packages:demo",
+              name: "demo-plugin",
+              normalizedName: "demo-plugin",
+              family: "code-plugin",
+              latestReleaseId: "packageReleases:demo-1",
+            }));
           }
           if (table === "packageInspectorWarnings") {
             return {
@@ -15036,17 +14949,13 @@ describe("packages public queries", () => {
         get: vi.fn(),
         query: vi.fn((table: string) => {
           if (table === "packages") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue({
-                  _id: "packages:demo",
-                  name: "demo-plugin",
-                  normalizedName: "demo-plugin",
-                  family: "code-plugin",
-                  latestReleaseId: "packageReleases:demo-2",
-                }),
-              })),
-            };
+            return indexedUnique(() => ({
+              _id: "packages:demo",
+              name: "demo-plugin",
+              normalizedName: "demo-plugin",
+              family: "code-plugin",
+              latestReleaseId: "packageReleases:demo-2",
+            }));
           }
           if (table === "packageInspectorWarnings") {
             return { withIndex: warningWithIndex };
@@ -15092,19 +15001,15 @@ describe("packages public queries", () => {
         get: vi.fn(),
         query: vi.fn((table: string) => {
           if (table === "packages") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue({
-                  _id: "packages:private",
-                  name: "private-plugin",
-                  normalizedName: "private-plugin",
-                  family: "code-plugin",
-                  channel: "private",
-                  scanStatus: "clean",
-                  ownerUserId: "users:owner",
-                }),
-              })),
-            };
+            return indexedUnique(() => ({
+              _id: "packages:private",
+              name: "private-plugin",
+              normalizedName: "private-plugin",
+              family: "code-plugin",
+              channel: "private",
+              scanStatus: "clean",
+              ownerUserId: "users:owner",
+            }));
           }
           throw new Error(`Unexpected table ${table}`);
         }),
@@ -15282,11 +15187,7 @@ describe("packages public queries", () => {
             };
           }
           if (table === "packageInspectorFindingNotifications") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(null),
-              })),
-            };
+            return indexedUnique(() => null);
           }
           throw new Error(`Unexpected table ${table}`);
         }),
@@ -15526,11 +15427,7 @@ describe("packages public queries", () => {
         }),
         query: vi.fn((table: string) => {
           if (table === "packageInspectorScanCursors") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(null),
-              })),
-            };
+            return indexedUnique(() => null);
           }
           if (table === "packageReleases") {
             return {
@@ -15585,18 +15482,14 @@ describe("packages public queries", () => {
           if (table !== "packageInspectorScanCursors") {
             throw new Error(`Unexpected table ${table}`);
           }
-          return {
-            withIndex: vi.fn(() => ({
-              unique: vi.fn().mockResolvedValue({
-                _id: "packageInspectorScanCursors:nightly",
-                name: "nightly",
-                cursor: null,
-                pendingCursor: "page-2",
-                runId: "run-42",
-                leaseExpiresAt: Date.now() + 60_000,
-              }),
-            })),
-          };
+          return indexedUnique(() => ({
+            _id: "packageInspectorScanCursors:nightly",
+            name: "nightly",
+            cursor: null,
+            pendingCursor: "page-2",
+            runId: "run-42",
+            leaseExpiresAt: Date.now() + 60_000,
+          }));
         }),
         patch,
         insert: vi.fn(),
@@ -15667,17 +15560,13 @@ describe("packages public queries", () => {
         get: vi.fn(),
         query: vi.fn((table: string) => {
           if (table === "packageInspectorScanCursors") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue({
-                  _id: "packageInspectorScanCursors:nightly",
-                  name: "nightly",
-                  runId: "run-42",
-                  cursor: "page-2",
-                  leaseExpiresAt: Date.now() + 60_000,
-                }),
-              })),
-            };
+            return indexedUnique(() => ({
+              _id: "packageInspectorScanCursors:nightly",
+              name: "nightly",
+              runId: "run-42",
+              cursor: "page-2",
+              leaseExpiresAt: Date.now() + 60_000,
+            }));
           }
           if (table === "packageReleases") {
             return {
@@ -15726,18 +15615,14 @@ describe("packages public queries", () => {
         get: vi.fn(),
         query: vi.fn((table: string) => {
           if (table === "packageInspectorScanCursors") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue({
-                  _id: "packageInspectorScanCursors:nightly",
-                  name: "nightly",
-                  runId: "run-42",
-                  cursor: "page-1",
-                  pendingCursor: "page-2",
-                  leaseExpiresAt: Date.now() + 60_000,
-                }),
-              })),
-            };
+            return indexedUnique(() => ({
+              _id: "packageInspectorScanCursors:nightly",
+              name: "nightly",
+              runId: "run-42",
+              cursor: "page-1",
+              pendingCursor: "page-2",
+              leaseExpiresAt: Date.now() + 60_000,
+            }));
           }
           if (table === "packageReleases") {
             return {
@@ -15788,16 +15673,12 @@ describe("packages public queries", () => {
         get: vi.fn(),
         query: vi.fn((table: string) => {
           if (table === "packageInspectorScanCursors") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue({
-                  _id: "packageInspectorScanCursors:nightly",
-                  runId: "run-42",
-                  cursor: "page-3",
-                  leaseExpiresAt: Date.now() + 60_000,
-                }),
-              })),
-            };
+            return indexedUnique(() => ({
+              _id: "packageInspectorScanCursors:nightly",
+              runId: "run-42",
+              cursor: "page-3",
+              leaseExpiresAt: Date.now() + 60_000,
+            }));
           }
           if (table === "packageReleases") {
             return {
@@ -15853,16 +15734,12 @@ describe("packages public queries", () => {
         ),
         query: vi.fn((table: string) => {
           if (table === "packageInspectorScanCursors") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue({
-                  _id: "packageInspectorScanCursors:nightly",
-                  runId: "run-old",
-                  cursor: "page-2",
-                  leaseExpiresAt: Date.now() - 1,
-                }),
-              })),
-            };
+            return indexedUnique(() => ({
+              _id: "packageInspectorScanCursors:nightly",
+              runId: "run-old",
+              cursor: "page-2",
+              leaseExpiresAt: Date.now() - 1,
+            }));
           }
           if (table === "packageReleases") {
             return {
@@ -15944,11 +15821,7 @@ describe("packages public queries", () => {
         }),
         query: vi.fn((table: string) => {
           if (table === "packageInspectorScanCursors") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(null),
-              })),
-            };
+            return indexedUnique(() => null);
           }
           if (table === "packageReleases") {
             return {
@@ -16302,11 +16175,7 @@ describe("packages public queries", () => {
         }),
         query: vi.fn((table: string) => {
           if (table === "packageInspectorScanCursors") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(null),
-              })),
-            };
+            return indexedUnique(() => null);
           }
           if (table === "packageReleases") {
             return {
@@ -16391,18 +16260,14 @@ describe("packages public queries", () => {
         }),
         query: vi.fn((table: string) => {
           if (table === "packages") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue({
-                  _id: "packages:demo",
-                  name: "demo-plugin",
-                  normalizedName: "demo-plugin",
-                  family: "code-plugin",
-                  ownerUserId: "users:owner",
-                  latestReleaseId: "packageReleases:demo-2",
-                }),
-              })),
-            };
+            return indexedUnique(() => ({
+              _id: "packages:demo",
+              name: "demo-plugin",
+              normalizedName: "demo-plugin",
+              family: "code-plugin",
+              ownerUserId: "users:owner",
+              latestReleaseId: "packageReleases:demo-2",
+            }));
           }
           if (table === "packageInspectorWarnings") {
             return { withIndex: warningWithIndex };
@@ -16849,11 +16714,7 @@ describe("packages public queries", () => {
         }),
         query: vi.fn((table: string) => {
           if (table !== "packages") throw new Error(`Unexpected table ${table}`);
-          return {
-            withIndex: vi.fn(() => ({
-              unique: vi.fn().mockResolvedValue(makePackageDoc({ scanStatus: "pending" })),
-            })),
-          };
+          return indexedUnique(() => makePackageDoc({ scanStatus: "pending" }));
         }),
       },
     };
@@ -16876,16 +16737,12 @@ describe("packages public queries", () => {
           }),
           query: vi.fn((table: string) => {
             if (table !== "packages") throw new Error(`Unexpected table ${table}`);
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(
-                  makePackageDoc({
-                    ownerUserId: "users:owner",
-                    scanStatus: "pending",
-                  }),
-                ),
-              })),
-            };
+            return indexedUnique(() =>
+              makePackageDoc({
+                ownerUserId: "users:owner",
+                scanStatus: "pending",
+              }),
+            );
           }),
           replace: vi.fn(),
           delete: vi.fn(),
@@ -16952,11 +16809,7 @@ describe("packages public queries", () => {
               };
             }
             if (table === "publisherMembers") {
-              return {
-                withIndex: vi.fn(() => ({
-                  unique: vi.fn().mockResolvedValue(null),
-                })),
-              };
+              return indexedUnique(() => null);
             }
             if (table === "packageInspectorWarnings") {
               return {
@@ -17067,11 +16920,7 @@ describe("packages public queries", () => {
               };
             }
             if (table === "publisherMembers") {
-              return {
-                withIndex: vi.fn(() => ({
-                  unique: vi.fn().mockResolvedValue(null),
-                })),
-              };
+              return indexedUnique(() => null);
             }
             if (table === "packageInspectorWarnings") {
               return makeEmptyPackageInspectorWarningsQuery();
@@ -17188,11 +17037,7 @@ describe("packages public queries", () => {
           }),
           query: vi.fn((table: string) => {
             if (table === "publisherMembers") {
-              return {
-                withIndex: vi.fn(() => ({
-                  unique: vi.fn().mockResolvedValue(null),
-                })),
-              };
+              return indexedUnique(() => null);
             }
             throw new Error(`Unexpected table ${table}`);
           }),
@@ -17234,16 +17079,12 @@ describe("packages public queries", () => {
               };
             }
             if (table === "publisherMembers") {
-              return {
-                withIndex: vi.fn(() => ({
-                  unique: vi.fn().mockResolvedValue({
-                    _id: "publisherMembers:stale",
-                    publisherId: "publishers:owner",
-                    userId: "users:stranger",
-                    role: "owner",
-                  }),
-                })),
-              };
+              return indexedUnique(() => ({
+                _id: "publisherMembers:stale",
+                publisherId: "publishers:owner",
+                userId: "users:stranger",
+                role: "owner",
+              }));
             }
             if (table === "packageInspectorWarnings") {
               return makeEmptyPackageInspectorWarningsQuery();
@@ -17290,16 +17131,12 @@ describe("packages public queries", () => {
               };
             }
             if (table === "publisherMembers") {
-              return {
-                withIndex: vi.fn(() => ({
-                  unique: vi.fn().mockResolvedValue({
-                    _id: "publisherMembers:member",
-                    publisherId: "publishers:org",
-                    userId: "users:member",
-                    role: "publisher",
-                  }),
-                })),
-              };
+              return indexedUnique(() => ({
+                _id: "publisherMembers:member",
+                publisherId: "publishers:org",
+                userId: "users:member",
+                role: "publisher",
+              }));
             }
             if (table === "packageInspectorWarnings") {
               return makeEmptyPackageInspectorWarningsQuery();
@@ -17330,18 +17167,10 @@ describe("packages public queries", () => {
           }),
           query: vi.fn((table: string) => {
             if (table === "packages") {
-              return {
-                withIndex: vi.fn(() => ({
-                  unique: vi.fn().mockResolvedValue(makePackageDoc()),
-                })),
-              };
+              return indexedUnique(() => makePackageDoc());
             }
             if (table === "packageReleases") {
-              return {
-                withIndex: vi.fn(() => ({
-                  unique: vi.fn().mockResolvedValue(makeReleaseDoc({ version: "1.2.3" })),
-                })),
-              };
+              return indexedUnique(() => makeReleaseDoc({ version: "1.2.3" }));
             }
             if (table === "packageReports") {
               return {
@@ -17415,24 +17244,16 @@ describe("packages public queries", () => {
           }),
           query: vi.fn((table: string) => {
             if (table === "packages") {
-              return {
-                withIndex: vi.fn(() => ({
-                  unique: vi.fn().mockResolvedValue(makePackageDoc({ reportCount: 2 })),
-                })),
-              };
+              return indexedUnique(() => makePackageDoc({ reportCount: 2 }));
             }
             if (table === "packageReports") {
-              return {
-                withIndex: vi.fn(() => ({
-                  unique: vi.fn().mockResolvedValue({
-                    _id: "packageReports:existing",
-                    packageId: "packages:demo",
-                    releaseId: "packageReleases:demo-1",
-                    userId: "users:reporter",
-                    status: "open",
-                  }),
-                })),
-              };
+              return indexedUnique(() => ({
+                _id: "packageReports:existing",
+                packageId: "packages:demo",
+                releaseId: "packageReleases:demo-1",
+                userId: "users:reporter",
+                status: "open",
+              }));
             }
             throw new Error(`Unexpected table ${table}`);
           }),
@@ -17676,18 +17497,14 @@ describe("packages public queries", () => {
           }),
           query: vi.fn((table: string) => {
             if (table !== "packages") throw new Error(`Unexpected table ${table}`);
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(
-                  makePackageDoc({
-                    name: "@scope/demo",
-                    ownerUserId: "users:owner",
-                    reportCount: 2,
-                    lastReportedAt: 456,
-                  }),
-                ),
-              })),
-            };
+            return indexedUnique(() =>
+              makePackageDoc({
+                name: "@scope/demo",
+                ownerUserId: "users:owner",
+                reportCount: 2,
+                lastReportedAt: 456,
+              }),
+            );
           }),
         },
       } as never,
@@ -17720,25 +17537,17 @@ describe("packages public queries", () => {
             }),
             query: vi.fn((table: string) => {
               if (table === "packages") {
-                return {
-                  withIndex: vi.fn(() => ({
-                    unique: vi.fn().mockResolvedValue(
-                      makePackageDoc({
-                        name: "@scope/demo",
-                        ownerKind: "user",
-                        ownerUserId: "users:viewer",
-                        ownerPublisherId: "publishers:other-personal",
-                      }),
-                    ),
-                  })),
-                };
+                return indexedUnique(() =>
+                  makePackageDoc({
+                    name: "@scope/demo",
+                    ownerKind: "user",
+                    ownerUserId: "users:viewer",
+                    ownerPublisherId: "publishers:other-personal",
+                  }),
+                );
               }
               if (table === "publisherMembers") {
-                return {
-                  withIndex: vi.fn(() => ({
-                    unique: vi.fn().mockResolvedValue(null),
-                  })),
-                };
+                return indexedUnique(() => null);
               }
               throw new Error(`Unexpected table ${table}`);
             }),
@@ -17763,33 +17572,25 @@ describe("packages public queries", () => {
           }),
           query: vi.fn((table: string) => {
             if (table === "packages") {
-              return {
-                withIndex: vi.fn(() => ({
-                  unique: vi.fn().mockResolvedValue(
-                    makePackageDoc({
-                      name: "@scope/demo",
-                      ownerUserId: "users:owner",
-                    }),
-                  ),
-                })),
-              };
+              return indexedUnique(() =>
+                makePackageDoc({
+                  name: "@scope/demo",
+                  ownerUserId: "users:owner",
+                }),
+              );
             }
             if (table === "packageReleases") {
-              return {
-                withIndex: vi.fn(() => ({
-                  unique: vi.fn().mockResolvedValue(
-                    makeReleaseDoc({
-                      version: "1.2.3",
-                      manualModeration: {
-                        state: "quarantined",
-                        reason: "manual review",
-                        reviewerUserId: "users:moderator",
-                        updatedAt: 2,
-                      },
-                    }),
-                  ),
-                })),
-              };
+              return indexedUnique(() =>
+                makeReleaseDoc({
+                  version: "1.2.3",
+                  manualModeration: {
+                    state: "quarantined",
+                    reason: "manual review",
+                    reviewerUserId: "users:moderator",
+                    updatedAt: 2,
+                  },
+                }),
+              );
             }
             if (table === "packageAppeals") {
               return {
@@ -17862,29 +17663,21 @@ describe("packages public queries", () => {
             }),
             query: vi.fn((table: string) => {
               if (table === "packages") {
-                return {
-                  withIndex: vi.fn(() => ({
-                    unique: vi.fn().mockResolvedValue(
-                      makePackageDoc({
-                        name: "@scope/demo",
-                        ownerUserId: "users:owner",
-                        ownerPublisherId: "publishers:owner",
-                      }),
-                    ),
-                  })),
-                };
+                return indexedUnique(() =>
+                  makePackageDoc({
+                    name: "@scope/demo",
+                    ownerUserId: "users:owner",
+                    ownerPublisherId: "publishers:owner",
+                  }),
+                );
               }
               if (table === "publisherMembers") {
-                return {
-                  withIndex: vi.fn(() => ({
-                    unique: vi.fn().mockResolvedValue({
-                      _id: "publisherMembers:stale",
-                      publisherId: "publishers:owner",
-                      userId: "users:stale-member",
-                      role: "admin",
-                    }),
-                  })),
-                };
+                return indexedUnique(() => ({
+                  _id: "publisherMembers:stale",
+                  publisherId: "publishers:owner",
+                  userId: "users:stale-member",
+                  role: "admin",
+                }));
               }
               throw new Error(`Unexpected table ${table}`);
             }),
@@ -17927,29 +17720,21 @@ describe("packages public queries", () => {
           }),
           query: vi.fn((table: string) => {
             if (table === "packages") {
-              return {
-                withIndex: vi.fn(() => ({
-                  unique: vi.fn().mockResolvedValue(
-                    makePackageDoc({
-                      name: "@scope/demo",
-                      ownerUserId: "users:owner",
-                      ownerPublisherId: "publishers:owner",
-                    }),
-                  ),
-                })),
-              };
+              return indexedUnique(() =>
+                makePackageDoc({
+                  name: "@scope/demo",
+                  ownerUserId: "users:owner",
+                  ownerPublisherId: "publishers:owner",
+                }),
+              );
             }
             if (table === "publisherMembers") {
-              return {
-                withIndex: vi.fn(() => ({
-                  unique: vi.fn().mockResolvedValue({
-                    _id: "publisherMembers:stale",
-                    publisherId: "publishers:owner",
-                    userId: "users:stale-member",
-                    role: "admin",
-                  }),
-                })),
-              };
+              return indexedUnique(() => ({
+                _id: "publisherMembers:stale",
+                publisherId: "publishers:owner",
+                userId: "users:stale-member",
+                role: "admin",
+              }));
             }
             throw new Error(`Unexpected table ${table}`);
           }),
@@ -17993,11 +17778,7 @@ describe("packages public queries", () => {
         get: vi.fn(async (id: string) => (id === "users:owner" ? { _id: id, role: "user" } : null)),
         query: vi.fn((table: string) => {
           if (table === "packages") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(makePackageDoc()),
-              })),
-            };
+            return indexedUnique(() => makePackageDoc());
           }
           if (table === "packageReleases") {
             return {
@@ -18209,11 +17990,7 @@ describe("packages public queries", () => {
           }),
           query: vi.fn((table: string) => {
             if (table === "packages") {
-              return {
-                withIndex: vi.fn(() => ({
-                  unique: vi.fn().mockResolvedValue(pkg),
-                })),
-              };
+              return indexedUnique(() => pkg);
             }
             throw new Error(`Unexpected table ${table}`);
           }),
@@ -18464,11 +18241,7 @@ describe("packages public queries", () => {
           normalizeId: vi.fn(),
           query: vi.fn((table: string) => {
             if (table === "packages") {
-              return {
-                withIndex: vi.fn(() => ({
-                  unique: vi.fn().mockResolvedValue(makePackageDoc({ _id: "packages:demo" })),
-                })),
-              };
+              return indexedUnique(() => makePackageDoc({ _id: "packages:demo" }));
             }
             if (table === "officialPluginMigrations") {
               return {
@@ -19138,15 +18911,11 @@ describe("package scan backfill", () => {
               };
             }
             if (table === "packageSearchDigest") {
-              return {
-                withIndex: vi.fn(() => ({
-                  unique: vi.fn().mockResolvedValue({
-                    _id: "packageSearchDigest:demo",
-                    packageId: "packages:demo",
-                    scanStatus: "malicious",
-                  }),
-                })),
-              };
+              return indexedUnique(() => ({
+                _id: "packageSearchDigest:demo",
+                packageId: "packages:demo",
+                scanStatus: "malicious",
+              }));
             }
             if (
               table === "packageCapabilitySearchDigest" ||
@@ -19246,15 +19015,11 @@ describe("package scan backfill", () => {
               };
             }
             if (table === "packageSearchDigest") {
-              return {
-                withIndex: vi.fn(() => ({
-                  unique: vi.fn().mockResolvedValue({
-                    _id: "packageSearchDigest:demo",
-                    packageId: "packages:demo",
-                    scanStatus: "malicious",
-                  }),
-                })),
-              };
+              return indexedUnique(() => ({
+                _id: "packageSearchDigest:demo",
+                packageId: "packages:demo",
+                scanStatus: "malicious",
+              }));
             }
             if (
               table === "packagePluginCategorySearchDigest" ||
@@ -19363,15 +19128,11 @@ describe("package scan backfill", () => {
               };
             }
             if (table === "packageSearchDigest") {
-              return {
-                withIndex: vi.fn(() => ({
-                  unique: vi.fn().mockResolvedValue({
-                    _id: "packageSearchDigest:demo",
-                    packageId: "packages:demo",
-                    scanStatus: "pending",
-                  }),
-                })),
-              };
+              return indexedUnique(() => ({
+                _id: "packageSearchDigest:demo",
+                packageId: "packages:demo",
+                scanStatus: "pending",
+              }));
             }
             if (
               table === "packageCapabilitySearchDigest" ||
@@ -19496,15 +19257,11 @@ describe("package scan backfill", () => {
           }),
           query: vi.fn((table: string) => {
             if (table === "packageSearchDigest") {
-              return {
-                withIndex: vi.fn(() => ({
-                  unique: vi.fn().mockResolvedValue({
-                    _id: "packageSearchDigest:demo",
-                    packageId: "packages:demo",
-                    scanStatus: "clean",
-                  }),
-                })),
-              };
+              return indexedUnique(() => ({
+                _id: "packageSearchDigest:demo",
+                packageId: "packages:demo",
+                scanStatus: "clean",
+              }));
             }
             if (
               table === "packageCapabilitySearchDigest" ||
@@ -19613,15 +19370,11 @@ describe("package scan backfill", () => {
               };
             }
             if (table === "packageSearchDigest") {
-              return {
-                withIndex: vi.fn(() => ({
-                  unique: vi.fn().mockResolvedValue({
-                    _id: "packageSearchDigest:demo",
-                    packageId: "packages:demo",
-                    scanStatus: "pending",
-                  }),
-                })),
-              };
+              return indexedUnique(() => ({
+                _id: "packageSearchDigest:demo",
+                packageId: "packages:demo",
+                scanStatus: "pending",
+              }));
             }
             if (
               table === "packageCapabilitySearchDigest" ||
@@ -19735,11 +19488,7 @@ function makeSoftDeleteCtx(options?: {
         }),
         query: vi.fn((table: string) => {
           if (table === "packages") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(pkg),
-              })),
-            };
+            return indexedUnique(() => pkg);
           }
           if (table === "packageReleases") {
             return {
@@ -19775,11 +19524,7 @@ function makeSoftDeleteCtx(options?: {
             };
           }
           if (table === "publisherMemberships") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(null),
-              })),
-            };
+            return indexedUnique(() => null);
           }
           throw new Error(`Unexpected table: ${table}`);
         }),
