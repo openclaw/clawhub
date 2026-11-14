@@ -1,5 +1,6 @@
 /* @vitest-environment node */
 import { describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 
 const apiRefs = vi.hoisted(() => ({
   applyAggregatedStatsAndUpdateCursor: Symbol("applyAggregatedStatsAndUpdateCursor"),
@@ -55,70 +56,50 @@ const {
   pruneProcessedSkillStatEventsInternal,
 } = await import("./skillStatEvents");
 
-const processSkillStatEventBatchInternalHandler = (
-  processSkillStatEventBatchInternal as unknown as {
-    _handler: (
-      ctx: unknown,
-      args: { batchSize?: number; leaseOwner: string },
-    ) => Promise<{ processed: number; skillsUpdated: number; hasMore: boolean }>;
-  }
-)._handler;
+const processSkillStatEventBatchInternalHandler = getTestHandler<
+  { batchSize?: number; leaseOwner: string },
+  { processed: number; skillsUpdated: number; hasMore: boolean }
+>(processSkillStatEventBatchInternal);
 
-const processSkillStatEventsActionHandler = (
-  processSkillStatEventsAction as unknown as {
-    _handler: (
-      ctx: unknown,
-      args: Record<string, never>,
-    ) => Promise<{ skillsUpdated: number; exhausted: boolean }>;
-  }
-)._handler;
+const processSkillStatEventsActionHandler = getTestHandler<
+  Record<string, never>,
+  { skillsUpdated: number; exhausted: boolean }
+>(processSkillStatEventsAction);
 
-const processSkillStatEventsInternalHandler = (
-  processSkillStatEventsInternal as unknown as {
-    _handler: (
-      ctx: unknown,
-      args: { batchSize?: number; maxBatches?: number; retryCount?: number },
-    ) => Promise<{
-      processed: number;
-      scheduledContinuation: boolean;
-      stoppedReason?: "empty" | "max_batches" | "lease_lost" | "error";
-      error?: string;
-    }>;
+const processSkillStatEventsInternalHandler = getTestHandler<
+  { batchSize?: number; maxBatches?: number; retryCount?: number },
+  {
+    processed: number;
+    scheduledContinuation: boolean;
+    stoppedReason?: "empty" | "max_batches" | "lease_lost" | "error";
+    error?: string;
   }
-)._handler;
+>(processSkillStatEventsInternal);
 
-const pruneProcessedSkillStatEventBatchInternalHandler = (
-  pruneProcessedSkillStatEventBatchInternal as unknown as {
-    _handler: (
-      ctx: unknown,
-      args: {
-        cutoffProcessedAt: number;
-        dryRun: boolean;
-        batchSize?: number;
-        minProcessedAt?: number;
-        maxProcessedAt?: number;
-        confirmationToken?: string;
-      },
-    ) => Promise<{ matched: number; deleted: number; hasMore: boolean }>;
-  }
-)._handler;
+const pruneProcessedSkillStatEventBatchInternalHandler = getTestHandler<
+  {
+    cutoffProcessedAt: number;
+    dryRun: boolean;
+    batchSize?: number;
+    minProcessedAt?: number;
+    maxProcessedAt?: number;
+    confirmationToken?: string;
+  },
+  { matched: number; deleted: number; hasMore: boolean }
+>(pruneProcessedSkillStatEventBatchInternal);
 
-const pruneProcessedSkillStatEventsInternalHandler = (
-  pruneProcessedSkillStatEventsInternal as unknown as {
-    _handler: (
-      ctx: unknown,
-      args: {
-        dryRun?: boolean;
-        retentionDays?: number;
-        batchSize?: number;
-        maxBatches?: number;
-        minProcessedAt?: number;
-        maxProcessedAt?: number;
-        confirmationToken?: string;
-      },
-    ) => Promise<{ matched: number; deleted: number; scheduledContinuation: boolean }>;
-  }
-)._handler;
+const pruneProcessedSkillStatEventsInternalHandler = getTestHandler<
+  {
+    dryRun?: boolean;
+    retentionDays?: number;
+    batchSize?: number;
+    maxBatches?: number;
+    minProcessedAt?: number;
+    maxProcessedAt?: number;
+    confirmationToken?: string;
+  },
+  { matched: number; deleted: number; scheduledContinuation: boolean }
+>(pruneProcessedSkillStatEventsInternal);
 
 type StatEventRow = {
   _id: string;
@@ -199,28 +180,24 @@ const getUnprocessedEventBatchHandler = (
   }
 )._handler;
 
-const kickProcessedSkillStatEventPruneInternalHandler = (
-  kickProcessedSkillStatEventPruneInternal as unknown as {
-    _handler: (
-      ctx: unknown,
-      args: {
-        dryRun?: boolean;
-        retentionDays?: number;
-        batchSize?: number;
-        maxBatches?: number;
-        minProcessedAt?: number;
-        maxProcessedAt?: number;
-        confirmationToken?: string;
-      },
-    ) => Promise<{
-      ok: true;
-      dryRun: boolean;
-      retentionDays: number;
-      batchSize: number;
-      maxBatches: number;
-    }>;
+const kickProcessedSkillStatEventPruneInternalHandler = getTestHandler<
+  {
+    dryRun?: boolean;
+    retentionDays?: number;
+    batchSize?: number;
+    maxBatches?: number;
+    minProcessedAt?: number;
+    maxProcessedAt?: number;
+    confirmationToken?: string;
+  },
+  {
+    ok: true;
+    dryRun: boolean;
+    retentionDays: number;
+    batchSize: number;
+    maxBatches: number;
   }
-)._handler;
+>(kickProcessedSkillStatEventPruneInternal);
 
 describe("skill stat events", () => {
   it("advances the action cursor for retired comment events without writing stat deltas", async () => {
@@ -584,14 +561,10 @@ describe("skill stat events", () => {
       lastProcessedCount: 50,
     };
     const { releaseSkillStatDocSyncLeaseInternal } = await import("./skillStatEvents");
-    const releaseHandler = (
-      releaseSkillStatDocSyncLeaseInternal as unknown as {
-        _handler: (
-          ctx: unknown,
-          args: { leaseOwner: string; processed?: number; error?: string },
-        ) => Promise<{ released: boolean }>;
-      }
-    )._handler;
+    const releaseHandler = getTestHandler<
+      { leaseOwner: string; processed?: number; error?: string },
+      { released: boolean }
+    >(releaseSkillStatDocSyncLeaseInternal);
 
     await expect(
       releaseHandler(
