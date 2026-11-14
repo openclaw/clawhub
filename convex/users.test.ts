@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
+import { chainEq } from "../src/__tests__/helpers/convexQuery";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -535,12 +536,7 @@ function makeBanCtx(
       if (table === "apiTokens") return { collect: vi.fn().mockResolvedValue(apiTokens) };
       if (table === "officialPublishers") {
         const constraints: Record<string, unknown> = {};
-        const q = {
-          eq(field: string, value: unknown) {
-            constraints[field] = value;
-            return q;
-          },
-        };
+        const q = chainEq(constraints);
         build?.(q);
         const publisherId =
           typeof constraints.publisherId === "string" ? constraints.publisherId : "";
@@ -556,12 +552,7 @@ function makeBanCtx(
       }
       if (table === "publisherMembers") {
         const constraints: Record<string, unknown> = {};
-        const q = {
-          eq(field: string, value: unknown) {
-            constraints[field] = value;
-            return q;
-          },
-        };
+        const q = chainEq(constraints);
         build?.(q);
         const publisherId =
           typeof constraints.publisherId === "string" ? constraints.publisherId : "";
@@ -1964,12 +1955,7 @@ describe("users.purgeSelfDeletedAccountRecoveryBatchInternal", () => {
         return {
           withIndex: vi.fn((_indexName: string, buildQuery: (q: unknown) => unknown) => {
             const fields: Record<string, string> = {};
-            const q = {
-              eq: (field: string, value: string) => {
-                fields[field] = value;
-                return q;
-              },
-            };
+            const q = chainEq(fields);
             buildQuery(q);
             return {
               collect: vi.fn(async () => logsByUser.get(fields.targetId) ?? []),
@@ -2103,12 +2089,7 @@ describe("users.purgeSelfDeletedAccountRecoveryBatchInternal", () => {
         return {
           withIndex: vi.fn((_indexName: string, buildQuery: (q: unknown) => unknown) => {
             const fields: Record<string, string> = {};
-            const q = {
-              eq: (field: string, value: string) => {
-                fields[field] = value;
-                return q;
-              },
-            };
+            const q = chainEq(fields);
             buildQuery(q);
             return {
               collect: vi.fn(async () => logsByUser.get(fields.targetId) ?? []),
@@ -2241,12 +2222,7 @@ describe("users.purgeSelfDeletedAccountRecoveryBatchInternal", () => {
         return {
           withIndex: vi.fn((_indexName: string, buildQuery: (q: unknown) => unknown) => {
             const fields: Record<string, string> = {};
-            const q = {
-              eq: (field: string, value: string) => {
-                fields[field] = value;
-                return q;
-              },
-            };
+            const q = chainEq(fields);
             buildQuery(q);
             return {
               collect: vi.fn(async () => authAccountsByUser.get(fields.userId) ?? []),
@@ -2407,12 +2383,7 @@ describe("users.purgeSelfDeletedAccountRecoveryBatchInternal", () => {
         return {
           withIndex: vi.fn((_indexName: string, buildQuery: (q: unknown) => unknown) => {
             const fields: Record<string, string> = {};
-            const q = {
-              eq: (field: string, value: string) => {
-                fields[field] = value;
-                return q;
-              },
-            };
+            const q = chainEq(fields);
             buildQuery(q);
             return {
               collect: vi.fn(async () => logsByUser.get(fields.targetId) ?? []),
@@ -2424,12 +2395,7 @@ describe("users.purgeSelfDeletedAccountRecoveryBatchInternal", () => {
         return {
           withIndex: vi.fn((_indexName: string, buildQuery: (q: unknown) => unknown) => {
             const fields: Record<string, string> = {};
-            const q = {
-              eq: (field: string, value: string) => {
-                fields[field] = value;
-                return q;
-              },
-            };
+            const q = chainEq(fields);
             buildQuery(q);
             return {
               collect: vi.fn(async () => authAccountsByUser.get(fields.userId) ?? []),

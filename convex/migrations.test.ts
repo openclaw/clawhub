@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 
 import { describe, expect, it, vi } from "vitest";
+import { chainEq } from "../src/__tests__/helpers/convexQuery";
 import { internal } from "./_generated/api";
 import type { Doc, Id, TableNames } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
@@ -392,12 +393,7 @@ describe("skill install backfill migration", () => {
             }) => unknown,
           ) => {
             const filters: Record<string, unknown> = {};
-            const builder = {
-              eq: (field: string, value: unknown) => {
-                filters[field] = value;
-                return builder;
-              },
-            };
+            const builder = chainEq(filters);
             queryBuilder(builder);
             return {
               unique: vi.fn(async () => {
@@ -636,12 +632,7 @@ describe("skill install backfill migration", () => {
             }) => unknown,
           ) => {
             const filters: Record<string, unknown> = {};
-            const builder = {
-              eq: (field: string, value: unknown) => {
-                filters[field] = value;
-                return builder;
-              },
-            };
+            const builder = chainEq(filters);
             queryBuilder(builder);
             return {
               unique: vi.fn(async () => {
@@ -1000,12 +991,7 @@ describe("NVIDIA GitHub download backfill migration", () => {
             }) => unknown,
           ) => {
             const filters: Record<string, unknown> = {};
-            const builder = {
-              eq: (field: string, value: unknown) => {
-                filters[field] = value;
-                return builder;
-              },
-            };
+            const builder = chainEq(filters);
             queryBuilder(builder);
             return {
               unique: vi.fn(async () => {

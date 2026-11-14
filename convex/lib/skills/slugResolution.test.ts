@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 
 import { describe, expect, it } from "vitest";
+import { chainEq } from "../../../src/__tests__/helpers/convexQuery";
 import type { Doc, Id } from "../../_generated/dataModel";
 import {
   getSkillBySlugForPublisher,
@@ -82,12 +83,7 @@ function makeDb() {
         build?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
       ) => {
         const constraints: Record<string, string> = {};
-        const q = {
-          eq: (field: string, value: string) => {
-            constraints[field] = value;
-            return q;
-          },
-        };
+        const q = chainEq(constraints);
         build?.(q);
 
         let matches: unknown[] = [];
@@ -140,12 +136,7 @@ function makeLegacySlugQuery(skills: Doc<"skills">[], aliases: Doc<"skillSlugAli
       build?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
     ) => {
       const constraints: Record<string, string> = {};
-      const q = {
-        eq: (field: string, value: string) => {
-          constraints[field] = value;
-          return q;
-        },
-      };
+      const q = chainEq(constraints);
       build?.(q);
       if (table === "skills" && indexName === "by_slug") {
         return { take: async () => skills.filter((skill) => skill.slug === constraints.slug) };
