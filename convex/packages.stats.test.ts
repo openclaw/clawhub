@@ -63,6 +63,31 @@ const getActivityTrendHandler = getTestHandler<
   } | null
 >(getActivityTrendForName);
 
+function makeActivityTrendQueryMocks<TPackage, TDailyQuery>(
+  readPackage: () => Promise<TPackage>,
+  createDailyQuery: () => TDailyQuery,
+) {
+  const packageIndexBuilder = { eq: vi.fn(() => packageIndexBuilder) };
+  const dailyIndexBuilder = {
+    eq: vi.fn(() => dailyIndexBuilder),
+    gte: vi.fn(() => dailyIndexBuilder),
+    lte: vi.fn(() => dailyIndexBuilder),
+  };
+  const packageWithIndex = vi.fn(
+    (_indexName: string, buildQuery: (q: typeof packageIndexBuilder) => unknown) => {
+      buildQuery(packageIndexBuilder);
+      return { unique: vi.fn(readPackage) };
+    },
+  );
+  const dailyWithIndex = vi.fn(
+    (_indexName: string, buildQuery: (q: typeof dailyIndexBuilder) => unknown) => {
+      buildQuery(dailyIndexBuilder);
+      return createDailyQuery();
+    },
+  );
+  return { packageIndexBuilder, dailyIndexBuilder, packageWithIndex, dailyWithIndex };
+}
+
 function makeActivityTrendContext<TPackageIndex, TDailyIndex>(
   packageWithIndex: TPackageIndex,
   dailyWithIndex: TDailyIndex,
@@ -545,38 +570,23 @@ describe("package stat events", () => {
     vi.setSystemTime(now);
 
     try {
-      const packageIndexBuilder = { eq: vi.fn(() => packageIndexBuilder) };
-      const dailyIndexBuilder = {
-        eq: vi.fn(() => dailyIndexBuilder),
-        gte: vi.fn(() => dailyIndexBuilder),
-        lte: vi.fn(() => dailyIndexBuilder),
-      };
-      const packageWithIndex = vi.fn(
-        (_indexName: string, buildQuery: (q: typeof packageIndexBuilder) => unknown) => {
-          buildQuery(packageIndexBuilder);
-          return {
-            unique: vi.fn(async () => ({
-              _id: "packages:one",
-              _creationTime: Date.UTC(2026, 5, 1),
-              createdAt: Date.UTC(2026, 5, 1),
-              normalizedName: "demo-plugin",
-              channel: "public",
-              scanStatus: "clean",
-              stats: { downloads: 143, installs: 0, stars: 0, versions: 1 },
-            })),
-          };
-        },
-      );
       const takeDailyStats = vi.fn(async () => [
         { day: endDay - 1, downloads: 2, installs: 1 },
         { day: endDay, downloads: 1, installs: 3 },
       ]);
-      const dailyWithIndex = vi.fn(
-        (_indexName: string, buildQuery: (q: typeof dailyIndexBuilder) => unknown) => {
-          buildQuery(dailyIndexBuilder);
-          return { take: takeDailyStats };
-        },
-      );
+      const { packageIndexBuilder, dailyIndexBuilder, packageWithIndex, dailyWithIndex } =
+        makeActivityTrendQueryMocks(
+          async () => ({
+            _id: "packages:one",
+            _creationTime: Date.UTC(2026, 5, 1),
+            createdAt: Date.UTC(2026, 5, 1),
+            normalizedName: "demo-plugin",
+            channel: "public",
+            scanStatus: "clean",
+            stats: { downloads: 143, installs: 0, stars: 0, versions: 1 },
+          }),
+          () => ({ take: takeDailyStats }),
+        );
       const ctx = makeActivityTrendContext(packageWithIndex, dailyWithIndex);
 
       const trend = await getActivityTrendHandler(ctx, { name: "demo-plugin", endDay });
@@ -611,34 +621,18 @@ describe("package stat events", () => {
     vi.setSystemTime(now);
 
     try {
-      const packageIndexBuilder = { eq: vi.fn(() => packageIndexBuilder) };
-      const dailyIndexBuilder = {
-        eq: vi.fn(() => dailyIndexBuilder),
-        gte: vi.fn(() => dailyIndexBuilder),
-        lte: vi.fn(() => dailyIndexBuilder),
-      };
-      const packageWithIndex = vi.fn(
-        (_indexName: string, buildQuery: (q: typeof packageIndexBuilder) => unknown) => {
-          buildQuery(packageIndexBuilder);
-          return {
-            unique: vi.fn(async () => ({
-              _id: "packages:one",
-              _creationTime: Date.UTC(2026, 5, 1),
-              createdAt: Date.UTC(2026, 5, 1),
-              normalizedName: "demo-plugin",
-              channel: "public",
-              scanStatus: "clean",
-              stats: { downloads: 143, installs: 12, stars: 0, versions: 1 },
-            })),
-          };
-        },
-      );
       const takeDailyStats = vi.fn(async () => []);
-      const dailyWithIndex = vi.fn(
-        (_indexName: string, buildQuery: (q: typeof dailyIndexBuilder) => unknown) => {
-          buildQuery(dailyIndexBuilder);
-          return { take: takeDailyStats };
-        },
+      const { packageWithIndex, dailyWithIndex } = makeActivityTrendQueryMocks(
+        async () => ({
+          _id: "packages:one",
+          _creationTime: Date.UTC(2026, 5, 1),
+          createdAt: Date.UTC(2026, 5, 1),
+          normalizedName: "demo-plugin",
+          channel: "public",
+          scanStatus: "clean",
+          stats: { downloads: 143, installs: 12, stars: 0, versions: 1 },
+        }),
+        () => ({ take: takeDailyStats }),
       );
       const ctx = makeActivityTrendContext(packageWithIndex, dailyWithIndex);
 
@@ -661,38 +655,22 @@ describe("package stat events", () => {
     vi.setSystemTime(now);
 
     try {
-      const packageIndexBuilder = { eq: vi.fn(() => packageIndexBuilder) };
-      const dailyIndexBuilder = {
-        eq: vi.fn(() => dailyIndexBuilder),
-        gte: vi.fn(() => dailyIndexBuilder),
-        lte: vi.fn(() => dailyIndexBuilder),
-      };
-      const packageWithIndex = vi.fn(
-        (_indexName: string, buildQuery: (q: typeof packageIndexBuilder) => unknown) => {
-          buildQuery(packageIndexBuilder);
-          return {
-            unique: vi.fn(async () => ({
-              _id: "packages:one",
-              _creationTime: Date.UTC(2026, 4, 1),
-              createdAt: Date.UTC(2026, 4, 1),
-              normalizedName: "demo-plugin",
-              channel: "public",
-              scanStatus: "clean",
-              stats: { downloads: 143, installs: 12, stars: 0, versions: 1 },
-            })),
-          };
-        },
-      );
       const takeDailyStats = vi.fn(async () => [
         { day: endDay - 2, downloads: 41, installs: 3 },
         { day: endDay - 1, downloads: 52, installs: 4 },
         { day: endDay, downloads: 50, installs: 5 },
       ]);
-      const dailyWithIndex = vi.fn(
-        (_indexName: string, buildQuery: (q: typeof dailyIndexBuilder) => unknown) => {
-          buildQuery(dailyIndexBuilder);
-          return { take: takeDailyStats };
-        },
+      const { packageWithIndex, dailyWithIndex } = makeActivityTrendQueryMocks(
+        async () => ({
+          _id: "packages:one",
+          _creationTime: Date.UTC(2026, 4, 1),
+          createdAt: Date.UTC(2026, 4, 1),
+          normalizedName: "demo-plugin",
+          channel: "public",
+          scanStatus: "clean",
+          stats: { downloads: 143, installs: 12, stars: 0, versions: 1 },
+        }),
+        () => ({ take: takeDailyStats }),
       );
       const ctx = makeActivityTrendContext(packageWithIndex, dailyWithIndex);
 
@@ -716,33 +694,17 @@ describe("package stat events", () => {
     vi.setSystemTime(now);
 
     try {
-      const packageIndexBuilder = { eq: vi.fn(() => packageIndexBuilder) };
-      const dailyIndexBuilder = {
-        eq: vi.fn(() => dailyIndexBuilder),
-        gte: vi.fn(() => dailyIndexBuilder),
-        lte: vi.fn(() => dailyIndexBuilder),
-      };
-      const packageWithIndex = vi.fn(
-        (_indexName: string, buildQuery: (q: typeof packageIndexBuilder) => unknown) => {
-          buildQuery(packageIndexBuilder);
-          return {
-            unique: vi.fn(async () => ({
-              _id: "packages:one",
-              _creationTime: Date.UTC(2026, 5, 1),
-              createdAt: Date.UTC(2026, 5, 1),
-              normalizedName: "demo-plugin",
-              channel: "public",
-              scanStatus: "clean",
-              stats: { downloads: 143, installs: 12, stars: 0, versions: 1 },
-            })),
-          };
-        },
-      );
-      const dailyWithIndex = vi.fn(
-        (_indexName: string, buildQuery: (q: typeof dailyIndexBuilder) => unknown) => {
-          buildQuery(dailyIndexBuilder);
-          return { take: vi.fn(async () => [{ day: serverEndDay, downloads: 1, installs: 1 }]) };
-        },
+      const { dailyIndexBuilder, packageWithIndex, dailyWithIndex } = makeActivityTrendQueryMocks(
+        async () => ({
+          _id: "packages:one",
+          _creationTime: Date.UTC(2026, 5, 1),
+          createdAt: Date.UTC(2026, 5, 1),
+          normalizedName: "demo-plugin",
+          channel: "public",
+          scanStatus: "clean",
+          stats: { downloads: 143, installs: 12, stars: 0, versions: 1 },
+        }),
+        () => ({ take: vi.fn(async () => [{ day: serverEndDay, downloads: 1, installs: 1 }]) }),
       );
       const ctx = makeActivityTrendContext(packageWithIndex, dailyWithIndex);
 
@@ -766,36 +728,20 @@ describe("package stat events", () => {
     vi.setSystemTime(now);
 
     try {
-      const packageIndexBuilder = { eq: vi.fn(() => packageIndexBuilder) };
-      const dailyIndexBuilder = {
-        eq: vi.fn(() => dailyIndexBuilder),
-        gte: vi.fn(() => dailyIndexBuilder),
-        lte: vi.fn(() => dailyIndexBuilder),
-      };
-      const packageWithIndex = vi.fn(
-        (_indexName: string, buildQuery: (q: typeof packageIndexBuilder) => unknown) => {
-          buildQuery(packageIndexBuilder);
-          return {
-            unique: vi.fn(async () => ({
-              _id: "packages:one",
-              _creationTime: Date.UTC(2026, 5, 1),
-              createdAt: Date.UTC(2026, 5, 1),
-              ownerUserId: "users:owner",
-              ownerPublisherId: undefined,
-              normalizedName: "demo-plugin",
-              channel: "private",
-              scanStatus: "clean",
-              stats: { downloads: 143, installs: 12, stars: 0, versions: 1 },
-            })),
-          };
-        },
-      );
       const takeDailyStats = vi.fn(async () => [{ day: endDay, downloads: 2, installs: 1 }]);
-      const dailyWithIndex = vi.fn(
-        (_indexName: string, buildQuery: (q: typeof dailyIndexBuilder) => unknown) => {
-          buildQuery(dailyIndexBuilder);
-          return { take: takeDailyStats };
-        },
+      const { packageWithIndex, dailyWithIndex } = makeActivityTrendQueryMocks(
+        async () => ({
+          _id: "packages:one",
+          _creationTime: Date.UTC(2026, 5, 1),
+          createdAt: Date.UTC(2026, 5, 1),
+          ownerUserId: "users:owner",
+          ownerPublisherId: undefined,
+          normalizedName: "demo-plugin",
+          channel: "private",
+          scanStatus: "clean",
+          stats: { downloads: 143, installs: 12, stars: 0, versions: 1 },
+        }),
+        () => ({ take: takeDailyStats }),
       );
       const get = vi.fn(async (id: string) => {
         if (id === "users:owner") {
