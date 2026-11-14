@@ -5,6 +5,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
 import { internalAction, internalMutation, internalQuery, query } from "./functions";
 import { storedFileValidator } from "./lib/fileValidators";
+import { sha256Hex } from "./lib/hash";
 import { getRuntimeRolloutCapabilities } from "./lib/rolloutCapabilities";
 import {
   assertSkillsShCatalogControlMutationAllowed,
@@ -2854,11 +2855,6 @@ function fixtureObservationConflicts(
   sourceKind: Doc<"skillsShCatalogEntries">["sourceKind"],
 ) {
   return existing.sourceKind !== sourceKind || existing.githubOwnerId !== row.githubOwnerId;
-}
-
-async function sha256Hex(bytes: Uint8Array) {
-  const digest = await crypto.subtle.digest("SHA-256", new Uint8Array(bytes).buffer);
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 async function computeGitHubArtifactContentHash(files: StagingLiveArtifact["files"]) {

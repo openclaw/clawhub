@@ -1,6 +1,7 @@
 import { strFromU8, unzipSync } from "fflate";
 import type { VerifiedGitHubActionsIdentity } from "./githubActionsOidc";
 import { buildGitHubApiHeaders } from "./githubAuth";
+import { toHex } from "./hash";
 
 const MAX_JSON_BYTES = 64 * 1024;
 const POSITIVE_INTEGER_PATTERN = /^[1-9][0-9]*$/;
@@ -664,9 +665,7 @@ async function fetchArtifactReceipt(options: {
     ).arrayBuffer(),
   );
   const archiveDigest = await crypto.subtle.digest("SHA-256", archive);
-  const archiveDigestHex = [...new Uint8Array(archiveDigest)]
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
+  const archiveDigestHex = toHex(new Uint8Array(archiveDigest));
   if (archiveDigestHex !== digestMatch[1]) {
     fail(`authorization artifact ${options.name} digest mismatch`);
   }
