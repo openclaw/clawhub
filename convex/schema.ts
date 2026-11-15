@@ -17,6 +17,10 @@ import { endorAnalysisValidator } from "./lib/endorAnalysis";
 import { editorialSelection, featuredPublication } from "./lib/featuredSelections";
 import { storedFilesValidator } from "./lib/fileValidators";
 import {
+  packageLeaderboardEntryValidator,
+  skillLeaderboardEntryValidator,
+} from "./lib/leaderboardEntry";
+import {
   packageInspectorFailureValidator,
   packageInspectorOutcomeValidator,
 } from "./lib/packageInspectorOutcome";
@@ -2096,14 +2100,7 @@ const packageLeaderboards = defineTable({
   rangeEndDay: v.number(),
   rangeStartAt: v.optional(v.number()),
   rangeEndAt: v.optional(v.number()),
-  items: v.array(
-    v.object({
-      packageId: v.id("packages"),
-      score: v.number(),
-      installs: v.number(),
-      downloads: v.number(),
-    }),
-  ),
+  items: v.array(packageLeaderboardEntryValidator),
 }).index("by_kind", ["kind", "generatedAt"]);
 
 const packageTrustedPublishers = defineTable({
@@ -2532,14 +2529,7 @@ const skillLeaderboards = defineTable({
   generatedAt: v.number(),
   rangeStartDay: v.number(),
   rangeEndDay: v.number(),
-  items: v.array(
-    v.object({
-      skillId: v.id("skills"),
-      score: v.number(),
-      installs: v.number(),
-      downloads: v.number(),
-    }),
-  ),
+  items: v.array(skillLeaderboardEntryValidator),
 }).index("by_kind", ["kind", "generatedAt"]);
 
 const skillStatBackfillState = defineTable({

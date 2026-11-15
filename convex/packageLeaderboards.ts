@@ -9,6 +9,7 @@ import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery } from "./functions";
 import { isPublicPluginDoc } from "./lib/globalStats";
+import { packageLeaderboardEntryValidator } from "./lib/leaderboardEntry";
 import { toDayKey } from "./lib/leaderboards";
 import { isEnglishPluginListing } from "./lib/pluginDiscovery";
 import { getCompletedRolling24HourWindow } from "./lib/skillHourlyStats";
@@ -63,14 +64,7 @@ export const getStatEventsPage = internalQuery({
 
 export const writeTrendingLeaderboard = internalMutation({
   args: {
-    items: v.array(
-      v.object({
-        packageId: v.id("packages"),
-        score: v.number(),
-        installs: v.number(),
-        downloads: v.number(),
-      }),
-    ),
+    items: v.array(packageLeaderboardEntryValidator),
     startAt: v.number(),
     endAt: v.number(),
   },
