@@ -62,6 +62,25 @@ export { skillSpectorAnalysisValidator } from "./lib/securityAnalysisValidators"
 
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
 
+export const skillParsedMetadataValidator = v.object({
+  frontmatter: v.record(v.string(), v.any()),
+  metadata: v.optional(v.any()),
+  clawdis: v.optional(v.any()),
+  moltbot: v.optional(v.any()),
+  license: v.optional(v.literal(PLATFORM_SKILL_LICENSE)),
+  presentation: v.optional(skillPresentationValidator),
+});
+
+export const skillSourceProvenanceValidator = v.object({
+  kind: v.literal("github"),
+  url: v.string(),
+  repo: v.string(),
+  ref: v.string(),
+  commit: v.string(),
+  path: v.optional(v.string()),
+  importedAt: v.number(),
+});
+
 const manualModerationOverride = v.object({
   verdict: v.literal("clean"),
   note: v.string(),
@@ -1038,30 +1057,13 @@ const skillVersions = defineTable({
   finalizationRecovery: v.optional(operationalPublishRetryValidator),
   pendingPublication: v.optional(v.any()),
   fingerprint: v.optional(v.string()),
-  sourceProvenance: v.optional(
-    v.object({
-      kind: v.literal("github"),
-      url: v.string(),
-      repo: v.string(),
-      ref: v.string(),
-      commit: v.string(),
-      path: v.optional(v.string()),
-      importedAt: v.number(),
-    }),
-  ),
+  sourceProvenance: v.optional(skillSourceProvenanceValidator),
   changelog: v.string(),
   changelogSource: v.optional(v.union(v.literal("auto"), v.literal("user"))),
   icon: v.optional(v.string()),
   files: storedFilesValidator,
   skillCardGeneration: v.optional(v.object({ inputHash: v.string(), cardSha256: v.string() })),
-  parsed: v.object({
-    frontmatter: v.record(v.string(), v.any()),
-    metadata: v.optional(v.any()),
-    clawdis: v.optional(v.any()),
-    moltbot: v.optional(v.any()),
-    license: v.optional(v.literal(PLATFORM_SKILL_LICENSE)),
-    presentation: v.optional(skillPresentationValidator),
-  }),
+  parsed: skillParsedMetadataValidator,
   createdBy: v.id("users"),
   createdAt: v.number(),
   softDeletedAt: v.optional(v.number()),
@@ -1986,16 +1988,7 @@ const skillScanRequests = defineTable({
   files: packageFilesValidator,
   fileChunkCount: v.optional(v.number()),
   fileManifestBytes: v.optional(v.number()),
-  parsed: v.optional(
-    v.object({
-      frontmatter: v.record(v.string(), v.any()),
-      metadata: v.optional(v.any()),
-      clawdis: v.optional(v.any()),
-      moltbot: v.optional(v.any()),
-      license: v.optional(v.literal(PLATFORM_SKILL_LICENSE)),
-      presentation: v.optional(skillPresentationValidator),
-    }),
-  ),
+  parsed: v.optional(skillParsedMetadataValidator),
   sha256hash: v.optional(v.string()),
   // Retired VirusTotal / static publish scan results. Historical rows only.
   vtAnalysis: v.optional(vtAnalysisValidator),
