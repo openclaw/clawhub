@@ -1,3 +1,4 @@
+import type { PackageSkillSpectorIssue } from "clawhub-schema";
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -120,20 +121,7 @@ type ExistingLlmAnalysis = {
   verdict?: string;
 };
 
-type SkillSpectorIssueForStorage = SkillSpectorReviewContext & {
-  issueId: string;
-  category?: string;
-  pattern?: string;
-  severity: string;
-  confidence?: number;
-  file?: string;
-  startLine?: number;
-  endLine?: number;
-  explanation: string;
-  remediation?: string;
-  finding?: string;
-  codeSnippet?: string;
-};
+type SkillSpectorIssueForStorage = SkillSpectorReviewContext & PackageSkillSpectorIssue;
 
 type SkillSpectorAnalysisForStorage = {
   inspectionCaveats?: SkillSpectorInspectionCaveats;
