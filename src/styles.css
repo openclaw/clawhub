@@ -6059,7 +6059,7 @@ a.skills-sh-security-audit-row:focus-visible {
 
 .skill-install-command-card {
   display: grid;
-  gap: 18px;
+  gap: 12px;
   min-width: 0;
   padding: 0;
   border: 0;
@@ -6069,9 +6069,15 @@ a.skills-sh-security-audit-row:focus-visible {
 }
 
 .skill-install-command-header {
+  display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  border-bottom: 0;
 }
 
 [data-theme-resolved="light"] .skill-install-command-card {
@@ -6262,7 +6268,85 @@ a.skills-sh-security-audit-row:focus-visible {
   color: var(--status-error-fg);
 }
 
-/* Skill/plugin install card — flat CLI | Prompt text toggle */
+.openclaw-install {
+  --openclaw-install-primary: #d13c3c;
+  --openclaw-install-primary-hover: #c22e2e;
+  --openclaw-install-primary-foreground: #ffffff;
+  display: flex;
+  align-items: center;
+}
+
+/* Match the compact, accent-filled primary action on Control UI plugin details. */
+.openclaw-install-button[data-slot="button"] {
+  min-height: 32px;
+  padding: 8px 14px;
+  border-radius: var(--oc-radius-control, var(--r-btn));
+  border-color: var(--openclaw-install-primary);
+  background: var(--openclaw-install-primary);
+  color: var(--openclaw-install-primary-foreground);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: normal;
+}
+
+.openclaw-install-button[data-slot="button"]:hover {
+  border-color: var(--openclaw-install-primary-hover);
+  background: var(--openclaw-install-primary-hover);
+  color: var(--openclaw-install-primary-foreground);
+}
+
+.openclaw-install-button[data-slot="button"]:active {
+  transform: scale(0.98);
+}
+
+.plugin-detail-page .skill-hero-sidebar-stack,
+.skill-detail-page .skill-hero-sidebar-stack {
+  gap: 24px;
+}
+
+/* Separate install from the next metadata row within the existing 24px rail gap.
+   Keep the compact heading/panel spacing and the mobile card unchanged. */
+.skill-hero-sidebar-stack > .skill-install-command-card,
+.template-detail-metadata > .template-detail-install {
+  position: relative;
+}
+
+.skill-hero-sidebar-stack > .skill-install-command-card::after,
+.template-detail-metadata > .template-detail-install::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: -12px;
+  border-bottom: 1px solid var(--line);
+  pointer-events: none;
+}
+
+/* Keep the terminal preview to one line, including the mobile fallback.
+   Hover or keyboard focus exposes the full, unmodified command in a tooltip. */
+.skill-install-command-card .skill-install-command-shell-cli .skill-install-command,
+.skill-install-command-card .skill-install-command-shell-cli .skill-install-command code {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+  text-overflow: ellipsis;
+}
+
+.skill-install-command-tooltip {
+  max-width: min(36rem, calc(100vw - 32px));
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+}
+
+.skill-install-desktop-panel .openclaw-install-button {
+  width: 100%;
+}
+
+/* Reuse the existing flat terminal tabs for Desktop | CLI and legacy sources. */
 .skill-install-command-card .skill-install-tab-toggle {
   display: inline-flex;
   align-items: center;
@@ -6443,19 +6527,6 @@ a.skills-sh-security-audit-row:focus-visible {
   .detail-mobile-install .skill-install-command-card > * {
     position: relative;
     z-index: 1;
-  }
-
-  .detail-mobile-install .skill-install-command-header {
-    padding-bottom: 12px;
-    border-bottom-color: transparent;
-    background: linear-gradient(
-        90deg,
-        transparent,
-        color-mix(in srgb, var(--line) 62%, transparent) 12%,
-        color-mix(in srgb, var(--line) 62%, transparent) 88%,
-        transparent
-      )
-      bottom / 100% 1px no-repeat;
   }
 
   .detail-mobile-install .skill-install-command-shell {
@@ -6880,10 +6951,6 @@ a.skills-sh-security-audit-row:focus-visible {
   .skill-hero-lower.has-sidebar .detail-hero-summary-row {
     height: var(--detail-hero-summary-row-block-size);
     min-height: var(--detail-hero-summary-row-block-size);
-  }
-
-  .skill-install-command-header.detail-hero-summary-row {
-    flex-wrap: nowrap;
   }
 }
 

@@ -188,3 +188,61 @@ This note preserves the complete UI direction established during the June 2026 d
 - Confirm no debug borders, accidental heading rules, duplicated metadata, fixed wash, or unintended horizontal page scroll remain.
 - Run the repository static, unit, type/build, and relevant browser gates only after the iteration is complete, unless the user explicitly narrows verification for the handoff.
 - Run pre-handoff review and resolve accepted actionable findings unless the user explicitly opts out.
+
+## Identity-only native Install handoff
+
+The primary action lives inside the shared install card in the desktop right
+rail, not the hero. The existing flat terminal toggle becomes **Desktop | CLI**,
+with the same vertical divider, type and active text treatment. Eligible hosted
+skills, plugins and Templates default to Desktop with the red, text-only
+**Install in OpenClaw** CTA; switching to CLI uses the existing command shell, `$` marker,
+syntax treatment and inline copy icon, with no separate Copy bar. There is no
+platform label, icon, helper copy or secondary download CTA. The card appears
+once before content on mobile (900px and below). The Install heading has no
+horizontal divider; its content-height row has no leftover divider padding or
+fixed metadata-row height, with a compact 12px gap to either panel. A matching
+1px metadata divider sits below the complete install section, above Downloads
+(or the next metadata row), centered in the existing 24px right-rail gap. It
+does not add spacing or appear on the standalone mobile install card.
+CLI commands stay on one line and truncate with an ellipsis;
+hover or keyboard focus shows the full command in a viewport-bounded tooltip.
+Copy always uses the complete command. Switching tabs does not launch the app
+or install anything.
+
+Unavailable app handoffs retain the existing CLI/source fallback; external
+source cards keep their source-specific command choices rather than gaining an
+invented hosted Desktop identity.
+
+The website sends identity only, encoded with `URLSearchParams`:
+
+- Plugins: `openclaw://plugins/install?name=<exact package name>`.
+- Hosted skills: `openclaw://skills/install?name=<@owner/slug>`.
+- Templates: `openclaw://templates/install?name=<@publisher/slug>`.
+
+Skill identity uses the resolved publisher handle and resolved skill slug, via
+`buildSkillInstallTarget`; it never substitutes a display name, owner ID or
+ambiguous unscoped slug for the app intent. The existing scoped lookup in
+`convex/lib/skills/slugResolution.ts` resolves the publisher first; the CLI's
+`parsePublishedSkillRef` preserves the owner-qualified published identity.
+Missing handles, unpublished releases, pending publication/scan, hidden/removed
+or malicious skills do not get an app CTA. Template identity is the same
+`buildTemplateInstallRef` reference as the CLI command, so a Template stored
+under an unscoped name is still requested as `@publisher/slug` and an exact
+scoped name is sent unchanged. GitHub-only and external-source
+skill surfaces retain their existing source-specific restrictions, without
+inventing a hosted artifact or app install intent.
+
+Plugin CTA visibility still requires a current release and excludes malicious
+package/release scan status. Template CTA visibility uses the same readiness
+predicate as command copy: supported manifest, no retired profile summary,
+clean package scan and a current release. Template repair/migration guidance,
+original document and release archive paths remain available when blocked.
+
+These URLs are requests to inspect an identity, not commands or installation
+consent. They contain no action/authority parameters. Native routing, resolving,
+review and explicit installation belong to OpenClaw (desktop handling:
+openclaw/openclaw#198571); the website neither performs installation nor
+detects whether an installed app handles the link. Apps without that handler
+ignore it, and the CLI tab remains the fallback. The Template CLI fallback
+remains `openclaw templates add <@publisher/slug>`; this UI change does not
+establish that every released CLI supports that command.
