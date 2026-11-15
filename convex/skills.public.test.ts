@@ -316,6 +316,46 @@ function makeSkill(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function makeGitHubScanCtx(contentHash: string, currentCommit: string, scanOriginCommit: string) {
+  return makeCtx({
+    skill: makeSkill({
+      installKind: "github",
+      githubPath: "skills/demo",
+      githubCurrentCommit: currentCommit,
+      githubCurrentContentHash: contentHash,
+      githubCurrentStatus: "present",
+      githubScanStatus: "clean",
+      latestVersionSummary: {
+        version: "1.2.3",
+        createdAt: 2,
+        changelog: "Synced from GitHub source.",
+      },
+    }),
+    owner: makeOwner("users:1", "demo-owner"),
+    githubScan: {
+      _id: "githubSkillScans:1",
+      skillId: "skills:1",
+      githubSourceId: "githubSkillSources:1",
+      contentHash,
+      commit: scanOriginCommit,
+      path: "skills/old-demo",
+      status: "clean",
+      staticScan: {
+        status: "clean",
+        reasonCodes: [],
+        findings: [],
+        summary: "No findings.",
+        engineVersion: "test",
+        checkedAt: 2,
+      },
+      llmAnalysis: { status: "clean", checkedAt: 3 },
+      createdAt: 2,
+      updatedAt: 3,
+      completedAt: 3,
+    },
+  });
+}
+
 function makeResolveCtx(args: {
   skill: Record<string, unknown>;
   latestVersion?: Record<string, unknown> | null;
@@ -412,43 +452,7 @@ describe("skills.getBySlug", () => {
     const contentHash = "a".repeat(64);
     const currentCommit = "b".repeat(40);
     const scanOriginCommit = "c".repeat(40);
-    const ctx = makeCtx({
-      skill: makeSkill({
-        installKind: "github",
-        githubPath: "skills/demo",
-        githubCurrentCommit: currentCommit,
-        githubCurrentContentHash: contentHash,
-        githubCurrentStatus: "present",
-        githubScanStatus: "clean",
-        latestVersionSummary: {
-          version: "1.2.3",
-          createdAt: 2,
-          changelog: "Synced from GitHub source.",
-        },
-      }),
-      owner: makeOwner("users:1", "demo-owner"),
-      githubScan: {
-        _id: "githubSkillScans:1",
-        skillId: "skills:1",
-        githubSourceId: "githubSkillSources:1",
-        contentHash,
-        commit: scanOriginCommit,
-        path: "skills/old-demo",
-        status: "clean",
-        staticScan: {
-          status: "clean",
-          reasonCodes: [],
-          findings: [],
-          summary: "No findings.",
-          engineVersion: "test",
-          checkedAt: 2,
-        },
-        llmAnalysis: { status: "clean", checkedAt: 3 },
-        createdAt: 2,
-        updatedAt: 3,
-        completedAt: 3,
-      },
-    });
+    const ctx = makeGitHubScanCtx(contentHash, currentCommit, scanOriginCommit);
 
     const result = await getBySlugHandler(ctx, { slug: "demo" } as never);
 
@@ -466,43 +470,7 @@ describe("skills.getBySlug", () => {
     const contentHash = "a".repeat(64);
     const currentCommit = "b".repeat(40);
     const scanOriginCommit = "c".repeat(40);
-    const ctx = makeCtx({
-      skill: makeSkill({
-        installKind: "github",
-        githubPath: "skills/demo",
-        githubCurrentCommit: currentCommit,
-        githubCurrentContentHash: contentHash,
-        githubCurrentStatus: "present",
-        githubScanStatus: "clean",
-        latestVersionSummary: {
-          version: "1.2.3",
-          createdAt: 2,
-          changelog: "Synced from GitHub source.",
-        },
-      }),
-      owner: makeOwner("users:1", "demo-owner"),
-      githubScan: {
-        _id: "githubSkillScans:1",
-        skillId: "skills:1",
-        githubSourceId: "githubSkillSources:1",
-        contentHash,
-        commit: scanOriginCommit,
-        path: "skills/old-demo",
-        status: "clean",
-        staticScan: {
-          status: "clean",
-          reasonCodes: [],
-          findings: [],
-          summary: "No findings.",
-          engineVersion: "test",
-          checkedAt: 2,
-        },
-        llmAnalysis: { status: "clean", checkedAt: 3 },
-        createdAt: 2,
-        updatedAt: 3,
-        completedAt: 3,
-      },
-    });
+    const ctx = makeGitHubScanCtx(contentHash, currentCommit, scanOriginCommit);
 
     const result = await getGitHubScanForAuditHandler(ctx, { slug: "demo" });
 
