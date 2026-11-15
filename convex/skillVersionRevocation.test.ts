@@ -1,7 +1,7 @@
 /* @vitest-environment node */
 
 import { describe, expect, it, vi } from "vitest";
-import { indexedUnique } from "../src/__tests__/helpers/convexQuery";
+import { indexedUnique, indexedTake } from "../src/__tests__/helpers/convexQuery";
 import {
   buildSkillVersionRevocationPlan,
   findReplacementLatestSkillVersion,
@@ -177,18 +177,10 @@ describe("revokeSkillVersionForUser", () => {
         }),
         query: vi.fn((table: string) => {
           if (table === "skills") {
-            return {
-              withIndex: vi.fn(() => ({
-                take: vi.fn().mockResolvedValue([hiddenSkill]),
-              })),
-            };
+            return indexedTake(() => [hiddenSkill]);
           }
           if (table === "skillSlugAliases") {
-            return {
-              withIndex: vi.fn(() => ({
-                take: vi.fn().mockResolvedValue([]),
-              })),
-            };
+            return indexedTake(() => []);
           }
           if (table === "skillVersions") {
             return indexedUnique(() => null);
