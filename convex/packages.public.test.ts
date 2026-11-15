@@ -4272,15 +4272,6 @@ describe("packages public queries", () => {
       "packages:private",
       expect.objectContaining({ channel: "official" }),
     );
-    expect(patch).toHaveBeenCalledWith(
-      "packageSearchDigest:memory",
-      expect.objectContaining({
-        channel: "official",
-        isOfficial: true,
-        ownerHandle: "openclaw",
-        ownerKind: "org",
-      }),
-    );
   });
 
   it("includes current inferred taxonomy on install-sorted package pages", async () => {
@@ -7711,14 +7702,7 @@ describe("packages public queries", () => {
         updatedAt: expect.any(Number),
       }),
     );
-    expect(patch).toHaveBeenCalledWith(
-      "packageSearchDigest:demo",
-      expect.objectContaining({
-        packageId: "packages:demo",
-        softDeletedAt: expect.any(Number),
-        updatedAt: expect.any(Number),
-      }),
-    );
+
     expect(insert).toHaveBeenCalledWith(
       "auditLogs",
       expect.objectContaining({
@@ -8071,31 +8055,6 @@ describe("packages public queries", () => {
     });
   });
 
-  it("syncs package search digest when packages are soft-deleted", async () => {
-    const { ctx, patch } = makeSoftDeletePackageCtx({
-      packageSearchDigest: {
-        _id: "packageSearchDigest:demo",
-        packageId: "packages:demo",
-        softDeletedAt: undefined,
-      },
-    });
-
-    await expect(
-      softDeletePackageInternalHandler(ctx, {
-        userId: "users:owner",
-        name: "demo-plugin",
-      }),
-    ).resolves.toMatchObject({ ok: true, alreadyDeleted: false });
-
-    expect(patch).toHaveBeenCalledWith(
-      "packageSearchDigest:demo",
-      expect.objectContaining({
-        softDeletedAt: expect.any(Number),
-        updatedAt: expect.any(Number),
-      }),
-    );
-  });
-
   it("reserves private package placeholders without releases", async () => {
     const { ctx, insert } = makeReservePackageNameCtx();
 
@@ -8233,15 +8192,6 @@ describe("packages public queries", () => {
       isOfficial: false,
       updatedAt: expect.any(Number),
     });
-    expect(patch).toHaveBeenCalledWith(
-      "packageSearchDigest:opik",
-      expect.objectContaining({
-        ownerUserId: "users:vincent",
-        ownerPublisherId: "publishers:opik",
-        channel: "community",
-        isOfficial: false,
-      }),
-    );
     expect(patch).not.toHaveBeenCalledWith(
       "packages:opik",
       expect.objectContaining({ stats: expect.anything() }),
@@ -8454,14 +8404,7 @@ describe("packages public queries", () => {
       runtimeId: "ivangdavila-whatsapp",
       updatedAt: expect.any(Number),
     });
-    expect(patch).toHaveBeenCalledWith(
-      "packageSearchDigest:demo",
-      expect.objectContaining({
-        name: "ivangdavila-whatsapp",
-        normalizedName: "ivangdavila-whatsapp",
-        runtimeId: "ivangdavila-whatsapp",
-      }),
-    );
+
     expect(insert).toHaveBeenCalledWith(
       "auditLogs",
       expect.objectContaining({
@@ -18480,7 +18423,7 @@ describe("package scan backfill", () => {
     expect(runAfter).not.toHaveBeenCalled();
   });
 
-  it("backfills legacy static-only package scan status into the package search digest", async () => {
+  it("backfills legacy static-only package scan status into package metadata", async () => {
     const verification = {
       tier: "source-linked",
       scope: "artifact-only",
@@ -18578,10 +18521,6 @@ describe("package scan backfill", () => {
         }),
       }),
     );
-    expect(patch).toHaveBeenCalledWith(
-      "packageSearchDigest:demo",
-      expect.objectContaining({ scanStatus: "clean" }),
-    );
   });
 
   it("repairs stale package search digests even when package scan status is already current", async () => {
@@ -18613,6 +18552,7 @@ describe("package scan backfill", () => {
       {
         db: {
           get: vi.fn(async (id: string) => {
+            if (id === pkg._id) return pkg;
             if (id === "packageReleases:demo-1") return release;
             if (id === "publishers:owner") {
               return {
@@ -20108,7 +20048,7 @@ describe("owned package sanction batches", () => {
 });
 
 describe("softDeletePackageInternal", () => {
-  it("soft-deletes a package owned by a personal publisher and writes ownerHandle to the search digest", async () => {
+  it("soft-deletes a package owned by a personal publisher", async () => {
     const { ctx, patch, insert } = makeSoftDeleteCtx();
 
     const result = await softDeletePackageInternalHandler(ctx as never, {
@@ -20122,12 +20062,6 @@ describe("softDeletePackageInternal", () => {
     expect(patch).toHaveBeenCalledWith(
       "packages:demo",
       expect.objectContaining({ softDeletedAt: expect.any(Number) }),
-    );
-
-    // The packageSearchDigest row must be updated with ownerHandle resolved.
-    expect(patch).toHaveBeenCalledWith(
-      "packageSearchDigest:demo",
-      expect.objectContaining({ ownerHandle: "tongfei11", softDeletedAt: expect.any(Number) }),
     );
 
     // An audit log must be inserted.

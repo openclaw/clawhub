@@ -41,6 +41,7 @@ import {
   internalQuery,
   mutation,
   query,
+  syncPackageSearchDigestForPackageId,
 } from "./functions";
 import { compareCatalogSearchEntries } from "./httpApiV1/packagesV1";
 import {
@@ -177,7 +178,7 @@ import {
   type SdkUsageReport,
 } from "./lib/packageSdkUsageContract";
 import { readStagedSdkUsageReport } from "./lib/packageSdkUsageStorage";
-import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
+import { extractPackageDigestFields } from "./lib/packageSearchDigest";
 import {
   getPackageTrustReasons,
   isPackageBlockedFromPublic,
@@ -5328,22 +5329,6 @@ export const insertAuditLogInternal = internalMutation({
   },
 });
 
-async function refreshPackageSearchDigest(
-  ctx: Pick<MutationCtx, "db">,
-  pkg: Doc<"packages">,
-  ownerSource: Pick<Doc<"packages">, "ownerPublisherId" | "ownerUserId">,
-) {
-  const owner = await getOwnerPublisher(ctx, {
-    ownerPublisherId: ownerSource.ownerPublisherId,
-    ownerUserId: ownerSource.ownerUserId,
-  });
-  await upsertPackageSearchDigest(ctx, {
-    ...extractPackageDigestFields(pkg),
-    ownerHandle: owner?.handle ?? "",
-    ownerKind: owner?.kind,
-  });
-}
-
 async function softDeletePackageDoc(
   ctx: Pick<MutationCtx, "db">,
   pkg: Doc<"packages">,
@@ -5367,9 +5352,8 @@ async function softDeletePackageDoc(
         packagePatch.softDeletedAt = now;
         packagePatch.softDeletedReason = params.reason;
       }
-      const nextPackage: Doc<"packages"> = { ...pkg, ...packagePatch };
+
       await ctx.db.patch(pkg._id, packagePatch);
-      await refreshPackageSearchDigest(ctx, nextPackage, pkg);
     }
     return {
       ok: true as const,
@@ -5393,9 +5377,9 @@ async function softDeletePackageDoc(
     softDeletedByRole: params.actorRole ?? "user",
     updatedAt: now,
   };
-  const nextPackage: Doc<"packages"> = { ...pkg, ...packagePatch };
+
   await ctx.db.patch(pkg._id, packagePatch);
-  await refreshPackageSearchDigest(ctx, nextPackage, pkg);
+
   for (const releaseId of deletedReleaseIds) {
     await ctx.db.patch(releaseId, { softDeletedAt: now });
   }
@@ -6026,9 +6010,8 @@ export const applyBanToOwnedPackagesBatchInternal = internalMutation({
             softDeletedByRole: args.deletedByRole,
             updatedAt: args.bannedAt,
           };
-          const nextPackage: Doc<"packages"> = { ...pkg, ...packagePatch };
+
           await ctx.db.patch(pkg._id, packagePatch);
-          await refreshPackageSearchDigest(ctx, nextPackage, pkg);
         }
         continue;
       }
@@ -6456,12 +6439,8 @@ export async function deleteOwnedPackageReleaseForActor(
       tags: nextTags,
       updatedAt: now,
     };
-    const nextPackage: Doc<"packages"> = {
-      ...pkg,
-      ...packagePatch,
-    };
+
     await ctx.db.patch(pkg._id, packagePatch);
-    await refreshPackageSearchDigest(ctx, nextPackage, pkg);
   }
 
   await ctx.db.insert("auditLogs", {
@@ -9546,10 +9525,6 @@ async function patchPackageOwnerWithAudit(
   }
 
   await ctx.db.patch(args.pkg._id, nextPackageFields);
-  await upsertPackageSearchDigest(ctx, {
-    ...extractPackageDigestFields(args.pkg),
-    ...nextPackageFields,
-  });
 
   await ctx.db.insert("auditLogs", {
     actorUserId: args.actorUserId,
@@ -9793,10 +9768,7 @@ export const repairPackageIdentityInternal = internalMutation({
     }
 
     await ctx.db.patch(pkg._id, patch);
-    await upsertPackageSearchDigest(ctx, {
-      ...extractPackageDigestFields(pkg),
-      ...patch,
-    });
+
     await ctx.db.insert("auditLogs", {
       actorUserId: args.actorUserId,
       action: "package.identity.repair",
@@ -9871,7 +9843,7 @@ export const setPackageCatalogMetadata = mutation({
       inferredTopicInputHash: nextPackage.inferredTopicInputHash,
       updatedAt: now,
     });
-    await refreshPackageSearchDigest(ctx, nextPackage, nextPackage);
+
     await ctx.db.insert("auditLogs", {
       actorUserId: user._id,
       action: "package.catalog_metadata.set",
@@ -11754,9 +11726,8 @@ async function quarantineMaliciousNonLatestPackageRelease(
       tags: nextTags,
       updatedAt: now,
     };
-    const nextPackage: Doc<"packages"> = { ...pkg, ...packagePatch };
+
     await ctx.db.patch(pkg._id, packagePatch);
-    await refreshPackageSearchDigest(ctx, nextPackage, pkg);
   }
 
   if (ctx.scheduler) {
@@ -11901,19 +11872,12 @@ async function syncLatestPackageVerification(
         verification: nextVerification,
       }
     : pkg.latestVersionSummary;
-  const nextPackage: Doc<"packages"> = {
-    ...pkg,
-    verification: nextVerification,
-    scanStatus,
-    latestVersionSummary: nextLatestVersionSummary,
-  };
 
   await ctx.db.patch(pkg._id, {
     verification: nextVerification,
     scanStatus,
     latestVersionSummary: nextLatestVersionSummary,
   });
-  await refreshPackageSearchDigest(ctx, nextPackage, pkg);
 }
 
 export const updateReleaseSkillSpectorAnalysisInternal = internalMutation({
@@ -12083,12 +12047,6 @@ export const backfillLatestPackageScanStatusInternal = internalMutation({
             verification: nextVerification,
           }
         : pkg.latestVersionSummary;
-      const nextPackage: Doc<"packages"> = {
-        ...pkg,
-        verification: nextVerification,
-        scanStatus,
-        latestVersionSummary: nextLatestVersionSummary,
-      };
 
       if (
         pkg.scanStatus !== scanStatus ||
@@ -12102,8 +12060,9 @@ export const backfillLatestPackageScanStatusInternal = internalMutation({
           latestVersionSummary: nextLatestVersionSummary,
         });
         patched++;
+      } else {
+        await syncPackageSearchDigestForPackageId(ctx, pkg._id);
       }
-      await refreshPackageSearchDigest(ctx, nextPackage, pkg);
     }
 
     if (!isDone) {
@@ -12175,7 +12134,7 @@ export const normalizeOfficialPublisherPackagesInternal = internalMutation({
         channel: nextPackage.channel,
         isOfficial: nextPackage.isOfficial,
       });
-      await refreshPackageSearchDigest(ctx, nextPackage, nextPackage);
+
       patched++;
     }
 

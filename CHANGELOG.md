@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Catalog: keep package search versions aligned with the current release when editing metadata on packages with stale version summaries. Package mutations now rely on the shared trigger to refresh search projections.
+
 - Scanning: reuse the shared subprocess runner for legacy pre-publication scanners, bounding captured output to 32 MiB stdout and 1 MiB stderr while preserving scanner verdict exit codes.
 
 ## 0.26.0 - 2026-11-12
