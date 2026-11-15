@@ -99,16 +99,14 @@ export function InstallCommandCard({
 }: InstallCommandCardProps) {
   const headingId = useId();
   type InstallTab = "desktop" | "cli" | "skills" | "prompt";
-  const [selectedInstallTab, setActiveInstallTab] = useState<InstallTab>(
-    desktopInstall ? "desktop" : "cli",
-  );
-  // Eligibility can change after loading; never keep a now-unavailable app action.
+  // CLI opens first: released desktop apps do not all handle the app link yet.
+  const [selectedInstallTab, setActiveInstallTab] = useState<InstallTab>("cli");
+  // Eligibility can change after loading; never keep a tab the card no longer offers.
   const activeInstallTab =
-    selectedInstallTab === "desktop" && !desktopInstall
+    (selectedInstallTab === "desktop" && !desktopInstall) ||
+    (desktopInstall && (selectedInstallTab === "prompt" || selectedInstallTab === "skills"))
       ? "cli"
-      : desktopInstall && (selectedInstallTab === "prompt" || selectedInstallTab === "skills")
-        ? "desktop"
-        : selectedInstallTab;
+      : selectedInstallTab;
   const [installTabDirection, setInstallTabDirection] = useState<"left" | "right">("right");
   const activeInstallText =
     activeInstallTab === "prompt"
@@ -116,7 +114,7 @@ export function InstallCommandCard({
       : activeInstallTab === "skills" && secondaryInstall
         ? secondaryInstall.command
         : cliCommand;
-  const installTabOrder: InstallTab[] = ["desktop", "cli", "skills", "prompt"];
+  const installTabOrder: InstallTab[] = ["cli", "desktop", "skills", "prompt"];
   const selectInstallTab = (tab: InstallTab) => {
     if (tab === activeInstallTab) {
       return;
@@ -155,6 +153,14 @@ export function InstallCommandCard({
           Install
         </h3>
         <div className="skill-install-tab-toggle" role="group" aria-label="Install option">
+          <button
+            type="button"
+            className={`skill-install-tab${activeInstallTab === "cli" ? " is-active" : ""}`}
+            aria-pressed={activeInstallTab === "cli"}
+            onClick={() => selectInstallTab("cli")}
+          >
+            CLI
+          </button>
           {desktopInstall ? (
             <button
               type="button"
@@ -165,14 +171,6 @@ export function InstallCommandCard({
               Desktop
             </button>
           ) : null}
-          <button
-            type="button"
-            className={`skill-install-tab${activeInstallTab === "cli" ? " is-active" : ""}`}
-            aria-pressed={activeInstallTab === "cli"}
-            onClick={() => selectInstallTab("cli")}
-          >
-            CLI
-          </button>
           {!desktopInstall && secondaryInstall ? (
             <button
               type="button"

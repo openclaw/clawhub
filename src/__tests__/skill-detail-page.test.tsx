@@ -1202,7 +1202,7 @@ describe("SkillDetailPage", () => {
     expect(screen.getByText(/Compose agent workflow pipelines\./i)).toBeTruthy();
   });
 
-  it("defaults the sidebar install surface to Desktop and exposes the full CLI command", async () => {
+  it("defaults the sidebar install surface to the full CLI command and offers Desktop second", async () => {
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
       return undefined;
@@ -1254,22 +1254,22 @@ describe("SkillDetailPage", () => {
 
     const installCard = screen.getByRole("article", { name: "Install" });
     const install = within(installCard);
-    expect(install.getByRole("button", { name: "Desktop" }).getAttribute("aria-pressed")).toBe(
-      "true",
-    );
-    expect(install.getByRole("link", { name: "Install in OpenClaw" }).getAttribute("href")).toBe(
-      "openclaw://skills/install?name=%40steipete%2Fweather",
-    );
-    expect(install.queryByRole("button", { name: "npx skills" })).toBeNull();
-    expect(install.queryByRole("button", { name: "Prompt" })).toBeNull();
-    expect(install.queryByRole("button", { name: "Copy OpenClaw CLI command" })).toBeNull();
-    fireEvent.click(install.getByRole("button", { name: "CLI" }));
     expect(install.getByRole("button", { name: "CLI" }).getAttribute("aria-pressed")).toBe("true");
     expect(installCard.querySelector("pre code")?.textContent).toBe(
       "openclaw skills install @steipete/weather",
     );
     expect(install.getByRole("button", { name: "Copy OpenClaw CLI command" })).toBeTruthy();
     expect(install.queryByRole("link", { name: "Install in OpenClaw" })).toBeNull();
+    expect(install.queryByRole("button", { name: "npx skills" })).toBeNull();
+    expect(install.queryByRole("button", { name: "Prompt" })).toBeNull();
+    fireEvent.click(install.getByRole("button", { name: "Desktop" }));
+    expect(install.getByRole("button", { name: "Desktop" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    expect(install.getByRole("link", { name: "Install in OpenClaw" }).getAttribute("href")).toBe(
+      "openclaw://skills/install?name=%40steipete%2Fweather",
+    );
+    expect(install.queryByRole("button", { name: "Copy OpenClaw CLI command" })).toBeNull();
     expect(screen.queryByText("npx clawhub@latest install @steipete/weather")).toBeNull();
     expect(screen.queryByRole("tab", { name: "ClawHub" })).toBeNull();
     expect(screen.queryByText(/After install, inspect the skill metadata/i)).toBeNull();

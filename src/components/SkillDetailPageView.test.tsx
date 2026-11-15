@@ -1,6 +1,6 @@
 /* @vitest-environment jsdom */
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeSkillDetailPageViewProps } from "../__tests__/helpers/skillDetailPageView";
@@ -60,6 +60,7 @@ describe("SkillDetailPageView", () => {
         <SkillDetailPageView {...makeInstallableProps()} />
       </TooltipProvider>,
     );
+    fireEvent.click(screen.getByRole("button", { name: "Desktop" }));
     const link = screen.getByRole("link", { name: "Install in OpenClaw" });
     expect(link.getAttribute("href")).toBe("openclaw://skills/install?name=%40publisher%2Fdemo");
     expect(link.closest(".skill-hero-sidebar")).not.toBeNull();
