@@ -150,7 +150,6 @@ import {
   type PublicSkillVersionParsed,
 } from "./lib/skillPageRead";
 import { isHostedSkillPresentationIconPath } from "./lib/skillPresentation";
-import { skillPresentationValidator } from "./lib/skillPresentationValidator";
 import {
   readSkillPublicationProgress,
   readSkillVersionPublicationProgress,
@@ -197,7 +196,11 @@ import {
 import { normalizeSkillTags } from "./lib/skillTags";
 import { fetchText } from "./lib/storageText";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
-import schema, { llmAnalysisValidator } from "./schema";
+import schema, {
+  llmAnalysisValidator,
+  skillParsedMetadataValidator,
+  skillSourceProvenanceValidator,
+} from "./schema";
 import { consumeSkillPublishUploads } from "./skillPublishUploads";
 
 const MAX_OWNER_SUMMARY_LENGTH = 500;
@@ -218,7 +221,6 @@ type FilePreviewResult = {
   size: number;
   sha256: string;
 };
-const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
 
 const MAX_DIFF_FILE_BYTES = 200 * 1024;
 const MAX_LIST_LIMIT = 50;
@@ -10489,17 +10491,7 @@ export const insertVersion = internalMutation({
     version: v.string(),
     changelog: v.string(),
     changelogSource: v.optional(v.union(v.literal("auto"), v.literal("user"))),
-    sourceProvenance: v.optional(
-      v.object({
-        kind: v.literal("github"),
-        url: v.string(),
-        repo: v.string(),
-        ref: v.string(),
-        commit: v.string(),
-        path: v.optional(v.string()),
-        importedAt: v.number(),
-      }),
-    ),
+    sourceProvenance: v.optional(skillSourceProvenanceValidator),
     tags: v.optional(v.array(v.string())),
     categories: v.optional(v.array(v.string())),
     topics: v.optional(v.array(v.string())),
@@ -10513,13 +10505,7 @@ export const insertVersion = internalMutation({
       }),
     ),
     files: storedFilesValidator,
-    parsed: v.object({
-      frontmatter: v.record(v.string(), v.any()),
-      metadata: v.optional(v.any()),
-      clawdis: v.optional(v.any()),
-      license: v.optional(v.literal(PLATFORM_SKILL_LICENSE)),
-      presentation: v.optional(skillPresentationValidator),
-    }),
+    parsed: skillParsedMetadataValidator.omit("moltbot"),
     summary: v.optional(v.string()),
     qualityAssessment: v.optional(qualityAssessmentValidator),
     // Retired static publish scan. Still accepted so stored insert args from
