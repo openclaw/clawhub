@@ -27,11 +27,6 @@ import {
   emitAnalytics,
   publicAnalyticsContentId,
 } from "../lib/analyticsEvents";
-import {
-  getUserFacingAuthError,
-  isBannedAccountAuthError,
-  routeToBannedAccountPage,
-} from "../lib/authErrorMessage";
 import { gravatarUrl } from "../lib/gravatar";
 import {
   navigateWithManualCatalogSearch,
@@ -41,6 +36,7 @@ import { PRIMARY_NAV_ITEMS, SECONDARY_NAV_ITEMS } from "../lib/nav-items";
 import { buildPublisherProfileHref, buildSkillDetailHref } from "../lib/ownerRoute";
 import { buildPluginDetailHref, displayPluginPackageName } from "../lib/pluginRoutes";
 import { presentationTitle } from "../lib/presentationTitle";
+import { handleSignInError } from "../lib/signInError";
 import { SITE_NAME } from "../lib/site";
 import { applyTheme, useThemeMode } from "../lib/theme";
 import { clearAuthError, setAuthError } from "../lib/useAuthError";
@@ -766,17 +762,7 @@ export default function Header() {
                           setAuthError("Sign in failed. Please try again.");
                         }
                       })
-                      .catch((error) => {
-                        const message = getUserFacingAuthError(
-                          error,
-                          "Sign in failed. Please try again.",
-                        );
-                        if (isBannedAccountAuthError(message)) {
-                          routeToBannedAccountPage();
-                          return;
-                        }
-                        setAuthError(message);
-                      });
+                      .catch(handleSignInError);
                   }}
                 >
                   <GitHubLogo className="github-sign-in-logo" />
