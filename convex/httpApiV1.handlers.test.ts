@@ -199,6 +199,21 @@ function makeSkillFixture(
   };
 }
 
+function makePackageSkillFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    _id: "skills:demo",
+    slug: "demo",
+    displayName: "Demo Skill",
+    summary: "Skill summary",
+    latestVersionId: "skillVersions:demo-1",
+    tags: { latest: "skillVersions:demo-1" },
+    badges: {},
+    createdAt: 1,
+    updatedAt: 2,
+    ...overrides,
+  };
+}
+
 function makeSkillArtifactFixture(tags: Record<string, string> = {}) {
   return {
     ...makeSkillFixture({ tags }),
@@ -13159,18 +13174,9 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("packages detail falls back to public skills", async () => {
-    const selectedSkill0 = {
-      _id: "skills:demo",
-      slug: "demo",
-      displayName: "Demo Skill",
-      summary: "Skill summary",
+    const selectedSkill0 = makePackageSkillFixture({
       topics: ["Automation", "Email"],
-      latestVersionId: "skillVersions:demo-1",
-      tags: { latest: "skillVersions:demo-1" },
-      badges: {},
-      createdAt: 1,
-      updatedAt: 2,
-    };
+    });
     const selectedVersion0 = {
       _id: "skillVersions:demo-1",
       skillId: "skills:demo",
@@ -13330,17 +13336,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("packages file serves SKILL.md for skill README requests", async () => {
-    const selectedSkill = {
-      _id: "skills:demo",
-      slug: "demo",
-      displayName: "Demo Skill",
-      summary: "Skill summary",
-      latestVersionId: "skillVersions:demo-1",
-      tags: { latest: "skillVersions:demo-1" },
-      badges: {},
-      createdAt: 1,
-      updatedAt: 2,
-    };
+    const selectedSkill = makePackageSkillFixture({});
     const selectedVersion0 = {
       _id: "skillVersions:demo-1",
       skillId: "skills:demo",
@@ -13388,19 +13384,10 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("packages file blocks skill compatibility files for malware-blocked skills", async () => {
-    const selectedSkill = {
-      _id: "skills:demo",
-      slug: "demo",
-      displayName: "Demo Skill",
-      summary: "Skill summary",
-      latestVersionId: "skillVersions:demo-1",
-      tags: { latest: "skillVersions:demo-1" },
-      badges: {},
-      createdAt: 1,
-      updatedAt: 2,
+    const selectedSkill = makePackageSkillFixture({
       moderationVerdict: "malicious",
       moderationFlags: ["blocked.malware"],
-    };
+    });
     const selectedVersion0 = {
       _id: "skillVersions:demo-1",
       skillId: "skills:demo",
@@ -13443,17 +13430,9 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("packages file does not serve skill tags pointing at another skill's version", async () => {
-    const selectedSkill = {
-      _id: "skills:demo",
-      slug: "demo",
-      displayName: "Demo Skill",
-      summary: "Skill summary",
-      latestVersionId: "skillVersions:demo-1",
+    const selectedSkill = makePackageSkillFixture({
       tags: { latest: "skillVersions:demo-1", old: "skillVersions:other" },
-      badges: {},
-      createdAt: 1,
-      updatedAt: 2,
-    };
+    });
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
         return { status: "not_found" };
@@ -13488,17 +13467,7 @@ describe("httpApiV1 handlers", () => {
       if ("name" in args) return null;
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:demo",
-            slug: "demo",
-            displayName: "Demo Skill",
-            summary: "Skill summary",
-            latestVersionId: "skillVersions:demo-1",
-            tags: { latest: "skillVersions:demo-1" },
-            badges: {},
-            createdAt: 1,
-            updatedAt: 2,
-          },
+          skill: makePackageSkillFixture({}),
           latestVersion: null,
           owner: { handle: "steipete" },
         };
@@ -13543,17 +13512,9 @@ describe("httpApiV1 handlers", () => {
       }
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:demo",
-            slug: "demo",
-            displayName: "Demo Skill",
-            summary: "Skill summary",
-            latestVersionId: "skillVersions:demo-1",
+          skill: makePackageSkillFixture({
             tags: {},
-            badges: {},
-            createdAt: 1,
-            updatedAt: 2,
-          },
+          }),
           latestVersion: null,
           owner: { handle: "owner" },
         };
@@ -13712,20 +13673,13 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("packages version detail blocks skill compatibility metadata for malware-blocked skills", async () => {
-    const selectedSkill = {
-      _id: "skills:demo",
-      slug: "demo",
-      displayName: "Demo Skill",
-      summary: "Skill summary",
+    const selectedSkill = makePackageSkillFixture({
       latestVersionId: "skillVersions:demo-2",
       tags: { latest: "skillVersions:demo-2" },
-      badges: {},
-      createdAt: 1,
-      updatedAt: 2,
       moderationVerdict: "malicious",
       moderationFlags: ["blocked.malware"],
       moderationSourceVersionId: "skillVersions:demo-1",
-    };
+    });
     const selectedVersion0 = {
       _id: "skillVersions:demo-1",
       skillId: "skills:demo",
@@ -13777,17 +13731,7 @@ describe("httpApiV1 handlers", () => {
       if ("name" in args) return null;
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:demo",
-            slug: "demo",
-            displayName: "Demo Skill",
-            summary: "Skill summary",
-            latestVersionId: "skillVersions:demo-1",
-            tags: { latest: "skillVersions:demo-1" },
-            badges: {},
-            createdAt: 1,
-            updatedAt: 2,
-          },
+          skill: makePackageSkillFixture({}),
           latestVersion: { _id: "skillVersions:demo-1", version: "1.0.0" },
           owner: { handle: "steipete" },
           moderationInfo: null,
