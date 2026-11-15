@@ -3106,11 +3106,7 @@ export const list = query({
     if (args.batch) {
       if (args.batch === "highlighted") {
         const skills = await loadHighlightedSkills(ctx, limit);
-        const withBadges = await attachBadgesToSkills(ctx, skills);
-        const visibleSkills = await filterSkillsByActiveOwner(ctx, withBadges);
-        return visibleSkills
-          .map((skill) => toPublicSkill(skill))
-          .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill));
+        return await mapDashboardSkillPage(ctx, skills, false);
       }
       const entries = await ctx.db
         .query("skills")
@@ -3118,11 +3114,7 @@ export const list = query({
         .order("desc")
         .take(takeLimit);
       const filtered = entries.filter((skill) => !skill.softDeletedAt).slice(0, limit);
-      const withBadges = await attachBadgesToSkills(ctx, filtered);
-      const visibleSkills = await filterSkillsByActiveOwner(ctx, withBadges);
-      return visibleSkills
-        .map((skill) => toPublicSkill(skill))
-        .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill));
+      return await mapDashboardSkillPage(ctx, filtered, false);
     }
     const ownerPublisherId = args.ownerPublisherId;
     if (ownerPublisherId) {
@@ -3166,18 +3158,7 @@ export const list = query({
           all.findIndex((candidate) => candidate._id === skill._id) === index,
       );
       const filtered = combined.slice(0, limit);
-      const withBadges = await attachBadgesToSkills(ctx, filtered);
-
-      if (isOwnDashboard) {
-        return await Promise.all(
-          withBadges.map(async (skill) => await toDashboardSkillListItem(ctx, skill)),
-        );
-      }
-
-      const visibleSkills = await filterSkillsByActiveOwner(ctx, withBadges);
-      return visibleSkills
-        .map((skill) => toPublicSkill(skill))
-        .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill));
+      return await mapDashboardSkillPage(ctx, filtered, isOwnDashboard);
     }
     const ownerUserId = args.ownerUserId;
     if (ownerUserId) {
@@ -3190,26 +3171,11 @@ export const list = query({
         .take(takeLimit);
       const scoped = await filterSkillsForOwnerUserDashboard(ctx, entries, ownerUserId);
       const filtered = scoped.filter((skill) => !skill.softDeletedAt).slice(0, limit);
-      const withBadges = await attachBadgesToSkills(ctx, filtered);
-
-      if (isOwnDashboard) {
-        return await Promise.all(
-          withBadges.map(async (skill) => await toDashboardSkillListItem(ctx, skill)),
-        );
-      }
-
-      const visibleSkills = await filterSkillsByActiveOwner(ctx, withBadges);
-      return visibleSkills
-        .map((skill) => toPublicSkill(skill))
-        .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill));
+      return await mapDashboardSkillPage(ctx, filtered, isOwnDashboard);
     }
     const entries = await ctx.db.query("skills").order("desc").take(takeLimit);
     const filtered = entries.filter((skill) => !skill.softDeletedAt).slice(0, limit);
-    const withBadges = await attachBadgesToSkills(ctx, filtered);
-    const visibleSkills = await filterSkillsByActiveOwner(ctx, withBadges);
-    return visibleSkills
-      .map((skill) => toPublicSkill(skill))
-      .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill));
+    return await mapDashboardSkillPage(ctx, filtered, false);
   },
 });
 
