@@ -4375,22 +4375,24 @@ export const listPublicPage = query({
   },
 });
 
+const publicListSortValidator = v.optional(
+  v.union(
+    v.literal("default"),
+    v.literal("recommended"),
+    v.literal("newest"),
+    v.literal("updated"),
+    v.literal("downloads"),
+    v.literal("installs"),
+    v.literal("stars"),
+    v.literal("name"),
+  ),
+);
+
 /** @deprecated V2 is gutted — returns empty results with no DB reads. */
 export const listPublicPageV2 = query({
   args: {
     paginationOpts: paginationOptsValidator,
-    sort: v.optional(
-      v.union(
-        v.literal("default"),
-        v.literal("recommended"),
-        v.literal("newest"),
-        v.literal("updated"),
-        v.literal("downloads"),
-        v.literal("installs"),
-        v.literal("stars"),
-        v.literal("name"),
-      ),
-    ),
+    sort: publicListSortValidator,
     dir: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
     highlightedOnly: v.optional(v.boolean()),
     nonSuspiciousOnly: v.optional(v.boolean()),
@@ -4740,18 +4742,7 @@ export const listPublicPageV4 = query({
   args: {
     cursor: v.optional(v.string()),
     numItems: v.optional(v.number()),
-    sort: v.optional(
-      v.union(
-        v.literal("default"),
-        v.literal("recommended"),
-        v.literal("newest"),
-        v.literal("updated"),
-        v.literal("downloads"),
-        v.literal("installs"),
-        v.literal("stars"),
-        v.literal("name"),
-      ),
-    ),
+    sort: publicListSortValidator,
     dir: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
     highlightedOnly: v.optional(v.boolean()),
     officialOnly: v.optional(v.boolean()),
@@ -5488,18 +5479,7 @@ export const listPublicApiPageV1 = query({
     cursor: v.optional(v.string()),
     numItems: v.optional(v.number()),
     prefix: v.optional(v.string()),
-    sort: v.optional(
-      v.union(
-        v.literal("default"),
-        v.literal("recommended"),
-        v.literal("newest"),
-        v.literal("updated"),
-        v.literal("downloads"),
-        v.literal("installs"),
-        v.literal("stars"),
-        v.literal("name"),
-      ),
-    ),
+    sort: publicListSortValidator,
     dir: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
     nonSuspiciousOnly: v.optional(v.boolean()),
   },
