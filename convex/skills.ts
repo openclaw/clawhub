@@ -1114,6 +1114,15 @@ function buildReleasedUnpublishedSkillSlug(skill: Pick<Doc<"skills">, "_id">, at
   return `__unpublished_${idPart || "skill"}${suffix}`;
 }
 
+function availableSlugResult() {
+  return {
+    available: true,
+    reason: "available" as const,
+    message: null,
+    url: null,
+  };
+}
+
 function slugValidationAvailabilityFailure(error: unknown) {
   const message =
     error instanceof ConvexError && typeof error.data === "string" ? error.data : "Invalid slug.";
@@ -2376,12 +2385,7 @@ export const checkSlugAvailability = query({
       } catch (error) {
         return slugValidationAvailabilityFailure(error);
       }
-      return {
-        available: true,
-        reason: "available" as const,
-        message: null,
-        url: null,
-      };
+      return availableSlugResult();
     }
 
     const unpublishedReservationExpiresAt = await getUnpublishedSlugReservationExpiresAt(
@@ -2402,12 +2406,7 @@ export const checkSlugAvailability = query({
         } catch (error) {
           return slugValidationAvailabilityFailure(error);
         }
-        return {
-          available: true,
-          reason: "available" as const,
-          message: null,
-          url: null,
-        };
+        return availableSlugResult();
       }
       return {
         available: false,
@@ -2422,22 +2421,12 @@ export const checkSlugAvailability = query({
       : requestedPublisher.kind === "user" && requestedPublisher.linkedUserId === skill.ownerUserId;
 
     if (userId && skill.ownerUserId === userId && requestedPublisherMatchesSkill) {
-      return {
-        available: true,
-        reason: "available" as const,
-        message: null,
-        url: null,
-      };
+      return availableSlugResult();
     }
     if (userId && skill.ownerPublisherId && requestedPublisherMatchesSkill) {
       const membership = await getPublisherMembership(ctx, skill.ownerPublisherId, userId);
       if (membership && isPublisherRoleAllowed(membership.role, ["publisher"])) {
-        return {
-          available: true,
-          reason: "available" as const,
-          message: null,
-          url: null,
-        };
+        return availableSlugResult();
       }
     }
 
@@ -2463,12 +2452,7 @@ export const checkSlugAvailability = query({
           callerProviderAccountId,
         )
       ) {
-        return {
-          available: true,
-          reason: "available" as const,
-          message: null,
-          url: null,
-        };
+        return availableSlugResult();
       }
     }
 
