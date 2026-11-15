@@ -21,6 +21,7 @@ import type * as cliDeviceAuth from "../cliDeviceAuth.js";
 import type * as crons from "../crons.js";
 import type * as dashboard from "../dashboard.js";
 import type * as depRegistryScan from "../depRegistryScan.js";
+import type * as devPublisherProfileFixtures from "../devPublisherProfileFixtures.js";
 import type * as devSeed from "../devSeed.js";
 import type * as devSeedDownloadAnalytics from "../devSeedDownloadAnalytics.js";
 import type * as devSeedExtra from "../devSeedExtra.js";
@@ -261,6 +262,7 @@ import type * as lib_skills_slugResolution from "../lib/skills/slugResolution.js
 import type * as lib_skillsShCatalogEnvironment from "../lib/skillsShCatalogEnvironment.js";
 import type * as lib_skillsShCatalogFixtures from "../lib/skillsShCatalogFixtures.js";
 import type * as lib_skillsShCatalogPublication from "../lib/skillsShCatalogPublication.js";
+import type * as lib_skillsShMirrorClassification from "../lib/skillsShMirrorClassification.js";
 import type * as lib_skillsShMirrorContract from "../lib/skillsShMirrorContract.js";
 import type * as lib_skillsShMirrorPublic from "../lib/skillsShMirrorPublic.js";
 import type * as lib_skillsShPublicVisibility from "../lib/skillsShPublicVisibility.js";
@@ -379,6 +381,7 @@ declare const fullApi: ApiFromModules<{
   crons: typeof crons;
   dashboard: typeof dashboard;
   depRegistryScan: typeof depRegistryScan;
+  devPublisherProfileFixtures: typeof devPublisherProfileFixtures;
   devSeed: typeof devSeed;
   devSeedDownloadAnalytics: typeof devSeedDownloadAnalytics;
   devSeedExtra: typeof devSeedExtra;
@@ -619,6 +622,7 @@ declare const fullApi: ApiFromModules<{
   "lib/skillsShCatalogEnvironment": typeof lib_skillsShCatalogEnvironment;
   "lib/skillsShCatalogFixtures": typeof lib_skillsShCatalogFixtures;
   "lib/skillsShCatalogPublication": typeof lib_skillsShCatalogPublication;
+  "lib/skillsShMirrorClassification": typeof lib_skillsShMirrorClassification;
   "lib/skillsShMirrorContract": typeof lib_skillsShMirrorContract;
   "lib/skillsShMirrorPublic": typeof lib_skillsShMirrorPublic;
   "lib/skillsShPublicVisibility": typeof lib_skillsShPublicVisibility;

@@ -68,6 +68,9 @@ const PUBLISHER_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
 const PUBLISHER_IMAGE_CONTENT_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const PUBLISHER_INVITE_TTL_MS = 7 * 24 * 60 * 60_000;
 const MAX_PENDING_PUBLISHER_INVITES = 100;
+// Profile tab counts read one publisher's template digests. The cap keeps that
+// read bounded if a catalog grows far beyond today's largest publisher.
+const PUBLISHER_PROFILE_TEMPLATE_SCAN_LIMIT = 1000;
 const PUBLISHER_OG_AFFILIATION_LIMIT = 5;
 const PUBLISHER_OG_MEMBERSHIP_PAGE_SIZE = 64;
 const PUBLISHER_OG_MEMBERSHIP_SCAN_LIMIT = 512;
@@ -107,7 +110,7 @@ type PublisherPublishedPreviewItem = PublisherPublishedItem;
 
 type PublisherCatalogItem = {
   _id: Id<"skills"> | Id<"packages">;
-  kind: "skill" | "plugin";
+  kind: "skill" | "plugin" | "template";
   slug?: string;
   displayName: string;
   summary: string | null;
@@ -433,6 +436,33 @@ function getIndexedPublisherStatsFromRows(rows: PublisherPublishedRows): Publish
   return stats;
 }
 
+/**
+ * Counts one publisher's templates for the profile tabs. Search digests are
+ * small rows, so the profile does not read every package the publisher owns.
+ * `published` matches what `publishedPackages` already counted; `listed` matches
+ * what the Templates tab can show.
+ */
+async function getPublisherTemplateCounts(
+  ctx: Pick<QueryCtx, "db">,
+  publisher: Pick<Doc<"publishers">, "_id" | "handle">,
+) {
+  const digests = await ctx.db
+    .query("packageSearchDigest")
+    .withIndex("by_active_family_owner_handle", (q) =>
+      q.eq("softDeletedAt", undefined).eq("family", "claw").eq("ownerHandle", publisher.handle),
+    )
+    .take(PUBLISHER_PROFILE_TEMPLATE_SCAN_LIMIT);
+  let published = 0;
+  let listed = 0;
+  for (const digest of digests) {
+    if (digest.ownerPublisherId !== publisher._id) continue;
+    if (!digest.latestVersion && (digest.stats?.versions ?? 0) <= 0) continue;
+    published += 1;
+    if (digest.channel !== "private") listed += 1;
+  }
+  return { published, listed };
+}
+
 function getPublisherPublishedItems(
   rows: PublisherPublishedRows,
   limit = PUBLISHER_LIST_PREVIEW_LIMIT,
@@ -488,6 +518,18 @@ function buildPluginDetailHref(name: string) {
   return `/plugins/@${encodeURIComponent(scope)}/${encodeURIComponent(packageName)}`;
 }
 
+/** Templates live at `/<publisher>/templates/<slug>`, never under the plugin routes. */
+function buildTemplateDetailHref(name: string, publisherHandle: string) {
+  const normalized = name.trim().replace(/^@+/, "");
+  const slashIndex = normalized.indexOf("/");
+  const owner = (slashIndex > 0 ? normalized.slice(0, slashIndex) : publisherHandle)
+    .trim()
+    .toLowerCase();
+  const slug = slashIndex > 0 ? normalized.slice(slashIndex + 1) : normalized;
+  if (!owner || !slug || slug.includes("/")) return buildPluginDetailHref(name);
+  return `/${encodeURIComponent(owner)}/templates/${encodeURIComponent(slug)}`;
+}
+
 function comparePublisherCatalogItems(sort: PublisherCatalogSort) {
   return (a: PublisherCatalogItem, b: PublisherCatalogItem) => {
     if (sort === "recent") {
@@ -533,6 +575,26 @@ function parsePublisherPageCursor(cursor: string | null): {
 
 function encodePublisherPageCursor(mode: PublisherPageCursorMode, cursor: string, isDone: boolean) {
   return isDone ? "" : `${mode}:${cursor}`;
+}
+
+/**
+ * The client splits an oversized page by sending `splitCursor` back as a start
+ * cursor and as an `endCursor`. Both must round-trip through the same prefix as
+ * `continueCursor`, or the second half restarts from the first row.
+ */
+function encodeIndexedPublisherPage<T extends { continueCursor: string; isDone: boolean }>(
+  result: T & { splitCursor?: string | null },
+) {
+  return {
+    ...result,
+    continueCursor: encodePublisherPageCursor("indexed", result.continueCursor, result.isDone),
+    splitCursor: result.splitCursor ? `indexed:${result.splitCursor}` : result.splitCursor,
+  };
+}
+
+function decodeIndexedPublisherEndCursor(endCursor: string | null | undefined) {
+  if (!endCursor) return undefined;
+  return endCursor.startsWith("indexed:") ? endCursor.slice("indexed:".length) : endCursor;
 }
 
 function paginatePublisherItems(
@@ -594,12 +656,14 @@ function toPublisherSkillCatalogItem(
 }
 
 function toPublisherPackageCatalogItem(
+  publisher: Pick<Doc<"publishers">, "handle">,
   pkg: Doc<"packages">,
   publisherOfficial: boolean,
 ): PublisherCatalogItem {
+  const isTemplate = pkg.family === "claw";
   return {
     _id: pkg._id,
-    kind: "plugin",
+    kind: isTemplate ? "template" : "plugin",
     displayName: pkg.displayName,
     summary: pkg.summary ?? null,
     topics: pkg.topics,
@@ -607,7 +671,9 @@ function toPublisherPackageCatalogItem(
       pkg.channel === "private" || isPackageBlockedFromPublic(pkg.scanStatus)
         ? null
         : (pkg.icon ?? null),
-    href: buildPluginDetailHref(pkg.name),
+    href: isTemplate
+      ? buildTemplateDetailHref(pkg.name, publisher.handle)
+      : buildPluginDetailHref(pkg.name),
     installs: pkg.stats.installs,
     downloads: pkg.stats.downloads,
     stars: pkg.stats.stars,
@@ -624,7 +690,7 @@ function getPublisherCatalogItems(
 ): PublisherCatalogItem[] {
   return [
     ...rows.skills.map((skill) => toPublisherSkillCatalogItem(publisher, skill, publisherOfficial)),
-    ...rows.packages.map((pkg) => toPublisherPackageCatalogItem(pkg, publisherOfficial)),
+    ...rows.packages.map((pkg) => toPublisherPackageCatalogItem(publisher, pkg, publisherOfficial)),
   ].sort(comparePublisherCatalogItems(sort));
 }
 
@@ -2449,7 +2515,17 @@ export const getProfileByHandle = query({
       includeAffiliations: true,
     });
     if (!item) return null;
-    return withoutPublishedItems(item);
+    const templates = await getPublisherTemplateCounts(ctx, publisher);
+    const summary = withoutPublishedItems(item);
+    return {
+      ...summary,
+      stats: {
+        ...summary.stats,
+        // `packages` keeps counting every package family for existing readers.
+        plugins: Math.max(0, summary.stats.packages - templates.published),
+        templates: templates.listed,
+      },
+    };
   },
 });
 
@@ -2643,7 +2719,7 @@ export const listStarredPage = query({
 export const listPublishedPage = query({
   args: {
     handle: v.string(),
-    kind: v.optional(v.union(v.literal("skill"), v.literal("plugin"))),
+    kind: v.optional(v.union(v.literal("skill"), v.literal("plugin"), v.literal("template"))),
     sort: v.optional(v.union(v.literal("installs"), v.literal("recent"), v.literal("downloads"))),
     paginationOpts: paginationOptsValidator,
   },
@@ -2742,16 +2818,21 @@ export const listPublishedPage = query({
           q.eq("ownerPublisherId", visiblePublisher._id).eq("softDeletedAt", undefined),
         )
         .order("desc")
-        .paginate({ ...paginationOpts, cursor: cursorState.cursor });
+        .paginate({
+          ...paginationOpts,
+          cursor: cursorState.cursor,
+          endCursor: decodeIndexedPublisherEndCursor(paginationOpts.endCursor),
+        });
       return {
-        ...result,
-        continueCursor: encodePublisherPageCursor("indexed", result.continueCursor, result.isDone),
+        ...encodeIndexedPublisherPage(result),
         page: result.page
           .filter(isPublicPublishedSkill)
           .map((skill) => toPublisherSkillCatalogItem(visiblePublisher, skill, publisherOfficial)),
       };
     }
 
+    // Templates are stored as packages, but the profile lists them on their own tab.
+    const wantsTemplates = args.kind === "template";
     const cursorState = parsePublisherPageCursor(paginationOpts.cursor);
     if (cursorState.mode === "legacy" || cursorState.mode === "preindex") {
       const packages = (
@@ -2761,15 +2842,19 @@ export const listPublishedPage = query({
             q.eq("ownerPublisherId", visiblePublisher._id).eq("softDeletedAt", undefined),
           )
           .collect()
-      ).filter(isPublicPublisherCatalogPackage);
+      )
+        .filter(isPublicPublisherCatalogPackage)
+        .filter((pkg) => (pkg.family === "claw") === wantsTemplates);
       const items =
         cursorState.mode === "preindex"
           ? packages
-              .map((pkg) => toPublisherPackageCatalogItem(pkg, publisherOfficial))
+              .map((pkg) => toPublisherPackageCatalogItem(visiblePublisher, pkg, publisherOfficial))
               .sort(comparePublisherCatalogItems(sort))
           : packages
               .sort(comparePublisherIndexOrder(sort, (pkg) => pkg.stats.downloads))
-              .map((pkg) => toPublisherPackageCatalogItem(pkg, publisherOfficial));
+              .map((pkg) =>
+                toPublisherPackageCatalogItem(visiblePublisher, pkg, publisherOfficial),
+              );
       return paginatePublisherItems(
         items,
         {
@@ -2786,13 +2871,22 @@ export const listPublishedPage = query({
         q.eq("ownerPublisherId", visiblePublisher._id).eq("softDeletedAt", undefined),
       )
       .order("desc")
-      .paginate({ ...paginationOpts, cursor: cursorState.cursor });
+      // The family test runs inside the paginated scan, so a publisher with both
+      // kinds still gets full pages. The index range already limits the scan to
+      // this publisher's packages.
+      .filter((q) =>
+        wantsTemplates ? q.eq(q.field("family"), "claw") : q.neq(q.field("family"), "claw"),
+      )
+      .paginate({
+        ...paginationOpts,
+        cursor: cursorState.cursor,
+        endCursor: decodeIndexedPublisherEndCursor(paginationOpts.endCursor),
+      });
     return {
-      ...result,
-      continueCursor: encodePublisherPageCursor("indexed", result.continueCursor, result.isDone),
+      ...encodeIndexedPublisherPage(result),
       page: result.page
         .filter(isPublicPublisherCatalogPackage)
-        .map((pkg) => toPublisherPackageCatalogItem(pkg, publisherOfficial)),
+        .map((pkg) => toPublisherPackageCatalogItem(visiblePublisher, pkg, publisherOfficial)),
     };
   },
 });

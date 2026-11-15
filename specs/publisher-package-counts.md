@@ -24,3 +24,16 @@ After deploy, either step corrects an idle publisher:
 2. The next first publication that increases a publisher's published-package count recomputes that publisher immediately, including when the backfill has not reached it yet.
 
 The first-publication path is safe before the backfill finishes. The backfill is still required for publishers that do not cross that boundary.
+
+## Profile tabs
+
+Templates are stored as packages, so `publishedPackages` counts plugins and templates together. That stored counter keeps its meaning for publisher lists, settings, and abuse scoring.
+
+The publisher profile lists the two kinds on separate tabs. `publishers.getProfileByHandle` reads the publisher's template search digests and adds two derived counts to the stored ones:
+
+- `templates` is the number of templates the Templates tab can list. Private templates are left out.
+- `plugins` is `packages` minus every published template, private ones included, because `publishedPackages` counted those too.
+
+`publishers.listPublishedPage` applies the same split. `kind: "plugin"` returns every package family except templates, and `kind: "template"` returns only templates, linked at `/<publisher>/templates/<slug>`.
+
+The website shows the Templates tab only when the profile response carries `templates`. A website build that is newer than the deployed backend therefore keeps the previous two tabs and never sends the `template` kind to a backend that would reject it.
