@@ -1,3 +1,12 @@
+import type {
+  PackageSkillSpectorIssue as SkillSpectorIssue,
+  PackageSkillSpectorAnalysis as SkillSpectorAnalysis,
+  PackageAigFinding as AigFinding,
+  PackageAigAnalysis as AigAnalysis,
+} from "clawhub-schema";
+
+export type { SkillSpectorAnalysis, AigFinding, AigAnalysis };
+
 import { mkdirSync, readFileSync } from "node:fs";
 import { appendFile, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -125,57 +134,6 @@ export type StoredLlmAnalysis = {
   findings?: string;
   // Legacy configured identity; Decisions uses its validated provider-returned model.
   model?: string;
-  checkedAt: number;
-};
-
-type SkillSpectorIssue = {
-  issueId: string;
-  category?: string;
-  pattern?: string;
-  severity: string;
-  confidence?: number;
-  file?: string;
-  startLine?: number;
-  endLine?: number;
-  explanation: string;
-  remediation?: string;
-  finding?: string;
-  codeSnippet?: string;
-};
-
-export type SkillSpectorAnalysis = {
-  status: string;
-  inspectionStatus?: "completed" | "partial";
-  score?: number;
-  severity?: string;
-  recommendation?: string;
-  issueCount: number;
-  issues: SkillSpectorIssue[];
-  scannerVersion?: string;
-  summary?: string;
-  error?: string;
-  checkedAt: number;
-};
-
-export type AigFinding = {
-  ruleId: string;
-  level: string;
-  message: string;
-  title?: string;
-  description?: string;
-  file?: string;
-  startLine?: number;
-  endLine?: number;
-  remediation?: string;
-};
-
-export type AigAnalysis = {
-  status: string;
-  issueCount: number;
-  findings: AigFinding[];
-  scannerVersion?: string;
-  summary?: string;
-  error?: string;
   checkedAt: number;
 };
 

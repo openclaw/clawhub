@@ -1,3 +1,11 @@
+import type {
+  PackageSkillSpectorIssue as SkillSpectorIssue,
+  PackageSkillSpectorAnalysis as SkillSpectorAnalysis,
+  PackageAigAnalysis as AigAnalysis,
+} from "clawhub-schema";
+
+export type { SkillSpectorIssue, SkillSpectorAnalysis, AigAnalysis };
+
 export { getClawScanDisplayStatus } from "clawhub-schema/securityAudit";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { Badge, type BadgeProps } from "./ui/badge";
@@ -52,57 +60,6 @@ export type LlmAnalysis = {
   agenticRiskFindings?: LlmAgenticRiskFinding[];
   riskSummary?: LlmRiskSummary;
   model?: string;
-  checkedAt: number;
-};
-
-export type SkillSpectorIssue = {
-  issueId: string;
-  category?: string;
-  pattern?: string;
-  severity: string;
-  confidence?: number;
-  file?: string;
-  startLine?: number;
-  endLine?: number;
-  explanation: string;
-  remediation?: string;
-  finding?: string;
-  codeSnippet?: string;
-};
-
-export type SkillSpectorAnalysis = {
-  status: string;
-  inspectionStatus?: "completed" | "partial";
-  score?: number;
-  severity?: string;
-  recommendation?: string;
-  issueCount: number;
-  issues: SkillSpectorIssue[];
-  scannerVersion?: string;
-  summary?: string;
-  error?: string;
-  checkedAt: number;
-};
-
-type AigFinding = {
-  ruleId: string;
-  level: string;
-  message: string;
-  title?: string;
-  description?: string;
-  file?: string;
-  startLine?: number;
-  endLine?: number;
-  remediation?: string;
-};
-
-export type AigAnalysis = {
-  status: string;
-  issueCount: number;
-  findings: AigFinding[];
-  scannerVersion?: string;
-  summary?: string;
-  error?: string;
   checkedAt: number;
 };
 
