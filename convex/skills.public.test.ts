@@ -327,7 +327,7 @@ function makeResolveCtx(args: {
   ];
   const query = vi.fn((table: string) => {
     if (table === "skills") {
-      return { withIndex: vi.fn(() => ({ unique: vi.fn().mockResolvedValue(args.skill) })) };
+      return indexedUnique(() => args.skill);
     }
     if (table === "skillVersionFingerprints") {
       return indexedTake(() => fingerprintMatches);
@@ -1380,7 +1380,7 @@ describe("skill artifact moderation", () => {
               return { withIndex: vi.fn(() => ({ collect: vi.fn().mockResolvedValue([]) })) };
             }
             if (table === "globalStats") {
-              return { withIndex: vi.fn(() => ({ unique: vi.fn().mockResolvedValue(null) })) };
+              return indexedUnique(() => null);
             }
             throw new Error(`Unexpected query table: ${table}`);
           }),
@@ -1475,7 +1475,7 @@ describe("skill artifact moderation", () => {
               return { withIndex: vi.fn(() => ({ collect: vi.fn().mockResolvedValue([]) })) };
             }
             if (table === "globalStats") {
-              return { withIndex: vi.fn(() => ({ unique: vi.fn().mockResolvedValue(null) })) };
+              return indexedUnique(() => null);
             }
             throw new Error(`Unexpected query table: ${table}`);
           }),

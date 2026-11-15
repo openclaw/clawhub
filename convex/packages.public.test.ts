@@ -1635,8 +1635,7 @@ function makeDigestCtx(options: {
           return null;
         }),
         query: vi.fn((table: string) => {
-          if (table === "featuredSelections")
-            return { withIndex: vi.fn(() => ({ unique: vi.fn().mockResolvedValue(null) })) };
+          if (table === "featuredSelections") return indexedUnique(() => null);
           if (table === "packageBadges") {
             return {
               withIndex: vi.fn(() => ({
@@ -9508,22 +9507,20 @@ describe("packages public queries", () => {
   it("does not recover a Template publish result for different exact artifact bytes", async () => {
     const ctx = {
       db: {
-        query: vi.fn((table: string) => ({
-          withIndex: vi.fn(() => ({
-            unique: vi.fn().mockResolvedValue(
-              table === "packages"
-                ? makePackageDoc({
-                    family: "template",
-                    ownerUserId: "users:owner",
-                    ownerPublisherId: "publishers:owner",
-                  })
-                : makeReleaseDoc({
-                    integritySha256: "same-extracted-files",
-                    clawpackSha256: "a".repeat(64),
-                  }),
-            ),
-          })),
-        })),
+        query: vi.fn((table: string) =>
+          indexedUnique(() =>
+            table === "packages"
+              ? makePackageDoc({
+                  family: "template",
+                  ownerUserId: "users:owner",
+                  ownerPublisherId: "publishers:owner",
+                })
+              : makeReleaseDoc({
+                  integritySha256: "same-extracted-files",
+                  clawpackSha256: "a".repeat(64),
+                }),
+          ),
+        ),
       },
     };
 
@@ -14265,9 +14262,7 @@ describe("packages public queries", () => {
             };
           }
           if (table === "packageInspectorFindingNotifications") {
-            return {
-              withIndex: vi.fn(() => ({ unique: vi.fn().mockResolvedValue(null) })),
-            };
+            return indexedUnique(() => null);
           }
           throw new Error(`Unexpected table ${table}`);
         }),
@@ -14337,9 +14332,7 @@ describe("packages public queries", () => {
             };
           }
           if (table === "packageInspectorScanStates") {
-            return {
-              withIndex: vi.fn(() => ({ unique: vi.fn().mockResolvedValue(null) })),
-            };
+            return indexedUnique(() => null);
           }
           throw new Error(`Unexpected table ${table}`);
         }),
@@ -14896,17 +14889,13 @@ describe("packages public queries", () => {
     const ctx = {
       db: {
         get: vi.fn(),
-        query: vi.fn((table: string) => ({
-          withIndex: vi.fn(() => ({
-            unique: vi
-              .fn()
-              .mockResolvedValue(
-                table === "packageInspectorScanStates"
-                  ? { _id: "packageInspectorScanStates:demo" }
-                  : null,
-              ),
-          })),
-        })),
+        query: vi.fn((table: string) =>
+          indexedUnique(() =>
+            table === "packageInspectorScanStates"
+              ? { _id: "packageInspectorScanStates:demo" }
+              : null,
+          ),
+        ),
         insert: vi.fn(),
         patch,
         replace: vi.fn(),
@@ -15065,9 +15054,7 @@ describe("packages public queries", () => {
             };
           }
           if (table === "packageInspectorScanStates") {
-            return {
-              withIndex: vi.fn(() => ({ unique: vi.fn().mockResolvedValue(null) })),
-            };
+            return indexedUnique(() => null);
           }
           if (table === "packageInspectorFindingNotifications") {
             throw new Error("Exact-target email context must not use release-wide dedupe");
@@ -15122,9 +15109,7 @@ describe("packages public queries", () => {
             };
           }
           if (table === "packageInspectorScanStates") {
-            return {
-              withIndex: vi.fn(() => ({ unique: vi.fn().mockResolvedValue(null) })),
-            };
+            return indexedUnique(() => null);
           }
           throw new Error(`Unexpected table ${table}`);
         }),
@@ -15278,16 +15263,14 @@ describe("packages public queries", () => {
     const ctx = {
       db: {
         get: vi.fn(),
-        query: vi.fn(() => ({
-          withIndex: vi.fn(() => ({
-            unique: vi.fn().mockResolvedValue({
-              _id: "packageInspectorScanCursors:nightly",
-              cursor: null,
-              pendingCursor: "page-2",
-              runId: "run-42",
-            }),
+        query: vi.fn(() =>
+          indexedUnique(() => ({
+            _id: "packageInspectorScanCursors:nightly",
+            cursor: null,
+            pendingCursor: "page-2",
+            runId: "run-42",
           })),
-        })),
+        ),
         patch,
         insert: vi.fn(),
         replace: vi.fn(),
@@ -17893,9 +17876,7 @@ describe("packages public queries", () => {
               return indexedUnique(() => makePackageDoc({ _id: "packages:demo" }));
             }
             if (table === "officialPluginMigrations") {
-              return {
-                withIndex: vi.fn(() => ({ unique: vi.fn().mockResolvedValue(null) })),
-              };
+              return indexedUnique(() => null);
             }
             throw new Error(`Unexpected table ${table}`);
           }),
@@ -21030,11 +21011,7 @@ describe("restorePackageInternal", () => {
       {
         db: {
           get: vi.fn(async (id: string) => records.get(id) ?? null),
-          query: vi.fn(() => ({
-            withIndex: vi.fn(() => ({
-              unique: vi.fn().mockResolvedValue({ publisherId: "publishers:openclaw" }),
-            })),
-          })),
+          query: vi.fn(() => indexedUnique(() => ({ publisherId: "publishers:openclaw" }))),
         },
       },
       {

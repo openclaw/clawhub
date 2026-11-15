@@ -1,7 +1,7 @@
 /* @vitest-environment node */
 import { describe, expect, it, vi } from "vitest";
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
-import { orderedTake } from "../src/__tests__/helpers/convexQuery";
+import { orderedTake, indexedUnique } from "../src/__tests__/helpers/convexQuery";
 import {
   computeRecommendationScore,
   RECOMMENDATION_SCORE_VERSION,
@@ -219,7 +219,7 @@ function makeHighlightedCtx(digests: Array<ReturnType<typeof makeDigest>>) {
     db: {
       query: vi.fn((table: string) => {
         if (table === "featuredSelections") {
-          return { withIndex: vi.fn(() => ({ unique: vi.fn().mockResolvedValue(null) })) };
+          return indexedUnique(() => null);
         }
         if (table === "skillBadges") {
           return {
