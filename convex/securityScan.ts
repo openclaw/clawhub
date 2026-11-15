@@ -1,5 +1,4 @@
-import type { PackageSkillSpectorIssue } from "clawhub-schema";
-import { ConvexError, v } from "convex/values";
+import { ConvexError, type Infer, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
@@ -46,8 +45,6 @@ import {
 import {
   capSkillSpectorInspectionCaveats,
   normalizeSkillSpectorReviewContext,
-  type SkillSpectorInspectionCaveats,
-  type SkillSpectorReviewContext,
 } from "./lib/skillSpectorEvidence";
 import { getSkillsShFixtureEnvironmentPolicy } from "./lib/skillsShCatalogEnvironment";
 import {
@@ -121,22 +118,9 @@ type ExistingLlmAnalysis = {
   verdict?: string;
 };
 
-type SkillSpectorIssueForStorage = SkillSpectorReviewContext & PackageSkillSpectorIssue;
+type SkillSpectorIssueForStorage = SkillSpectorAnalysisForStorage["issues"][number];
 
-type SkillSpectorAnalysisForStorage = {
-  inspectionCaveats?: SkillSpectorInspectionCaveats;
-  status: string;
-  inspectionStatus?: "completed" | "partial";
-  score?: number;
-  severity?: string;
-  recommendation?: string;
-  issueCount: number;
-  issues: SkillSpectorIssueForStorage[];
-  scannerVersion?: string;
-  summary?: string;
-  error?: string;
-  checkedAt: number;
-};
+type SkillSpectorAnalysisForStorage = Infer<typeof skillSpectorAnalysisValidator>;
 
 async function resolveSkillForRescan(
   ctx: Pick<QueryCtx | MutationCtx, "db">,
