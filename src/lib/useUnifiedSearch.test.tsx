@@ -2,6 +2,7 @@
 
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { makeCanonicalExternalSearchResult } from "../__tests__/helpers/unifiedSearch";
 import { isUnifiedNativeSkillResult, useUnifiedSearch } from "./useUnifiedSearch";
 
 const { searchSkillsMock, fetchPluginCatalogMock, convexQueryMock } = vi.hoisted(() => ({
@@ -60,32 +61,6 @@ function makeCanonicalSkill(slug: string) {
     },
     metrics: { updatedAt: 1 },
     native,
-  };
-}
-
-function makeCanonicalExternalSkill() {
-  return {
-    id: "skills-sh:patrick-erichsen/skills/html",
-    source: "skills-sh",
-    slug: "html",
-    displayName: "HTML Artifact Chooser",
-    summary: "Build self-contained HTML artifacts.",
-    score: 5000,
-    canonicalUrl: "/skills-sh/patrick-erichsen/skills/html",
-    install: {
-      kind: "skills-sh",
-      reference: "skills-sh:patrick-erichsen/skills/html",
-      sourceUrl: "https://skills.sh/patrick-erichsen/skills/html",
-    },
-    sourceIdentity: {
-      id: "patrick-erichsen/skills/html",
-      owner: "patrick-erichsen",
-      repo: "skills",
-      host: null,
-      lifetimeInstalls: 12500,
-    },
-    metrics: { updatedAt: 1 },
-    native: null,
   };
 }
 
@@ -374,7 +349,7 @@ describe("useUnifiedSearch", () => {
   it("preserves canonical native and external result order", async () => {
     searchSkillsMock.mockResolvedValue([
       makeCanonicalSkill("calendar"),
-      makeCanonicalExternalSkill(),
+      makeCanonicalExternalSearchResult(),
     ]);
     fetchPluginCatalogMock.mockResolvedValue({ items: [], nextCursor: null });
     convexQueryMock.mockResolvedValue({ page: [], continueCursor: null, isDone: true });
