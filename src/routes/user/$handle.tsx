@@ -492,13 +492,21 @@ export function PublisherProfilePage({
   const [catalogTab, setCatalogTab] = useState<ProfileCatalogTab>(() =>
     resolveDefaultCatalogTab(loaderPublisher),
   );
+  const queriedPublisher = useQuery(api.publishers.getProfileByHandle, { handle }) as
+    | PublicPublisherProfileItem
+    | null
+    | undefined;
+  const publisher = queriedPublisher === undefined ? loaderPublisher : queriedPublisher;
+  // The tab list comes from the live profile, so the hash must accept the same tabs.
+  // The two can differ when the backend deploys while this page is open.
+  const templatesTabAvailable = hasTemplatesTab(publisher ?? loaderPublisher);
   useEffect(() => {
     const syncTabFromHash = () => {
       const hash = window.location.hash.slice(1);
       const tab =
         hash === "skills" ||
         hash === "plugins" ||
-        (hash === "templates" && hasTemplatesTab(loaderPublisher)) ||
+        (hash === "templates" && templatesTabAvailable) ||
         (hash === "stars" && loaderPublisher.kind === "user")
           ? hash
           : resolveDefaultCatalogTab(loaderPublisher);
@@ -507,7 +515,7 @@ export function PublisherProfilePage({
     syncTabFromHash();
     window.addEventListener("hashchange", syncTabFromHash);
     return () => window.removeEventListener("hashchange", syncTabFromHash);
-  }, [handle, loaderPublisher]);
+  }, [handle, loaderPublisher, templatesTabAvailable]);
   const [catalogSort, setCatalogSort] = useState<ProfileCatalogSort>(DEFAULT_PROFILE_CATALOG_SORT);
   const [catalogSearch, setCatalogSearch] = useState("");
   const [selectedCatalogGroup, setSelectedCatalogGroup] = useState("all");
@@ -534,11 +542,6 @@ export function PublisherProfilePage({
     return { ...base, kind: "skill" as const };
   }, [handle, catalogTab, apiSort]);
 
-  const queriedPublisher = useQuery(api.publishers.getProfileByHandle, { handle }) as
-    | PublicPublisherProfileItem
-    | null
-    | undefined;
-  const publisher = queriedPublisher === undefined ? loaderPublisher : queriedPublisher;
   const githubHandle = publisher?.kind === "org" ? publisher.githubHandle : publisher?.handle;
 
   const publishedDisplay = useQuery(

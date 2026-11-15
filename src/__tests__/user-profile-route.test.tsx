@@ -467,6 +467,37 @@ describe("user profile route", () => {
     );
   });
 
+  it("keeps the Templates tab selectable when template counts arrive after page load", async () => {
+    // The page loaded from a backend without template counts; the live profile
+    // query then reports them after that backend deploys.
+    const loadedPublisher = { ...publisher, stats: { ...publisher.stats, skills: 0, packages: 9 } };
+    const livePublisher = {
+      ...loadedPublisher,
+      stats: { ...loadedPublisher.stats, plugins: 6, templates: 3 },
+    };
+    loaderDataMock.mockReturnValue({ publisher: loadedPublisher });
+    queryMock.mockImplementation((_query, args: Record<string, unknown> | "skip") => {
+      if (args === "skip") return undefined;
+      if ("publisherHandle" in args) return { publisher: livePublisher, members: [] };
+      if ("kind" in args) return null;
+      return livePublisher;
+    });
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    const catalogTabs = screen.getByRole("group", { name: "Catalog" });
+    fireEvent.click(within(catalogTabs).getByRole("button", { name: /templates 3/i }));
+    // jsdom does not dispatch hashchange for programmatic hash writes.
+    fireEvent(window, new HashChangeEvent("hashchange"));
+
+    expect(window.location.hash).toBe("#templates");
+    expect(
+      within(catalogTabs).getByRole("button", { name: /templates 3/i, pressed: true }),
+    ).toBeTruthy();
+  });
+
   it("uses downloads sort for published catalog pages by default", async () => {
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;

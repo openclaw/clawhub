@@ -577,6 +577,26 @@ function encodePublisherPageCursor(mode: PublisherPageCursorMode, cursor: string
   return isDone ? "" : `${mode}:${cursor}`;
 }
 
+/**
+ * The client splits an oversized page by sending `splitCursor` back as a start
+ * cursor and as an `endCursor`. Both must round-trip through the same prefix as
+ * `continueCursor`, or the second half restarts from the first row.
+ */
+function encodeIndexedPublisherPage<T extends { continueCursor: string; isDone: boolean }>(
+  result: T & { splitCursor?: string | null },
+) {
+  return {
+    ...result,
+    continueCursor: encodePublisherPageCursor("indexed", result.continueCursor, result.isDone),
+    splitCursor: result.splitCursor ? `indexed:${result.splitCursor}` : result.splitCursor,
+  };
+}
+
+function decodeIndexedPublisherEndCursor(endCursor: string | null | undefined) {
+  if (!endCursor) return undefined;
+  return endCursor.startsWith("indexed:") ? endCursor.slice("indexed:".length) : endCursor;
+}
+
 function paginatePublisherItems(
   items: PublisherCatalogItem[],
   paginationOpts: { cursor: string | null; numItems: number },
@@ -2798,10 +2818,13 @@ export const listPublishedPage = query({
           q.eq("ownerPublisherId", visiblePublisher._id).eq("softDeletedAt", undefined),
         )
         .order("desc")
-        .paginate({ ...paginationOpts, cursor: cursorState.cursor });
+        .paginate({
+          ...paginationOpts,
+          cursor: cursorState.cursor,
+          endCursor: decodeIndexedPublisherEndCursor(paginationOpts.endCursor),
+        });
       return {
-        ...result,
-        continueCursor: encodePublisherPageCursor("indexed", result.continueCursor, result.isDone),
+        ...encodeIndexedPublisherPage(result),
         page: result.page
           .filter(isPublicPublishedSkill)
           .map((skill) => toPublisherSkillCatalogItem(visiblePublisher, skill, publisherOfficial)),
@@ -2854,10 +2877,13 @@ export const listPublishedPage = query({
       .filter((q) =>
         wantsTemplates ? q.eq(q.field("family"), "claw") : q.neq(q.field("family"), "claw"),
       )
-      .paginate({ ...paginationOpts, cursor: cursorState.cursor });
+      .paginate({
+        ...paginationOpts,
+        cursor: cursorState.cursor,
+        endCursor: decodeIndexedPublisherEndCursor(paginationOpts.endCursor),
+      });
     return {
-      ...result,
-      continueCursor: encodePublisherPageCursor("indexed", result.continueCursor, result.isDone),
+      ...encodeIndexedPublisherPage(result),
       page: result.page
         .filter(isPublicPublisherCatalogPackage)
         .map((pkg) => toPublisherPackageCatalogItem(visiblePublisher, pkg, publisherOfficial)),

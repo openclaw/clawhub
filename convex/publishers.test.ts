@@ -276,7 +276,7 @@ const listPublishedPageHandler = getTestHandler<
     handle: string;
     kind?: "skill" | "plugin" | "template";
     sort?: "installs" | "recent" | "downloads";
-    paginationOpts: { cursor: string | null; numItems: number };
+    paginationOpts: { cursor: string | null; endCursor?: string | null; numItems: number };
   },
   {
     page: Array<{
@@ -286,6 +286,7 @@ const listPublishedPageHandler = getTestHandler<
       downloads: number;
     }>;
     continueCursor: string;
+    splitCursor?: string | null;
     isDone: boolean;
   }
 >(listPublishedPage);
@@ -569,19 +570,29 @@ function indexedRows(rows: unknown[]) {
   // Like Convex, a `.filter()` narrows rows before the page is cut.
   let predicate: RowPredicate | null = null;
   const paginate = vi.fn(
-    async ({ cursor, numItems }: { cursor: string | null; numItems: number }) => {
+    async ({
+      cursor,
+      numItems,
+      endCursor,
+    }: {
+      cursor: string | null;
+      numItems: number;
+      endCursor?: string | null;
+    }) => {
       const activePredicate = predicate;
       const matching = activePredicate
         ? rows.filter((row) => activePredicate(row as Record<string, unknown>))
         : rows;
       const offset = cursor ? Number(cursor) : 0;
-      const page = matching.slice(offset, offset + numItems);
+      // Like Convex, an end cursor pins the page range instead of `numItems`.
+      const page = matching.slice(offset, endCursor ? Number(endCursor) : offset + numItems);
       const nextOffset = offset + page.length;
       const isDone = nextOffset >= matching.length;
       return {
         page,
         isDone,
         continueCursor: isDone ? "" : String(nextOffset),
+        ...(page.length > 1 ? { splitCursor: String(offset + Math.floor(page.length / 2)) } : {}),
       };
     },
   );
@@ -3555,6 +3566,21 @@ describe("publishers membership controls", () => {
     expect(summarize(firstTemplatePage.page)).toEqual([expectedTemplates[0]]);
     expect(firstTemplatePage.isDone).toBe(false);
     expect(summarize(secondTemplatePage.page)).toEqual([expectedTemplates[1]]);
+
+    // A client splits an oversized page by reusing `splitCursor` as the first
+    // half's end and the second half's start. Both halves must cover the page once.
+    const wholePage = await list("plugin", null, 2);
+    expect(wholePage.splitCursor).toBe("indexed:1");
+    const splitHalf = (cursor: string | null, endCursor: string) =>
+      listPublishedPageHandler(ctx as never, {
+        handle: "openclaw",
+        kind: "plugin",
+        sort: "downloads",
+        paginationOpts: { cursor, endCursor, numItems: 2 },
+      });
+    const firstHalf = await splitHalf(null, wholePage.splitCursor as string);
+    const secondHalf = await splitHalf(wholePage.splitCursor as string, "indexed:2");
+    expect(summarize([...firstHalf.page, ...secondHalf.page])).toEqual(expectedPlugins);
 
     // The unfiltered catalog keeps every public package and labels each kind.
     expect(summarize((await list(undefined, null)).page)).toEqual([
