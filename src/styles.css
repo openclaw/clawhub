@@ -6974,7 +6974,18 @@ a.skills-sh-security-audit-row:focus-visible {
 .detail-skeleton-install-tabs {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
+}
+
+/* One action row, the height of the default Desktop button. */
+.detail-skeleton-install-action {
+  width: 100%;
+  height: 34px;
+}
+
+/* The card renders once: in the rail on wide screens, in the content column below 900px. */
+.detail-skeleton-install-mobile {
+  display: none;
 }
 
 .detail-skeleton-tabs {
@@ -6990,61 +7001,22 @@ a.skills-sh-security-audit-row:focus-visible {
   overflow: hidden;
 }
 
-.detail-skeleton .skill-install-command-inline-button {
-  width: auto;
-}
-
-.detail-skeleton-deferred-summary {
-  display: none;
-}
-
 @media (max-width: 900px) {
   .detail-skeleton-mobile-creator {
     display: inline-flex;
   }
 
-  .detail-skeleton-deferred[data-kind="skill"] {
-    display: none;
+  .detail-skeleton-install-mobile {
+    display: block;
   }
 
-  .detail-skeleton-deferred[data-kind="plugin"] {
-    border: var(--detail-mobile-surface-border);
-    border-radius: var(--detail-mobile-surface-radius);
-    background: var(--detail-mobile-surface-bg);
-  }
-
-  .detail-skeleton-deferred[data-kind="plugin"] .detail-skeleton-deferred-summary {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 12px var(--detail-mobile-surface-padding);
-  }
-
-  .detail-skeleton-deferred[data-kind="plugin"] .detail-skeleton-deferred-body {
-    display: none;
-  }
-
-  .detail-skeleton .skill-hero-lower.has-sidebar {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .detail-skeleton .skill-hero-main-extra,
+  /* Bookmark and stats live in the hero and the second section tab on narrow screens. */
   .detail-skeleton .skill-hero-sidebar {
-    display: contents;
+    display: none;
   }
 
   .detail-skeleton-tabs .tab-header {
     overflow-x: auto;
-  }
-
-  .detail-skeleton .skill-install-command-header {
-    align-items: flex-start;
-  }
-
-  .detail-skeleton .skill-install-command-shell {
-    padding-right: 58px;
   }
 }
 
@@ -7055,11 +7027,6 @@ a.skills-sh-security-audit-row:focus-visible {
 
   .detail-skeleton .skill-hero-title-row {
     gap: 10px;
-  }
-
-  .detail-skeleton-install-tabs {
-    width: 100%;
-    justify-content: flex-start;
   }
 
   .detail-skeleton-tabs .tab-header {
