@@ -25,3 +25,11 @@ export function orderedTake<T>(readValues: () => T[]) {
     })),
   };
 }
+
+export function indexedTake<T>(readValues: () => T[]) {
+  return {
+    withIndex: vi.fn(() => ({
+      take: vi.fn().mockResolvedValue(readValues()),
+    })),
+  };
+}

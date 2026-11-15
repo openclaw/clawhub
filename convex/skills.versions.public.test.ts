@@ -1,7 +1,7 @@
 /* @vitest-environment node */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
-import { indexedUnique, orderedTake } from "../src/__tests__/helpers/convexQuery";
+import { indexedUnique, orderedTake, indexedTake } from "../src/__tests__/helpers/convexQuery";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -237,11 +237,7 @@ describe("public skill version queries", () => {
       db: {
         query: vi.fn((table: string) => {
           if (table === "skillSlugAliases") {
-            return {
-              withIndex: vi.fn(() => ({
-                take: vi.fn().mockResolvedValue([]),
-              })),
-            };
+            return indexedTake(() => []);
           }
           if (table !== "skills") throw new Error(`Unexpected table ${table}`);
           return indexedUnique(() => makeSkillWithLatestVersion(version._id));

@@ -1,7 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { describe, expect, it, vi } from "vitest";
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
-import { indexedUnique } from "../src/__tests__/helpers/convexQuery";
+import { indexedUnique, indexedTake } from "../src/__tests__/helpers/convexQuery";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -140,11 +140,7 @@ function makeCtx(
           return indexedUnique(() => options.membership ?? null);
         }
         if (table === "skillBadges") {
-          return {
-            withIndex: vi.fn(() => ({
-              take: vi.fn().mockResolvedValue([]),
-            })),
-          };
+          return indexedTake(() => []);
         }
         if (table === "skills") {
           return {
