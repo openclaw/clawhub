@@ -591,18 +591,20 @@ export const ApiV1SkillScanDownloadManifestSchema = type({
 export type ApiV1SkillScanDownloadManifest =
   (typeof ApiV1SkillScanDownloadManifestSchema)[inferred];
 
-export const ApiV1SkillBulkRescanBatchRequestSchema = type({
+const scanBatchRequestFields = {
   mode: '"all-active-latest"?',
   cursor: "string|null?",
   batchSize: "number?",
   dryRun: "boolean?",
   requestId: "string?",
   expectedVersionIds: "string[]?",
-});
+} as const;
+
+export const ApiV1SkillBulkRescanBatchRequestSchema = type(scanBatchRequestFields);
 export type ApiV1SkillBulkRescanBatchRequest =
   (typeof ApiV1SkillBulkRescanBatchRequestSchema)[inferred];
 
-export const ApiV1SkillBulkRescanBatchResponseSchema = type({
+const scanBatchResponseFields = {
   ok: "true",
   mode: '"all-active-latest"',
   queued: "number",
@@ -612,17 +614,21 @@ export const ApiV1SkillBulkRescanBatchResponseSchema = type({
   nextCursor: "string|null",
   done: "boolean",
   sampleSlugs: "string[]",
-});
+} as const;
+
+export const ApiV1SkillBulkRescanBatchResponseSchema = type(scanBatchResponseFields);
 export type ApiV1SkillBulkRescanBatchResponse =
   (typeof ApiV1SkillBulkRescanBatchResponseSchema)[inferred];
 
-export const ApiV1SkillBulkRescanStatusRequestSchema = type({
+const scanBatchStatusRequestFields = {
   jobIds: "string[]",
-});
+} as const;
+
+export const ApiV1SkillBulkRescanStatusRequestSchema = type(scanBatchStatusRequestFields);
 export type ApiV1SkillBulkRescanStatusRequest =
   (typeof ApiV1SkillBulkRescanStatusRequestSchema)[inferred];
 
-export const ApiV1SkillBulkRescanStatusResponseSchema = type({
+const scanBatchStatusResponseFields = {
   ok: "true",
   total: "number",
   queued: "number",
@@ -633,31 +639,16 @@ export const ApiV1SkillBulkRescanStatusResponseSchema = type({
   terminal: "number",
   done: "boolean",
   failedJobIds: "string[]",
-});
+} as const;
+
+export const ApiV1SkillBulkRescanStatusResponseSchema = type(scanBatchStatusResponseFields);
 export type ApiV1SkillBulkRescanStatusResponse =
   (typeof ApiV1SkillBulkRescanStatusResponseSchema)[inferred];
 
-export const ApiV1SkillScanBatchRequestSchema = type({
-  mode: '"all-active-latest"?',
-  cursor: "string|null?",
-  batchSize: "number?",
-  dryRun: "boolean?",
-  requestId: "string?",
-  expectedVersionIds: "string[]?",
-});
+export const ApiV1SkillScanBatchRequestSchema = type(scanBatchRequestFields);
 export type ApiV1SkillScanBatchRequest = (typeof ApiV1SkillScanBatchRequestSchema)[inferred];
 
-export const ApiV1SkillScanBatchResponseSchema = type({
-  ok: "true",
-  mode: '"all-active-latest"',
-  queued: "number",
-  alreadyQueued: "number",
-  skipped: "number",
-  jobIds: "string[]",
-  nextCursor: "string|null",
-  done: "boolean",
-  sampleSlugs: "string[]",
-});
+export const ApiV1SkillScanBatchResponseSchema = type(scanBatchResponseFields);
 export type ApiV1SkillScanBatchResponse = (typeof ApiV1SkillScanBatchResponseSchema)[inferred];
 
 export const ApiV1SkillScanJobHistoryRequestSchema = type({
@@ -683,9 +674,7 @@ export const ApiV1SkillScanJobHistoryResponseSchema = type({
 export type ApiV1SkillScanJobHistoryResponse =
   (typeof ApiV1SkillScanJobHistoryResponseSchema)[inferred];
 
-export const ApiV1SkillScanBatchStatusRequestSchema = type({
-  jobIds: "string[]",
-});
+export const ApiV1SkillScanBatchStatusRequestSchema = type(scanBatchStatusRequestFields);
 export type ApiV1SkillScanBatchStatusRequest =
   (typeof ApiV1SkillScanBatchStatusRequestSchema)[inferred];
 
@@ -710,24 +699,11 @@ export const ApiV1PackageScanBatchResponseSchema = type({
 });
 export type ApiV1PackageScanBatchResponse = (typeof ApiV1PackageScanBatchResponseSchema)[inferred];
 
-export const ApiV1PackageScanBatchStatusRequestSchema = type({
-  jobIds: "string[]",
-});
+export const ApiV1PackageScanBatchStatusRequestSchema = type(scanBatchStatusRequestFields);
 export type ApiV1PackageScanBatchStatusRequest =
   (typeof ApiV1PackageScanBatchStatusRequestSchema)[inferred];
 
-export const ApiV1PackageScanBatchStatusResponseSchema = type({
-  ok: "true",
-  total: "number",
-  queued: "number",
-  running: "number",
-  succeeded: "number",
-  failed: "number",
-  missing: "number",
-  terminal: "number",
-  done: "boolean",
-  failedJobIds: "string[]",
-});
+export const ApiV1PackageScanBatchStatusResponseSchema = type(scanBatchStatusResponseFields);
 export type ApiV1PackageScanBatchStatusResponse =
   (typeof ApiV1PackageScanBatchStatusResponseSchema)[inferred];
 
