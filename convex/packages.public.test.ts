@@ -561,6 +561,21 @@ function isPackagePublishAttemptArgs(args: unknown) {
   return typeof args === "object" && args !== null && "packageReleaseId" in args;
 }
 
+function makePublishActorQuery(actor: { _id: string; handle?: string }, role: "user" | "admin") {
+  return vi
+    .fn()
+    .mockResolvedValueOnce(null)
+    .mockResolvedValueOnce({
+      ...actor,
+      githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+    })
+    .mockResolvedValueOnce({
+      ...actor,
+      role,
+      githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+    });
+}
+
 function makePublishRunActionMock(
   inspectorResult: () => unknown = makeCleanPackageInspectorResult,
 ) {
@@ -10455,18 +10470,7 @@ describe("packages public queries", () => {
   it("rejects package scopes that do not match the selected owner handle", async () => {
     const runMutation = vi.fn();
     const ctx = {
-      runQuery: vi
-        .fn()
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({
-          _id: "users:vintageayu",
-          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-        })
-        .mockResolvedValueOnce({
-          _id: "users:vintageayu",
-          role: "user",
-          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-        }),
+      runQuery: makePublishActorQuery({ _id: "users:vintageayu" }, "user"),
       runMutation,
       runAction: makePublishRunActionMock(),
       scheduler: {
@@ -11892,19 +11896,7 @@ describe("packages public queries", () => {
 
   it("keeps raw package publishes behind the per-file size limit", async () => {
     const ctx = {
-      runQuery: vi
-        .fn()
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({
-          _id: "users:owner",
-          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-        })
-        .mockResolvedValueOnce({
-          _id: "users:owner",
-          role: "user",
-          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-        })
-        .mockResolvedValueOnce(null),
+      runQuery: makePublishActorQuery({ _id: "users:owner" }, "user").mockResolvedValueOnce(null),
       runMutation: vi.fn(),
       storage: {
         get: vi.fn(async (storageId: string) => {
@@ -11945,19 +11937,7 @@ describe("packages public queries", () => {
       return null;
     });
     const ctx = {
-      runQuery: vi
-        .fn()
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({
-          _id: "users:owner",
-          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-        })
-        .mockResolvedValueOnce({
-          _id: "users:owner",
-          role: "user",
-          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-        })
-        .mockResolvedValueOnce(null),
+      runQuery: makePublishActorQuery({ _id: "users:owner" }, "user").mockResolvedValueOnce(null),
       runMutation,
       runAction: makePublishRunActionMock(),
       scheduler: {
@@ -16084,19 +16064,9 @@ describe("packages public queries", () => {
       return { ok: true, packageId: "packages:discord", releaseId: "releases:discord-1" };
     });
     const ctx = {
-      runQuery: vi
-        .fn()
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({
-          _id: "users:steipete",
-          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-        })
-        .mockResolvedValueOnce({
-          _id: "users:steipete",
-          role: "admin",
-          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-        })
-        .mockResolvedValueOnce(null),
+      runQuery: makePublishActorQuery({ _id: "users:steipete" }, "admin").mockResolvedValueOnce(
+        null,
+      ),
       runMutation,
       scheduler: {
         runAfter: vi.fn(),
@@ -16139,19 +16109,9 @@ describe("packages public queries", () => {
       return { ok: true, packageId: "packages:opik", releaseId: "releases:opik-1" };
     });
     const ctx = {
-      runQuery: vi
-        .fn()
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({
-          _id: "users:vincent",
-          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-        })
-        .mockResolvedValueOnce({
-          _id: "users:vincent",
-          role: "admin",
-          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-        })
-        .mockResolvedValueOnce(null),
+      runQuery: makePublishActorQuery({ _id: "users:vincent" }, "admin").mockResolvedValueOnce(
+        null,
+      ),
       runMutation,
       scheduler: {
         runAfter: vi.fn(),
@@ -16192,20 +16152,7 @@ describe("packages public queries", () => {
       throw new Error('Publisher "@opik" not found');
     });
     const ctx = {
-      runQuery: vi
-        .fn()
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({
-          _id: "users:vincent",
-          handle: "vincentkoc",
-          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-        })
-        .mockResolvedValueOnce({
-          _id: "users:vincent",
-          handle: "vincentkoc",
-          role: "user",
-          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-        }),
+      runQuery: makePublishActorQuery({ _id: "users:vincent", handle: "vincentkoc" }, "user"),
       runMutation,
       runAction: makePublishRunActionMock(),
       scheduler: {
@@ -16359,20 +16306,7 @@ describe("packages public queries", () => {
       throw new Error('Publisher "@example.tools" not found');
     });
     const ctx = {
-      runQuery: vi
-        .fn()
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({
-          _id: "users:vincent",
-          handle: "vincentkoc",
-          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-        })
-        .mockResolvedValueOnce({
-          _id: "users:vincent",
-          handle: "vincentkoc",
-          role: "user",
-          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-        }),
+      runQuery: makePublishActorQuery({ _id: "users:vincent", handle: "vincentkoc" }, "user"),
       runMutation,
       runAction: makePublishRunActionMock(),
       scheduler: {
@@ -16404,20 +16338,7 @@ describe("packages public queries", () => {
       throw new Error('Forbidden: you do not have publish access to publisher "@openclaw"');
     });
     const ctx = {
-      runQuery: vi
-        .fn()
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({
-          _id: "users:steipete",
-          handle: "steipete",
-          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-        })
-        .mockResolvedValueOnce({
-          _id: "users:steipete",
-          handle: "steipete",
-          role: "user",
-          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-        }),
+      runQuery: makePublishActorQuery({ _id: "users:steipete", handle: "steipete" }, "user"),
       runMutation,
       runAction: makePublishRunActionMock(),
       scheduler: {
@@ -16452,18 +16373,7 @@ describe("packages public queries", () => {
   it("rejects scoped package publishes when --owner conflicts with the package scope", async () => {
     const runMutation = vi.fn();
     const ctx = {
-      runQuery: vi
-        .fn()
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({
-          _id: "users:steipete",
-          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-        })
-        .mockResolvedValueOnce({
-          _id: "users:steipete",
-          role: "user",
-          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-        }),
+      runQuery: makePublishActorQuery({ _id: "users:steipete" }, "user"),
       runMutation,
       runAction: makePublishRunActionMock(),
       scheduler: {
