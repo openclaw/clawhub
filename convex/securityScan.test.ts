@@ -990,6 +990,27 @@ function makeBulkRescanCtx(options: {
   };
 }
 
+function makeCatalogControl(overrides: Record<string, unknown> = {}) {
+  return {
+    key: "global",
+    mode: "staging-live",
+    paused: false,
+    scanAdmissionEnabled: true,
+    maxNativeQueued: 10,
+    maxNativeInFlight: 10,
+    maxCatalogQueued: 10,
+    maxCatalogInFlight: 1,
+    ...overrides,
+  };
+}
+
+function stubCatalogTestEnvironment() {
+  vi.stubEnv("CLAWHUB_ENV", "test");
+  vi.stubEnv("CLAWHUB_DISABLE_CRONS", "1");
+  vi.stubEnv("CLAWHUB_DEPLOYMENT_NAME", "academic-chihuahua-392");
+  vi.stubEnv("CONVEX_CLOUD_URL", "https://academic-chihuahua-392.convex.cloud");
+}
+
 function makeClaimCtx(
   jobs: ScanJob[],
   docs: Record<string, Record<string, unknown>> = {},
@@ -4359,10 +4380,7 @@ describe("securityScan", () => {
   });
 
   it("lets the catalog lane claim only the lowest-priority catalog source", async () => {
-    vi.stubEnv("CLAWHUB_ENV", "test");
-    vi.stubEnv("CLAWHUB_DISABLE_CRONS", "1");
-    vi.stubEnv("CLAWHUB_DEPLOYMENT_NAME", "academic-chihuahua-392");
-    vi.stubEnv("CONVEX_CLOUD_URL", "https://academic-chihuahua-392.convex.cloud");
+    stubCatalogTestEnvironment();
     const { ctx } = makeClaimCtx(
       [
         makeScanJob({
@@ -4406,16 +4424,7 @@ describe("securityScan", () => {
           status: "completed",
         },
       },
-      {
-        key: "global",
-        mode: "staging-live",
-        paused: false,
-        scanAdmissionEnabled: true,
-        maxNativeQueued: 10,
-        maxNativeInFlight: 10,
-        maxCatalogQueued: 10,
-        maxCatalogInFlight: 1,
-      },
+      makeCatalogControl(),
     );
 
     const claimed = await claimQueuedJobsInternalHandler(ctx, {
@@ -4429,10 +4438,7 @@ describe("securityScan", () => {
   });
 
   it("skips paused catalog runs without starving later runnable jobs", async () => {
-    vi.stubEnv("CLAWHUB_ENV", "test");
-    vi.stubEnv("CLAWHUB_DISABLE_CRONS", "1");
-    vi.stubEnv("CLAWHUB_DEPLOYMENT_NAME", "academic-chihuahua-392");
-    vi.stubEnv("CONVEX_CLOUD_URL", "https://academic-chihuahua-392.convex.cloud");
+    stubCatalogTestEnvironment();
     const jobs = ["paused", "active"].map((kind, index) =>
       makeScanJob({
         _id: `securityScanJobs:${kind}`,
@@ -4475,16 +4481,7 @@ describe("securityScan", () => {
         ];
       }),
     );
-    const { ctx } = makeClaimCtx(jobs, docs, {
-      key: "global",
-      mode: "staging-live",
-      paused: false,
-      scanAdmissionEnabled: true,
-      maxNativeQueued: 10,
-      maxNativeInFlight: 10,
-      maxCatalogQueued: 1,
-      maxCatalogInFlight: 1,
-    });
+    const { ctx } = makeClaimCtx(jobs, docs, makeCatalogControl({ maxCatalogQueued: 1 }));
 
     const claimed = await claimQueuedJobsInternalHandler(ctx, {
       workerId: "catalog-worker",
@@ -4496,10 +4493,7 @@ describe("securityScan", () => {
   });
 
   it("stops catalog claims when the native queue is unhealthy", async () => {
-    vi.stubEnv("CLAWHUB_ENV", "test");
-    vi.stubEnv("CLAWHUB_DISABLE_CRONS", "1");
-    vi.stubEnv("CLAWHUB_DEPLOYMENT_NAME", "academic-chihuahua-392");
-    vi.stubEnv("CONVEX_CLOUD_URL", "https://academic-chihuahua-392.convex.cloud");
+    stubCatalogTestEnvironment();
     const { ctx } = makeClaimCtx(
       [
         makeScanJob({
@@ -4532,16 +4526,7 @@ describe("securityScan", () => {
           status: "completed",
         },
       },
-      {
-        key: "global",
-        mode: "staging-live",
-        paused: false,
-        scanAdmissionEnabled: true,
-        maxNativeQueued: 0,
-        maxNativeInFlight: 10,
-        maxCatalogQueued: 10,
-        maxCatalogInFlight: 1,
-      },
+      makeCatalogControl({ maxNativeQueued: 0 }),
     );
 
     const claimed = await claimQueuedJobsInternalHandler(ctx, {
@@ -4554,10 +4539,7 @@ describe("securityScan", () => {
   });
 
   it("ignores deterministic attempts when checking real catalog claim capacity", async () => {
-    vi.stubEnv("CLAWHUB_ENV", "test");
-    vi.stubEnv("CLAWHUB_DISABLE_CRONS", "1");
-    vi.stubEnv("CLAWHUB_DEPLOYMENT_NAME", "academic-chihuahua-392");
-    vi.stubEnv("CONVEX_CLOUD_URL", "https://academic-chihuahua-392.convex.cloud");
+    stubCatalogTestEnvironment();
     const catalogJob = makeScanJob({
       _id: "securityScanJobs:catalog",
       source: "skills-sh-catalog-test",
@@ -4595,16 +4577,7 @@ describe("securityScan", () => {
           status: "completed",
         },
       },
-      {
-        key: "global",
-        mode: "staging-live",
-        paused: false,
-        scanAdmissionEnabled: true,
-        maxNativeQueued: 10,
-        maxNativeInFlight: 10,
-        maxCatalogQueued: 1,
-        maxCatalogInFlight: 1,
-      },
+      makeCatalogControl({ maxCatalogQueued: 1 }),
     );
 
     const claimed = await claimQueuedJobsInternalHandler(ctx, {
@@ -4617,10 +4590,7 @@ describe("securityScan", () => {
   });
 
   it("drains an admitted catalog backlog above a lowered queue cap", async () => {
-    vi.stubEnv("CLAWHUB_ENV", "test");
-    vi.stubEnv("CLAWHUB_DISABLE_CRONS", "1");
-    vi.stubEnv("CLAWHUB_DEPLOYMENT_NAME", "academic-chihuahua-392");
-    vi.stubEnv("CONVEX_CLOUD_URL", "https://academic-chihuahua-392.convex.cloud");
+    stubCatalogTestEnvironment();
     const jobs = [0, 1].map((index) =>
       makeScanJob({
         _id: `securityScanJobs:catalog-${index}`,
@@ -4658,16 +4628,7 @@ describe("securityScan", () => {
       _id: "skillsShCatalogRuns:catalog",
       status: "completed",
     };
-    const { ctx } = makeClaimCtx(jobs, docs, {
-      key: "global",
-      mode: "staging-live",
-      paused: false,
-      scanAdmissionEnabled: true,
-      maxNativeQueued: 10,
-      maxNativeInFlight: 10,
-      maxCatalogQueued: 1,
-      maxCatalogInFlight: 1,
-    });
+    const { ctx } = makeClaimCtx(jobs, docs, makeCatalogControl({ maxCatalogQueued: 1 }));
 
     const claimed = await claimQueuedJobsInternalHandler(ctx, {
       workerId: "catalog-worker",
@@ -4685,10 +4646,7 @@ describe("securityScan", () => {
   });
 
   it("caps catalog claims at the configured in-flight capacity", async () => {
-    vi.stubEnv("CLAWHUB_ENV", "test");
-    vi.stubEnv("CLAWHUB_DISABLE_CRONS", "1");
-    vi.stubEnv("CLAWHUB_DEPLOYMENT_NAME", "academic-chihuahua-392");
-    vi.stubEnv("CONVEX_CLOUD_URL", "https://academic-chihuahua-392.convex.cloud");
+    stubCatalogTestEnvironment();
     const jobs = [0, 1].map((index) =>
       makeScanJob({
         _id: `securityScanJobs:catalog-${index}`,
@@ -4725,16 +4683,7 @@ describe("securityScan", () => {
       _id: "skillsShCatalogRuns:catalog",
       status: "completed",
     };
-    const { ctx } = makeClaimCtx(jobs, docs, {
-      key: "global",
-      mode: "staging-live",
-      paused: false,
-      scanAdmissionEnabled: true,
-      maxNativeQueued: 10,
-      maxNativeInFlight: 10,
-      maxCatalogQueued: 10,
-      maxCatalogInFlight: 1,
-    });
+    const { ctx } = makeClaimCtx(jobs, docs, makeCatalogControl());
 
     const claimed = await claimQueuedJobsInternalHandler(ctx, {
       workerId: "catalog-worker",
