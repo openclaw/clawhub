@@ -1155,6 +1155,43 @@ export const seedCanonicalSearchFixture = internalMutation({
   },
 });
 
+async function refreshExistingPublicCorpusPackage(
+  ctx: Pick<MutationCtx, "db">,
+  existing: Doc<"packages">,
+  row: Extract<PublicCorpusSeedRow, { kind: "plugin" }>,
+  now: number,
+) {
+  const catalogMetadata = publicCorpusPluginCatalogMetadata(row);
+  await ctx.db.patch(existing._id, {
+    categories: catalogMetadata.categories,
+    topics: catalogMetadata.topics,
+    updatedAt: now,
+  });
+  if (existing.latestReleaseId) {
+    await ensurePublicCorpusPackageValidationWarning(ctx, {
+      packageId: existing._id,
+      releaseId: existing.latestReleaseId,
+      ownerUserId: existing.ownerUserId,
+      ownerPublisherId: existing.ownerPublisherId,
+      packageName: existing.name,
+      normalizedName: existing.normalizedName,
+      version: row.version,
+      createdAt: now,
+    });
+  }
+  const updatedPackage = await ctx.db.get(existing._id);
+  if (updatedPackage) {
+    await upsertPackageSearchDigest(ctx, extractPackageDigestFields(updatedPackage));
+  }
+  await ensurePublicCorpusPackageDailyStats(ctx, {
+    packageId: existing._id,
+    key: row.name,
+    downloads: existing.stats?.downloads ?? 0,
+    installs: existing.stats?.installs ?? 0,
+    now,
+  });
+}
+
 export const backfillExistingPublicCorpusBatchRows = internalMutation({
   args: {
     rows: v.array(publicCorpusSeedRowValidator),
@@ -1201,35 +1238,7 @@ export const backfillExistingPublicCorpusBatchRows = internalMutation({
         skipped.push(`plugin:${row.name}`);
         continue;
       }
-      const catalogMetadata = publicCorpusPluginCatalogMetadata(row);
-      await ctx.db.patch(existing._id, {
-        categories: catalogMetadata.categories,
-        topics: catalogMetadata.topics,
-        updatedAt: now,
-      });
-      if (existing.latestReleaseId) {
-        await ensurePublicCorpusPackageValidationWarning(ctx, {
-          packageId: existing._id,
-          releaseId: existing.latestReleaseId,
-          ownerUserId: existing.ownerUserId,
-          ownerPublisherId: existing.ownerPublisherId,
-          packageName: existing.name,
-          normalizedName: existing.normalizedName,
-          version: row.version,
-          createdAt: now,
-        });
-      }
-      const updatedPackage = await ctx.db.get(existing._id);
-      if (updatedPackage) {
-        await upsertPackageSearchDigest(ctx, extractPackageDigestFields(updatedPackage));
-      }
-      await ensurePublicCorpusPackageDailyStats(ctx, {
-        packageId: existing._id,
-        key: row.name,
-        downloads: existing.stats?.downloads ?? 0,
-        installs: existing.stats?.installs ?? 0,
-        now,
-      });
+      await refreshExistingPublicCorpusPackage(ctx, existing, row, now);
       skipped.push(`plugin:${row.name}`);
     }
 
@@ -1472,35 +1481,7 @@ export const seedPublicCorpusBatchMutation = internalMutation({
             skipped.push(`plugin:${row.name}`);
             continue;
           }
-          const catalogMetadata = publicCorpusPluginCatalogMetadata(row);
-          await ctx.db.patch(existing._id, {
-            categories: catalogMetadata.categories,
-            topics: catalogMetadata.topics,
-            updatedAt: now,
-          });
-          if (existing.latestReleaseId) {
-            await ensurePublicCorpusPackageValidationWarning(ctx, {
-              packageId: existing._id,
-              releaseId: existing.latestReleaseId,
-              ownerUserId: existing.ownerUserId,
-              ownerPublisherId: existing.ownerPublisherId,
-              packageName: existing.name,
-              normalizedName: existing.normalizedName,
-              version: row.version,
-              createdAt: now,
-            });
-          }
-          const updatedPackage = await ctx.db.get(existing._id);
-          if (updatedPackage) {
-            await upsertPackageSearchDigest(ctx, extractPackageDigestFields(updatedPackage));
-          }
-          await ensurePublicCorpusPackageDailyStats(ctx, {
-            packageId: existing._id,
-            key: row.name,
-            downloads: existing.stats?.downloads ?? 0,
-            installs: existing.stats?.installs ?? 0,
-            now,
-          });
+          await refreshExistingPublicCorpusPackage(ctx, existing, row, now);
           skipped.push(`plugin:${row.name}`);
           continue;
         }
