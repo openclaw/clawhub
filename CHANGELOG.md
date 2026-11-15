@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Skill reads: invalid UTF-8 in a skill file is a client error for the readme, skill card, and file text. The message stays "File is not valid UTF-8 text".
+
 - Scanning: reuse the shared subprocess runner for legacy pre-publication scanners, bounding captured output to 32 MiB stdout and 1 MiB stderr while preserving scanner verdict exit codes.
 
 ## 0.26.0 - 2026-11-12
