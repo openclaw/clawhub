@@ -6,7 +6,7 @@ import {
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import type { HydratableSkill, PublicPublisher } from "./public";
-import { type PublicBrowseVersionState, resolvePublicBrowseVersionState } from "./publicBrowse";
+import { resolvePublicBrowseVersionState } from "./publicBrowse";
 import { getOwnerPublisher } from "./publishers";
 import { computeRecommendationScore, RECOMMENDATION_SCORE_VERSION } from "./recommendationScore";
 import { tokenize } from "./searchText";
@@ -60,22 +60,7 @@ const SHARED_KEYS = [
 ] as const satisfies readonly SharedSkillKey[];
 
 /** Fields stored in the skillSearchDigest table. */
-export type SkillSearchDigestFields = Pick<Doc<"skills">, (typeof SHARED_KEYS)[number]> & {
-  skillId: Id<"skills">;
-  latestVersionSkillId?: Id<"skills">;
-  normalizedSlug?: string;
-  normalizedSlugFirstToken?: string;
-  normalizedDisplayName?: string;
-  normalizedDisplayNameFirstToken?: string;
-  ownerHandle?: string;
-  ownerKind?: "user" | "org";
-  ownerName?: string;
-  ownerDisplayName?: string;
-  ownerImage?: string;
-  recommendedScore?: number;
-  recommendedScoreVersion?: number;
-  publicVersion?: PublicBrowseVersionState;
-};
+export type SkillSearchDigestFields = Omit<Doc<"skillSearchDigest">, "_id" | "_creationTime">;
 
 /** Pick the subset of fields from a full skill doc needed for the digest. */
 export function extractDigestFields(skill: Doc<"skills">): SkillSearchDigestFields {
