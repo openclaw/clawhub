@@ -499,15 +499,6 @@ function getHttpRateLimitName(kind: RateLimitKind, subject: RateLimitSubject): H
   return `${kind}${suffix}` as HttpRateLimitName;
 }
 
-export function parseBearerToken(request: Request) {
-  const header = request.headers.get("authorization") ?? request.headers.get("Authorization");
-  if (!header) return null;
-  const trimmed = header.trim();
-  if (!trimmed.toLowerCase().startsWith("bearer ")) return null;
-  const token = trimmed.slice(7).trim();
-  return token || null;
-}
-
 function isRateLimitCounterWriteConflict(error: unknown) {
   if (!(error instanceof Error)) return false;
   return (

@@ -3,7 +3,6 @@
 import { generateKeyPairSync } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  extractWorkflowFilenameFromWorkflowRef,
   fetchGitHubRepositoryIdentity,
   GitHubActionsOidcJwksUnavailableError,
   verifyGitHubActionsSkillsShSyncJwt,
@@ -48,17 +47,6 @@ function stubGitHubAppEnv() {
   vi.stubEnv("GITHUB_APP_INSTALLATION_ID", "456");
   vi.stubEnv("GITHUB_APP_PRIVATE_KEY", privateKey);
 }
-
-describe("extractWorkflowFilenameFromWorkflowRef", () => {
-  it("extracts the workflow filename from workflow_ref", () => {
-    expect(
-      extractWorkflowFilenameFromWorkflowRef(
-        "openclaw/openclaw/.github/workflows/plugin-clawhub-release.yml@refs/heads/main",
-        "openclaw/openclaw",
-      ),
-    ).toBe("plugin-clawhub-release.yml");
-  });
-});
 
 describe("fetchGitHubRepositoryIdentity", () => {
   it("uses GITHUB_TOKEN for repository lookup when configured", async () => {

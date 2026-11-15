@@ -406,13 +406,6 @@ export function normalizeGitHubRepository(repository: string) {
   return `${match[1]}/${match[2]}`;
 }
 
-export function extractWorkflowFilenameFromWorkflowRef(
-  workflowRef: string,
-  expectedRepository?: string,
-) {
-  return parseWorkflowRef(workflowRef, expectedRepository).workflowFilename;
-}
-
 function parseWorkflowRef(workflowRef: string, expectedRepository?: string): ParsedWorkflowRef {
   const match = /^([^/]+\/[^/]+)\/\.github\/workflows\/([^@/]+)@.+$/.exec(workflowRef.trim());
   if (!match?.[1] || !match[2]) {
