@@ -211,6 +211,61 @@ function createDb(initial: Record<string, Row[]> = {}) {
   return { db, tables };
 }
 
+function createPendingReplacementDb(scanStatus: "malicious" | "failed") {
+  return createDb({
+    skills: [
+      {
+        _id: "skills:html",
+        slug: "html",
+        displayName: "HTML A",
+        ownerUserId: "users:patrick",
+        installKind: "github",
+        githubSourceId: "githubSkillSources:current",
+        githubPath: "skills/html",
+        githubCurrentCommit: "a".repeat(40),
+        githubCurrentContentHash: "a".repeat(64),
+        githubCurrentStatus: "present",
+        githubScanStatus: "clean",
+        githubPendingCandidateId: "githubSkillCandidates:b",
+        tags: {},
+        stats: { downloads: 0, stars: 0, versions: 0, comments: 0 },
+        moderationStatus: "active",
+        moderationFlags: [],
+        isSuspicious: false,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ],
+    githubSkillCandidates: [
+      {
+        _id: "githubSkillCandidates:b",
+        skillId: "skills:html",
+        githubSourceId: "githubSkillSources:current",
+        githubRepo: "patrick-erichsen/skills",
+        githubPath: "skills/html",
+        githubHasSkillCard: false,
+        githubCommit: "b".repeat(40),
+        githubContentHash: "b".repeat(64),
+        displayName: "HTML B",
+        skillMarkdownPath: "skills/html/SKILL.md",
+        skillMarkdown: "# HTML B\n",
+        scanStatus: "pending",
+        lifecycleStatus: "pending",
+        verdictSourceScanId: "githubSkillScans:b",
+        createdAt: 2,
+        updatedAt: 2,
+      },
+    ],
+    githubSkillScans: [
+      createGitHubScan("githubSkillScans:b", "b".repeat(64), "b".repeat(40), {
+        status: scanStatus,
+        createdAt: 2,
+        updatedAt: 3,
+      }),
+    ],
+  });
+}
+
 function createFakeGitHubSkillsRepo() {
   let commit = "a".repeat(40);
   let entries: Record<string, string> = {};
@@ -3215,58 +3270,7 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
   });
 
   it("retains a rejected candidate without replacing the allowed GitHub version", async () => {
-    const { db, tables } = createDb({
-      skills: [
-        {
-          _id: "skills:html",
-          slug: "html",
-          displayName: "HTML A",
-          ownerUserId: "users:patrick",
-          installKind: "github",
-          githubSourceId: "githubSkillSources:current",
-          githubPath: "skills/html",
-          githubCurrentCommit: "a".repeat(40),
-          githubCurrentContentHash: "a".repeat(64),
-          githubCurrentStatus: "present",
-          githubScanStatus: "clean",
-          githubPendingCandidateId: "githubSkillCandidates:b",
-          tags: {},
-          stats: { downloads: 0, stars: 0, versions: 0, comments: 0 },
-          moderationStatus: "active",
-          moderationFlags: [],
-          isSuspicious: false,
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
-      githubSkillCandidates: [
-        {
-          _id: "githubSkillCandidates:b",
-          skillId: "skills:html",
-          githubSourceId: "githubSkillSources:current",
-          githubRepo: "patrick-erichsen/skills",
-          githubPath: "skills/html",
-          githubHasSkillCard: false,
-          githubCommit: "b".repeat(40),
-          githubContentHash: "b".repeat(64),
-          displayName: "HTML B",
-          skillMarkdownPath: "skills/html/SKILL.md",
-          skillMarkdown: "# HTML B\n",
-          scanStatus: "pending",
-          lifecycleStatus: "pending",
-          verdictSourceScanId: "githubSkillScans:b",
-          createdAt: 2,
-          updatedAt: 2,
-        },
-      ],
-      githubSkillScans: [
-        createGitHubScan("githubSkillScans:b", "b".repeat(64), "b".repeat(40), {
-          status: "malicious",
-          createdAt: 2,
-          updatedAt: 3,
-        }),
-      ],
-    });
+    const { db, tables } = createPendingReplacementDb("malicious");
 
     await expect(
       applyGitHubSkillVerificationResultHandler({ db } as never, {
@@ -3292,58 +3296,7 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
   });
 
   it("keeps a failed candidate addressable so the exact scan can be retried", async () => {
-    const { db, tables } = createDb({
-      skills: [
-        {
-          _id: "skills:html",
-          slug: "html",
-          displayName: "HTML A",
-          ownerUserId: "users:patrick",
-          installKind: "github",
-          githubSourceId: "githubSkillSources:current",
-          githubPath: "skills/html",
-          githubCurrentCommit: "a".repeat(40),
-          githubCurrentContentHash: "a".repeat(64),
-          githubCurrentStatus: "present",
-          githubScanStatus: "clean",
-          githubPendingCandidateId: "githubSkillCandidates:b",
-          tags: {},
-          stats: { downloads: 0, stars: 0, versions: 0, comments: 0 },
-          moderationStatus: "active",
-          moderationFlags: [],
-          isSuspicious: false,
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
-      githubSkillCandidates: [
-        {
-          _id: "githubSkillCandidates:b",
-          skillId: "skills:html",
-          githubSourceId: "githubSkillSources:current",
-          githubRepo: "patrick-erichsen/skills",
-          githubPath: "skills/html",
-          githubHasSkillCard: false,
-          githubCommit: "b".repeat(40),
-          githubContentHash: "b".repeat(64),
-          displayName: "HTML B",
-          skillMarkdownPath: "skills/html/SKILL.md",
-          skillMarkdown: "# HTML B\n",
-          scanStatus: "pending",
-          lifecycleStatus: "pending",
-          verdictSourceScanId: "githubSkillScans:b",
-          createdAt: 2,
-          updatedAt: 2,
-        },
-      ],
-      githubSkillScans: [
-        createGitHubScan("githubSkillScans:b", "b".repeat(64), "b".repeat(40), {
-          status: "failed",
-          createdAt: 2,
-          updatedAt: 3,
-        }),
-      ],
-    });
+    const { db, tables } = createPendingReplacementDb("failed");
 
     await applyGitHubSkillVerificationResultHandler({ db } as never, {
       skillId: "skills:html" as never,
