@@ -6,6 +6,7 @@ import { action, internalAction, internalMutation, internalQuery, mutation } fro
 import { assertModerator, requireUser, requireUserFromAction } from "./lib/access";
 import { toDayKey } from "./lib/leaderboards";
 import { temporalBenchmarkValidator } from "./lib/publisherAbuseBenchmark";
+import { publisherAbuseTemporalScoreValidator } from "./lib/publisherAbuseScoreContract";
 import {
   classifySkillTemporalAbuseScore,
   DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
@@ -36,48 +37,6 @@ const MAX_TEMPORAL_SCAN_FAILURE_ATTEMPTS = 5;
 export const PUBLISHER_ABUSE_SIGNAL_SCAN_CANCELED_MESSAGE =
   "Signal scan canceled by staff before it finished.";
 
-const temporalCohortBandValidator = v.union(v.literal("p95"), v.literal("p99"));
-const temporalScoreValidator = v.object({
-  spike: v.boolean(),
-  sustained: v.boolean(),
-  nearConversion: v.boolean(),
-  pressure: v.number(),
-  recent7Downloads: v.number(),
-  recent7Installs: v.number(),
-  previous30Downloads: v.number(),
-  baseline7Downloads: v.number(),
-  spikeMultiplier: v.number(),
-  expected7Downloads: v.number(),
-  excess7Downloads: v.number(),
-  recent30Downloads: v.number(),
-  recent30Installs: v.number(),
-  downloadInstallRatio30: v.number(),
-  downloads30dCohortBand: v.optional(temporalCohortBandValidator),
-  spikeMultiplierCohortBand: v.optional(temporalCohortBandValidator),
-  excess7DownloadsCohortBand: v.optional(temporalCohortBandValidator),
-  downloads30dVsPeerP95: v.optional(v.number()),
-  spikeMultiplierVsPeerP95: v.optional(v.number()),
-  excess7DownloadsVsPeerP95: v.optional(v.number()),
-  sustainedDaysAboveThreshold: v.number(),
-  sustainedWindowDays: v.number(),
-  sustainedDailyDownloadThreshold: v.number(),
-  sustainedExpectedDailyDownloads: v.number(),
-  sustainedWindowDownloads: v.number(),
-  sustainedWindowInstalls: v.number(),
-  sustainedDailyDownloads: v.array(v.number()),
-  installDownloadRatio7: v.number(),
-  installDownloadRatio30: v.number(),
-  installDownloadExcessZScore7: v.number(),
-  installDownloadExcessZScore30: v.number(),
-  spikeWindowStartDay: v.optional(v.number()),
-  spikeWindowEndDay: v.optional(v.number()),
-  sustainedWindowStartDay: v.optional(v.number()),
-  sustainedWindowEndDay: v.optional(v.number()),
-  nearConversionWindowStartDay: v.optional(v.number()),
-  nearConversionWindowEndDay: v.optional(v.number()),
-  reasonCodes: v.array(v.string()),
-});
-
 const temporalCandidateValidator = v.object({
   ownerKey: v.string(),
   ownerPublisherId: v.optional(v.id("publishers")),
@@ -89,7 +48,7 @@ const temporalCandidateValidator = v.object({
   totalDownloads: v.number(),
   totalInstalls: v.number(),
   synchronyDailyDownloads: v.optional(v.array(v.number())),
-  temporalScore: temporalScoreValidator,
+  temporalScore: publisherAbuseTemporalScoreValidator,
 });
 
 type TemporalScanRun = Doc<"publisherAbuseScoreRuns">;

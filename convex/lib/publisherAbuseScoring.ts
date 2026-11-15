@@ -2,35 +2,24 @@ import type {
   StoredTemporalAbuseCohortBenchmark,
   TemporalAbuseCohortBenchmark,
 } from "./publisherAbuseBenchmark";
+import type {
+  PublisherAbuseModelConfig,
+  SkillTemporalAbuseScore,
+} from "./publisherAbuseScoreContract";
 
 export type {
   StoredTemporalAbuseCohortBenchmark,
   TemporalAbuseCohortBenchmark,
 } from "./publisherAbuseBenchmark";
+export type {
+  PublisherAbuseModelConfig,
+  SkillTemporalAbuseScore,
+} from "./publisherAbuseScoreContract";
 
 export const PUBLISHER_ABUSE_MODEL_VERSION = "publisher-abuse-pressure.v4";
 export const PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION = "publisher-abuse-temporal.v2";
 
 export type PublisherAbuseLabel = "pass" | "review" | "potential_ban_candidate";
-
-export type PublisherAbuseModelConfig = {
-  modelVersion: string;
-  skillPivot: number;
-  installsPerSkillPivot: number;
-  starsPerSkillPivot: number;
-  downloadsPerSkillPivot: number;
-  outputElasticity: number;
-  engagementElasticity?: number;
-  minPublishedSkillsForAggregateLabel?: number;
-  installTrustElasticity: number;
-  starTrustElasticity: number;
-  downloadDemandElasticity: number;
-  minInstallsPerSkill: number;
-  minStarsPerSkill: number;
-  minDownloadsPerSkill: number;
-  reviewZThreshold: number;
-  potentialBanCandidateZThreshold: number;
-};
 
 export type PublisherAbuseInput = {
   ownerKey: string;
@@ -61,47 +50,6 @@ export type SkillTemporalAbuseDailyStat = {
   day: number;
   downloads: number;
   installs: number;
-};
-
-export type SkillTemporalAbuseScore = {
-  spike: boolean;
-  sustained: boolean;
-  nearConversion: boolean;
-  pressure: number;
-  recent7Downloads: number;
-  recent7Installs: number;
-  previous30Downloads: number;
-  baseline7Downloads: number;
-  spikeMultiplier: number;
-  expected7Downloads: number;
-  excess7Downloads: number;
-  recent30Downloads: number;
-  recent30Installs: number;
-  downloadInstallRatio30: number;
-  downloads30dCohortBand?: "p95" | "p99";
-  spikeMultiplierCohortBand?: "p95" | "p99";
-  excess7DownloadsCohortBand?: "p95" | "p99";
-  downloads30dVsPeerP95?: number;
-  spikeMultiplierVsPeerP95?: number;
-  excess7DownloadsVsPeerP95?: number;
-  sustainedDaysAboveThreshold: number;
-  sustainedWindowDays: number;
-  sustainedDailyDownloadThreshold: number;
-  sustainedExpectedDailyDownloads: number;
-  sustainedWindowDownloads: number;
-  sustainedWindowInstalls: number;
-  sustainedDailyDownloads: number[];
-  installDownloadRatio7: number;
-  installDownloadRatio30: number;
-  installDownloadExcessZScore7: number;
-  installDownloadExcessZScore30: number;
-  spikeWindowStartDay?: number;
-  spikeWindowEndDay?: number;
-  sustainedWindowStartDay?: number;
-  sustainedWindowEndDay?: number;
-  nearConversionWindowStartDay?: number;
-  nearConversionWindowEndDay?: number;
-  reasonCodes: string[];
 };
 
 export function normalizeTemporalAbuseCohortBenchmark(
