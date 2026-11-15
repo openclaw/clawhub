@@ -12,7 +12,9 @@ import type {
   TemplateManifestSummary,
 } from "clawhub-schema";
 import { ApiRoutes } from "clawhub-schema/routes";
+import type { Infer } from "convex/values";
 import { getPluginBrowseSnapshotKind } from "../../convex/lib/pluginBrowseSnapshot";
+import type { llmAnalysisValidator } from "../../convex/schema";
 import { hasOwnProperty } from "./hasOwnProperty";
 import { publicApiUrl } from "./publicApiUrl";
 import {
@@ -91,57 +93,7 @@ export type PackageVersionDetail = {
     sha256hash?: string | null;
     skillSpectorAnalysis?: PackageSkillSpectorAnalysis | null;
     aigAnalysis?: PackageAigAnalysis | null;
-    llmAnalysis?: {
-      status: string;
-      verdict?: string;
-      confidence?: string;
-      summary?: string;
-      dimensions?: Array<{
-        name: string;
-        label: string;
-        rating: string;
-        detail: string;
-      }>;
-      guidance?: string;
-      findings?: string;
-      agenticRiskFindings?: Array<{
-        categoryId: string;
-        categoryLabel: string;
-        riskBucket:
-          | "abnormal_behavior_control"
-          | "permission_boundary"
-          | "sensitive_data_protection";
-        status: "none" | "note" | "concern";
-        severity: string;
-        confidence: "high" | "medium" | "low";
-        evidence?: {
-          path: string;
-          snippet: string;
-          explanation: string;
-        };
-        userImpact: string;
-        recommendation: string;
-      }>;
-      riskSummary?: {
-        abnormal_behavior_control: {
-          status: "none" | "note" | "concern";
-          summary: string;
-          highestSeverity?: string;
-        };
-        permission_boundary: {
-          status: "none" | "note" | "concern";
-          summary: string;
-          highestSeverity?: string;
-        };
-        sensitive_data_protection: {
-          status: "none" | "note" | "concern";
-          summary: string;
-          highestSeverity?: string;
-        };
-      };
-      model?: string;
-      checkedAt: number;
-    } | null;
+    llmAnalysis?: Infer<typeof llmAnalysisValidator> | null;
   } | null;
 };
 
