@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Skill reads: a missing stored skill file is a client error for the readme, skill card, file text, and publish preview text. The message stays "File missing in storage".
+
 - Catalog: keep package search versions aligned with the current release when editing metadata on packages with stale version summaries. Package mutations now rely on the shared trigger to refresh search projections.
 
 - Scanning: reuse the shared subprocess runner for legacy pre-publication scanners, bounding captured output to 32 MiB stdout and 1 MiB stderr while preserving scanner verdict exit codes.
