@@ -13,6 +13,7 @@ import type {
 } from "clawhub-schema";
 import { ApiRoutes } from "clawhub-schema/routes";
 import type { Infer } from "convex/values";
+import type { PublicPackageDocLike } from "../../convex/lib/packageReadProjection";
 import { getPluginBrowseSnapshotKind } from "../../convex/lib/pluginBrowseSnapshot";
 import type { llmAnalysisValidator } from "../../convex/schema";
 import { hasOwnProperty } from "./hasOwnProperty";
@@ -78,17 +79,7 @@ export type PackageVersionDetail = {
     templateManifestSummary?: TemplateManifestSummary | null;
     templateInventory?: TemplateDependencyInventory;
     verification?: PackageVerificationSummary | null;
-    artifact?: {
-      kind: "legacy-zip" | "npm-pack";
-      sha256?: string;
-      size?: number;
-      format?: string;
-      npmIntegrity?: string;
-      npmShasum?: string;
-      npmTarballName?: string;
-      npmUnpackedSize?: number;
-      npmFileCount?: number;
-    } | null;
+    artifact?: NonNullable<PublicPackageDocLike["artifact"]> | null;
     /** @deprecated Compatibility hash for exact /download ZIP bytes. Use artifact.sha256. */
     sha256hash?: string | null;
     skillSpectorAnalysis?: PackageSkillSpectorAnalysis | null;
