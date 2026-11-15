@@ -119,6 +119,24 @@ function createNvidiaSource() {
   };
 }
 
+function createAiqDeploySkill(overrides: Record<string, unknown> = {}) {
+  return {
+    _id: "skills:aiq-deploy",
+    slug: "aiq-deploy",
+    displayName: "AIQ Deploy",
+    ownerUserId: "users:nvidia",
+    ownerPublisherId: "publishers:nvidia",
+    installKind: "github",
+    githubSourceId: "githubSkillSources:nvidia",
+    githubPath: "skills/aiq-deploy",
+    tags: {},
+    stats: { downloads: 0, stars: 0, installsCurrent: 0, installsAllTime: 0, versions: 0 },
+    createdAt: 1,
+    updatedAt: 1,
+    ...overrides,
+  };
+}
+
 function createPatrickPublisher() {
   return {
     _id: "publishers:patrick",
@@ -3847,32 +3865,14 @@ description: Build HTML artifacts.
     const { db, tables } = createDb({
       githubSkillSources: [createNvidiaSource()],
       skills: [
-        {
-          _id: "skills:aiq-deploy",
-          slug: "aiq-deploy",
-          displayName: "AIQ Deploy",
-          ownerUserId: "users:nvidia",
-          ownerPublisherId: "publishers:nvidia",
-          installKind: "github",
-          githubSourceId: "githubSkillSources:nvidia",
-          githubPath: "skills/aiq-deploy",
+        createAiqDeploySkill({
           githubCurrentCommit: "1".repeat(40),
           githubCurrentContentHash: contentHash,
           githubCurrentStatus: "present",
           githubScanStatus: "clean",
           moderationStatus: "active",
           moderationVerdict: "clean",
-          tags: {},
-          stats: {
-            downloads: 0,
-            stars: 0,
-            installsCurrent: 0,
-            installsAllTime: 0,
-            versions: 0,
-          },
-          createdAt: 1,
-          updatedAt: 1,
-        },
+        }),
       ],
     });
     const scheduler = { runAfter: vi.fn(async () => undefined) };
@@ -3938,29 +3938,11 @@ description: Build HTML artifacts.
         },
       ],
       skills: [
-        {
-          _id: "skills:aiq-deploy",
-          slug: "aiq-deploy",
-          displayName: "AIQ Deploy",
-          ownerUserId: "users:nvidia",
-          ownerPublisherId: "publishers:nvidia",
-          installKind: "github",
-          githubSourceId: "githubSkillSources:nvidia",
-          githubPath: "skills/aiq-deploy",
+        createAiqDeploySkill({
           githubCurrentStatus: "present",
           githubCurrentContentHash: "old-hash",
           githubScanStatus: "clean",
-          tags: {},
-          stats: {
-            downloads: 0,
-            stars: 0,
-            installsCurrent: 0,
-            installsAllTime: 0,
-            versions: 0,
-          },
-          createdAt: 1,
-          updatedAt: 1,
-        },
+        }),
         {
           _id: "skills:vision-helper-conflict",
           slug: "vision-helper",
@@ -4066,30 +4048,13 @@ description: Build HTML artifacts.
     const { db, tables } = createDb({
       githubSkillSources: [createNvidiaSource()],
       skills: [
-        {
-          _id: "skills:aiq-deploy",
-          slug: "aiq-deploy",
-          displayName: "AIQ Deploy",
-          ownerUserId: "users:nvidia",
-          ownerPublisherId: "publishers:nvidia",
-          installKind: "github",
-          githubSourceId: "githubSkillSources:nvidia",
-          githubPath: "skills/aiq-deploy",
+        createAiqDeploySkill({
           githubCurrentStatus: "missing",
           githubRemovedAt: 60,
           softDeletedAt: 40,
           githubScanStatus: "clean",
-          tags: {},
-          stats: {
-            downloads: 0,
-            stars: 0,
-            installsCurrent: 0,
-            installsAllTime: 0,
-            versions: 0,
-          },
-          createdAt: 1,
           updatedAt: 60,
-        },
+        }),
       ],
     });
 
@@ -4177,15 +4142,9 @@ description: Build HTML artifacts.
         },
       ],
       skills: [
-        {
-          _id: "skills:aiq-deploy",
-          slug: "aiq-deploy",
+        createAiqDeploySkill({
           displayName: "AIQ Deploy old",
-          ownerUserId: "users:nvidia",
-          ownerPublisherId: "publishers:nvidia",
-          installKind: "github",
           githubSourceId: "githubSkillSources:deleted-nvidia",
-          githubPath: "skills/aiq-deploy",
           githubCurrentStatus: "missing",
           githubCurrentContentHash: "old-hash",
           githubScanStatus: "clean",
@@ -4193,7 +4152,6 @@ description: Build HTML artifacts.
           softDeletedAt: 60,
           moderationStatus: "hidden",
           moderationReason: "github.upstream.removed",
-          tags: {},
           statsDownloads: 7,
           statsStars: 3,
           statsInstallsCurrent: 2,
@@ -4207,9 +4165,8 @@ description: Build HTML artifacts.
             installsAllTime: 5,
             versions: 0,
           },
-          createdAt: 1,
           updatedAt: 60,
-        },
+        }),
       ],
     });
     const scheduler = { runAfter: vi.fn(async () => undefined) };
@@ -4391,30 +4348,18 @@ description: Build HTML artifacts.
     const { db } = createDb({
       githubSkillSources: [createNvidiaSource()],
       skills: [
-        {
-          _id: "skills:aiq-deploy",
-          slug: "aiq-deploy",
-          displayName: "AIQ Deploy",
-          ownerUserId: "users:nvidia",
-          ownerPublisherId: "publishers:nvidia",
-          installKind: "github",
-          githubSourceId: "githubSkillSources:nvidia",
-          githubPath: "skills/aiq-deploy",
+        createAiqDeploySkill({
           githubCurrentCommit: "1".repeat(40),
           githubCurrentContentHash: contentHash,
           githubCurrentStatus: "present",
           githubScanStatus: "pending",
-          tags: {},
           statsDownloads: 7,
           statsStars: 3,
           statsInstallsCurrent: 2,
           statsInstallsAllTime: 5,
           statsSkillsShInstalls: 17,
           statsGithubStars: 321,
-          stats: { downloads: 0, stars: 0, installsCurrent: 0, installsAllTime: 0, versions: 0 },
-          createdAt: 1,
-          updatedAt: 1,
-        },
+        }),
       ],
       githubSkillScans: [
         {
@@ -4462,30 +4407,12 @@ description: Build HTML artifacts.
     const { db } = createDb({
       githubSkillSources: [createNvidiaSource()],
       skills: [
-        {
-          _id: "skills:aiq-deploy",
-          slug: "aiq-deploy",
-          displayName: "AIQ Deploy",
-          ownerUserId: "users:nvidia",
-          ownerPublisherId: "publishers:nvidia",
-          installKind: "github",
-          githubSourceId: "githubSkillSources:nvidia",
-          githubPath: "skills/aiq-deploy",
+        createAiqDeploySkill({
           githubCurrentCommit: "1".repeat(40),
           githubCurrentContentHash: contentHash,
           githubCurrentStatus: "present",
           githubScanStatus: "pending",
-          tags: {},
-          stats: {
-            downloads: 0,
-            stars: 0,
-            installsCurrent: 0,
-            installsAllTime: 0,
-            versions: 0,
-          },
-          createdAt: 1,
-          updatedAt: 1,
-        },
+        }),
       ],
       githubSkillScans: [
         {
@@ -4533,30 +4460,12 @@ description: Build HTML artifacts.
     const { db, tables } = createDb({
       githubSkillSources: [createNvidiaSource()],
       skills: [
-        {
-          _id: "skills:aiq-deploy",
-          slug: "aiq-deploy",
-          displayName: "AIQ Deploy",
-          ownerUserId: "users:nvidia",
-          ownerPublisherId: "publishers:nvidia",
-          installKind: "github",
-          githubSourceId: "githubSkillSources:nvidia",
-          githubPath: "skills/aiq-deploy",
+        createAiqDeploySkill({
           githubCurrentCommit: "1".repeat(40),
           githubCurrentContentHash: contentHash,
           githubCurrentStatus: "present",
           githubScanStatus: "clean",
-          tags: {},
-          stats: {
-            downloads: 0,
-            stars: 0,
-            installsCurrent: 0,
-            installsAllTime: 0,
-            versions: 0,
-          },
-          createdAt: 1,
-          updatedAt: 1,
-        },
+        }),
       ],
       githubSkillContents: [
         {
@@ -4599,30 +4508,12 @@ description: Build HTML artifacts.
     const { db, tables } = createDb({
       githubSkillSources: [createNvidiaSource()],
       skills: [
-        {
-          _id: "skills:aiq-deploy",
-          slug: "aiq-deploy",
-          displayName: "AIQ Deploy",
-          ownerUserId: "users:nvidia",
-          ownerPublisherId: "publishers:nvidia",
-          installKind: "github",
-          githubSourceId: "githubSkillSources:nvidia",
-          githubPath: "skills/aiq-deploy",
+        createAiqDeploySkill({
           githubHasSkillCard: true,
           githubCurrentStatus: "present",
           githubCurrentContentHash: "old-hash",
           githubScanStatus: "clean",
-          tags: {},
-          stats: {
-            downloads: 0,
-            stars: 0,
-            installsCurrent: 0,
-            installsAllTime: 0,
-            versions: 0,
-          },
-          createdAt: 1,
-          updatedAt: 1,
-        },
+        }),
       ],
       githubSkillContents: [
         {
@@ -4706,32 +4597,20 @@ describe("applyGitHubSkillVerificationResultHandler", () => {
   it("applies scan results only to the exact current content hash", async () => {
     const { db, tables } = createDb({
       skills: [
-        {
-          _id: "skills:aiq-deploy",
-          slug: "aiq-deploy",
-          displayName: "AIQ Deploy",
-          ownerUserId: "users:nvidia",
-          ownerPublisherId: "publishers:nvidia",
-          installKind: "github",
-          githubSourceId: "githubSkillSources:nvidia",
-          githubPath: "skills/aiq-deploy",
+        createAiqDeploySkill({
           githubCurrentCommit: "2".repeat(40),
           githubCurrentContentHash: "new-hash",
           githubCurrentStatus: "present",
           githubScanStatus: "pending",
-          tags: {},
           statsDownloads: 7,
           statsStars: 3,
           statsInstallsCurrent: 2,
           statsInstallsAllTime: 5,
           statsSkillsShInstalls: 17,
           statsGithubStars: 321,
-          stats: { downloads: 0, stars: 0, installsCurrent: 0, installsAllTime: 0, versions: 0 },
           moderationStatus: "hidden",
           moderationReason: "pending.scan",
-          createdAt: 1,
-          updatedAt: 1,
-        },
+        }),
       ],
       globalStats: [
         {
