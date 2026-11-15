@@ -20,6 +20,7 @@ import {
   packageLeaderboardEntryValidator,
   skillLeaderboardEntryValidator,
 } from "./lib/leaderboardEntry";
+import { packageInspectorIssueInputValidator } from "./lib/packageInspectorFinding";
 import {
   packageInspectorFailureValidator,
   packageInspectorOutcomeValidator,
@@ -1786,25 +1787,7 @@ const packageInspectorWarnings = defineTable({
   scanSource: v.optional(v.union(v.literal("publish"), v.literal("nightly"))),
   inspectorVersion: v.optional(v.string()),
   targetOpenClawVersion: v.optional(v.string()),
-  code: v.string(),
-  severity: v.optional(v.string()),
-  level: v.optional(v.string()),
-  issueClass: v.optional(v.string()),
-  compatStatus: v.optional(v.string()),
-  deprecated: v.optional(v.boolean()),
-  deprecatedApi: v.optional(v.string()),
-  replacement: v.optional(v.string()),
-  removeAfter: v.optional(v.string()),
-  message: v.string(),
-  evidence: v.optional(v.array(v.string())),
-  authorRemediation: v.optional(
-    v.object({
-      summary: v.string(),
-      docsUrl: v.optional(v.string()),
-    }),
-  ),
-  fixture: v.optional(v.string()),
-  decision: v.optional(v.string()),
+  ...packageInspectorIssueInputValidator.omit("id").fields,
   inspectorFindingId: v.optional(v.string()),
   createdAt: v.number(),
 })
