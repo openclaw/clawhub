@@ -5328,6 +5328,22 @@ export const insertAuditLogInternal = internalMutation({
   },
 });
 
+async function refreshPackageSearchDigest(
+  ctx: Pick<MutationCtx, "db">,
+  pkg: Doc<"packages">,
+  ownerSource: Pick<Doc<"packages">, "ownerPublisherId" | "ownerUserId">,
+) {
+  const owner = await getOwnerPublisher(ctx, {
+    ownerPublisherId: ownerSource.ownerPublisherId,
+    ownerUserId: ownerSource.ownerUserId,
+  });
+  await upsertPackageSearchDigest(ctx, {
+    ...extractPackageDigestFields(pkg),
+    ownerHandle: owner?.handle ?? "",
+    ownerKind: owner?.kind,
+  });
+}
+
 async function softDeletePackageDoc(
   ctx: Pick<MutationCtx, "db">,
   pkg: Doc<"packages">,
@@ -5353,15 +5369,7 @@ async function softDeletePackageDoc(
       }
       const nextPackage: Doc<"packages"> = { ...pkg, ...packagePatch };
       await ctx.db.patch(pkg._id, packagePatch);
-      const deleteOwner = await getOwnerPublisher(ctx, {
-        ownerPublisherId: pkg.ownerPublisherId,
-        ownerUserId: pkg.ownerUserId,
-      });
-      await upsertPackageSearchDigest(ctx, {
-        ...extractPackageDigestFields(nextPackage),
-        ownerHandle: deleteOwner?.handle ?? "",
-        ownerKind: deleteOwner?.kind,
-      });
+      await refreshPackageSearchDigest(ctx, nextPackage, pkg);
     }
     return {
       ok: true as const,
@@ -5387,15 +5395,7 @@ async function softDeletePackageDoc(
   };
   const nextPackage: Doc<"packages"> = { ...pkg, ...packagePatch };
   await ctx.db.patch(pkg._id, packagePatch);
-  const deleteOwner = await getOwnerPublisher(ctx, {
-    ownerPublisherId: pkg.ownerPublisherId,
-    ownerUserId: pkg.ownerUserId,
-  });
-  await upsertPackageSearchDigest(ctx, {
-    ...extractPackageDigestFields(nextPackage),
-    ownerHandle: deleteOwner?.handle ?? "",
-    ownerKind: deleteOwner?.kind,
-  });
+  await refreshPackageSearchDigest(ctx, nextPackage, pkg);
   for (const releaseId of deletedReleaseIds) {
     await ctx.db.patch(releaseId, { softDeletedAt: now });
   }
@@ -6028,15 +6028,7 @@ export const applyBanToOwnedPackagesBatchInternal = internalMutation({
           };
           const nextPackage: Doc<"packages"> = { ...pkg, ...packagePatch };
           await ctx.db.patch(pkg._id, packagePatch);
-          const ownerPublisher = await getOwnerPublisher(ctx, {
-            ownerPublisherId: pkg.ownerPublisherId,
-            ownerUserId: pkg.ownerUserId,
-          });
-          await upsertPackageSearchDigest(ctx, {
-            ...extractPackageDigestFields(nextPackage),
-            ownerHandle: ownerPublisher?.handle ?? "",
-            ownerKind: ownerPublisher?.kind,
-          });
+          await refreshPackageSearchDigest(ctx, nextPackage, pkg);
         }
         continue;
       }
@@ -6469,15 +6461,7 @@ export async function deleteOwnedPackageReleaseForActor(
       ...packagePatch,
     };
     await ctx.db.patch(pkg._id, packagePatch);
-    const owner = await getOwnerPublisher(ctx, {
-      ownerPublisherId: pkg.ownerPublisherId,
-      ownerUserId: pkg.ownerUserId,
-    });
-    await upsertPackageSearchDigest(ctx, {
-      ...extractPackageDigestFields(nextPackage),
-      ownerHandle: owner?.handle ?? "",
-      ownerKind: owner?.kind,
-    });
+    await refreshPackageSearchDigest(ctx, nextPackage, pkg);
   }
 
   await ctx.db.insert("auditLogs", {
@@ -9887,15 +9871,7 @@ export const setPackageCatalogMetadata = mutation({
       inferredTopicInputHash: nextPackage.inferredTopicInputHash,
       updatedAt: now,
     });
-    const owner = await getOwnerPublisher(ctx, {
-      ownerPublisherId: nextPackage.ownerPublisherId,
-      ownerUserId: nextPackage.ownerUserId,
-    });
-    await upsertPackageSearchDigest(ctx, {
-      ...extractPackageDigestFields(nextPackage),
-      ownerHandle: owner?.handle ?? "",
-      ownerKind: owner?.kind,
-    });
+    await refreshPackageSearchDigest(ctx, nextPackage, nextPackage);
     await ctx.db.insert("auditLogs", {
       actorUserId: user._id,
       action: "package.catalog_metadata.set",
@@ -11780,15 +11756,7 @@ async function quarantineMaliciousNonLatestPackageRelease(
     };
     const nextPackage: Doc<"packages"> = { ...pkg, ...packagePatch };
     await ctx.db.patch(pkg._id, packagePatch);
-    const owner = await getOwnerPublisher(ctx, {
-      ownerPublisherId: pkg.ownerPublisherId,
-      ownerUserId: pkg.ownerUserId,
-    });
-    await upsertPackageSearchDigest(ctx, {
-      ...extractPackageDigestFields(nextPackage),
-      ownerHandle: owner?.handle ?? "",
-      ownerKind: owner?.kind,
-    });
+    await refreshPackageSearchDigest(ctx, nextPackage, pkg);
   }
 
   if (ctx.scheduler) {
@@ -11945,15 +11913,7 @@ async function syncLatestPackageVerification(
     scanStatus,
     latestVersionSummary: nextLatestVersionSummary,
   });
-  const owner = await getOwnerPublisher(ctx, {
-    ownerPublisherId: pkg.ownerPublisherId,
-    ownerUserId: pkg.ownerUserId,
-  });
-  await upsertPackageSearchDigest(ctx, {
-    ...extractPackageDigestFields(nextPackage),
-    ownerHandle: owner?.handle ?? "",
-    ownerKind: owner?.kind,
-  });
+  await refreshPackageSearchDigest(ctx, nextPackage, pkg);
 }
 
 export const updateReleaseSkillSpectorAnalysisInternal = internalMutation({
@@ -12143,15 +12103,7 @@ export const backfillLatestPackageScanStatusInternal = internalMutation({
         });
         patched++;
       }
-      const owner = await getOwnerPublisher(ctx, {
-        ownerPublisherId: pkg.ownerPublisherId,
-        ownerUserId: pkg.ownerUserId,
-      });
-      await upsertPackageSearchDigest(ctx, {
-        ...extractPackageDigestFields(nextPackage),
-        ownerHandle: owner?.handle ?? "",
-        ownerKind: owner?.kind,
-      });
+      await refreshPackageSearchDigest(ctx, nextPackage, pkg);
     }
 
     if (!isDone) {
@@ -12223,15 +12175,7 @@ export const normalizeOfficialPublisherPackagesInternal = internalMutation({
         channel: nextPackage.channel,
         isOfficial: nextPackage.isOfficial,
       });
-      const owner = await getOwnerPublisher(ctx, {
-        ownerPublisherId: nextPackage.ownerPublisherId,
-        ownerUserId: nextPackage.ownerUserId,
-      });
-      await upsertPackageSearchDigest(ctx, {
-        ...extractPackageDigestFields(nextPackage),
-        ownerHandle: owner?.handle ?? "",
-        ownerKind: owner?.kind,
-      });
+      await refreshPackageSearchDigest(ctx, nextPackage, nextPackage);
       patched++;
     }
 
