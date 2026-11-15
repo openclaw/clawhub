@@ -1,4 +1,4 @@
-import { ConvexError, v } from "convex/values";
+import { ConvexError, type Infer, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
@@ -616,18 +616,7 @@ const activePublisherSlugScanRowValidator = v.object({
   createdAt: v.number(),
   updatedAt: v.number(),
 });
-type ActivePublisherSlugScanRow = {
-  skillId: Id<"skills">;
-  ownerPublisherId?: Id<"publishers">;
-  slug: string;
-  active: boolean;
-  latestVersionId?: Id<"skillVersions">;
-  latestVersion?: string;
-  moderationStatus: string;
-  canonicalSkillId?: Id<"skills">;
-  createdAt: number;
-  updatedAt: number;
-};
+type ActivePublisherSlugScanRow = Infer<typeof activePublisherSlugScanRowValidator>;
 type HeartflowDuplicateInspection = {
   slug: string;
   sourceSkillId: Id<"skills">;
