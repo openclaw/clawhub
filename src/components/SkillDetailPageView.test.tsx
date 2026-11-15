@@ -1,8 +1,8 @@
 /* @vitest-environment jsdom */
 
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeSkillDetailPageViewProps } from "../__tests__/helpers/skillDetailPageView";
 import { SkillDetailPageView } from "./SkillDetailPageView";
 import { TooltipProvider } from "./ui/tooltip";
@@ -18,6 +18,8 @@ vi.mock("../lib/useHeroCreatorPublisher", () => ({
 }));
 
 describe("SkillDetailPageView", () => {
+  afterEach(cleanup);
+
   beforeEach(() => {
     vi.stubGlobal("matchMedia", () => ({
       matches: false,
@@ -29,6 +31,85 @@ describe("SkillDetailPageView", () => {
       removeListener: vi.fn(),
       dispatchEvent: vi.fn(),
     }));
+  });
+
+  it.each([false, true])(
+    "places exactly one command card in the desktop rail/mobile fallback (%s)",
+    (mobile) => {
+      vi.stubGlobal("matchMedia", () => ({
+        matches: mobile,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }));
+      render(
+        <TooltipProvider>
+          <SkillDetailPageView {...makeMinimalProps()} />
+        </TooltipProvider>,
+      );
+      const card = screen.getByRole("article", { name: "Install" });
+      expect(
+        card.closest(mobile ? ".detail-mobile-install" : ".skill-hero-sidebar"),
+      ).not.toBeNull();
+      expect(document.querySelectorAll(".skill-install-command-card")).toHaveLength(1);
+    },
+  );
+
+  it("offers only an owner-qualified identity intent for a current hosted skill", () => {
+    render(
+      <TooltipProvider>
+        <SkillDetailPageView {...makeInstallableProps()} />
+      </TooltipProvider>,
+    );
+    const link = screen.getByRole("link", { name: "Install in OpenClaw" });
+    expect(link.getAttribute("href")).toBe("openclaw://skills/install?name=%40publisher%2Fdemo");
+    expect(link.closest(".skill-hero-sidebar")).not.toBeNull();
+    expect(link.closest(".skill-install-command-card")).not.toBeNull();
+    expect(link.querySelector("svg")).toBeNull();
+  });
+
+  it.each([
+    { latestVersion: null },
+    { ownerHandle: null },
+    { isPendingPublication: true },
+    { isRemoved: true },
+    { isAutoHidden: true },
+    ...["isPendingScan", "isMalwareBlocked", "isHiddenByMod", "isRemoved"].map((flag) => ({
+      modInfo: {
+        isPendingScan: false,
+        isMalwareBlocked: false,
+        isHiddenByMod: false,
+        isRemoved: false,
+        isSuspicious: false,
+        [flag]: true,
+      },
+    })),
+    {
+      modInfo: {
+        isPendingScan: false,
+        isMalwareBlocked: false,
+        isHiddenByMod: false,
+        isRemoved: false,
+        isSuspicious: false,
+        verdict: "malicious" as const,
+      },
+    },
+  ])("does not offer an app intent for an unavailable skill: %j", (overrides) => {
+    render(
+      <TooltipProvider>
+        <SkillDetailPageView {...makeInstallableProps()} {...overrides} />
+      </TooltipProvider>,
+    );
+    expect(screen.queryByRole("link", { name: "Install in OpenClaw" })).toBeNull();
+  });
+
+  it("does not turn GitHub-only or external-source cards into hosted install intents", () => {
+    const props = makeInstallableProps();
+    render(
+      <TooltipProvider>
+        <SkillDetailPageView {...props} skill={{ ...props.skill, installKind: "github" }} />
+      </TooltipProvider>,
+    );
+    expect(screen.queryByRole("link", { name: "Install in OpenClaw" })).toBeNull();
   });
 
   it("tells the owner when publication checks failed and where to get help", () => {
@@ -136,4 +217,22 @@ function makeMinimalProps() {
       updatedAt: 1,
     },
   });
+}
+
+function makeInstallableProps() {
+  const props = makeMinimalProps();
+  return {
+    ...props,
+    latestVersion: {
+      _id: "skillVersions:demo" as import("../../convex/_generated/dataModel").Id<"skillVersions">,
+      _creationTime: 1,
+      skillId: "skills:demo" as import("../../convex/_generated/dataModel").Id<"skills">,
+      version: "1.0.0",
+      changelog: "Initial",
+      files: [],
+      parsed: { frontmatter: {} },
+      createdBy: "users:owner" as import("../../convex/_generated/dataModel").Id<"users">,
+      createdAt: 1,
+    },
+  };
 }

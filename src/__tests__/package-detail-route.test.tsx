@@ -249,6 +249,127 @@ describe("plugin detail route", () => {
     vi.unstubAllGlobals();
   });
 
+  it("offers a right-rail Install link with the existing Desktop and CLI tabs for a published plugin", async () => {
+    loaderDataMock.detail.package = {
+      ...loaderDataMock.detail.package!,
+      name: "@owner/scoped-plugin",
+      latestVersion: "1.0.0",
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    const link = screen.getByRole("link", { name: "Install in OpenClaw" });
+    expect(link.closest(".skill-install-command-card")).not.toBeNull();
+    expect(link.getAttribute("href")).toBe(
+      "openclaw://plugins/install?name=%40owner%2Fscoped-plugin",
+    );
+    expect(link.querySelector("svg")).toBeNull();
+    expect(screen.queryByText("OpenClaw for Mac")).toBeNull();
+    expect(
+      screen.queryByText("Review this plugin in the Mac app, then choose Install."),
+    ).toBeNull();
+    expect(screen.queryByText("This page can’t detect whether the app opened.")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Get OpenClaw for Mac" })).toBeNull();
+    const rail = screen.getByRole("complementary");
+    expect(within(rail).getByRole("button", { name: "CLI" })).toBeTruthy();
+    expect(within(rail).getByRole("button", { name: "Desktop" })).toBeTruthy();
+    expect(within(rail).queryByRole("button", { name: "Prompt" })).toBeNull();
+    expect(screen.getAllByRole("article", { name: "Install" })).toHaveLength(1);
+  });
+
+  it.each([390, 768, 900, 901, 1366, 1440])(
+    "keeps one install card with its Install action at viewport width %s",
+    async (width) => {
+      setViewportWidth(width);
+      loaderDataMock.detail.package!.latestVersion = "1.0.0";
+      const route = await loadRoute();
+      const Component = route.__config.component as ComponentType;
+      render(<Component />);
+
+      const link = screen.getByRole("link", { name: "Install in OpenClaw" });
+      expect(link.closest(".skill-install-command-card")).not.toBeNull();
+      const cards = screen.getAllByRole("article", { name: "Install" });
+      expect(cards).toHaveLength(1);
+      expect(Boolean(cards[0].closest("aside"))).toBe(width > 900);
+      expect(Boolean(cards[0].closest(".detail-mobile-install"))).toBe(width <= 900);
+      expect(
+        within(cards[0]).getByRole("button", { name: "Desktop" }).getAttribute("aria-pressed"),
+      ).toBe("true");
+      fireEvent.click(within(cards[0]).getByRole("button", { name: "CLI" }));
+      expect(
+        within(cards[0]).getByRole("button", { name: "Copy plugin install command" }),
+      ).toBeTruthy();
+    },
+  );
+
+  it.each([
+    { family: "bundle-plugin", name: "discord", href: "openclaw://plugins/install?name=discord" },
+    {
+      family: "code-plugin",
+      name: "owner/plugin",
+      href: "openclaw://plugins/install?name=owner%2Fplugin",
+    },
+  ] as const)(
+    "preserves the exact published $family name $name in the Mac link",
+    async ({ family, name, href }) => {
+      loaderDataMock.detail.package = {
+        ...loaderDataMock.detail.package!,
+        family,
+        name,
+        latestVersion: "1.0.0",
+      };
+      const route = await loadRoute();
+      const Component = route.__config.component as ComponentType;
+      render(<Component />);
+      expect(screen.getByRole("link", { name: "Install in OpenClaw" }).getAttribute("href")).toBe(
+        href,
+      );
+    },
+  );
+
+  it.each(["unpublished", "beta-only", "skill", "malicious package", "malicious release"] as const)(
+    "does not offer a Mac launch for a %s",
+    async (state) => {
+      loaderDataMock.detail.package = {
+        ...loaderDataMock.detail.package!,
+        latestVersion: state === "unpublished" || state === "beta-only" ? null : "1.0.0",
+        family: state === "skill" ? "skill" : "code-plugin",
+        scanStatus: state === "malicious package" ? "malicious" : "clean",
+      };
+      if (state === "beta-only") {
+        loaderDataMock.version = {
+          package: null,
+          version: { version: "1.1.0-beta.1", createdAt: 1, changelog: "", files: [] },
+        };
+      }
+      if (state === "malicious release") {
+        loaderDataMock.version = {
+          package: null,
+          version: {
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "",
+            files: [],
+            verification: {
+              tier: "source-linked",
+              scope: "artifact-only",
+              scanStatus: "malicious",
+            },
+          },
+        };
+      }
+      const route = await loadRoute();
+      const Component = route.__config.component as ComponentType;
+      render(<Component />);
+      expect(screen.queryByRole("link", { name: "Install in OpenClaw" })).toBeNull();
+      expect(screen.queryByRole("link", { name: "Get OpenClaw for Mac" })).toBeNull();
+      expect(screen.getByRole("button", { name: "CLI" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Prompt" })).toBeTruthy();
+    },
+  );
+
   it.each([
     { family: "code-plugin", name: "demo-plugin", target: "demo-plugin@latest" },
     { family: "code-plugin", name: "discord", target: "discord@latest" },
@@ -258,7 +379,7 @@ describe("plugin detail route", () => {
     { family: "bundle-plugin", name: "demo-bundle", target: "demo-bundle@latest" },
     { family: "bundle-plugin", name: "@owner/scoped-bundle", target: "@owner/scoped-bundle" },
   ] as const)(
-    "shows and copies the CLI command and ClawHub prompt for $name",
+    "shows and copies the exact CLI command for $name",
     async ({ family, name, target }) => {
       const writeText = vi.fn().mockResolvedValue(undefined);
       vi.stubGlobal("navigator", { clipboard: { writeText } });
@@ -271,6 +392,7 @@ describe("plugin detail route", () => {
       const card = screen
         .getByRole("heading", { name: "Install" })
         .closest(".skill-install-command-card") as HTMLElement;
+      fireEvent.click(within(card).getByRole("button", { name: "CLI" }));
       const command = `openclaw plugins install clawhub:${target}`;
       expect(card.querySelectorAll("pre")).toHaveLength(1);
       expect(card.querySelector(".skill-install-command-wrap pre")).toBeTruthy();
@@ -283,11 +405,10 @@ describe("plugin detail route", () => {
       fireEvent.click(within(card).getByRole("button", { name: "Copy plugin install command" }));
       await waitFor(() => expect(writeText).toHaveBeenCalledWith(command));
 
-      fireEvent.click(within(card).getByRole("button", { name: "Prompt" }));
-      const prompt = `Install the ${name} package from ClawHub`;
-      expect(card.querySelector("pre")?.textContent).toBe(prompt);
-      fireEvent.click(within(card).getByRole("button", { name: "Copy OpenClaw prompt" }));
-      await waitFor(() => expect(writeText).toHaveBeenCalledWith(prompt));
+      if (screen.queryByRole("button", { name: "Desktop" })) {
+        fireEvent.click(screen.getByRole("button", { name: "Desktop" }));
+        expect(within(card).getByRole("link", { name: "Install in OpenClaw" })).toBeTruthy();
+      }
     },
   );
 
@@ -1821,6 +1942,7 @@ describe("plugin detail route", () => {
     expect(screen.getByText("ClawPack")).toBeTruthy();
     expect(screen.getByText("demo-plugin-1.0.0.tgz")).toBeTruthy();
     expect(screen.getByText("sha512-demo")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "CLI" }));
     expect(screen.getAllByText("openclaw plugins install")).toHaveLength(1);
     expect(
       screen.getByText("clawhub:demo-plugin@latest", { selector: ".skill-install-command-target" }),

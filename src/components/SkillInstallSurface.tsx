@@ -2,6 +2,7 @@ import { useId, useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
 import { emitAnalytics } from "../lib/analyticsEvents";
 import { InstallCopyButton } from "./InstallCopyButton";
+import { OpenClawInstall } from "./OpenClawInstall";
 import {
   buildSkillInstallTarget,
   buildSkillPageUrl,
@@ -9,11 +10,13 @@ import {
   formatOpenClawPrompt,
   formatSkillsCliInstallCommand,
 } from "./skillDetailUtils";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 type SkillCommandLineCardProps = {
   slug: string;
   ownerHandle: string | null;
   ownerId: Id<"users"> | Id<"publishers"> | null;
   installTarget?: string;
+  desktopInstall?: { family: "skills"; name: string };
   skillPageUrl?: string | null;
   secondaryInstall?: {
     label: string;
@@ -43,6 +46,7 @@ export function SkillCommandLineCard({
   installTarget: installTargetOverride,
   skillPageUrl: skillPageUrlOverride,
   secondaryInstall,
+  desktopInstall,
 }: SkillCommandLineCardProps) {
   const installTarget =
     installTargetOverride ?? buildSkillInstallTarget(ownerHandle, ownerId, slug);
@@ -56,6 +60,7 @@ export function SkillCommandLineCard({
 
   return (
     <InstallCommandCard
+      desktopInstall={desktopInstall}
       cliCommand={formatOpenClawInstallCommand(installTarget)}
       prompt={formatOpenClawPrompt(installTarget, "skill")}
       secondaryInstall={
@@ -72,6 +77,7 @@ export function SkillCommandLineCard({
 }
 
 type InstallCommandCardProps = {
+  desktopInstall?: { family: "plugins" | "skills" | "templates"; name: string };
   copyEnabled?: boolean;
   cliCommand: string;
   prompt: string;
@@ -84,6 +90,7 @@ type InstallCommandCardProps = {
 };
 
 export function InstallCommandCard({
+  desktopInstall,
   copyEnabled = true,
   cliCommand,
   prompt,
@@ -91,8 +98,17 @@ export function InstallCommandCard({
   secondaryInstall,
 }: InstallCommandCardProps) {
   const headingId = useId();
-  type InstallTab = "cli" | "skills" | "prompt";
-  const [activeInstallTab, setActiveInstallTab] = useState<InstallTab>("cli");
+  type InstallTab = "desktop" | "cli" | "skills" | "prompt";
+  const [selectedInstallTab, setActiveInstallTab] = useState<InstallTab>(
+    desktopInstall ? "desktop" : "cli",
+  );
+  // Eligibility can change after loading; never keep a now-unavailable app action.
+  const activeInstallTab =
+    selectedInstallTab === "desktop" && !desktopInstall
+      ? "cli"
+      : desktopInstall && (selectedInstallTab === "prompt" || selectedInstallTab === "skills")
+        ? "desktop"
+        : selectedInstallTab;
   const [installTabDirection, setInstallTabDirection] = useState<"left" | "right">("right");
   const activeInstallText =
     activeInstallTab === "prompt"
@@ -100,7 +116,7 @@ export function InstallCommandCard({
       : activeInstallTab === "skills" && secondaryInstall
         ? secondaryInstall.command
         : cliCommand;
-  const installTabOrder: InstallTab[] = ["cli", "skills", "prompt"];
+  const installTabOrder: InstallTab[] = ["desktop", "cli", "skills", "prompt"];
   const selectInstallTab = (tab: InstallTab) => {
     if (tab === activeInstallTab) {
       return;
@@ -117,13 +133,38 @@ export function InstallCommandCard({
     });
   };
 
+  const commandPreview = (
+    <pre
+      key={activeInstallTab}
+      data-direction={installTabDirection}
+      className={`skill-install-command${activeInstallTab === "prompt" ? " skill-install-prompt-compact" : ""} skill-install-command-reveal`}
+      tabIndex={0}
+    >
+      {activeInstallTab !== "prompt" ? (
+        <OpenClawCliInstallCommand command={activeInstallText} />
+      ) : (
+        <code translate="no">{activeInstallText}</code>
+      )}
+    </pre>
+  );
+
   return (
     <article className="skill-install-command-card" aria-labelledby={headingId}>
-      <div className="skill-install-command-header detail-hero-summary-row">
+      <div className="skill-install-command-header">
         <h3 id={headingId} className="skill-install-panel-title">
           Install
         </h3>
         <div className="skill-install-tab-toggle" role="group" aria-label="Install option">
+          {desktopInstall ? (
+            <button
+              type="button"
+              className={`skill-install-tab${activeInstallTab === "desktop" ? " is-active" : ""}`}
+              aria-pressed={activeInstallTab === "desktop"}
+              onClick={() => selectInstallTab("desktop")}
+            >
+              Desktop
+            </button>
+          ) : null}
           <button
             type="button"
             className={`skill-install-tab${activeInstallTab === "cli" ? " is-active" : ""}`}
@@ -132,7 +173,7 @@ export function InstallCommandCard({
           >
             CLI
           </button>
-          {secondaryInstall ? (
+          {!desktopInstall && secondaryInstall ? (
             <button
               type="button"
               className={`skill-install-tab${activeInstallTab === "skills" ? " is-active" : ""}`}
@@ -142,61 +183,67 @@ export function InstallCommandCard({
               {secondaryInstall.label}
             </button>
           ) : null}
-          <button
-            type="button"
-            className={`skill-install-tab${activeInstallTab === "prompt" ? " is-active" : ""}`}
-            aria-pressed={activeInstallTab === "prompt"}
-            onClick={() => selectInstallTab("prompt")}
-          >
-            Prompt
-          </button>
+          {!desktopInstall ? (
+            <button
+              type="button"
+              className={`skill-install-tab${activeInstallTab === "prompt" ? " is-active" : ""}`}
+              aria-pressed={activeInstallTab === "prompt"}
+              onClick={() => selectInstallTab("prompt")}
+            >
+              Prompt
+            </button>
+          ) : null}
         </div>
       </div>
 
-      <div className="skill-install-command-wrap">
-        <div
-          className={`skill-install-command-shell${
-            activeInstallTab !== "prompt" ? " skill-install-command-shell-cli" : ""
-          }`}
-        >
-          {activeInstallTab !== "prompt" ? (
-            <span className="skill-install-command-prompt" aria-hidden="true">
-              $
-            </span>
-          ) : null}
-          <pre
-            key={activeInstallTab}
-            data-direction={installTabDirection}
-            className={`skill-install-command${
-              activeInstallTab === "prompt" ? " skill-install-prompt-compact" : ""
-            } skill-install-command-reveal`}
-            tabIndex={0}
+      {activeInstallTab === "desktop" && desktopInstall ? (
+        <div className="skill-install-desktop-panel">
+          <OpenClawInstall {...desktopInstall} />
+        </div>
+      ) : (
+        <div className="skill-install-command-wrap">
+          <div
+            className={`skill-install-command-shell${
+              activeInstallTab !== "prompt" ? " skill-install-command-shell-cli" : ""
+            }`}
           >
             {activeInstallTab !== "prompt" ? (
-              <OpenClawCliInstallCommand command={activeInstallText} />
+              <span className="skill-install-command-prompt" aria-hidden="true">
+                $
+              </span>
+            ) : null}
+            {activeInstallTab === "prompt" ? (
+              commandPreview
             ) : (
-              <code translate="no">{activeInstallText}</code>
+              <TooltipProvider delayDuration={180}>
+                <Tooltip>
+                  <TooltipTrigger asChild>{commandPreview}</TooltipTrigger>
+                  <TooltipContent className="skill-install-command-tooltip" side="top" align="end">
+                    <code translate="no">{activeInstallText}</code>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             )}
-          </pre>
-          {copyEnabled ? (
-            <InstallCopyButton
-              analyticsMethod={activeInstallTab}
-              text={activeInstallText}
-              ariaLabel={
-                activeInstallTab === "prompt"
-                  ? "Copy OpenClaw prompt"
-                  : activeInstallTab === "skills"
-                    ? (secondaryInstall?.copyAriaLabel ?? "Copy npx skills command")
-                    : cliCopyAriaLabel
-              }
-              className="skill-install-command-inline-button"
-              showLabel={false}
-              variant="ghost"
-              size="icon-sm"
-            />
-          ) : null}
+            {copyEnabled ? (
+              <InstallCopyButton
+                analyticsMethod={activeInstallTab === "desktop" ? "cli" : activeInstallTab}
+                text={activeInstallText}
+                ariaLabel={
+                  activeInstallTab === "prompt"
+                    ? "Copy OpenClaw prompt"
+                    : activeInstallTab === "skills"
+                      ? (secondaryInstall?.copyAriaLabel ?? "Copy npx skills command")
+                      : cliCopyAriaLabel
+                }
+                className="skill-install-command-inline-button"
+                showLabel={false}
+                variant="ghost"
+                size="icon-sm"
+              />
+            ) : null}
+          </div>
         </div>
-      </div>
+      )}
     </article>
   );
 }
