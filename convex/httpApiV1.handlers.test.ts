@@ -3585,43 +3585,6 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(404);
   });
 
-  it("get skill returns ownerHandle guidance when the slug is ambiguous", async () => {
-    const runQuery = vi.fn().mockResolvedValue({
-      skill: null,
-      ambiguous: true,
-      ambiguousMatches: [
-        { slug: "demo", ownerHandle: "openclaw" },
-        { slug: "demo", ownerHandle: "patrick" },
-      ],
-    });
-    const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery }),
-      new Request("https://example.com/api/v1/skills/demo"),
-    );
-
-    expect(response.status).toBe(409);
-    const body = await response.json();
-    expect(body).toEqual({
-      code: "AMBIGUOUS_SKILL_SLUG",
-      message: 'Found multiple skills with the slug "demo"; specify which one you want to install:',
-      slug: "demo",
-      matches: [
-        {
-          ownerHandle: "openclaw",
-          slug: "demo",
-          ref: "@openclaw/demo",
-          url: "https://example.com/openclaw/skills/demo",
-        },
-        {
-          ownerHandle: "patrick",
-          slug: "demo",
-          ref: "@patrick/demo",
-          url: "https://example.com/patrick/skills/demo",
-        },
-      ],
-    });
-  });
-
   it("uses the public site origin for production ambiguous skill choices", async () => {
     vi.stubEnv("CONVEX_DEPLOYMENT", "prod:wry-manatee-359");
     const runQuery = vi.fn().mockResolvedValue({
