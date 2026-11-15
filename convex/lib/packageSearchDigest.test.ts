@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 
 import { describe, expect, it, vi } from "vitest";
+import { indexedUnique } from "../../src/__tests__/helpers/convexQuery";
 import { createPackageSeedDefaults } from "../../src/__tests__/helpers/packageSeed";
 import {
   deletePackageSearchDigests,
@@ -188,9 +189,7 @@ describe("packageSearchDigest", () => {
         get: vi.fn().mockResolvedValue(null),
         query: vi.fn((table: string) => {
           if (table === "packageSearchDigest") {
-            return {
-              withIndex: vi.fn(() => ({ unique: vi.fn().mockResolvedValue(null) })),
-            };
+            return indexedUnique(() => null);
           }
           if (
             table === "packageCapabilitySearchDigest" ||
@@ -202,9 +201,7 @@ describe("packageSearchDigest", () => {
             };
           }
           if (table === "globalStats") {
-            return {
-              withIndex: vi.fn(() => ({ unique: vi.fn().mockResolvedValue(null) })),
-            };
+            return indexedUnique(() => null);
           }
           throw new Error(`Unexpected table ${table}`);
         }),
@@ -267,9 +264,7 @@ describe("packageSearchDigest", () => {
         }),
         query: vi.fn((table: string) => {
           if (table === "packageSearchDigest") {
-            return {
-              withIndex: vi.fn(() => ({ unique: vi.fn().mockResolvedValue(null) })),
-            };
+            return indexedUnique(() => null);
           }
           if (
             table === "packageTopicSearchDigest" ||
@@ -280,9 +275,7 @@ describe("packageSearchDigest", () => {
             };
           }
           if (table === "globalStats") {
-            return {
-              withIndex: vi.fn(() => ({ unique: vi.fn().mockResolvedValue(null) })),
-            };
+            return indexedUnique(() => null);
           }
           throw new Error(`Unexpected table ${table}`);
         }),
