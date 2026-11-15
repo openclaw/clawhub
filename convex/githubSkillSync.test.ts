@@ -3,6 +3,7 @@ import { getFunctionName } from "convex/server";
 import { ConvexError } from "convex/values";
 import { zipSync } from "fflate";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createTableStore, type TestDbRow as Row } from "../src/__tests__/helpers/convexDb";
 import { chainEq } from "../src/__tests__/helpers/convexQuery";
 import {
   __test,
@@ -35,8 +36,6 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllEnvs();
 });
-
-type Row = Record<string, unknown> & { _id: string };
 
 function createPublicGitHubRepo(
   fullName: string,
@@ -154,20 +153,11 @@ function matches(doc: Row, constraints: Record<string, unknown>) {
 }
 
 function createDb(initial: Record<string, Row[]> = {}) {
-  const tables: Record<string, Row[]> = Object.fromEntries(
-    Object.entries(initial).map(([table, rows]) => [table, [...rows]]),
-  );
+  const { tables, list, get, patch, delete: deleteRow } = createTableStore(initial);
   const counters: Record<string, number> = {};
-  const list = (table: string) => {
-    tables[table] ??= [];
-    return tables[table];
-  };
 
   const db = {
-    get: async (id: string) => {
-      const table = id.split(":")[0] ?? "";
-      return list(table).find((row) => row._id === id) ?? null;
-    },
+    get,
     insert: async (table: string, doc: Record<string, unknown>) => {
       counters[table] = (counters[table] ?? 0) + 1;
       const inserted = {
@@ -178,21 +168,8 @@ function createDb(initial: Record<string, Row[]> = {}) {
       list(table).push(inserted);
       return inserted._id;
     },
-    patch: async (id: string, patch: Record<string, unknown>) => {
-      const table = id.split(":")[0] ?? "";
-      const row = list(table).find((candidate) => candidate._id === id);
-      if (row) {
-        for (const [key, value] of Object.entries(patch)) {
-          if (value === undefined) delete row[key];
-          else row[key] = value;
-        }
-      }
-    },
-    delete: async (id: string) => {
-      const table = id.split(":")[0] ?? "";
-      const index = list(table).findIndex((candidate) => candidate._id === id);
-      if (index >= 0) list(table).splice(index, 1);
-    },
+    patch,
+    delete: deleteRow,
     query: (table: string) => ({
       withIndex: (_indexName: string, build?: (q: ReturnType<typeof chainEq>) => unknown) => {
         const constraints: Record<string, unknown> = {};
