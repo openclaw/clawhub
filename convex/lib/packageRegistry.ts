@@ -10,6 +10,7 @@ import type {
   BundlePublishMetadata,
   PackageCompatibility,
   PackageVerificationSummary,
+  PublishSource as SourceInfo,
 } from "clawhub-schema";
 import { ConvexError } from "convex/values";
 import semver from "semver";
@@ -28,16 +29,6 @@ type PublishFile = {
   storageId: string;
   sha256: string;
   contentType?: string;
-};
-
-type SourceInfo = {
-  kind: "github";
-  url: string;
-  repo: string;
-  ref: string;
-  commit: string;
-  path: string;
-  importedAt: number;
 };
 
 type JsonRecord = Record<string, unknown>;

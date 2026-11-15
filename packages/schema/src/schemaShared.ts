@@ -80,6 +80,7 @@ export const PublishSourceSchema = type({
   path: "string",
   importedAt: "number",
 });
+export type PublishSource = (typeof PublishSourceSchema)[inferred];
 
 export const CliPublishRequestSchema = type({
   slug: "string",

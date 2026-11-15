@@ -3,6 +3,7 @@ import { buildSkillPublishAttemptIdempotencyKey } from "./skillPublishAttemptKey
 export { buildSkillPublishAttemptIdempotencyKey } from "./skillPublishAttemptKey";
 import {
   normalizeCatalogTopics,
+  type PublishSource,
   normalizeContentType,
   normalizeSkillCategories,
   resolveSkillCategories,
@@ -124,15 +125,7 @@ export type PublishVersionArgs = {
   topics?: string[];
   summary?: string;
   forkOf?: { slug: string; ownerHandle?: string; version?: string };
-  source?: {
-    kind: "github";
-    url: string;
-    repo: string;
-    ref: string;
-    commit: string;
-    path: string;
-    importedAt: number;
-  };
+  source?: PublishSource;
   files: Array<{
     path: string;
     size: number;
