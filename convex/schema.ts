@@ -32,6 +32,10 @@ import {
 } from "./lib/pluginCategoryClassificationContract";
 import { storedTemporalBenchmarkValidator } from "./lib/publisherAbuseBenchmark";
 import { publisherAbusePortfolioEvidenceValidator } from "./lib/publisherAbuseOwnerSynchronyContract";
+import {
+  publisherAbuseModelConfigValidator,
+  publisherAbuseTemporalScoreValidator,
+} from "./lib/publisherAbuseScoreContract";
 import { searchDigestValidator } from "./lib/searchDigestContract";
 import {
   searchArtifactKind,
@@ -598,25 +602,6 @@ const publisherAbuseTriageStatusValidator = v.union(
   v.literal("needs_policy_discussion"),
   v.literal("candidate_for_future_action"),
 );
-
-const publisherAbuseModelConfigValidator = v.object({
-  modelVersion: v.string(),
-  skillPivot: v.number(),
-  installsPerSkillPivot: v.number(),
-  starsPerSkillPivot: v.number(),
-  downloadsPerSkillPivot: v.number(),
-  outputElasticity: v.number(),
-  engagementElasticity: v.optional(v.number()),
-  minPublishedSkillsForAggregateLabel: v.optional(v.number()),
-  installTrustElasticity: v.number(),
-  starTrustElasticity: v.number(),
-  downloadDemandElasticity: v.number(),
-  minInstallsPerSkill: v.number(),
-  minStarsPerSkill: v.number(),
-  minDownloadsPerSkill: v.number(),
-  reviewZThreshold: v.number(),
-  potentialBanCandidateZThreshold: v.number(),
-});
 
 const packageStatsValidator = v.object({
   downloads: v.number(),
@@ -3632,27 +3617,11 @@ const publisherAbuseTemporalScanSamples = defineTable({
   .index("by_run_id_and_excess7_downloads", ["runId", "excess7Downloads"])
   .index("by_expiration_time", ["expirationTime"]);
 
+// Historical scan rows can omit fields required by newly computed scores.
 const publisherAbuseTemporalScanScoreValidator = v.object({
-  spike: v.boolean(),
-  sustained: v.boolean(),
-  nearConversion: v.boolean(),
-  pressure: v.number(),
-  recent7Downloads: v.number(),
-  recent7Installs: v.number(),
-  previous30Downloads: v.number(),
-  baseline7Downloads: v.number(),
-  spikeMultiplier: v.number(),
+  ...publisherAbuseTemporalScoreValidator.fields,
   expected7Downloads: v.optional(v.number()),
   excess7Downloads: v.optional(v.number()),
-  recent30Downloads: v.number(),
-  recent30Installs: v.number(),
-  downloadInstallRatio30: v.number(),
-  downloads30dCohortBand: v.optional(v.union(v.literal("p95"), v.literal("p99"))),
-  spikeMultiplierCohortBand: v.optional(v.union(v.literal("p95"), v.literal("p99"))),
-  excess7DownloadsCohortBand: v.optional(v.union(v.literal("p95"), v.literal("p99"))),
-  downloads30dVsPeerP95: v.optional(v.number()),
-  spikeMultiplierVsPeerP95: v.optional(v.number()),
-  excess7DownloadsVsPeerP95: v.optional(v.number()),
   sustainedDaysAboveThreshold: v.optional(v.number()),
   sustainedWindowDays: v.optional(v.number()),
   sustainedDailyDownloadThreshold: v.optional(v.number()),
@@ -3660,17 +3629,6 @@ const publisherAbuseTemporalScanScoreValidator = v.object({
   sustainedWindowDownloads: v.optional(v.number()),
   sustainedWindowInstalls: v.optional(v.number()),
   sustainedDailyDownloads: v.optional(v.array(v.number())),
-  installDownloadRatio7: v.number(),
-  installDownloadRatio30: v.number(),
-  installDownloadExcessZScore7: v.number(),
-  installDownloadExcessZScore30: v.number(),
-  spikeWindowStartDay: v.optional(v.number()),
-  spikeWindowEndDay: v.optional(v.number()),
-  sustainedWindowStartDay: v.optional(v.number()),
-  sustainedWindowEndDay: v.optional(v.number()),
-  nearConversionWindowStartDay: v.optional(v.number()),
-  nearConversionWindowEndDay: v.optional(v.number()),
-  reasonCodes: v.array(v.string()),
 });
 
 const publisherAbuseTemporalScanCandidates = defineTable({
