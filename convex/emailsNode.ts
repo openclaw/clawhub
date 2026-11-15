@@ -12,28 +12,11 @@ import {
   buildPublisherAbuseWarningEmail,
   buildRestoredAccountEmail,
   buildSecretBlockedPublishEmail,
-  type NotificationArtifact,
+  notificationArtifactValidator,
+  publisherAbuseWarningScoreValidator,
 } from "./lib/emails";
 
 const DEFAULT_FROM = "ClawHub Security <noreply@notifications.openclaw.ai>";
-
-const notificationArtifactValidator = v.object({
-  kind: v.union(v.literal("skill"), v.literal("plugin")),
-  name: v.string(),
-});
-
-const publisherAbuseWarningScoreValidator = v.object({
-  modelVersion: v.string(),
-  publishedSkills: v.number(),
-  totalInstalls: v.number(),
-  totalStars: v.number(),
-  totalDownloads: v.number(),
-  installsPerSkill: v.number(),
-  starsPerSkill: v.number(),
-  downloadsPerSkill: v.number(),
-  zScore: v.number(),
-  reasonCodes: v.array(v.string()),
-});
 
 type SendEmailArgs = {
   idempotencyKey: string;
@@ -111,7 +94,7 @@ export const sendBanNotificationInternal = internalAction({
       source: args.source,
       reason: args.reason,
       trigger: args.trigger,
-      artifact: args.artifact as NotificationArtifact | undefined,
+      artifact: args.artifact,
       bannedAt: args.bannedAt,
       hiddenArtifacts: args.hiddenArtifacts,
     });
@@ -138,7 +121,7 @@ export const sendRestoredAccountNotificationInternal = internalAction({
   handler: async (_ctx, args) => {
     const email = await buildRestoredAccountEmail({
       handle: args.handle,
-      restoredListings: args.restoredListings as NotificationArtifact[] | undefined,
+      restoredListings: args.restoredListings,
       restoredAt: args.restoredAt,
       skillsRestored: args.skillsRestored,
       packagesRestored: args.packagesRestored,
@@ -167,7 +150,7 @@ export const sendMaliciousArtifactNotificationInternal = internalAction({
   handler: async (_ctx, args) => {
     const email = await buildMaliciousArtifactEmail({
       handle: args.handle,
-      artifact: args.artifact as NotificationArtifact,
+      artifact: args.artifact,
       version: args.version,
       trigger: args.trigger,
       findingSummary: args.findingSummary,
@@ -194,7 +177,7 @@ export const sendSecretPublishBlockedNotificationInternal = internalAction({
   handler: async (_ctx, args) => {
     const email = await buildSecretBlockedPublishEmail({
       handle: args.handle,
-      artifact: args.artifact as NotificationArtifact,
+      artifact: args.artifact,
       version: args.version,
     });
     return await sendTransactionalEmail({
