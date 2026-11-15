@@ -443,6 +443,10 @@ function registerPromotionCommands(command: Command) {
     );
 }
 
+function parseIntegerOption(value: string) {
+  return Number.parseInt(value, 10);
+}
+
 function collectOption(value: string, previous: string[]) {
   return [...previous, value];
 }
@@ -610,10 +614,8 @@ function registerOrgCommands(command: Command) {
     .description("Batch-create org publishers and transfer scoped packages from a CSV")
     .argument("<csv>", "CSV with packageName,intendedOrg,legacyOwner[,orgDisplayName]")
     .option("--apply", "Write changes; defaults to dry-run")
-    .option("--start <n>", "Start at zero-based CSV row offset", (value) =>
-      Number.parseInt(value, 10),
-    )
-    .option("--limit <n>", "Limit rows processed", (value) => Number.parseInt(value, 10))
+    .option("--start <n>", "Start at zero-based CSV row offset", parseIntegerOption)
+    .option("--limit <n>", "Limit rows processed", parseIntegerOption)
     .option("--reason <reason>", "Override audit reason for all rows")
     .option("--result-file <path>", "Write JSON result report")
     .option("--json", "Output JSON")
@@ -680,9 +682,7 @@ function registerPluginGovernanceCommands(command: Command) {
       "all",
     )
     .option("--cursor <cursor>", "Resume cursor")
-    .option("--limit <n>", "Number of migrations to show (max 100)", (value) =>
-      Number.parseInt(value, 10),
-    )
+    .option("--limit <n>", "Number of migrations to show (max 100)", parseIntegerOption)
     .option("--json", "Output JSON")
     .action(withGlobalOpts((opts, options) => cmdListPackageMigrations(opts, options)));
 
@@ -759,9 +759,7 @@ function registerPluginModerationCommands(command: Command) {
     .description("List plugin reports for moderator review")
     .option("--status <status>", "open|confirmed|dismissed|all", "open")
     .option("--cursor <cursor>", "Resume cursor")
-    .option("--limit <n>", "Number of reports to show (max 100)", (value) =>
-      Number.parseInt(value, 10),
-    )
+    .option("--limit <n>", "Number of reports to show (max 100)", parseIntegerOption)
     .option("--json", "Output JSON")
     .action(withGlobalOpts((opts, options) => cmdListPackageReports(opts, options)));
 
@@ -783,15 +781,13 @@ function registerPluginOperations(command: Command) {
   command
     .command("rescan-all")
     .description("Queue admin ClawScan rescans for active latest plugins in paced batches")
-    .option("--batch-size <n>", "Batch size; backend caps at 10", (value) =>
-      Number.parseInt(value, 10),
-    )
-    .option("--poll-interval <sec>", "Seconds between batch status polls", (value) =>
-      Number.parseInt(value, 10),
-    )
+    .option("--batch-size <n>", "Batch size; backend caps at 10", parseIntegerOption)
+    .option("--poll-interval <sec>", "Seconds between batch status polls", parseIntegerOption)
     .option("--cursor <cursor>", "Resume from a backend pagination cursor")
-    .option("--max-packages <n>", "Stop after this many scanned/queued/skipped packages", (value) =>
-      Number.parseInt(value, 10),
+    .option(
+      "--max-packages <n>",
+      "Stop after this many scanned/queued/skipped packages",
+      parseIntegerOption,
     )
     .option("--dry-run", "Page eligible plugins without queueing jobs")
     .option("--yes", "Skip confirmation")
@@ -835,9 +831,7 @@ function registerPluginOperations(command: Command) {
     .description("List plugin releases that need moderation")
     .option("--status <status>", "open|blocked|manual|all", "open")
     .option("--cursor <cursor>", "Resume cursor")
-    .option("--limit <n>", "Number of releases to show (max 100)", (value) =>
-      Number.parseInt(value, 10),
-    )
+    .option("--limit <n>", "Number of releases to show (max 100)", parseIntegerOption)
     .option("--json", "Output JSON")
     .action(withGlobalOpts((opts, options) => cmdPackageModerationQueue(opts, options)));
 }
@@ -913,15 +907,13 @@ function registerSkillModerationCommands(command: Command) {
   command
     .command("rescan-all")
     .description("Queue admin ClawScan rescans for active latest skills in paced batches")
-    .option("--batch-size <n>", "Batch size; backend caps at 100", (value) =>
-      Number.parseInt(value, 10),
-    )
-    .option("--poll-interval <sec>", "Seconds between batch status polls", (value) =>
-      Number.parseInt(value, 10),
-    )
+    .option("--batch-size <n>", "Batch size; backend caps at 100", parseIntegerOption)
+    .option("--poll-interval <sec>", "Seconds between batch status polls", parseIntegerOption)
     .option("--cursor <cursor>", "Resume from a backend pagination cursor")
-    .option("--max-skills <n>", "Stop after this many scanned/queued/skipped skills", (value) =>
-      Number.parseInt(value, 10),
+    .option(
+      "--max-skills <n>",
+      "Stop after this many scanned/queued/skipped skills",
+      parseIntegerOption,
     )
     .option("--dry-run", "Page eligible skills without queueing jobs")
     .option("--yes", "Skip confirmation")
@@ -934,9 +926,7 @@ function registerSkillModerationCommands(command: Command) {
     .description("List skill reports for moderator review")
     .option("--status <status>", "open|confirmed|dismissed|all", "open")
     .option("--cursor <cursor>", "Resume cursor")
-    .option("--limit <n>", "Number of reports to show (max 200)", (value) =>
-      Number.parseInt(value, 10),
-    )
+    .option("--limit <n>", "Number of reports to show (max 200)", parseIntegerOption)
     .option("--json", "Output JSON")
     .action(withGlobalOpts((opts, options) => cmdListSkillReports(opts, options)));
 
