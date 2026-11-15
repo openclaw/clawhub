@@ -1,9 +1,14 @@
 import { createHash } from "node:crypto";
+import type { Infer } from "convex/values";
 import {
   CLASSIFIER_VERSION,
   TOPIC_CLASSIFIER_VERSION,
   classifySkill,
 } from "../convex/lib/catalogClassifier.mjs";
+import type {
+  skillsShMirrorDetailValidator,
+  skillsShMirrorStoredRowValidator,
+} from "../convex/lib/skillsShMirrorContract";
 
 const MAX_CLASSIFICATION_TEXT_LENGTH = 40_000;
 
@@ -43,45 +48,8 @@ type QuarantinedMirrorRow = {
 };
 
 type MirrorReplayPair = {
-  digest: {
-    externalId: string;
-    sourceType: "github" | "well-known";
-    upstreamSourceType?: string;
-    owner?: string;
-    repo?: string;
-    sourceHost?: string;
-    slug: string;
-    displayName: string;
-    sourceUrl: string;
-    canonicalRepoUrl?: string;
-    githubPath?: string;
-    githubCommit?: string;
-    sourceContentHash?: string;
-    upstreamInstalls: number;
-    upstreamScanners: {
-      genAgentTrustHub: { status: string; sourceCheckedAt?: string; sourceUrl?: string };
-      socket: { status: string; sourceCheckedAt?: string; sourceUrl?: string };
-      snyk: { status: string; sourceCheckedAt?: string; sourceUrl?: string };
-    };
-    inferredCategories?: string[];
-    inferredTopics?: string[];
-    inferredCategoryConfidence?: ClassificationConfidence;
-    inferredTopicConfidence?: ClassificationConfidence;
-    inferredClassifierVersion?: string;
-    inferredTopicClassifierVersion?: string;
-    inferredInputHash?: string;
-    inferredTopicInputHash?: string;
-    inferredAt?: number;
-  };
-  detail: {
-    contentKind: "skill-md" | "readme";
-    path: string;
-    content: string;
-    contentBytes: number;
-    sourceBytes: number;
-    sourceFileCount: number;
-    truncated: boolean;
-  } | null;
+  digest: Infer<typeof skillsShMirrorStoredRowValidator>;
+  detail: Infer<typeof skillsShMirrorDetailValidator> | null;
 };
 
 type MirrorReplayQuarantine = {
