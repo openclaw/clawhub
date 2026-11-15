@@ -274,7 +274,7 @@ const listPublicPageHandler = getTestHandler<
 const listPublishedPageHandler = getTestHandler<
   {
     handle: string;
-    kind?: "skill" | "plugin";
+    kind?: "skill" | "plugin" | "template";
     sort?: "installs" | "recent" | "downloads";
     paginationOpts: { cursor: string | null; numItems: number };
   },
@@ -282,7 +282,7 @@ const listPublishedPageHandler = getTestHandler<
     page: Array<{
       displayName: string;
       href: string;
-      kind: "skill" | "plugin";
+      kind: "skill" | "plugin" | "template";
       downloads: number;
     }>;
     continueCursor: string;
@@ -548,13 +548,36 @@ function captureIndexRange(buildQuery: (q: unknown) => unknown) {
   return { fields, range };
 }
 
+type RowPredicate = (row: Record<string, unknown>) => boolean;
+
+/** Evaluates the `q.eq` / `q.neq` field comparisons a Convex `.filter()` callback builds. */
+function buildRowPredicate(buildFilter: (q: unknown) => unknown): RowPredicate {
+  const isFieldRef = (operand: unknown): operand is { fieldName: string } =>
+    typeof operand === "object" && operand !== null && "fieldName" in operand;
+  const read = (operand: unknown, row: Record<string, unknown>) =>
+    isFieldRef(operand) ? row[operand.fieldName] : operand;
+  return buildFilter({
+    field: (fieldName: string) => ({ fieldName }),
+    eq: (left: unknown, right: unknown) => (row: Record<string, unknown>) =>
+      read(left, row) === read(right, row),
+    neq: (left: unknown, right: unknown) => (row: Record<string, unknown>) =>
+      read(left, row) !== read(right, row),
+  }) as RowPredicate;
+}
+
 function indexedRows(rows: unknown[]) {
+  // Like Convex, a `.filter()` narrows rows before the page is cut.
+  let predicate: RowPredicate | null = null;
   const paginate = vi.fn(
     async ({ cursor, numItems }: { cursor: string | null; numItems: number }) => {
+      const activePredicate = predicate;
+      const matching = activePredicate
+        ? rows.filter((row) => activePredicate(row as Record<string, unknown>))
+        : rows;
       const offset = cursor ? Number(cursor) : 0;
-      const page = rows.slice(offset, offset + numItems);
+      const page = matching.slice(offset, offset + numItems);
       const nextOffset = offset + page.length;
-      const isDone = nextOffset >= rows.length;
+      const isDone = nextOffset >= matching.length;
       return {
         page,
         isDone,
@@ -562,6 +585,15 @@ function indexedRows(rows: unknown[]) {
       };
     },
   );
+  const ordered = {
+    collect: vi.fn(async () => rows),
+    take: vi.fn(async (limit: number) => rows.slice(0, limit)),
+    paginate,
+    filter: vi.fn((buildFilter: (q: unknown) => unknown) => {
+      predicate = buildRowPredicate(buildFilter);
+      return ordered;
+    }),
+  };
   return {
     async *[Symbol.asyncIterator]() {
       for (const row of rows) yield row;
@@ -570,11 +602,7 @@ function indexedRows(rows: unknown[]) {
     first: vi.fn(async (): Promise<unknown> => null),
     take: vi.fn(async (limit: number) => rows.slice(0, limit)),
     paginate,
-    order: vi.fn(() => ({
-      collect: vi.fn(async () => rows),
-      take: vi.fn(async (limit: number) => rows.slice(0, limit)),
-      paginate,
-    })),
+    order: vi.fn(() => ordered),
   };
 }
 
@@ -689,6 +717,9 @@ function makePublicPublisherVisibilityCtx(options?: {
       }
       if (table === "officialPublishers" && indexName === "by_publisher") {
         return { unique: vi.fn(async () => null) };
+      }
+      if (table === "packageSearchDigest" && indexName === "by_active_family_owner_handle") {
+        return indexedRows([]);
       }
 
       throw new Error(`unexpected ${table} index ${indexName}`);
@@ -3342,23 +3373,54 @@ describe("publishers membership controls", () => {
     const publisher = makeOrgPublisher("openclaw", {
       displayName: "OpenClaw",
       publishedSkills: 3,
-      publishedPackages: 2,
+      publishedPackages: 6,
       totalInstalls: 50,
       totalDownloads: 80,
       totalStars: 7,
     });
+    const templateDigest = (overrides: Record<string, unknown>) => ({
+      family: "claw",
+      ownerHandle: "openclaw",
+      ownerPublisherId: publisher._id,
+      channel: "community",
+      latestVersion: "1.0.0",
+      stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+      ...overrides,
+    });
+    const templateDigests = [
+      templateDigest({ packageId: "packages:listed-a" }),
+      templateDigest({ packageId: "packages:listed-b", channel: "official" }),
+      // Counted by `publishedPackages`, but never listed publicly.
+      templateDigest({ packageId: "packages:private", channel: "private" }),
+      // A staged first publish has no public version and was never counted.
+      templateDigest({
+        packageId: "packages:staged",
+        latestVersion: undefined,
+        stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
+      }),
+      // Another publisher's legacy row can share a handle-keyed digest range.
+      templateDigest({ packageId: "packages:other", ownerPublisherId: "publishers:other" }),
+    ];
     const queriedTables: string[] = [];
+    const digestRanges: Array<Record<string, unknown>> = [];
     const ctx = {
       db: {
         query: vi.fn((table: string) => {
           queriedTables.push(table);
           return {
-            withIndex: vi.fn((indexName: string) => {
+            withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
               if (table === "publishers" && indexName === "by_handle") {
                 return { unique: vi.fn(async () => publisher) };
               }
               if (table === "officialPublishers" && indexName === "by_publisher") {
                 return { unique: vi.fn(async () => null) };
+              }
+              if (
+                table === "packageSearchDigest" &&
+                indexName === "by_active_family_owner_handle"
+              ) {
+                digestRanges.push(captureIndexFields(buildQuery));
+                return indexedRows(templateDigests);
               }
               throw new Error(`unexpected ${table} index ${indexName}`);
             }),
@@ -3371,13 +3433,136 @@ describe("publishers membership controls", () => {
 
     expect(result).toEqual(
       expect.objectContaining({
-        stats: { skills: 3, packages: 2, installs: 50, downloads: 80, stars: 7 },
+        stats: {
+          skills: 3,
+          packages: 6,
+          plugins: 3,
+          templates: 2,
+          installs: 50,
+          downloads: 80,
+          stars: 7,
+        },
       }),
     );
+    expect(digestRanges).toEqual([
+      { softDeletedAt: undefined, family: "claw", ownerHandle: "openclaw" },
+    ]);
     expect(result).not.toHaveProperty("publishedItems");
     expect(queriedTables).not.toContain("skills");
     expect(queriedTables).not.toContain("packages");
     expect(queriedTables).not.toContain("stars");
+  });
+
+  it("lists templates on their own profile tab instead of among plugins", async () => {
+    const publisher = makeOrgPublisherIdentity("openclaw", "OpenClaw");
+    const packageRow = (overrides: Record<string, unknown>) => ({
+      _creationTime: 1,
+      ownerPublisherId: "publishers:openclaw",
+      softDeletedAt: undefined,
+      summary: null,
+      channel: "community",
+      scanStatus: "clean",
+      updatedAt: 1,
+      ...overrides,
+    });
+    // Download order interleaves the two kinds, as it does for real publishers.
+    const packageRows = [
+      packageRow({
+        _id: "packages:scoped-template",
+        family: "claw",
+        name: "@openclaw/travel-copilot",
+        displayName: "Travel Copilot",
+        stats: { downloads: 40, installs: 4, stars: 0, versions: 1 },
+      }),
+      packageRow({
+        _id: "packages:code-plugin",
+        family: "code-plugin",
+        name: "@openclaw/pet",
+        displayName: "OpenClaw Pet",
+        stats: { downloads: 30, installs: 3, stars: 0, versions: 1 },
+      }),
+      packageRow({
+        _id: "packages:unscoped-template",
+        family: "claw",
+        name: "meal-planner",
+        displayName: "Meal Planner",
+        stats: { downloads: 20, installs: 2, stars: 0, versions: 1 },
+      }),
+      packageRow({
+        _id: "packages:bundle-plugin",
+        family: "bundle-plugin",
+        name: "openclaw-travel-themes",
+        displayName: "Travel Themes",
+        stats: { downloads: 10, installs: 1, stars: 0, versions: 1 },
+      }),
+      packageRow({
+        _id: "packages:private-template",
+        family: "claw",
+        name: "@openclaw/private-template",
+        displayName: "Private Template",
+        channel: "private",
+        stats: { downloads: 5, installs: 0, stars: 0, versions: 1 },
+      }),
+    ];
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => (id === "publishers:openclaw" ? publisher : null)),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields = captureIndexFields(buildQuery);
+            if (table === "publishers" && indexName === "by_handle") {
+              return {
+                unique: vi.fn(async () => (fields.handle === "openclaw" ? publisher : null)),
+              };
+            }
+            if (table === "skills") return indexedRows([]);
+            if (table === "packages") return indexedRows(packageRows);
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return { unique: vi.fn(async () => null) };
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+    const list = (kind: "plugin" | "template" | undefined, cursor: string | null, numItems = 24) =>
+      listPublishedPageHandler(ctx as never, {
+        handle: "openclaw",
+        kind,
+        sort: "downloads",
+        paginationOpts: { cursor, numItems },
+      });
+    const summarize = (page: Array<{ displayName: string; kind: string; href: string }>) =>
+      page.map((item) => [item.displayName, item.kind, item.href]);
+
+    const expectedPlugins = [
+      ["OpenClaw Pet", "plugin", "/plugins/@openclaw/pet"],
+      ["Travel Themes", "plugin", "/plugins/openclaw-travel-themes"],
+    ];
+    const expectedTemplates = [
+      ["Travel Copilot", "template", "/openclaw/templates/travel-copilot"],
+      ["Meal Planner", "template", "/openclaw/templates/meal-planner"],
+    ];
+
+    for (const cursor of [null, "legacy:0", "preindex:0"]) {
+      expect(summarize((await list("plugin", cursor)).page)).toEqual(expectedPlugins);
+      expect(summarize((await list("template", cursor)).page)).toEqual(expectedTemplates);
+    }
+
+    // The family filter runs before the page is cut, so mixed publishers get full pages.
+    const firstTemplatePage = await list("template", null, 1);
+    const secondTemplatePage = await list("template", firstTemplatePage.continueCursor, 1);
+    expect(summarize(firstTemplatePage.page)).toEqual([expectedTemplates[0]]);
+    expect(firstTemplatePage.isDone).toBe(false);
+    expect(summarize(secondTemplatePage.page)).toEqual([expectedTemplates[1]]);
+
+    // The unfiltered catalog keeps every public package and labels each kind.
+    expect(summarize((await list(undefined, null)).page)).toEqual([
+      expectedTemplates[0],
+      expectedPlugins[0],
+      expectedTemplates[1],
+      expectedPlugins[1],
+    ]);
   });
 
   it("computes OG metadata stats when publisher denormalized stats are missing", async () => {

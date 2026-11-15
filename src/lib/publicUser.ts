@@ -36,11 +36,20 @@ export type PublicPublisherListItem = PublicPublisherSummary & {
   }>;
 };
 
-export type PublicPublisherProfileItem = Omit<PublicPublisherListItem, "publishedItems">;
+export type PublicPublisherProfileItem = Omit<
+  PublicPublisherListItem,
+  "publishedItems" | "stats"
+> & {
+  stats: PublicPublisherStats & {
+    /** Both counts are absent while a backend that predates the Templates tab is still serving. */
+    plugins?: number;
+    templates?: number;
+  };
+};
 
 export type PublicPublisherCatalogItem = {
   _id: string;
-  kind: "skill" | "plugin";
+  kind: "skill" | "plugin" | "template";
   slug?: string | null;
   displayName: string;
   summary: string | null;
