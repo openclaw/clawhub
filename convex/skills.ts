@@ -5105,12 +5105,7 @@ async function listSkillTopicFilteredPage(
       if (
         digest &&
         (!opts.excludeCurated || !isCuratedSkillDigest(digest)) &&
-        digestPassesPublicListFilters(digest, {
-          categorySlug: opts.categorySlug,
-          topic: opts.topic,
-          categoryKeywords: opts.categoryKeywords,
-          excludeCategoryKeywords: opts.excludeCategoryKeywords,
-        })
+        digestPassesPublicListFilters(digest, opts)
       ) {
         const item = await buildPublicSkillEntryFromDigest(ctx, digest);
         if (item) items.push(item);
@@ -6387,12 +6382,7 @@ async function listCuratedSkillPage(
       }
       if (
         (typeof opts.createdAfter !== "number" || curatedDigest.createdAt >= opts.createdAfter) &&
-        digestPassesPublicListFilters(curatedDigest, {
-          topic: opts.topic,
-          categorySlug: opts.categorySlug,
-          categoryKeywords: opts.categoryKeywords,
-          excludeCategoryKeywords: opts.excludeCategoryKeywords,
-        })
+        digestPassesPublicListFilters(curatedDigest, opts)
       ) {
         // The compact projection contains official and highlighted rows but omits badge kind,
         // so hydrate before applying officialOnly and appending a result.
@@ -6406,12 +6396,7 @@ async function listCuratedSkillPage(
           (!opts.officialOnly || isSkillCatalogOfficial(digest)) &&
           (typeof opts.createdAfter !== "number" || digest.createdAt >= opts.createdAfter) &&
           (!opts.nonSuspiciousOnly || !digest.isSuspicious) &&
-          digestPassesPublicListFilters(digest, {
-            topic: opts.topic,
-            categorySlug: opts.categorySlug,
-            categoryKeywords: opts.categoryKeywords,
-            excludeCategoryKeywords: opts.excludeCategoryKeywords,
-          })
+          digestPassesPublicListFilters(digest, opts)
         ) {
           const item = await buildPublicSkillEntryFromDigest(ctx, digest);
           if (item) items.push(item);
@@ -6513,15 +6498,7 @@ async function listCommunitySkillCategoryPage(
     for (let index = 0; index < result.page.length; index += 1) {
       const digest = result.page[index];
       const cursor = result.indexKeys[index];
-      if (
-        !isCuratedSkillDigest(digest) &&
-        digestPassesPublicListFilters(digest, {
-          topic: opts.topic,
-          categorySlug: opts.categorySlug,
-          categoryKeywords: opts.categoryKeywords,
-          excludeCategoryKeywords: opts.excludeCategoryKeywords,
-        })
-      ) {
+      if (!isCuratedSkillDigest(digest) && digestPassesPublicListFilters(digest, opts)) {
         const item = await buildPublicSkillEntryFromDigest(ctx, digest);
         if (item) items.push(item);
       }
@@ -6640,14 +6617,7 @@ async function fetchHighlightedPage(
       .unique();
     if (!digest || digest.softDeletedAt) continue;
     if (opts.nonSuspiciousOnly && digest.isSuspicious) continue;
-    if (
-      !digestPassesPublicListFilters(digest, {
-        categorySlug: opts.categorySlug,
-        topic: opts.topic,
-        categoryKeywords: opts.categoryKeywords,
-        excludeCategoryKeywords: opts.excludeCategoryKeywords,
-      })
-    ) {
+    if (!digestPassesPublicListFilters(digest, opts)) {
       continue;
     }
     digests.push(digest);
