@@ -278,6 +278,33 @@ function makeSkillScanQuery<TSkill, TVersion>(
   });
 }
 
+function makeMalwareBlockedSkillQuery<TSkill, TVersion>(
+  selectedSkill: TSkill,
+  selectedVersion0: TVersion,
+) {
+  return vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+    if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+      return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+    }
+
+    if ("slug" in args) {
+      return {
+        skill: selectedSkill,
+        latestVersion: null,
+        owner: null,
+        moderationInfo: {
+          isMalwareBlocked: true,
+          isPendingScan: false,
+          isHiddenByMod: false,
+          isRemoved: false,
+        },
+      };
+    }
+
+    throw new Error("unexpected version lookup");
+  });
+}
+
 function makeModeratedSkillQuery<TSkill, TVersion>(
   selectedSkill: TSkill,
   selectedVersion0: TVersion,
@@ -6376,27 +6403,7 @@ describe("httpApiV1 handlers", () => {
       files: [{ path: "SKILL.md", size: 5, storageId: "storage:1", sha256: "abcd" }],
       softDeletedAt: undefined,
     };
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
-      }
-
-      if ("slug" in args) {
-        return {
-          skill: selectedSkill,
-          latestVersion: null,
-          owner: null,
-          moderationInfo: {
-            isMalwareBlocked: true,
-            isPendingScan: false,
-            isHiddenByMod: false,
-            isRemoved: false,
-          },
-        };
-      }
-
-      throw new Error("unexpected version lookup");
-    });
+    const runQuery = makeMalwareBlockedSkillQuery(selectedSkill, selectedVersion0);
     const storage = { get: vi.fn() };
 
     const response = await __handlers.skillsGetRouterV1Handler(
@@ -6551,27 +6558,7 @@ describe("httpApiV1 handlers", () => {
       files: [{ path: "skill-card.md", size: 5, storageId: "storage:card", sha256: "card" }],
       softDeletedAt: undefined,
     };
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
-      }
-
-      if ("slug" in args) {
-        return {
-          skill: selectedSkill,
-          latestVersion: null,
-          owner: null,
-          moderationInfo: {
-            isMalwareBlocked: true,
-            isPendingScan: false,
-            isHiddenByMod: false,
-            isRemoved: false,
-          },
-        };
-      }
-
-      throw new Error("unexpected version lookup");
-    });
+    const runQuery = makeMalwareBlockedSkillQuery(selectedSkill, selectedVersion0);
     const storage = { get: vi.fn() };
 
     const response = await __handlers.skillsGetRouterV1Handler(
