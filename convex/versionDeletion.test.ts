@@ -1488,12 +1488,12 @@ describe("owner package release deletion", () => {
     );
   });
 
-  it("removes every package tag targeting the deleted release and synchronizes its digest", async () => {
+  it("removes every package tag targeting the deleted release", async () => {
     const deleteOwned = getDeletionHelper<{ name: string; version: string }>(
       packagesModule,
       "deleteOwnedPackageReleaseForActor",
     );
-    const { actors, ctx, digest, patches, pkg } = makePackageDeletionCtx({
+    const { actors, ctx, patches, pkg } = makePackageDeletionCtx({
       pkg: {
         ...makePackageDeletionCtx({}).pkg,
         tags: {
@@ -1521,14 +1521,6 @@ describe("owner package release deletion", () => {
         updatedAt: expect.any(Number),
       },
     });
-    expect(digest).toMatchObject({
-      packageId: "packages:demo",
-      latestVersion: "2.0.0",
-      ownerHandle: "owner",
-      ownerKind: "user",
-      updatedAt: expect.any(Number),
-    });
-    expect(digest.updatedAt).toBe(pkg.updatedAt);
   });
 
   it("allows an org admin to delete an owned package release", async () => {
