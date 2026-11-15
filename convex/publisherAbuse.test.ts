@@ -376,6 +376,20 @@ function makeCompletePageQuery<T>(getPage: () => T[]) {
   };
 }
 
+function makeOrderedCompletePageQuery<T>(getPage: () => T[]) {
+  return {
+    withIndex: () => ({
+      order: () => ({
+        paginate: async () => ({
+          page: getPage(),
+          isDone: true,
+          continueCursor: "",
+        }),
+      }),
+    }),
+  };
+}
+
 function makeCollectingRunGetter(
   modelConfig: Partial<typeof TEST_MODEL_CONFIG> = TEST_MODEL_CONFIG,
   trigger?: "manual" | "cron",
@@ -428,36 +442,26 @@ function makeFinalizingRunGetter() {
 }
 
 function makeRepeatPublisherScoreQuery() {
-  return {
-    withIndex: () => ({
-      order: () => ({
-        paginate: async () => ({
-          page: [
-            {
-              _id: "publisherAbuseScores:repeat",
-              ownerKey: "publisher:publishers:repeat",
-              ownerPublisherId: "publishers:repeat",
-              ownerUserId: "users:repeat",
-              handleSnapshot: "repeat",
-              modelVersion: "publisher-abuse-pressure.v2",
-              pressure: 1000,
-              logPressure: 6,
-              publishedSkills: 1200,
-              totalInstalls: 8,
-              totalStars: 0,
-              totalDownloads: 120,
-              installsPerSkill: 0.006,
-              starsPerSkill: 0,
-              downloadsPerSkill: 0.1,
-              reasonCodes: ["high_catalog_volume"],
-            },
-          ],
-          isDone: true,
-          continueCursor: "",
-        }),
-      }),
-    }),
-  };
+  return makeOrderedCompletePageQuery(() => [
+    {
+      _id: "publisherAbuseScores:repeat",
+      ownerKey: "publisher:publishers:repeat",
+      ownerPublisherId: "publishers:repeat",
+      ownerUserId: "users:repeat",
+      handleSnapshot: "repeat",
+      modelVersion: "publisher-abuse-pressure.v2",
+      pressure: 1000,
+      logPressure: 6,
+      publishedSkills: 1200,
+      totalInstalls: 8,
+      totalStars: 0,
+      totalDownloads: 120,
+      installsPerSkill: 0.006,
+      starsPerSkill: 0,
+      downloadsPerSkill: 0.1,
+      reasonCodes: ["high_catalog_volume"],
+    },
+  ]);
 }
 
 function makeScore(
@@ -3891,17 +3895,7 @@ describe("publisher abuse dry-run persistence", () => {
         }),
         query: vi.fn((table: string) => {
           if (table === "publisherAbuseReviewNominations") {
-            return {
-              withIndex: () => ({
-                order: () => ({
-                  paginate: async () => ({
-                    page: [nomination],
-                    isDone: true,
-                    continueCursor: "",
-                  }),
-                }),
-              }),
-            };
+            return makeOrderedCompletePageQuery(() => [nomination]);
           }
           if (table === "officialPublishers") return makeEmptyOfficialPublishersQuery();
           throw new Error(`unexpected table ${table}`);
@@ -4688,36 +4682,26 @@ describe("publisher abuse dry-run persistence", () => {
         patch,
         query: vi.fn((table: string) => {
           if (table === "publisherAbuseScores") {
-            return {
-              withIndex: () => ({
-                order: () => ({
-                  paginate: async () => ({
-                    page: [
-                      {
-                        _id: "publisherAbuseScores:legacy-score",
-                        ownerKey: "publisher:publishers:legacy-score",
-                        ownerPublisherId: "publishers:legacy-score",
-                        ownerUserId: "users:legacy-score",
-                        handleSnapshot: "legacy-score",
-                        modelVersion: "publisher-abuse-pressure.v2",
-                        pressure: 1000,
-                        logPressure: 6,
-                        publishedSkills: 99,
-                        totalInstalls: 0,
-                        totalStars: 0,
-                        totalDownloads: 100,
-                        installsPerSkill: 0,
-                        starsPerSkill: 0,
-                        downloadsPerSkill: 1.01,
-                        reasonCodes: ["low_installs_per_skill"],
-                      },
-                    ],
-                    isDone: true,
-                    continueCursor: "",
-                  }),
-                }),
-              }),
-            };
+            return makeOrderedCompletePageQuery(() => [
+              {
+                _id: "publisherAbuseScores:legacy-score",
+                ownerKey: "publisher:publishers:legacy-score",
+                ownerPublisherId: "publishers:legacy-score",
+                ownerUserId: "users:legacy-score",
+                handleSnapshot: "legacy-score",
+                modelVersion: "publisher-abuse-pressure.v2",
+                pressure: 1000,
+                logPressure: 6,
+                publishedSkills: 99,
+                totalInstalls: 0,
+                totalStars: 0,
+                totalDownloads: 100,
+                installsPerSkill: 0,
+                starsPerSkill: 0,
+                downloadsPerSkill: 1.01,
+                reasonCodes: ["low_installs_per_skill"],
+              },
+            ]);
           }
           if (table === "publisherAbuseReviewNominations") {
             return {
@@ -5637,36 +5621,26 @@ describe("publisher abuse dry-run persistence", () => {
         patch,
         query: vi.fn((table: string) => {
           if (table === "publisherAbuseScores") {
-            return {
-              withIndex: () => ({
-                order: () => ({
-                  paginate: async () => ({
-                    page: [
-                      {
-                        _id: "publisherAbuseScores:score",
-                        ownerKey: "publisher:publishers:gora050",
-                        ownerPublisherId: "publishers:gora050",
-                        ownerUserId: "users:gora050",
-                        handleSnapshot: "gora050",
-                        modelVersion: "publisher-abuse-pressure.v2",
-                        pressure: 1000,
-                        logPressure: 6,
-                        publishedSkills: 1200,
-                        totalInstalls: 8,
-                        totalStars: 0,
-                        totalDownloads: 120,
-                        installsPerSkill: 0.006,
-                        starsPerSkill: 0,
-                        downloadsPerSkill: 0.1,
-                        reasonCodes: ["high_catalog_volume"],
-                      },
-                    ],
-                    isDone: true,
-                    continueCursor: "",
-                  }),
-                }),
-              }),
-            };
+            return makeOrderedCompletePageQuery(() => [
+              {
+                _id: "publisherAbuseScores:score",
+                ownerKey: "publisher:publishers:gora050",
+                ownerPublisherId: "publishers:gora050",
+                ownerUserId: "users:gora050",
+                handleSnapshot: "gora050",
+                modelVersion: "publisher-abuse-pressure.v2",
+                pressure: 1000,
+                logPressure: 6,
+                publishedSkills: 1200,
+                totalInstalls: 8,
+                totalStars: 0,
+                totalDownloads: 120,
+                installsPerSkill: 0.006,
+                starsPerSkill: 0,
+                downloadsPerSkill: 0.1,
+                reasonCodes: ["high_catalog_volume"],
+              },
+            ]);
           }
           if (table === "publisherAbuseReviewNominations") {
             return {
@@ -5726,36 +5700,26 @@ describe("publisher abuse dry-run persistence", () => {
         patch,
         query: vi.fn((table: string) => {
           if (table === "publisherAbuseScores") {
-            return {
-              withIndex: () => ({
-                order: () => ({
-                  paginate: async () => ({
-                    page: [
-                      {
-                        _id: "publisherAbuseScores:spacesq-shape",
-                        ownerKey: "publisher:publishers:spacesq-shape",
-                        ownerPublisherId: "publishers:spacesq-shape",
-                        ownerUserId: "users:spacesq-shape",
-                        handleSnapshot: "spacesq-shape",
-                        modelVersion: modelConfig.modelVersion,
-                        pressure: 1000,
-                        logPressure: 6,
-                        publishedSkills: 62,
-                        totalInstalls: 0,
-                        totalStars: 0,
-                        totalDownloads: 29_906,
-                        installsPerSkill: 0,
-                        starsPerSkill: 0,
-                        downloadsPerSkill: 482.35,
-                        reasonCodes: ["low_installs_per_skill", "low_stars_per_skill"],
-                      },
-                    ],
-                    isDone: true,
-                    continueCursor: "",
-                  }),
-                }),
-              }),
-            };
+            return makeOrderedCompletePageQuery(() => [
+              {
+                _id: "publisherAbuseScores:spacesq-shape",
+                ownerKey: "publisher:publishers:spacesq-shape",
+                ownerPublisherId: "publishers:spacesq-shape",
+                ownerUserId: "users:spacesq-shape",
+                handleSnapshot: "spacesq-shape",
+                modelVersion: modelConfig.modelVersion,
+                pressure: 1000,
+                logPressure: 6,
+                publishedSkills: 62,
+                totalInstalls: 0,
+                totalStars: 0,
+                totalDownloads: 29_906,
+                installsPerSkill: 0,
+                starsPerSkill: 0,
+                downloadsPerSkill: 482.35,
+                reasonCodes: ["low_installs_per_skill", "low_stars_per_skill"],
+              },
+            ]);
           }
           if (table === "publisherAbuseReviewNominations") {
             return {
@@ -5852,36 +5816,26 @@ describe("publisher abuse dry-run persistence", () => {
         patch,
         query: vi.fn((table: string) => {
           if (table === "publisherAbuseScores") {
-            return {
-              withIndex: () => ({
-                order: () => ({
-                  paginate: async () => ({
-                    page: [
-                      {
-                        _id: "publisherAbuseScores:downgraded-v4",
-                        ownerKey: "publisher:publishers:downgraded",
-                        ownerPublisherId: "publishers:downgraded",
-                        ownerUserId: "users:downgraded",
-                        handleSnapshot: "downgraded",
-                        modelVersion: modelConfig.modelVersion,
-                        pressure: 100,
-                        logPressure: 5,
-                        publishedSkills: 220,
-                        totalInstalls: 80,
-                        totalStars: 2,
-                        totalDownloads: 2_000,
-                        installsPerSkill: 0.36,
-                        starsPerSkill: 0.009,
-                        downloadsPerSkill: 9.09,
-                        reasonCodes: ["high_catalog_volume"],
-                      },
-                    ],
-                    isDone: true,
-                    continueCursor: "",
-                  }),
-                }),
-              }),
-            };
+            return makeOrderedCompletePageQuery(() => [
+              {
+                _id: "publisherAbuseScores:downgraded-v4",
+                ownerKey: "publisher:publishers:downgraded",
+                ownerPublisherId: "publishers:downgraded",
+                ownerUserId: "users:downgraded",
+                handleSnapshot: "downgraded",
+                modelVersion: modelConfig.modelVersion,
+                pressure: 100,
+                logPressure: 5,
+                publishedSkills: 220,
+                totalInstalls: 80,
+                totalStars: 2,
+                totalDownloads: 2_000,
+                installsPerSkill: 0.36,
+                starsPerSkill: 0.009,
+                downloadsPerSkill: 9.09,
+                reasonCodes: ["high_catalog_volume"],
+              },
+            ]);
           }
           if (table === "publisherAbuseReviewNominations") {
             return {
@@ -5980,36 +5934,26 @@ describe("publisher abuse dry-run persistence", () => {
         patch,
         query: vi.fn((table: string) => {
           if (table === "publisherAbuseScores") {
-            return {
-              withIndex: () => ({
-                order: () => ({
-                  paginate: async () => ({
-                    page: [
-                      {
-                        _id: "publisherAbuseScores:late-v2-score",
-                        ownerKey: "publisher:publishers:late-v2",
-                        ownerPublisherId: "publishers:late-v2",
-                        ownerUserId: "users:late-v2",
-                        handleSnapshot: "late-v2",
-                        modelVersion: modelConfig.modelVersion,
-                        pressure: 1,
-                        logPressure: 0,
-                        publishedSkills: 220,
-                        totalInstalls: 600,
-                        totalStars: 20,
-                        totalDownloads: 80_000,
-                        installsPerSkill: 2.72,
-                        starsPerSkill: 0.09,
-                        downloadsPerSkill: 363.64,
-                        reasonCodes: [],
-                      },
-                    ],
-                    isDone: true,
-                    continueCursor: "",
-                  }),
-                }),
-              }),
-            };
+            return makeOrderedCompletePageQuery(() => [
+              {
+                _id: "publisherAbuseScores:late-v2-score",
+                ownerKey: "publisher:publishers:late-v2",
+                ownerPublisherId: "publishers:late-v2",
+                ownerUserId: "users:late-v2",
+                handleSnapshot: "late-v2",
+                modelVersion: modelConfig.modelVersion,
+                pressure: 1,
+                logPressure: 0,
+                publishedSkills: 220,
+                totalInstalls: 600,
+                totalStars: 20,
+                totalDownloads: 80_000,
+                installsPerSkill: 2.72,
+                starsPerSkill: 0.09,
+                downloadsPerSkill: 363.64,
+                reasonCodes: [],
+              },
+            ]);
           }
           if (table === "publisherAbuseReviewNominations") {
             return {
@@ -6412,36 +6356,26 @@ describe("publisher abuse dry-run persistence", () => {
         patch,
         query: vi.fn((table: string) => {
           if (table === "publisherAbuseScores") {
-            return {
-              withIndex: () => ({
-                order: () => ({
-                  paginate: async () => ({
-                    page: [
-                      {
-                        _id: "publisherAbuseScores:repeat-review",
-                        ownerKey: "publisher:publishers:repeat-review",
-                        ownerPublisherId: "publishers:repeat-review",
-                        ownerUserId: "users:repeat-review",
-                        handleSnapshot: "repeat-review",
-                        modelVersion: "publisher-abuse-pressure.v2",
-                        pressure: 100,
-                        logPressure: 4.6,
-                        publishedSkills: 120,
-                        totalInstalls: 12,
-                        totalStars: 1,
-                        totalDownloads: 120,
-                        installsPerSkill: 0.1,
-                        starsPerSkill: 0.008,
-                        downloadsPerSkill: 1,
-                        reasonCodes: ["high_catalog_volume"],
-                      },
-                    ],
-                    isDone: true,
-                    continueCursor: "",
-                  }),
-                }),
-              }),
-            };
+            return makeOrderedCompletePageQuery(() => [
+              {
+                _id: "publisherAbuseScores:repeat-review",
+                ownerKey: "publisher:publishers:repeat-review",
+                ownerPublisherId: "publishers:repeat-review",
+                ownerUserId: "users:repeat-review",
+                handleSnapshot: "repeat-review",
+                modelVersion: "publisher-abuse-pressure.v2",
+                pressure: 100,
+                logPressure: 4.6,
+                publishedSkills: 120,
+                totalInstalls: 12,
+                totalStars: 1,
+                totalDownloads: 120,
+                installsPerSkill: 0.1,
+                starsPerSkill: 0.008,
+                downloadsPerSkill: 1,
+                reasonCodes: ["high_catalog_volume"],
+              },
+            ]);
           }
           if (table === "publisherAbuseReviewNominations") {
             return {
@@ -6488,36 +6422,26 @@ describe("publisher abuse dry-run persistence", () => {
         patch,
         query: vi.fn((table: string) => {
           if (table === "publisherAbuseScores") {
-            return {
-              withIndex: () => ({
-                order: () => ({
-                  paginate: async () => ({
-                    page: [
-                      {
-                        _id: "publisherAbuseScores:pass-score",
-                        ownerKey: "publisher:publishers:recovered",
-                        ownerPublisherId: "publishers:recovered",
-                        ownerUserId: "users:recovered",
-                        handleSnapshot: "recovered",
-                        modelVersion: "publisher-abuse-pressure.v2",
-                        pressure: 20,
-                        logPressure: 3,
-                        publishedSkills: 40,
-                        totalInstalls: 120,
-                        totalStars: 8,
-                        totalDownloads: 2_000,
-                        installsPerSkill: 3,
-                        starsPerSkill: 0.2,
-                        downloadsPerSkill: 50,
-                        reasonCodes: [],
-                      },
-                    ],
-                    isDone: true,
-                    continueCursor: "",
-                  }),
-                }),
-              }),
-            };
+            return makeOrderedCompletePageQuery(() => [
+              {
+                _id: "publisherAbuseScores:pass-score",
+                ownerKey: "publisher:publishers:recovered",
+                ownerPublisherId: "publishers:recovered",
+                ownerUserId: "users:recovered",
+                handleSnapshot: "recovered",
+                modelVersion: "publisher-abuse-pressure.v2",
+                pressure: 20,
+                logPressure: 3,
+                publishedSkills: 40,
+                totalInstalls: 120,
+                totalStars: 8,
+                totalDownloads: 2_000,
+                installsPerSkill: 3,
+                starsPerSkill: 0.2,
+                downloadsPerSkill: 50,
+                reasonCodes: [],
+              },
+            ]);
           }
           if (table === "publisherAbuseReviewNominations") {
             const existingNomination = {
