@@ -1,6 +1,6 @@
 /* @vitest-environment node */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { indexedUnique } from "../src/__tests__/helpers/convexQuery";
+import { indexedUnique, orderedTake } from "../src/__tests__/helpers/convexQuery";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -342,9 +342,7 @@ function makeResolveCtx(args: {
     }
     if (table === "skillVersions") {
       return {
-        withIndex: vi.fn(() => ({
-          order: vi.fn(() => ({ take: vi.fn().mockResolvedValue([]) })),
-        })),
+        withIndex: vi.fn(() => orderedTake(() => [])),
       };
     }
     if (table === "skillSlugAliases") {

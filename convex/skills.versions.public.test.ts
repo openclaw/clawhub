@@ -1,7 +1,7 @@
 /* @vitest-environment node */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
-import { indexedUnique } from "../src/__tests__/helpers/convexQuery";
+import { indexedUnique, orderedTake } from "../src/__tests__/helpers/convexQuery";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -755,16 +755,12 @@ describe("public skill version queries", () => {
       db: {
         query: vi.fn((table: string) => {
           if (table !== "skills") throw new Error(`Unexpected table ${table}`);
-          return {
-            order: vi.fn(() => ({
-              take: vi.fn().mockResolvedValue([
-                {
-                  ...makeSkillWithLatestVersion(version._id),
-                  badges: undefined,
-                },
-              ]),
-            })),
-          };
+          return orderedTake(() => [
+            {
+              ...makeSkillWithLatestVersion(version._id),
+              badges: undefined,
+            },
+          ]);
         }),
         get: vi.fn().mockResolvedValue(version),
       },
@@ -786,16 +782,12 @@ describe("public skill version queries", () => {
       db: {
         query: vi.fn((table: string) => {
           if (table !== "skills") throw new Error(`Unexpected table ${table}`);
-          return {
-            order: vi.fn(() => ({
-              take: vi.fn().mockResolvedValue([
-                {
-                  ...makeSkillWithLatestVersion(version._id),
-                  badges: undefined,
-                },
-              ]),
-            })),
-          };
+          return orderedTake(() => [
+            {
+              ...makeSkillWithLatestVersion(version._id),
+              badges: undefined,
+            },
+          ]);
         }),
         get: vi.fn(async (id: string) => {
           if (id === "users:1") return { _id: id };
@@ -833,11 +825,7 @@ describe("public skill version queries", () => {
           }
           if (table !== "skillBadges") throw new Error(`Unexpected table ${table}`);
           return {
-            withIndex: vi.fn(() => ({
-              order: vi.fn(() => ({
-                take: vi.fn().mockResolvedValue([{ skillId: skill._id }]),
-              })),
-            })),
+            withIndex: vi.fn(() => orderedTake(() => [{ skillId: skill._id }])),
           };
         }),
         get: vi.fn(async (id: string) => {
