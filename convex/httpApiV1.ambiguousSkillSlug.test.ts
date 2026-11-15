@@ -46,57 +46,33 @@ function makeCtx(partial: {
 }
 
 describe("ambiguous skill slug responses", () => {
-  it("returns structured owner choices for slug-only skill detail requests", async () => {
-    const runQuery = vi.fn().mockResolvedValue({
+  it.each([
+    [
+      "returns structured owner choices for slug-only skill detail requests",
+      __handlers.skillsGetRouterV1Handler,
+      "skills",
+    ],
+    [
+      "returns structured owner choices for package skill fallback requests",
+      __handlers.packagesGetRouterV1Handler,
+      "packages",
+    ],
+  ] as const)("%s", async (_name, handler, resource) => {
+    const ambiguous = {
       skill: null,
       ambiguous: true,
       ambiguousMatches: [
         { slug: "demo", ownerHandle: "openclaw" },
         { slug: "demo", ownerHandle: "patrick" },
       ],
-    });
-    const response = await __handlers.skillsGetRouterV1Handler(
+    };
+    const runQuery =
+      resource === "packages"
+        ? vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(ambiguous)
+        : vi.fn().mockResolvedValue(ambiguous);
+    const response = await handler(
       makeCtx({ runQuery }),
-      new Request("https://example.com/api/v1/skills/demo"),
-    );
-
-    expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({
-      code: "AMBIGUOUS_SKILL_SLUG",
-      message: 'Found multiple skills with the slug "demo"; specify which one you want to install:',
-      slug: "demo",
-      matches: [
-        {
-          ownerHandle: "openclaw",
-          slug: "demo",
-          ref: "@openclaw/demo",
-          url: "https://example.com/openclaw/skills/demo",
-        },
-        {
-          ownerHandle: "patrick",
-          slug: "demo",
-          ref: "@patrick/demo",
-          url: "https://example.com/patrick/skills/demo",
-        },
-      ],
-    });
-  });
-
-  it("returns structured owner choices for package skill fallback requests", async () => {
-    const runQuery = vi
-      .fn()
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({
-        skill: null,
-        ambiguous: true,
-        ambiguousMatches: [
-          { slug: "demo", ownerHandle: "openclaw" },
-          { slug: "demo", ownerHandle: "patrick" },
-        ],
-      });
-    const response = await __handlers.packagesGetRouterV1Handler(
-      makeCtx({ runQuery }),
-      new Request("https://example.com/api/v1/packages/demo"),
+      new Request(`https://example.com/api/v1/${resource}/demo`),
     );
 
     expect(response.status).toBe(409);
