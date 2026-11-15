@@ -1698,45 +1698,31 @@ function buildPackagePluginCategoryDigestQuery(
   const isOfficial = args.isOfficial;
   const digests = ctx.db.query("packagePluginCategorySearchDigest");
   if (args.sort === "installs" || args.sort === "recommended") {
+    const scoreSort = args.sort === "installs" ? "installs" : "recommended_score";
     if (family && typeof isOfficial === "boolean") {
-      return digests.withIndex(
-        args.sort === "installs"
-          ? "by_active_family_official_category_installs"
-          : "by_active_family_official_category_recommended_score",
-        (q) =>
-          q
-            .eq("softDeletedAt", undefined)
-            .eq("family", family)
-            .eq("isOfficial", isOfficial)
-            .eq("pluginCategory", args.category),
+      return digests.withIndex(`by_active_family_official_category_${scoreSort}`, (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("family", family)
+          .eq("isOfficial", isOfficial)
+          .eq("pluginCategory", args.category),
       );
     }
     if (family) {
-      return digests.withIndex(
-        args.sort === "installs"
-          ? "by_active_family_category_installs"
-          : "by_active_family_category_recommended_score",
-        (q) =>
-          q.eq("softDeletedAt", undefined).eq("family", family).eq("pluginCategory", args.category),
+      return digests.withIndex(`by_active_family_category_${scoreSort}`, (q) =>
+        q.eq("softDeletedAt", undefined).eq("family", family).eq("pluginCategory", args.category),
       );
     }
     if (typeof isOfficial === "boolean") {
-      return digests.withIndex(
-        args.sort === "installs"
-          ? "by_active_official_category_installs"
-          : "by_active_official_category_recommended_score",
-        (q) =>
-          q
-            .eq("softDeletedAt", undefined)
-            .eq("isOfficial", isOfficial)
-            .eq("pluginCategory", args.category),
+      return digests.withIndex(`by_active_official_category_${scoreSort}`, (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("isOfficial", isOfficial)
+          .eq("pluginCategory", args.category),
       );
     }
-    return digests.withIndex(
-      args.sort === "installs"
-        ? "by_active_category_installs"
-        : "by_active_category_recommended_score",
-      (q) => q.eq("softDeletedAt", undefined).eq("pluginCategory", args.category),
+    return digests.withIndex(`by_active_category_${scoreSort}`, (q) =>
+      q.eq("softDeletedAt", undefined).eq("pluginCategory", args.category),
     );
   }
   const sort = args.sort === "downloads" ? "downloads" : "updated";
@@ -1814,26 +1800,18 @@ function buildPackageTopicDigestQuery(
   const channel = args.channel;
   const isOfficial = args.isOfficial;
   const digests = ctx.db.query("packageTopicSearchDigest");
-  if (args.sort === "installs") {
+  if (args.sort === "installs" || args.sort === "recommended") {
+    const scoreSort = args.sort === "installs" ? "installs" : "recommended_score";
     if (typeof isOfficial === "boolean") {
-      return digests.withIndex("by_active_official_topic_installs", (q) =>
+      return digests.withIndex(`by_active_official_topic_${scoreSort}`, (q) =>
         q.eq("softDeletedAt", undefined).eq("isOfficial", isOfficial).eq("topic", args.topic),
       );
     }
-    return digests.withIndex("by_active_topic_installs", (q) =>
+    return digests.withIndex(`by_active_topic_${scoreSort}`, (q) =>
       q.eq("softDeletedAt", undefined).eq("topic", args.topic),
     );
   }
-  if (args.sort === "recommended") {
-    if (typeof isOfficial === "boolean") {
-      return digests.withIndex("by_active_official_topic_recommended_score", (q) =>
-        q.eq("softDeletedAt", undefined).eq("isOfficial", isOfficial).eq("topic", args.topic),
-      );
-    }
-    return digests.withIndex("by_active_topic_recommended_score", (q) =>
-      q.eq("softDeletedAt", undefined).eq("topic", args.topic),
-    );
-  }
+
   const sort = args.sort === "downloads" ? "downloads" : "updated";
   if (sort === "downloads" && family && channel && typeof isOfficial === "boolean") {
     return digests.withIndex("by_active_family_channel_official_topic_downloads", (q) =>
