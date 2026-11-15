@@ -6,19 +6,14 @@ import {
   normalizePluginCategories,
   resolvePluginCategories,
 } from "clawhub-schema";
-import { type Infer, v } from "convex/values";
+import { type Infer, type ObjectType, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx } from "./_generated/server";
 import { internalMutation as rawInternalMutation } from "./_generated/server";
 import { internalAction, internalMutation } from "./functions";
 import { isLocalDevAuthEnabled } from "./lib/devAuth";
-import {
-  type DisplayManifest,
-  type DisplayManifestStatus,
-  displayManifestStatusValidator,
-  displayManifestValidator,
-} from "./lib/displayManifest";
+import { displayManifestStatusValidator, displayManifestValidator } from "./lib/displayManifest";
 import { ACTIVITY_TREND_DAYS } from "./lib/downloadTrend";
 import { EMBEDDING_DIMENSIONS, generateEmbedding } from "./lib/embeddings";
 import { deleteGitHubSkillScansForSkill } from "./lib/githubSkillScans";
@@ -121,30 +116,7 @@ const githubSkillScanStatusValidator = v.union(
 
 type GitHubSkillScanStatus = SourceBackedSkillScanStatus;
 
-type SeedGitHubBackedSkillSourceArgs = {
-  reset?: boolean;
-  ownerUserId?: Id<"users">;
-  repo: string;
-  defaultBranch?: string;
-  displayManifestKind?: "skills.sh";
-  displayManifestHash?: string;
-  displayManifestCommit?: string;
-  displayManifestFetchedAt?: number;
-  displayManifestStatus?: DisplayManifestStatus;
-  displayManifest?: DisplayManifest;
-  skills: Array<{
-    slug: string;
-    displayName: string;
-    summary?: string;
-    githubPath: string;
-    githubCurrentCommit: string;
-    githubCurrentContentHash: string;
-    githubCurrentStatus?: "present" | "missing" | "unknown";
-    githubCurrentCheckedAt?: number;
-    githubScanStatus: GitHubSkillScanStatus;
-    githubRemovedAt?: number;
-  }>;
-};
+type SeedGitHubBackedSkillSourceArgs = ObjectType<typeof seedGitHubBackedSkillSourceArgs>;
 
 const publicCorpusDummyOwnerValidator = v.object({
   handle: v.string(),
@@ -3871,35 +3843,37 @@ export async function seedGitHubBackedSkillSourceHandler(
   };
 }
 
+const seedGitHubBackedSkillSourceArgs = {
+  reset: v.optional(v.boolean()),
+  ownerUserId: v.optional(v.id("users")),
+  repo: v.string(),
+  defaultBranch: v.optional(v.string()),
+  displayManifestKind: v.optional(v.literal("skills.sh")),
+  displayManifestHash: v.optional(v.string()),
+  displayManifestCommit: v.optional(v.string()),
+  displayManifestFetchedAt: v.optional(v.number()),
+  displayManifestStatus: v.optional(displayManifestStatusValidator),
+  displayManifest: v.optional(displayManifestValidator),
+  skills: v.array(
+    v.object({
+      slug: v.string(),
+      displayName: v.string(),
+      summary: v.optional(v.string()),
+      githubPath: v.string(),
+      githubCurrentCommit: v.string(),
+      githubCurrentContentHash: v.string(),
+      githubCurrentStatus: v.optional(
+        v.union(v.literal("present"), v.literal("missing"), v.literal("unknown")),
+      ),
+      githubCurrentCheckedAt: v.optional(v.number()),
+      githubScanStatus: githubSkillScanStatusValidator,
+      githubRemovedAt: v.optional(v.number()),
+    }),
+  ),
+};
+
 export const seedGitHubBackedSkillSourceMutation = internalMutation({
-  args: {
-    reset: v.optional(v.boolean()),
-    ownerUserId: v.optional(v.id("users")),
-    repo: v.string(),
-    defaultBranch: v.optional(v.string()),
-    displayManifestKind: v.optional(v.literal("skills.sh")),
-    displayManifestHash: v.optional(v.string()),
-    displayManifestCommit: v.optional(v.string()),
-    displayManifestFetchedAt: v.optional(v.number()),
-    displayManifestStatus: v.optional(displayManifestStatusValidator),
-    displayManifest: v.optional(displayManifestValidator),
-    skills: v.array(
-      v.object({
-        slug: v.string(),
-        displayName: v.string(),
-        summary: v.optional(v.string()),
-        githubPath: v.string(),
-        githubCurrentCommit: v.string(),
-        githubCurrentContentHash: v.string(),
-        githubCurrentStatus: v.optional(
-          v.union(v.literal("present"), v.literal("missing"), v.literal("unknown")),
-        ),
-        githubCurrentCheckedAt: v.optional(v.number()),
-        githubScanStatus: githubSkillScanStatusValidator,
-        githubRemovedAt: v.optional(v.number()),
-      }),
-    ),
-  },
+  args: seedGitHubBackedSkillSourceArgs,
   handler: seedGitHubBackedSkillSourceHandler,
 });
 
