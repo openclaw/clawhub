@@ -31,6 +31,7 @@ import {
   pluginCategoryReviewValidator,
 } from "./lib/pluginCategoryClassificationContract";
 import { storedTemporalBenchmarkValidator } from "./lib/publisherAbuseBenchmark";
+import { publisherAbusePortfolioEvidenceValidator } from "./lib/publisherAbuseOwnerSynchronyContract";
 import { searchDigestValidator } from "./lib/searchDigestContract";
 import {
   searchArtifactKind,
@@ -3887,20 +3888,7 @@ const publisherAbuseSignals = defineTable({
   sustainedWindowDownloads: v.optional(v.number()),
   sustainedWindowInstalls: v.optional(v.number()),
   reasonCodes: v.optional(v.array(v.string())),
-  portfolioEvidence: v.optional(
-    v.object({
-      skillCount: v.number(),
-      publisherSkillCount: v.number(),
-      allPublisherSkills: v.boolean(),
-      correlationFloor: v.number(),
-      correlationMedian: v.number(),
-      peak7DownloadsMin: v.number(),
-      peak7DownloadsMax: v.number(),
-      catalogCoverage: v.number(),
-      windowStartDay: v.number(),
-      windowEndDay: v.number(),
-    }),
-  ),
+  portfolioEvidence: v.optional(publisherAbusePortfolioEvidenceValidator),
   // The workflow is retired, but production rows keep this data until a
   // separately approved migration exports or removes it.
   reviewStatus: v.optional(publisherAbuseSignalReviewStatusValidator),

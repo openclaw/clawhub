@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { type Infer, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
@@ -9,6 +9,7 @@ import {
   PUBLISHER_ABUSE_OWNER_SYNCHRONY_MIN_CATALOG_COVERAGE,
   PUBLISHER_ABUSE_OWNER_SYNCHRONY_WINDOW_DAYS,
 } from "./lib/publisherAbuseOwnerSynchrony";
+import { publisherAbusePortfolioEvidenceValidator } from "./lib/publisherAbuseOwnerSynchronyContract";
 
 const OWNER_CANDIDATE_PAGE_SIZE = 50;
 const OWNER_SKILL_COUNT_PAGE_SIZE = 100;
@@ -51,47 +52,6 @@ type OwnerSkillCountPage = {
   isDone: boolean;
 };
 
-type OwnerSynchronyCandidate = {
-  ownerKey: string;
-  ownerPublisherId: Id<"publishers">;
-  ownerUserId?: Id<"users">;
-  handleSnapshot: string;
-  representativeSkillId: Id<"skills">;
-  representativeSkillSlug: string;
-  representativeSkillDisplayName: string;
-  recent7Downloads: number;
-  recent7Installs: number;
-  recent30Downloads: number;
-  recent30Installs: number;
-  allTimeDownloads: number;
-  allTimeInstalls: number;
-  portfolioEvidence: {
-    skillCount: number;
-    publisherSkillCount: number;
-    allPublisherSkills: boolean;
-    correlationFloor: number;
-    correlationMedian: number;
-    peak7DownloadsMin: number;
-    peak7DownloadsMax: number;
-    catalogCoverage: number;
-    windowStartDay: number;
-    windowEndDay: number;
-  };
-};
-
-const portfolioEvidenceValidator = v.object({
-  skillCount: v.number(),
-  publisherSkillCount: v.number(),
-  allPublisherSkills: v.boolean(),
-  correlationFloor: v.number(),
-  correlationMedian: v.number(),
-  peak7DownloadsMin: v.number(),
-  peak7DownloadsMax: v.number(),
-  catalogCoverage: v.number(),
-  windowStartDay: v.number(),
-  windowEndDay: v.number(),
-});
-
 const ownerSynchronyCandidateValidator = v.object({
   ownerKey: v.string(),
   ownerPublisherId: v.id("publishers"),
@@ -106,8 +66,10 @@ const ownerSynchronyCandidateValidator = v.object({
   recent30Installs: v.number(),
   allTimeDownloads: v.number(),
   allTimeInstalls: v.number(),
-  portfolioEvidence: portfolioEvidenceValidator,
+  portfolioEvidence: publisherAbusePortfolioEvidenceValidator,
 });
+
+type OwnerSynchronyCandidate = Infer<typeof ownerSynchronyCandidateValidator>;
 
 function installDownloadRatio(downloads: number, installs: number) {
   if (downloads <= 0) return installs > 0 ? 1 : 0;
