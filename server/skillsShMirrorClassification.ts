@@ -5,6 +5,11 @@ import {
   TOPIC_CLASSIFIER_VERSION,
   classifySkill,
 } from "../convex/lib/catalogClassifier.mjs";
+import {
+  getSkillsShMirrorClassificationState,
+  type SkillsShMirrorClassificationState,
+} from "../convex/lib/skillsShMirrorClassification";
+export type { SkillsShMirrorClassificationState } from "../convex/lib/skillsShMirrorClassification";
 import type {
   skillsShMirrorDetailValidator,
   skillsShMirrorStoredRowValidator,
@@ -14,24 +19,10 @@ const MAX_CLASSIFICATION_TEXT_LENGTH = 40_000;
 
 type ClassificationConfidence = "high" | "medium" | "low";
 
-type MirrorClassification = {
-  inferredCategories: string[];
-  inferredTopics: string[];
-  inferredCategoryConfidence: ClassificationConfidence;
-  inferredTopicConfidence: ClassificationConfidence;
-  inferredClassifierVersion: string;
-  inferredTopicClassifierVersion: string;
-  inferredInputHash: string;
-  inferredTopicInputHash: string;
-  inferredAt: number;
-};
-
-export type SkillsShMirrorClassificationState = MirrorClassification & {
-  externalId: string;
-  slug: string;
-  displayName: string;
-  sourceContentHash?: string;
-};
+type MirrorClassification = Omit<
+  SkillsShMirrorClassificationState,
+  "externalId" | "slug" | "displayName" | "sourceContentHash"
+>;
 
 type ClassifiableMirrorRow = {
   quarantined?: never;
@@ -149,46 +140,13 @@ export function enrichSkillsShMirrorClassifications<
   }) as Array<EnrichedMirrorRow<T>>;
 }
 
-function replayClassificationState(
-  digest: MirrorReplayPair["digest"],
-): SkillsShMirrorClassificationState | null {
-  if (
-    !digest.inferredCategories ||
-    !digest.inferredTopics ||
-    !digest.inferredCategoryConfidence ||
-    !digest.inferredTopicConfidence ||
-    !digest.inferredClassifierVersion ||
-    !digest.inferredTopicClassifierVersion ||
-    !digest.inferredInputHash ||
-    !digest.inferredTopicInputHash ||
-    digest.inferredAt === undefined
-  ) {
-    return null;
-  }
-  return {
-    externalId: digest.externalId,
-    slug: digest.slug,
-    displayName: digest.displayName,
-    ...(digest.sourceContentHash ? { sourceContentHash: digest.sourceContentHash } : {}),
-    inferredCategories: digest.inferredCategories,
-    inferredTopics: digest.inferredTopics,
-    inferredCategoryConfidence: digest.inferredCategoryConfidence,
-    inferredTopicConfidence: digest.inferredTopicConfidence,
-    inferredClassifierVersion: digest.inferredClassifierVersion,
-    inferredTopicClassifierVersion: digest.inferredTopicClassifierVersion,
-    inferredInputHash: digest.inferredInputHash,
-    inferredTopicInputHash: digest.inferredTopicInputHash,
-    inferredAt: digest.inferredAt,
-  };
-}
-
 export function buildSkillsShMirrorReplayRows(
   inputs: Array<MirrorReplayPair | MirrorReplayQuarantine>,
   inferredAt = Date.now(),
 ) {
   const pairs = inputs.filter((input): input is MirrorReplayPair => !("quarantined" in input));
   const states = pairs.flatMap((pair) => {
-    const state = replayClassificationState(pair.digest);
+    const state = getSkillsShMirrorClassificationState(pair.digest);
     return state ? [state] : [];
   });
   const rows = inputs.map((input) => {

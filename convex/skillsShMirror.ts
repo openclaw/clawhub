@@ -11,6 +11,7 @@ import { internalMutation, internalQuery } from "./functions";
 import { toHex } from "./lib/hash";
 import { getMirrorFirstSearchToken } from "./lib/skillSearchDigest";
 import { assertSkillsShMirrorEnvironmentAllowed } from "./lib/skillsShCatalogEnvironment";
+import { getSkillsShMirrorClassificationState } from "./lib/skillsShMirrorClassification";
 import {
   skillsShMirrorRowValidator as rowValidator,
   skillsShMirrorSourceRowValidator as sourceListRowValidator,
@@ -2234,37 +2235,8 @@ export const getClassificationStatesInternal = internalQuery({
       ),
     );
     return digests.flatMap((digest) => {
-      if (
-        !digest ||
-        !digest.inferredCategories ||
-        !digest.inferredTopics ||
-        !digest.inferredCategoryConfidence ||
-        !digest.inferredTopicConfidence ||
-        !digest.inferredClassifierVersion ||
-        !digest.inferredTopicClassifierVersion ||
-        !digest.inferredInputHash ||
-        !digest.inferredTopicInputHash ||
-        digest.inferredAt === undefined
-      ) {
-        return [];
-      }
-      return [
-        {
-          externalId: digest.externalId,
-          slug: digest.slug,
-          displayName: digest.displayName,
-          ...(digest.sourceContentHash ? { sourceContentHash: digest.sourceContentHash } : {}),
-          inferredCategories: digest.inferredCategories,
-          inferredTopics: digest.inferredTopics,
-          inferredCategoryConfidence: digest.inferredCategoryConfidence,
-          inferredTopicConfidence: digest.inferredTopicConfidence,
-          inferredClassifierVersion: digest.inferredClassifierVersion,
-          inferredTopicClassifierVersion: digest.inferredTopicClassifierVersion,
-          inferredInputHash: digest.inferredInputHash,
-          inferredTopicInputHash: digest.inferredTopicInputHash,
-          inferredAt: digest.inferredAt,
-        },
-      ];
+      const state = getSkillsShMirrorClassificationState(digest);
+      return state ? [state] : [];
     });
   },
 });
