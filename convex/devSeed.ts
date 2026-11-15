@@ -3407,6 +3407,13 @@ export async function seedLocalModerationFixturesHandler(
     updatedAt: now,
   });
 
+  const flaggedPluginVerification = {
+    tier: "structural",
+    scope: "artifact-only",
+    summary: "Local dev fixture intentionally flagged.",
+    sourceRepo: "openclaw/local-dev-fixture",
+    scanStatus: "malicious",
+  } satisfies NonNullable<Doc<"packages">["verification"]>;
   const packageId = await ctx.db.insert("packages", {
     name: flaggedPluginName,
     normalizedName: normalizePackageName(flaggedPluginName),
@@ -3423,13 +3430,7 @@ export async function seedLocalModerationFixturesHandler(
     latestVersionSummary: undefined,
     tags: {},
     compatibility: { pluginApiRange: ">=0.1.0" },
-    verification: {
-      tier: "structural",
-      scope: "artifact-only",
-      summary: "Local dev fixture intentionally flagged.",
-      sourceRepo: "openclaw/local-dev-fixture",
-      scanStatus: "malicious",
-    },
+    verification: { ...flaggedPluginVerification },
     scanStatus: "malicious",
     stats: { downloads: 2, installs: 0, stars: 0, versions: 0 },
     ...seededPackageRecommendationPatch({ downloads: 2, installs: 0, stars: 0 }),
@@ -3458,13 +3459,7 @@ export async function seedLocalModerationFixturesHandler(
       version: "0.1.0",
     },
     compatibility: { pluginApiRange: ">=0.1.0" },
-    verification: {
-      tier: "structural",
-      scope: "artifact-only",
-      summary: "Local dev fixture intentionally flagged.",
-      sourceRepo: "openclaw/local-dev-fixture",
-      scanStatus: "malicious",
-    },
+    verification: { ...flaggedPluginVerification },
     sha256hash: "seeded-flagged-plugin-hash",
     llmAnalysis: {
       status: "suspicious",
@@ -3487,13 +3482,7 @@ export async function seedLocalModerationFixturesHandler(
       createdAt: now,
       changelog: "Seeded flagged local release for security review testing.",
       compatibility: { pluginApiRange: ">=0.1.0" },
-      verification: {
-        tier: "structural",
-        scope: "artifact-only",
-        summary: "Local dev fixture intentionally flagged.",
-        sourceRepo: "openclaw/local-dev-fixture",
-        scanStatus: "malicious",
-      },
+      verification: { ...flaggedPluginVerification },
     },
     tags: { latest: packageReleaseId },
     stats: { downloads: 2, installs: 0, stars: 0, versions: 1 },
@@ -3507,6 +3496,13 @@ export async function seedLocalModerationFixturesHandler(
     installs: 0,
     now,
   });
+  const scannedPluginVerification = {
+    tier: "structural",
+    scope: "artifact-only",
+    summary: "Local dev fixture completed security scans with reviewable findings.",
+    sourceRepo: "openclaw/local-dev-fixture",
+    scanStatus: "suspicious",
+  } satisfies NonNullable<Doc<"packages">["verification"]>;
   const scannedPackageId = await ctx.db.insert("packages", {
     name: scannedPluginName,
     normalizedName: normalizePackageName(scannedPluginName),
@@ -3524,13 +3520,7 @@ export async function seedLocalModerationFixturesHandler(
     latestVersionSummary: undefined,
     tags: {},
     compatibility: { pluginApiRange: ">=0.1.0" },
-    verification: {
-      tier: "structural",
-      scope: "artifact-only",
-      summary: "Local dev fixture completed security scans with reviewable findings.",
-      sourceRepo: "openclaw/local-dev-fixture",
-      scanStatus: "suspicious",
-    },
+    verification: { ...scannedPluginVerification },
     scanStatus: "suspicious",
     stats: { downloads: 7, installs: 1, stars: 1, versions: 0 },
     ...seededPackageRecommendationPatch({ downloads: 7, installs: 1, stars: 1 }),
@@ -3560,13 +3550,7 @@ export async function seedLocalModerationFixturesHandler(
       version: "0.1.0",
     },
     compatibility: { pluginApiRange: ">=0.1.0" },
-    verification: {
-      tier: "structural",
-      scope: "artifact-only",
-      summary: "Local dev fixture completed security scans with reviewable findings.",
-      sourceRepo: "openclaw/local-dev-fixture",
-      scanStatus: "suspicious",
-    },
+    verification: { ...scannedPluginVerification },
     sha256hash: "seeded-scanned-plugin-hash",
     llmAnalysis: pluginClawScanRiskAnalysis(now),
     endorAnalysis: {
@@ -3595,13 +3579,7 @@ export async function seedLocalModerationFixturesHandler(
       createdAt: now,
       changelog: "Seeded public scanned release for plugin scanner page previews.",
       compatibility: { pluginApiRange: ">=0.1.0" },
-      verification: {
-        tier: "structural",
-        scope: "artifact-only",
-        summary: "Local dev fixture completed security scans with reviewable findings.",
-        sourceRepo: "openclaw/local-dev-fixture",
-        scanStatus: "suspicious",
-      },
+      verification: { ...scannedPluginVerification },
     },
     tags: { latest: scannedPackageReleaseId },
     stats: { downloads: 7, installs: 1, stars: 1, versions: 1 },
@@ -3615,6 +3593,13 @@ export async function seedLocalModerationFixturesHandler(
     installs: 1,
     now,
   });
+  const truncationPluginVerification = {
+    tier: "structural",
+    scope: "artifact-only",
+    summary: "Local dev fixture for long-name layout checks.",
+    sourceRepo: "openclaw/local-dev-fixture",
+    scanStatus: "clean",
+  } satisfies NonNullable<Doc<"packages">["verification"]>;
   const truncationPackageId = await ctx.db.insert("packages", {
     name: TRUNCATION_PLUGIN_NAME,
     normalizedName: normalizePackageName(TRUNCATION_PLUGIN_NAME),
@@ -3631,13 +3616,7 @@ export async function seedLocalModerationFixturesHandler(
     latestVersionSummary: undefined,
     tags: {},
     compatibility: { pluginApiRange: ">=0.1.0" },
-    verification: {
-      tier: "structural",
-      scope: "artifact-only",
-      summary: "Local dev fixture for long-name layout checks.",
-      sourceRepo: "openclaw/local-dev-fixture",
-      scanStatus: "clean",
-    },
+    verification: { ...truncationPluginVerification },
     scanStatus: "clean",
     stats: { downloads: 5, installs: 1, stars: 1, versions: 0 },
     ...seededPackageRecommendationPatch({ downloads: 5, installs: 1, stars: 1 }),
@@ -3667,13 +3646,7 @@ export async function seedLocalModerationFixturesHandler(
       description: "Long local owner plugin fixture for dashboard truncation checks.",
     },
     compatibility: { pluginApiRange: ">=0.1.0" },
-    verification: {
-      tier: "structural",
-      scope: "artifact-only",
-      summary: "Local dev fixture for long-name layout checks.",
-      sourceRepo: "openclaw/local-dev-fixture",
-      scanStatus: "clean",
-    },
+    verification: { ...truncationPluginVerification },
     sha256hash: "seeded-truncation-plugin-hash",
     source: { kind: "github", repo: "openclaw/local-dev-fixture", path: "." },
     createdBy: userId,
@@ -3688,13 +3661,7 @@ export async function seedLocalModerationFixturesHandler(
       createdAt: now,
       changelog: "Seeded local long-name release for dashboard truncation checks.",
       compatibility: { pluginApiRange: ">=0.1.0" },
-      verification: {
-        tier: "structural",
-        scope: "artifact-only",
-        summary: "Local dev fixture for long-name layout checks.",
-        sourceRepo: "openclaw/local-dev-fixture",
-        scanStatus: "clean",
-      },
+      verification: { ...truncationPluginVerification },
     },
     tags: { latest: truncationPackageReleaseId },
     stats: { downloads: 5, installs: 1, stars: 1, versions: 1 },
