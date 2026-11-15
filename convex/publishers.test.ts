@@ -492,6 +492,34 @@ function buildPublisherMemberQuery<T extends Record<string, unknown>>(
   };
 }
 
+function makeUserMembershipQuery<T>(memberships: Record<string, T>) {
+  return vi.fn((table: string) => {
+    if (table === "publisherMembers") {
+      return {
+        withIndex: vi.fn(
+          (
+            _indexName: string,
+            builder: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+          ) => {
+            let userId = "";
+            const q = {
+              eq: (field: string, value: string) => {
+                if (field === "userId") userId = value;
+                return q;
+              },
+            };
+            builder(q);
+            return {
+              unique: vi.fn().mockResolvedValue(memberships[userId] ?? null),
+            };
+          },
+        ),
+      };
+    }
+    throw new Error(`unexpected table ${table}`);
+  });
+}
+
 function captureIndexFields(buildQuery: (q: unknown) => unknown) {
   const fields: Record<string, unknown> = {};
   const q = chainEq(fields);
@@ -4420,31 +4448,7 @@ describe("publishers membership controls", () => {
           }
           return null;
         }),
-        query: vi.fn((table: string) => {
-          if (table === "publisherMembers") {
-            return {
-              withIndex: vi.fn(
-                (
-                  _indexName: string,
-                  builder: (q: { eq: (field: string, value: string) => unknown }) => unknown,
-                ) => {
-                  let userId = "";
-                  const q = {
-                    eq: (field: string, value: string) => {
-                      if (field === "userId") userId = value;
-                      return q;
-                    },
-                  };
-                  builder(q);
-                  return {
-                    unique: vi.fn().mockResolvedValue(memberships[userId] ?? null),
-                  };
-                },
-              ),
-            };
-          }
-          throw new Error(`unexpected table ${table}`);
-        }),
+        query: makeUserMembershipQuery(memberships),
         delete: vi.fn(),
         insert: vi.fn(),
         patch: vi.fn(),
@@ -4494,31 +4498,7 @@ describe("publishers membership controls", () => {
           }
           return null;
         }),
-        query: vi.fn((table: string) => {
-          if (table === "publisherMembers") {
-            return {
-              withIndex: vi.fn(
-                (
-                  _indexName: string,
-                  builder: (q: { eq: (field: string, value: string) => unknown }) => unknown,
-                ) => {
-                  let userId = "";
-                  const q = {
-                    eq: (field: string, value: string) => {
-                      if (field === "userId") userId = value;
-                      return q;
-                    },
-                  };
-                  builder(q);
-                  return {
-                    unique: vi.fn().mockResolvedValue(memberships[userId] ?? null),
-                  };
-                },
-              ),
-            };
-          }
-          throw new Error(`unexpected table ${table}`);
-        }),
+        query: makeUserMembershipQuery(memberships),
         delete: vi.fn(),
         insert: vi.fn(),
         patch: vi.fn(),
