@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 import { describe, expect, it, vi } from "vitest";
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
+import { orderedTake } from "../src/__tests__/helpers/convexQuery";
 import {
   computeRecommendationScore,
   RECOMMENDATION_SCORE_VERSION,
@@ -224,18 +225,14 @@ function makeHighlightedCtx(digests: Array<ReturnType<typeof makeDigest>>) {
           return {
             withIndex: vi.fn((_indexName: string, build: (q: EqBuilder) => unknown) => {
               build(makeEqBuilder());
-              return {
-                order: vi.fn(() => ({
-                  take: vi.fn().mockResolvedValue(
-                    digests.map((digest) => ({
-                      _id: `skillBadges:${digest.skillId}`,
-                      skillId: digest.skillId,
-                      kind: "highlighted",
-                      awardedAt: digest.updatedAt,
-                    })),
-                  ),
+              return orderedTake(() =>
+                digests.map((digest) => ({
+                  _id: `skillBadges:${digest.skillId}`,
+                  skillId: digest.skillId,
+                  kind: "highlighted",
+                  awardedAt: digest.updatedAt,
                 })),
-              };
+              );
             }),
           };
         }

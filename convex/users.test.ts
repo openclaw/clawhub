@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
-import { chainEq } from "../src/__tests__/helpers/convexQuery";
+import { chainEq, orderedTake } from "../src/__tests__/helpers/convexQuery";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -531,7 +531,7 @@ function makeBanCtx(
       build?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
     ) => {
       if (table === "auditLogs") {
-        return { order: vi.fn(() => ({ take: vi.fn().mockResolvedValue(auditLogs) })) };
+        return orderedTake(() => auditLogs);
       }
       if (table === "apiTokens") return { collect: vi.fn().mockResolvedValue(apiTokens) };
       if (table === "officialPublishers") {
@@ -599,9 +599,7 @@ function makeBanAppealContextCtx(options: {
         return { take: vi.fn().mockResolvedValue(options.accounts) };
       }
       if (table === "auditLogs") {
-        return {
-          order: vi.fn(() => ({ take: vi.fn().mockResolvedValue(options.auditLogs ?? []) })),
-        };
+        return orderedTake(() => options.auditLogs ?? []);
       }
       throw new Error(`Unexpected table ${table}`);
     },
