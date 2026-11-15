@@ -21,99 +21,78 @@ describe("skills.sh mirror visibility operations", () => {
   it("keeps the global lane closed when stored rejection evidence is incomplete", async () => {
     const t = convexTest(schema, modules);
     await t.run(async (ctx) => {
-      const leaderboardRunId = await ctx.db.insert("skillsShMirrorRuns", {
-        snapshotId: "skills-sh:leaderboard:missing-conflict",
-        sourceView: "leaderboard",
-        status: "completed",
-        sourceTotal: 1,
-        sourcePageSize: 500,
-        sourceMeasuredAt: new Date(1).toISOString(),
-        page: 1,
-        offset: 0,
-        counts: {
-          observed: 1,
-          inserted: 0,
-          updated: 0,
-          unchanged: 0,
-          rejected: 1,
-          quarantined: 1,
-          conflicts: 1,
-          detailsInserted: 0,
-          detailsUpdated: 0,
-          detailsUnchanged: 0,
-          detailsMissing: 0,
-          detailsTruncated: 0,
-          tombstoned: 0,
-          reactivated: 0,
-          scansPlanned: 0,
-          scansAdmitted: 0,
-        },
-        operations: {
-          functionCalls: 1,
-          dbReads: 1,
-          dbWrites: 1,
-          sourceRequests: 1,
-          sourceBytes: 1,
-        },
-        actor: "codex-test",
-        reason: "CLAW-603 missing conflict proof",
-        startedAt: 1,
-        completedAt: 2,
-        updatedAt: 2,
-      });
-      await ctx.db.insert("skillsShMirrorRuns", {
-        snapshotId: "skills-sh:trending:empty",
-        sourceView: "trending",
-        status: "completed",
-        sourceTotal: 0,
-        sourcePageSize: 500,
-        sourceMeasuredAt: new Date(3).toISOString(),
-        page: 1,
-        offset: 0,
-        counts: {
-          observed: 0,
-          inserted: 0,
-          updated: 0,
-          unchanged: 0,
-          rejected: 0,
-          conflicts: 0,
-          detailsInserted: 0,
-          detailsUpdated: 0,
-          detailsUnchanged: 0,
-          detailsMissing: 0,
-          detailsTruncated: 0,
-          tombstoned: 0,
-          reactivated: 0,
-          trendingJoined: 0,
-          trendingMissing: 0,
-          scansPlanned: 0,
-          scansAdmitted: 0,
-        },
-        operations: {
-          functionCalls: 1,
-          dbReads: 0,
-          dbWrites: 0,
-          sourceRequests: 0,
-          sourceBytes: 0,
-        },
-        actor: "codex-test",
-        reason: "CLAW-603 empty trending proof",
-        startedAt: 3,
-        completedAt: 4,
-        updatedAt: 4,
-      });
-      await ctx.db.insert("skillsShMirrorControls", {
-        key: "global",
-        enabled: true,
-        paused: false,
-        maxRowsPerRun: 50_000,
-        maxRowsPerBatch: 50,
-        maxDetailBytes: 65_536,
-        latestCompletedLeaderboardRunId: leaderboardRunId,
-        updatedBy: "codex-test",
-        reason: "CLAW-603 missing conflict proof",
-        updatedAt: 2,
-      });
+      const leaderboardRunId = await ctx.db.insert(
+        "skillsShMirrorRuns",
+        mirrorRun({
+          snapshotId: "skills-sh:leaderboard:missing-conflict",
+          sourceTotal: 1,
+          counts: {
+            observed: 1,
+            inserted: 0,
+            updated: 0,
+            unchanged: 0,
+            rejected: 1,
+            quarantined: 1,
+            conflicts: 1,
+            detailsInserted: 0,
+            detailsUpdated: 0,
+            detailsUnchanged: 0,
+            detailsMissing: 0,
+            detailsTruncated: 0,
+            tombstoned: 0,
+            reactivated: 0,
+            scansPlanned: 0,
+            scansAdmitted: 0,
+          },
+          operations: {
+            functionCalls: 1,
+            dbReads: 1,
+            dbWrites: 1,
+            sourceRequests: 1,
+            sourceBytes: 1,
+          },
+          reason: "CLAW-603 missing conflict proof",
+        }),
+      );
+      await ctx.db.insert(
+        "skillsShMirrorRuns",
+        mirrorRun({
+          snapshotId: "skills-sh:trending:empty",
+          sourceView: "trending",
+          sourceMeasuredAt: new Date(3).toISOString(),
+          counts: {
+            observed: 0,
+            inserted: 0,
+            updated: 0,
+            unchanged: 0,
+            rejected: 0,
+            conflicts: 0,
+            detailsInserted: 0,
+            detailsUpdated: 0,
+            detailsUnchanged: 0,
+            detailsMissing: 0,
+            detailsTruncated: 0,
+            tombstoned: 0,
+            reactivated: 0,
+            trendingJoined: 0,
+            trendingMissing: 0,
+            scansPlanned: 0,
+            scansAdmitted: 0,
+          },
+          reason: "CLAW-603 empty trending proof",
+          startedAt: 3,
+          completedAt: 4,
+          updatedAt: 4,
+        }),
+      );
+      await ctx.db.insert(
+        "skillsShMirrorControls",
+        mirrorControl({
+          latestCompletedLeaderboardRunId: leaderboardRunId,
+          reason: "CLAW-603 missing conflict proof",
+          updatedAt: 2,
+        }),
+      );
     });
 
     await expect(
@@ -155,18 +134,14 @@ describe("skills.sh mirror visibility operations", () => {
           updatedAt: 4,
         }),
       );
-      await ctx.db.insert("skillsShMirrorControls", {
-        key: "global",
-        enabled: true,
-        paused: false,
-        maxRowsPerRun: 50_000,
-        maxRowsPerBatch: 50,
-        maxDetailBytes: 65_536,
-        latestCompletedLeaderboardRunId: leaderboardRunId,
-        updatedBy: "codex-test",
-        reason: "CLAW-603 missing accepted digest proof",
-        updatedAt: 2,
-      });
+      await ctx.db.insert(
+        "skillsShMirrorControls",
+        mirrorControl({
+          latestCompletedLeaderboardRunId: leaderboardRunId,
+          reason: "CLAW-603 missing accepted digest proof",
+          updatedAt: 2,
+        }),
+      );
     });
 
     await expect(
@@ -183,95 +158,89 @@ describe("skills.sh mirror visibility operations", () => {
     const now = Date.now();
     const window = getCompletedRolling24HourWindow(now);
     const { nativeSkillId } = await t.run(async (ctx) => {
-      const leaderboardRunId = await ctx.db.insert("skillsShMirrorRuns", {
-        snapshotId: "skills-sh:leaderboard:verified",
-        sourceView: "leaderboard",
-        sourceSnapshotHash: "a".repeat(64),
-        status: "completed",
-        sourceTotal: 4,
-        sourcePageSize: 500,
-        sourceMeasuredAt: new Date(now - 2_000).toISOString(),
-        page: 1,
-        offset: 0,
-        counts: {
-          observed: 4,
-          inserted: 3,
-          updated: 0,
-          unchanged: 0,
-          rejected: 1,
-          quarantined: 1,
-          conflicts: 1,
-          detailsInserted: 3,
-          detailsUpdated: 0,
-          detailsUnchanged: 0,
-          detailsMissing: 0,
-          detailsTruncated: 0,
-          tombstoned: 0,
-          reactivated: 0,
-          scansPlanned: 0,
-          scansAdmitted: 0,
-        },
-        operations: {
-          functionCalls: 1,
-          dbReads: 2,
-          dbWrites: 3,
-          sourceRequests: 2,
-          sourceBytes: 100,
-        },
-        actor: "codex-test",
-        reason: "CLAW-603 verification test",
-        startedAt: now - 3_000,
-        completedAt: now - 2_000,
-        updatedAt: now - 2_000,
-      });
-      const trendingRunId = await ctx.db.insert("skillsShMirrorRuns", {
-        snapshotId: "skills-sh:trending:verified",
-        sourceView: "trending",
-        sourceSnapshotHash: "b".repeat(64),
-        status: "completed",
-        sourceTotal: 2,
-        sourcePageSize: 500,
-        sourceMeasuredAt: new Date(now - 1_000).toISOString(),
-        page: 1,
-        offset: 0,
-        counts: {
-          observed: 2,
-          inserted: 0,
-          updated: 0,
-          unchanged: 0,
-          rejected: 0,
-          conflicts: 0,
-          detailsInserted: 0,
-          detailsUpdated: 0,
-          detailsUnchanged: 0,
-          detailsMissing: 0,
-          detailsTruncated: 0,
-          tombstoned: 0,
-          reactivated: 0,
-          trendingJoined: 2,
-          trendingUpdated: 0,
-          trendingUnchanged: 2,
-          trendingMissing: 0,
-          trendingStaleRejected: 0,
-          trendingHydrationAttempts: 0,
-          trendingHydrated: 0,
-          trendingHydrationFailed: 0,
-          scansPlanned: 0,
-          scansAdmitted: 0,
-        },
-        operations: {
-          functionCalls: 1,
-          dbReads: 1,
-          dbWrites: 1,
-          sourceRequests: 1,
-          sourceBytes: 50,
-        },
-        actor: "codex-test",
-        reason: "CLAW-603 trending verification test",
-        startedAt: now - 1_500,
-        completedAt: now - 1_000,
-        updatedAt: now - 1_000,
-      });
+      const leaderboardRunId = await ctx.db.insert(
+        "skillsShMirrorRuns",
+        mirrorRun({
+          snapshotId: "skills-sh:leaderboard:verified",
+          sourceSnapshotHash: "a".repeat(64),
+          sourceTotal: 4,
+          sourceMeasuredAt: new Date(now - 2_000).toISOString(),
+          counts: {
+            observed: 4,
+            inserted: 3,
+            updated: 0,
+            unchanged: 0,
+            rejected: 1,
+            quarantined: 1,
+            conflicts: 1,
+            detailsInserted: 3,
+            detailsUpdated: 0,
+            detailsUnchanged: 0,
+            detailsMissing: 0,
+            detailsTruncated: 0,
+            tombstoned: 0,
+            reactivated: 0,
+            scansPlanned: 0,
+            scansAdmitted: 0,
+          },
+          operations: {
+            functionCalls: 1,
+            dbReads: 2,
+            dbWrites: 3,
+            sourceRequests: 2,
+            sourceBytes: 100,
+          },
+          startedAt: now - 3_000,
+          completedAt: now - 2_000,
+          updatedAt: now - 2_000,
+        }),
+      );
+      const trendingRunId = await ctx.db.insert(
+        "skillsShMirrorRuns",
+        mirrorRun({
+          snapshotId: "skills-sh:trending:verified",
+          sourceView: "trending",
+          sourceSnapshotHash: "b".repeat(64),
+          sourceTotal: 2,
+          sourceMeasuredAt: new Date(now - 1_000).toISOString(),
+          counts: {
+            observed: 2,
+            inserted: 0,
+            updated: 0,
+            unchanged: 0,
+            rejected: 0,
+            conflicts: 0,
+            detailsInserted: 0,
+            detailsUpdated: 0,
+            detailsUnchanged: 0,
+            detailsMissing: 0,
+            detailsTruncated: 0,
+            tombstoned: 0,
+            reactivated: 0,
+            trendingJoined: 2,
+            trendingUpdated: 0,
+            trendingUnchanged: 2,
+            trendingMissing: 0,
+            trendingStaleRejected: 0,
+            trendingHydrationAttempts: 0,
+            trendingHydrated: 0,
+            trendingHydrationFailed: 0,
+            scansPlanned: 0,
+            scansAdmitted: 0,
+          },
+          operations: {
+            functionCalls: 1,
+            dbReads: 1,
+            dbWrites: 1,
+            sourceRequests: 1,
+            sourceBytes: 50,
+          },
+          reason: "CLAW-603 trending verification test",
+          startedAt: now - 1_500,
+          completedAt: now - 1_000,
+          updatedAt: now - 1_000,
+        }),
+      );
       await ctx.db.insert(
         "skillsShMirrorDigests",
         digest({
@@ -335,18 +304,14 @@ describe("skills.sh mirror visibility operations", () => {
         offset: 1,
         createdAt: now - 2_000,
       });
-      await ctx.db.insert("skillsShMirrorControls", {
-        key: "global",
-        enabled: true,
-        paused: false,
-        maxRowsPerRun: 50_000,
-        maxRowsPerBatch: 50,
-        maxDetailBytes: 65_536,
-        latestCompletedLeaderboardRunId: leaderboardRunId,
-        updatedBy: "codex-test",
-        reason: "CLAW-603 verification test",
-        updatedAt: now - 2_000,
-      });
+      await ctx.db.insert(
+        "skillsShMirrorControls",
+        mirrorControl({
+          latestCompletedLeaderboardRunId: leaderboardRunId,
+          reason: "CLAW-603 verification test",
+          updatedAt: now - 2_000,
+        }),
+      );
       const nativeOwnerId = await ctx.db.insert("users", {
         handle: "native-owner",
         displayName: "Native owner",
@@ -596,18 +561,14 @@ describe("skills.sh mirror visibility operations", () => {
           }),
         );
       }
-      await ctx.db.insert("skillsShMirrorControls", {
-        key: "global",
-        enabled: true,
-        paused: false,
-        maxRowsPerRun: 50_000,
-        maxRowsPerBatch: 50,
-        maxDetailBytes: 65_536,
-        latestCompletedLeaderboardRunId: createdLeaderboardRunId,
-        updatedBy: "codex-test",
-        reason: "CLAW-603 bounded activation verification",
-        updatedAt: now - 2_000,
-      });
+      await ctx.db.insert(
+        "skillsShMirrorControls",
+        mirrorControl({
+          latestCompletedLeaderboardRunId: createdLeaderboardRunId,
+          reason: "CLAW-603 bounded activation verification",
+          updatedAt: now - 2_000,
+        }),
+      );
       return {
         leaderboardRunId: createdLeaderboardRunId,
         trendingRunId: createdTrendingRunId,
@@ -709,18 +670,14 @@ describe("skills.sh mirror visibility operations", () => {
           trendingObservedAt: now - 1_000,
         }),
       );
-      await ctx.db.insert("skillsShMirrorControls", {
-        key: "global",
-        enabled: true,
-        paused: false,
-        maxRowsPerRun: 50_000,
-        maxRowsPerBatch: 50,
-        maxDetailBytes: 65_536,
-        latestCompletedLeaderboardRunId: leaderboardRunId,
-        updatedBy: "codex-test",
-        reason: "CLAW-603 activation fallback test",
-        updatedAt: now - 3_000,
-      });
+      await ctx.db.insert(
+        "skillsShMirrorControls",
+        mirrorControl({
+          latestCompletedLeaderboardRunId: leaderboardRunId,
+          reason: "CLAW-603 activation fallback test",
+          updatedAt: now - 3_000,
+        }),
+      );
       await ctx.db.insert("skillHourlyStatStates", {
         key: "canonical_trending",
         liveStartedAt: now - 3_600_000,
@@ -944,18 +901,14 @@ describe("skills.sh mirror visibility operations", () => {
         "skillsShMirrorRuns",
         mirrorRun({ sourceView: "trending", startedAt: 1, completedAt: 2, updatedAt: 2 }),
       );
-      await ctx.db.insert("skillsShMirrorControls", {
-        key: "global",
-        enabled: true,
-        paused: false,
-        maxRowsPerRun: 50_000,
-        maxRowsPerBatch: 50,
-        maxDetailBytes: 65_536,
-        latestCompletedLeaderboardRunId: leaderboardRunId,
-        updatedBy: "codex-test",
-        reason: "current leaderboard without current trending",
-        updatedAt: 20,
-      });
+      await ctx.db.insert(
+        "skillsShMirrorControls",
+        mirrorControl({
+          latestCompletedLeaderboardRunId: leaderboardRunId,
+          reason: "current leaderboard without current trending",
+          updatedAt: 20,
+        }),
+      );
     });
 
     await expect(
@@ -1035,45 +988,39 @@ describe("skills.sh mirror visibility operations", () => {
   it("reconciles all row eligibility before atomically opening the scanless lane", async () => {
     const t = convexTest(schema, modules);
     await t.run(async (ctx) => {
-      const runId = await ctx.db.insert("skillsShMirrorRuns", {
-        snapshotId: "snapshot",
-        sourceView: "leaderboard",
-        status: "completed",
-        sourceTotal: 2,
-        sourcePageSize: 100,
-        sourceMeasuredAt: new Date(1).toISOString(),
-        page: 1,
-        offset: 0,
-        counts: {
-          observed: 2,
-          inserted: 2,
-          updated: 0,
-          unchanged: 0,
-          rejected: 0,
-          conflicts: 0,
-          detailsInserted: 0,
-          detailsUpdated: 0,
-          detailsUnchanged: 0,
-          detailsMissing: 0,
-          detailsTruncated: 0,
-          tombstoned: 0,
-          reactivated: 0,
-          scansPlanned: 0,
-          scansAdmitted: 0,
-        },
-        operations: {
-          functionCalls: 1,
-          dbReads: 0,
-          dbWrites: 2,
-          sourceRequests: 0,
-          sourceBytes: 0,
-        },
-        actor: "codex-test",
-        reason: "CLAW-603 visibility test",
-        startedAt: 1,
-        completedAt: 2,
-        updatedAt: 2,
-      });
+      const runId = await ctx.db.insert(
+        "skillsShMirrorRuns",
+        mirrorRun({
+          snapshotId: "snapshot",
+          sourceTotal: 2,
+          sourcePageSize: 100,
+          counts: {
+            observed: 2,
+            inserted: 2,
+            updated: 0,
+            unchanged: 0,
+            rejected: 0,
+            conflicts: 0,
+            detailsInserted: 0,
+            detailsUpdated: 0,
+            detailsUnchanged: 0,
+            detailsMissing: 0,
+            detailsTruncated: 0,
+            tombstoned: 0,
+            reactivated: 0,
+            scansPlanned: 0,
+            scansAdmitted: 0,
+          },
+          operations: {
+            functionCalls: 1,
+            dbReads: 0,
+            dbWrites: 2,
+            sourceRequests: 0,
+            sourceBytes: 0,
+          },
+          reason: "CLAW-603 visibility test",
+        }),
+      );
       await ctx.db.insert(
         "skillsShMirrorDigests",
         digest({
@@ -1203,6 +1150,24 @@ describe("skills.sh mirror visibility operations", () => {
     });
   });
 });
+
+function mirrorControl(
+  overrides: Pick<
+    Doc<"skillsShMirrorControls">,
+    "latestCompletedLeaderboardRunId" | "reason" | "updatedAt"
+  >,
+): Omit<Doc<"skillsShMirrorControls">, "_id" | "_creationTime"> {
+  return {
+    key: "global",
+    enabled: true,
+    paused: false,
+    maxRowsPerRun: 50_000,
+    maxRowsPerBatch: 50,
+    maxDetailBytes: 65_536,
+    updatedBy: "codex-test",
+    ...overrides,
+  };
+}
 
 function mirrorRunCounts(
   overrides: Partial<Doc<"skillsShMirrorRuns">["counts"]> = {},
