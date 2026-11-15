@@ -6,7 +6,7 @@ import {
   normalizePluginCategories,
   resolvePluginCategories,
 } from "clawhub-schema";
-import { v } from "convex/values";
+import { type Infer, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx } from "./_generated/server";
@@ -146,17 +146,13 @@ type SeedGitHubBackedSkillSourceArgs = {
   }>;
 };
 
-type PublicCorpusDummyOwner = {
-  handle: string;
-  displayName: string;
-  image: string;
-};
-
 const publicCorpusDummyOwnerValidator = v.object({
   handle: v.string(),
   displayName: v.string(),
   image: v.string(),
 });
+
+type PublicCorpusDummyOwner = Infer<typeof publicCorpusDummyOwnerValidator>;
 
 const publicCorpusSkillRowValidator = v.object({
   kind: v.literal("skill"),
@@ -192,62 +188,14 @@ const publicCorpusSeedRowValidator = v.union(
   publicCorpusPluginRowValidator,
 );
 
-type PublicCorpusSeedRow =
-  | {
-      kind: "skill";
-      slug: string;
-      displayName: string;
-      version: string;
-      skillMd: string;
-      summary?: string;
-      createdAt?: number;
-      dummyOwner: PublicCorpusDummyOwner;
-    }
-  | {
-      kind: "plugin";
-      name: string;
-      displayName: string;
-      version: string;
-      readme: string;
-      summary?: string;
-      categories?: string[];
-      topics?: string[];
-      family?: "skill" | "code-plugin" | "bundle-plugin";
-      channel?: "official" | "community" | "private";
-      sourceRepoHost?: string | null;
-      createdAt?: number;
-      dummyOwner: PublicCorpusDummyOwner;
-    };
+type PublicCorpusSeedRow = Infer<typeof publicCorpusSeedRowValidator>;
 
-const publicCorpusPreparedSkillRowValidator = v.object({
-  kind: v.literal("skill"),
-  slug: v.string(),
-  displayName: v.string(),
-  version: v.string(),
-  skillMd: v.string(),
-  summary: v.optional(v.string()),
-  createdAt: v.optional(v.number()),
-  dummyOwner: publicCorpusDummyOwnerValidator,
+const publicCorpusPreparedSkillRowValidator = publicCorpusSkillRowValidator.extend({
   storageId: v.id("_storage"),
   embedding: v.array(v.number()),
 });
 
-const publicCorpusPreparedPluginRowValidator = v.object({
-  kind: v.literal("plugin"),
-  name: v.string(),
-  displayName: v.string(),
-  version: v.string(),
-  readme: v.string(),
-  summary: v.optional(v.string()),
-  categories: v.optional(v.array(v.string())),
-  topics: v.optional(v.array(v.string())),
-  family: v.optional(
-    v.union(v.literal("skill"), v.literal("code-plugin"), v.literal("bundle-plugin")),
-  ),
-  channel: v.optional(v.union(v.literal("official"), v.literal("community"), v.literal("private"))),
-  sourceRepoHost: v.optional(v.union(v.string(), v.null())),
-  createdAt: v.optional(v.number()),
-  dummyOwner: publicCorpusDummyOwnerValidator,
+const publicCorpusPreparedPluginRowValidator = publicCorpusPluginRowValidator.extend({
   storageId: v.id("_storage"),
 });
 
