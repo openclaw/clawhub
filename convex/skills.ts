@@ -2,7 +2,6 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import {
   decodeUtf8Text,
   getCatalogTopicSlugs,
-  INTERNAL_UNCATEGORIZED_CATEGORY,
   isSkillCategorySlug,
   normalizeCatalogTopic,
   normalizeCatalogTopics,
@@ -44,6 +43,10 @@ import {
 } from "./lib/artifactModeration";
 import { getSkillBadgeMap, getSkillBadgeMaps, isSkillHighlighted } from "./lib/badges";
 import { scheduleNextBatchIfNeeded } from "./lib/batching";
+import {
+  type CatalogTextMatch as SkillCatalogSearchMatch,
+  matchCatalogText,
+} from "./lib/catalogTextMatch";
 import { generateChangelogPreview as buildChangelogPreview } from "./lib/changelog";
 import {
   ACTIVITY_TREND_DAYS,
@@ -128,7 +131,7 @@ import {
   rankedSearchKey,
   type SearchTrustSignals,
 } from "./lib/searchRanking";
-import { matchesAllTokens, matchesExploratoryTokenPrefixes, tokenize } from "./lib/searchText";
+import { tokenize } from "./lib/searchText";
 import {
   aigAnalysisValidator,
   skillSpectorAnalysisValidator,
@@ -5832,75 +5835,20 @@ async function collectSkillPackageCatalogPage<TRow>(
   };
 }
 
-type SkillCatalogSearchMatch = {
-  rankTier: number;
-  score: number;
-};
-
 function skillCatalogSearchMatch(
   digest: Doc<"skillSearchDigest">,
   queryText: string,
 ): SkillCatalogSearchMatch | null {
-  const needle = queryText.toLowerCase();
-  const queryTokens = tokenize(queryText);
-  if (queryTokens.length === 0) return null;
-  const slug = digest.slug.toLowerCase();
-  const display = digest.displayName.toLowerCase();
-  const slugTokens = tokenize(slug);
-  const displayTokens = tokenize(display);
-  let score = 0;
-  let rankTier = Number.POSITIVE_INFINITY;
-
-  const setMatch = (tier: number, boost: number) => {
-    score += boost;
-    rankTier = Math.min(rankTier, tier);
-  };
-
-  if (slug === needle) setMatch(0, 200);
-  else if (slug.startsWith(needle)) setMatch(1, 120);
-  else if (slug.includes(needle)) setMatch(1, 80);
-
-  if (display === needle) setMatch(0, 150);
-  else if (display.startsWith(needle)) setMatch(1, 70);
-  else if (display.includes(needle)) setMatch(1, 40);
-
-  if (matchesAllTokens(queryTokens, [...slugTokens, ...displayTokens], (a, b) => a === b)) {
-    setMatch(1, 65);
-  } else if (
-    matchesAllTokens(queryTokens, [...slugTokens, ...displayTokens], (a, b) => a.startsWith(b))
-  ) {
-    setMatch(1, 35);
-  }
-
-  const taxonomyQuery = normalizeCatalogTopic(queryText);
-  const categories = (digest.categories ?? []).filter(
-    (category) => category !== INTERNAL_UNCATEGORIZED_CATEGORY,
+  return matchCatalogText(
+    {
+      name: digest.slug,
+      displayName: digest.displayName,
+      categories: digest.categories,
+      topics: digest.topics,
+      summary: digest.summary,
+    },
+    queryText,
   );
-  const topicSlugs = getCatalogTopicSlugs(digest.topics);
-  if (taxonomyQuery && (categories.includes(taxonomyQuery) || topicSlugs.includes(taxonomyQuery))) {
-    setMatch(2, 25);
-  }
-  if (
-    matchesExploratoryTokenPrefixes(
-      queryTokens,
-      [...categories, ...(digest.topics ?? [])],
-      EXPLORATORY_SKILL_CATALOG_SEARCH_MIN_TOKEN_LENGTH,
-    )
-  ) {
-    setMatch(2, 20);
-  }
-
-  if (
-    matchesExploratoryTokenPrefixes(
-      queryTokens,
-      [digest.summary],
-      EXPLORATORY_SKILL_CATALOG_SEARCH_MIN_TOKEN_LENGTH,
-    )
-  ) {
-    setMatch(3, 20);
-  }
-  if (!Number.isFinite(rankTier)) return null;
-  return { rankTier, score };
 }
 
 // Skills have no verification tiers, so curated status + adoption are the
@@ -6039,8 +5987,6 @@ export const hasMissingPackageCatalogRecommendationScoresInternal = internalQuer
     return await hasMissingRecommendedScores(ctx, false, null);
   },
 });
-
-const EXPLORATORY_SKILL_CATALOG_SEARCH_MIN_TOKEN_LENGTH = 3;
 
 function skillCatalogPrefixUpperBound(value: string) {
   return `${value}\uffff`;
