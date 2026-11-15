@@ -154,6 +154,11 @@ import {
   resolvePackageReleaseFamily,
 } from "./lib/packageReleaseFamily";
 import {
+  type PackagePublishActor,
+  packagePublishActorValidator,
+  packageTemplateInventoryValidator,
+} from "./lib/packageReleaseValidators";
+import {
   hasNoPublishedPackageVersions,
   isPublishedPackageRelease,
 } from "./lib/packageReleaseVisibility";
@@ -525,19 +530,6 @@ const hardDeletePackageSourceValidator = v.union(
   v.literal("publisher.delete"),
 );
 type OwnedPackageScanScope = "ownerUserId" | "personalPublisher";
-type PackagePublishActor =
-  | {
-      kind: "user";
-      userId: Id<"users">;
-    }
-  | {
-      kind: "github-actions";
-      repository: string;
-      workflow: string;
-      runId: string;
-      runAttempt: string;
-      sha: string;
-    };
 type PackagePublishAuthContext =
   | {
       kind: "user";
@@ -11339,22 +11331,7 @@ export const insertReleaseInternal = internalMutation({
     actorUserId: v.id("users"),
     ownerUserId: v.id("users"),
     ownerPublisherId: v.optional(v.id("publishers")),
-    publishActor: v.optional(
-      v.union(
-        v.object({
-          kind: v.literal("user"),
-          userId: v.id("users"),
-        }),
-        v.object({
-          kind: v.literal("github-actions"),
-          repository: v.string(),
-          workflow: v.string(),
-          runId: v.string(),
-          runAttempt: v.string(),
-          sha: v.string(),
-        }),
-      ),
-    ),
+    publishActor: packagePublishActorValidator,
     name: v.string(),
     displayName: v.string(),
     family: v.union(
@@ -11404,24 +11381,7 @@ export const insertReleaseInternal = internalMutation({
     pluginManifestSummary: v.optional(v.any()),
     categoryClassification: v.optional(pluginCategoryClassificationValidator),
     clawManifestSummary: v.optional(v.any()),
-    templateInventory: v.optional(
-      v.array(
-        v.union(
-          v.object({
-            kind: v.union(v.literal("skill"), v.literal("plugin")),
-            source: v.literal("clawhub"),
-            ref: v.string(),
-            version: v.string(),
-          }),
-          v.object({
-            kind: v.union(v.literal("skill"), v.literal("plugin")),
-            source: v.literal("bundled"),
-            path: v.string(),
-            name: v.optional(v.string()),
-          }),
-        ),
-      ),
-    ),
+    templateInventory: packageTemplateInventoryValidator,
     source: v.optional(v.any()),
     trustedPublishTokenId: v.optional(v.id("packagePublishTokens")),
     trustedPublishInventoryDigest: v.optional(v.string()),

@@ -17,6 +17,10 @@ import {
   packageInspectorOutcomeValidator,
 } from "./lib/packageInspectorOutcome";
 import { packagePublishTokenFields } from "./lib/packagePublishTokenValidators";
+import {
+  packagePublishActorValidator,
+  packageTemplateInventoryValidator,
+} from "./lib/packageReleaseValidators";
 import { sdkUsageEntry, sdkUsageScan } from "./lib/packageSdkUsageContract";
 import {
   pluginCategoryClassificationValidator,
@@ -728,23 +732,6 @@ const packageVerificationValidator = v.optional(
       ),
     ),
   }),
-);
-
-const packagePublishActorValidator = v.optional(
-  v.union(
-    v.object({
-      kind: v.literal("user"),
-      userId: v.id("users"),
-    }),
-    v.object({
-      kind: v.literal("github-actions"),
-      repository: v.string(),
-      workflow: v.string(),
-      runId: v.string(),
-      runAttempt: v.string(),
-      sha: v.string(),
-    }),
-  ),
 );
 
 const packageScanStatusValidator = v.optional(
@@ -1737,24 +1724,7 @@ const packageReleases = defineTable({
   categoryClassification: v.optional(pluginCategoryClassificationValidator),
   // Preserve published releases and immutable archive lineage; expose templateManifestSummary on the wire.
   clawManifestSummary: v.optional(clawManifestSummaryValidator),
-  templateInventory: v.optional(
-    v.array(
-      v.union(
-        v.object({
-          kind: v.union(v.literal("skill"), v.literal("plugin")),
-          source: v.literal("clawhub"),
-          ref: v.string(),
-          version: v.string(),
-        }),
-        v.object({
-          kind: v.union(v.literal("skill"), v.literal("plugin")),
-          source: v.literal("bundled"),
-          path: v.string(),
-          name: v.optional(v.string()),
-        }),
-      ),
-    ),
-  ),
+  templateInventory: packageTemplateInventoryValidator,
   compatibility: packageCompatibilityValidator,
   runtimeId: v.optional(v.string()),
   sourceRepo: v.optional(v.string()),
