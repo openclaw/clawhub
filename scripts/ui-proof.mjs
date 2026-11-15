@@ -27,6 +27,32 @@ const DEFAULT_PORTS = {
     frontend: 4318,
   },
 };
+const PROOF_UI_VALUE_OPTIONS = new Map([
+  ["--baseline", "baseline"],
+  ["--baseline-url", "baselineUrl"],
+  ["--candidate", "candidate"],
+  ["--candidate-url", "candidateUrl"],
+  ["--class", "machineClass"],
+  ["--machine-class", "machineClass"],
+  ["--crabbox-bin", "crabboxBin"],
+  ["--idle-timeout", "idleTimeout"],
+  ["--lease-id", "leaseId"],
+  ["--mode", "mode"],
+  ["--output-dir", "outputDir"],
+  ["--provider", "provider"],
+  ["--runner", "runner"],
+  ["--scenario", "scenario"],
+  ["--seed-command", "seedCommand"],
+  ["--ttl", "ttl"],
+  ["--video-duration", "videoDuration"],
+]);
+const PROOF_UI_BOOLEAN_OPTIONS = new Map([
+  ["--dry-run", "dryRun"],
+  ["--dev-auth", "devAuth"],
+  ["--keep-lease", "keepLease"],
+  ["--skip-install", "skipInstall"],
+]);
+
 export function parseProofUiArgs(argv = []) {
   const opts = {
     baseline: DEFAULT_BASELINE,
@@ -51,28 +77,13 @@ export function parseProofUiArgs(argv = []) {
     if (arg === "--") {
       continue;
     }
-    if (arg === "--baseline") {
-      opts.baseline = requireValue(arg, next);
+    const valueOption = PROOF_UI_VALUE_OPTIONS.get(arg);
+    const booleanOption = PROOF_UI_BOOLEAN_OPTIONS.get(arg);
+    if (valueOption) {
+      opts[valueOption] = requireValue(arg, next);
       index += 1;
-    } else if (arg === "--baseline-url") {
-      opts.baselineUrl = requireValue(arg, next);
-      index += 1;
-    } else if (arg === "--candidate") {
-      opts.candidate = requireValue(arg, next);
-      index += 1;
-    } else if (arg === "--candidate-url") {
-      opts.candidateUrl = requireValue(arg, next);
-      index += 1;
-    } else if (arg === "--class" || arg === "--machine-class") {
-      opts.machineClass = requireValue(arg, next);
-      index += 1;
-    } else if (arg === "--crabbox-bin") {
-      opts.crabboxBin = requireValue(arg, next);
-      index += 1;
-    } else if (arg === "--dry-run") {
-      opts.dryRun = true;
-    } else if (arg === "--dev-auth") {
-      opts.devAuth = true;
+    } else if (booleanOption) {
+      opts[booleanOption] = true;
     } else if (arg === "--env") {
       const [key, value] = parseEnvAssignment(requireValue(arg, next), arg);
       opts.env[key] = value;
@@ -80,40 +91,6 @@ export function parseProofUiArgs(argv = []) {
     } else if (arg.startsWith("--env=")) {
       const [key, value] = parseEnvAssignment(arg.slice("--env=".length), "--env");
       opts.env[key] = value;
-    } else if (arg === "--idle-timeout") {
-      opts.idleTimeout = requireValue(arg, next);
-      index += 1;
-    } else if (arg === "--keep-lease") {
-      opts.keepLease = true;
-    } else if (arg === "--lease-id") {
-      opts.leaseId = requireValue(arg, next);
-      index += 1;
-    } else if (arg === "--mode") {
-      opts.mode = requireValue(arg, next);
-      index += 1;
-    } else if (arg === "--output-dir") {
-      opts.outputDir = requireValue(arg, next);
-      index += 1;
-    } else if (arg === "--provider") {
-      opts.provider = requireValue(arg, next);
-      index += 1;
-    } else if (arg === "--runner") {
-      opts.runner = requireValue(arg, next);
-      index += 1;
-    } else if (arg === "--scenario") {
-      opts.scenario = requireValue(arg, next);
-      index += 1;
-    } else if (arg === "--seed-command") {
-      opts.seedCommand = requireValue(arg, next);
-      index += 1;
-    } else if (arg === "--skip-install") {
-      opts.skipInstall = true;
-    } else if (arg === "--ttl") {
-      opts.ttl = requireValue(arg, next);
-      index += 1;
-    } else if (arg === "--video-duration") {
-      opts.videoDuration = requireValue(arg, next);
-      index += 1;
     } else {
       throw new Error(`Unknown proof:ui argument: ${arg}`);
     }
