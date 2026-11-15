@@ -1,22 +1,25 @@
+import { type Infer, v } from "convex/values";
 import frozenSnapshot from "../fixtures/skills-sh-500-2026-07-21.json";
 
-export type SkillsShCatalogFixtureRow = {
-  externalId: string;
-  githubOwnerId: number;
-  owner: string;
-  repo: string;
-  slug: string;
-  displayName: string;
-  sourceUrl: string;
-  githubRepoUrl: string;
-  githubPath?: string;
-  githubCommit?: string;
-  githubContentHash?: string;
-  claimPublisherHandle?: string;
-  sourceContentHash: string;
-  installs: number;
-  githubStars?: number;
-};
+export const skillsShCatalogRowValidator = v.object({
+  externalId: v.string(),
+  githubOwnerId: v.number(),
+  owner: v.string(),
+  repo: v.string(),
+  slug: v.string(),
+  displayName: v.string(),
+  sourceUrl: v.string(),
+  githubRepoUrl: v.string(),
+  githubPath: v.optional(v.string()),
+  githubCommit: v.optional(v.string()),
+  githubContentHash: v.optional(v.string()),
+  claimPublisherHandle: v.optional(v.string()),
+  sourceContentHash: v.string(),
+  installs: v.number(),
+  githubStars: v.optional(v.number()),
+});
+
+export type SkillsShCatalogFixtureRow = Infer<typeof skillsShCatalogRowValidator>;
 
 type SkillsShCatalogFixture = {
   snapshotId: string;
