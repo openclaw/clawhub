@@ -57,6 +57,11 @@ import {
 import { skillEvaluationMetricsValidator } from "./lib/skillEvaluationMetrics";
 import { skillPresentationValidator } from "./lib/skillPresentationValidator";
 import { qualityAssessmentValidator } from "./lib/skillQualityContract";
+import {
+  skillsShMirrorDetailValidator,
+  skillsShMirrorSourceRowValidator,
+  skillsShMirrorStoredRowValidator,
+} from "./lib/skillsShMirrorContract";
 
 export { skillSpectorAnalysisValidator } from "./lib/securityAnalysisValidators";
 
@@ -3264,34 +3269,11 @@ const skillsShMirrorSourcePages = defineTable({
   contentHash: v.string(),
   sourceBytes: v.number(),
   serializedBytes: v.number(),
-  rows: v.array(
-    v.object({
-      id: v.string(),
-      installUrl: v.union(v.string(), v.null()),
-      installs: v.number(),
-      name: v.string(),
-      slug: v.string(),
-      source: v.string(),
-      sourceType: v.string(),
-      url: v.string(),
-    }),
-  ),
+  rows: v.array(skillsShMirrorSourceRowValidator),
   createdAt: v.number(),
 })
   .index("by_snapshot_hash_and_page", ["snapshotHash", "page"])
   .index("by_source_view_and_page_and_created_at", ["sourceView", "page", "createdAt"]);
-
-const skillsShMirrorUpstreamScannerValidator = v.object({
-  status: v.string(),
-  sourceCheckedAt: v.optional(v.string()),
-  sourceUrl: v.optional(v.string()),
-});
-
-const skillsShMirrorClassificationConfidenceValidator = v.union(
-  v.literal("high"),
-  v.literal("medium"),
-  v.literal("low"),
-);
 
 const skillsShMirrorClaimStatusValidator = v.union(
   v.literal("pending"),
@@ -3300,45 +3282,18 @@ const skillsShMirrorClaimStatusValidator = v.union(
 );
 
 const skillsShMirrorDigests = defineTable({
-  externalId: v.string(),
-  sourceType: v.union(v.literal("github"), v.literal("well-known")),
-  upstreamSourceType: v.optional(v.string()),
-  owner: v.optional(v.string()),
-  repo: v.optional(v.string()),
-  sourceHost: v.optional(v.string()),
-  slug: v.string(),
+  ...skillsShMirrorStoredRowValidator.fields,
   normalizedSlug: v.string(),
   normalizedSlugFirstToken: v.string(),
-  displayName: v.string(),
   normalizedDisplayName: v.string(),
   normalizedDisplayNameFirstToken: v.string(),
   searchSummary: v.optional(v.string()),
   searchText: v.string(),
-  sourceUrl: v.string(),
-  canonicalRepoUrl: v.optional(v.string()),
-  githubPath: v.optional(v.string()),
-  githubCommit: v.optional(v.string()),
-  sourceContentHash: v.optional(v.string()),
-  upstreamInstalls: v.number(),
   trendingRank: v.optional(v.number()),
   trendingLifetimeInstalls: v.optional(v.number()),
   trendingObservedAt: v.optional(v.number()),
   trendingSnapshotId: v.optional(v.string()),
   trendingObservedRunId: v.optional(v.id("skillsShMirrorRuns")),
-  upstreamScanners: v.object({
-    genAgentTrustHub: skillsShMirrorUpstreamScannerValidator,
-    socket: skillsShMirrorUpstreamScannerValidator,
-    snyk: skillsShMirrorUpstreamScannerValidator,
-  }),
-  inferredCategories: v.optional(v.array(v.string())),
-  inferredTopics: v.optional(v.array(v.string())),
-  inferredCategoryConfidence: v.optional(skillsShMirrorClassificationConfidenceValidator),
-  inferredTopicConfidence: v.optional(skillsShMirrorClassificationConfidenceValidator),
-  inferredClassifierVersion: v.optional(v.string()),
-  inferredTopicClassifierVersion: v.optional(v.string()),
-  inferredInputHash: v.optional(v.string()),
-  inferredTopicInputHash: v.optional(v.string()),
-  inferredAt: v.optional(v.number()),
   sourceFreshnessStatus: v.union(v.literal("observed-only"), v.literal("stale")),
   staleQuarantineReason: v.optional(v.string()),
   detailStatus: v.union(v.literal("available"), v.literal("missing")),
@@ -3430,13 +3385,7 @@ const skillsShMirrorDigests = defineTable({
 const skillsShMirrorDetails = defineTable({
   externalId: v.string(),
   digestId: v.id("skillsShMirrorDigests"),
-  contentKind: v.union(v.literal("skill-md"), v.literal("readme")),
-  path: v.string(),
-  content: v.string(),
-  contentBytes: v.number(),
-  sourceBytes: v.number(),
-  sourceFileCount: v.number(),
-  truncated: v.boolean(),
+  ...skillsShMirrorDetailValidator.fields,
   sourceContentHash: v.optional(v.string()),
   sourceSnapshotId: v.string(),
   lastObservedRunId: v.id("skillsShMirrorRuns"),
