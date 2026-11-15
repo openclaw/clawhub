@@ -1341,6 +1341,29 @@ function makeReleaseDoc(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
+function makePackageInspectorEmailGet() {
+  return vi.fn(async (id: string) => {
+    if (id === "packages:demo") {
+      return makePackageDoc({
+        _id: "packages:demo",
+        name: "demo-plugin",
+        ownerUserId: "users:owner",
+      });
+    }
+    if (id === "packageReleases:demo-1") {
+      return makeReleaseDoc({
+        _id: "packageReleases:demo-1",
+        packageId: "packages:demo",
+        version: "1.0.0",
+      });
+    }
+    if (id === "users:owner") {
+      return { _id: "users:owner", handle: "owner", email: "owner@example.com" };
+    }
+    return null;
+  });
+}
+
 function makeDigestCtx(options: {
   pages?: Array<{
     page: Array<Record<string, unknown>>;
@@ -14940,26 +14963,7 @@ describe("packages public queries", () => {
   it("excludes internal and warning-only findings from owner emails", async () => {
     const ctx = {
       db: {
-        get: vi.fn(async (id: string) => {
-          if (id === "packages:demo") {
-            return makePackageDoc({
-              _id: "packages:demo",
-              name: "demo-plugin",
-              ownerUserId: "users:owner",
-            });
-          }
-          if (id === "packageReleases:demo-1") {
-            return makeReleaseDoc({
-              _id: "packageReleases:demo-1",
-              packageId: "packages:demo",
-              version: "1.0.0",
-            });
-          }
-          if (id === "users:owner") {
-            return { _id: "users:owner", handle: "owner", email: "owner@example.com" };
-          }
-          return null;
-        }),
+        get: makePackageInspectorEmailGet(),
         query: vi.fn((table: string) => {
           if (table === "packageInspectorWarnings") {
             return {
@@ -15067,26 +15071,7 @@ describe("packages public queries", () => {
   it("builds email context for a new exact target despite an older release notification", async () => {
     const ctx = {
       db: {
-        get: vi.fn(async (id: string) => {
-          if (id === "packages:demo") {
-            return makePackageDoc({
-              _id: "packages:demo",
-              name: "demo-plugin",
-              ownerUserId: "users:owner",
-            });
-          }
-          if (id === "packageReleases:demo-1") {
-            return makeReleaseDoc({
-              _id: "packageReleases:demo-1",
-              packageId: "packages:demo",
-              version: "1.0.0",
-            });
-          }
-          if (id === "users:owner") {
-            return { _id: "users:owner", handle: "owner", email: "owner@example.com" };
-          }
-          return null;
-        }),
+        get: makePackageInspectorEmailGet(),
         query: vi.fn((table: string) => {
           if (table === "packageInspectorWarnings") {
             return {
@@ -15135,26 +15120,7 @@ describe("packages public queries", () => {
   it("selects the exact nightly scan before limiting owner email findings", async () => {
     const ctx = {
       db: {
-        get: vi.fn(async (id: string) => {
-          if (id === "packages:demo") {
-            return makePackageDoc({
-              _id: "packages:demo",
-              name: "demo-plugin",
-              ownerUserId: "users:owner",
-            });
-          }
-          if (id === "packageReleases:demo-1") {
-            return makeReleaseDoc({
-              _id: "packageReleases:demo-1",
-              packageId: "packages:demo",
-              version: "1.0.0",
-            });
-          }
-          if (id === "users:owner") {
-            return { _id: "users:owner", handle: "owner", email: "owner@example.com" };
-          }
-          return null;
-        }),
+        get: makePackageInspectorEmailGet(),
         query: vi.fn((table: string) => {
           if (table === "packageInspectorWarnings") {
             return {
