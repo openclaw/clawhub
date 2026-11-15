@@ -207,7 +207,9 @@ does not add spacing or appear on the standalone mobile install card.
 CLI commands stay on one line and truncate with an ellipsis;
 hover or keyboard focus shows the full command in a viewport-bounded tooltip.
 Copy always uses the complete command. Switching tabs does not launch the app
-or install anything.
+or install anything. The Desktop button and the one-line CLI command share one
+row height (44px) at every width, so switching tabs never changes the card's
+height or moves the content below it; the loading placeholder uses the same row.
 
 Unavailable app handoffs retain the existing CLI/source fallback; external
 source cards keep their source-specific command choices rather than gaining an

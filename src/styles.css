@@ -6346,6 +6346,20 @@ a.skills-sh-security-audit-row:focus-visible {
   width: 100%;
 }
 
+/* Desktop and CLI share one row height so switching tabs never moves the page. */
+.skill-install-command-card {
+  --skill-install-panel-height: 44px;
+}
+
+.skill-install-desktop-panel .openclaw-install-button[data-slot="button"] {
+  min-height: var(--skill-install-panel-height);
+}
+
+.skill-install-command-card .skill-install-command-wrap .skill-install-command-shell-cli {
+  min-height: var(--skill-install-panel-height);
+  padding-block: 8px;
+}
+
 /* Reuse the existing flat terminal tabs for Desktop | CLI and legacy sources. */
 .skill-install-command-card .skill-install-tab-toggle {
   display: inline-flex;
@@ -6541,6 +6555,14 @@ a.skills-sh-security-audit-row:focus-visible {
 
   .skills-sh-detail-page .detail-mobile-install .skill-install-command-shell-cli {
     align-items: flex-start;
+  }
+
+  /* External source commands wrap here, so they keep their roomier padding. */
+  .skills-sh-detail-page
+    .detail-mobile-install
+    .skill-install-command-wrap
+    .skill-install-command-shell-cli {
+    padding-block: 12px;
   }
 
   .skills-sh-detail-page .detail-mobile-install .skill-install-command-prompt {
@@ -6977,10 +6999,10 @@ a.skills-sh-security-audit-row:focus-visible {
   gap: 12px;
 }
 
-/* One action row, the height of the default Desktop button. */
+/* One action row, the shared height of the Desktop button and the CLI command. */
 .detail-skeleton-install-action {
   width: 100%;
-  height: 34px;
+  height: var(--skill-install-panel-height, 44px);
 }
 
 /* The card renders once: in the rail on wide screens, in the content column below 900px. */

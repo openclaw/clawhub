@@ -105,8 +105,11 @@
 }
 
 .template-detail-install .skill-install-command-shell {
-  min-height: 54px;
   background: var(--oc-bg-surface);
+}
+
+.template-detail-install .skill-install-command-shell:not(.skill-install-command-shell-cli) {
+  min-height: 54px;
 }
 
 .template-detail-metadata {
