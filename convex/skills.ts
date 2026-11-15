@@ -197,7 +197,7 @@ import {
 import { normalizeSkillTags } from "./lib/skillTags";
 import { fetchText } from "./lib/storageText";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
-import schema from "./schema";
+import schema, { llmAnalysisValidator } from "./schema";
 import { consumeSkillPublishUploads } from "./skillPublishUploads";
 
 const MAX_OWNER_SUMMARY_LENGTH = 500;
@@ -7732,70 +7732,7 @@ export const updateVersionLlmAnalysisInternal = internalMutation({
     versionId: v.id("skillVersions"),
     scannerReportsStorageId: v.optional(v.id("_storage")),
     moderationMode: v.optional(v.union(v.literal("normal"), v.literal("preserve"))),
-    llmAnalysis: v.object({
-      status: v.string(),
-      verdict: v.optional(v.string()),
-      confidence: v.optional(v.string()),
-      summary: v.optional(v.string()),
-      dimensions: v.optional(
-        v.array(
-          v.object({
-            name: v.string(),
-            label: v.string(),
-            rating: v.string(),
-            detail: v.string(),
-          }),
-        ),
-      ),
-      guidance: v.optional(v.string()),
-      findings: v.optional(v.string()),
-      agenticRiskFindings: v.optional(
-        v.array(
-          v.object({
-            categoryId: v.string(),
-            categoryLabel: v.string(),
-            riskBucket: v.union(
-              v.literal("abnormal_behavior_control"),
-              v.literal("permission_boundary"),
-              v.literal("sensitive_data_protection"),
-            ),
-            status: v.union(v.literal("none"), v.literal("note"), v.literal("concern")),
-            severity: v.string(),
-            confidence: v.union(v.literal("high"), v.literal("medium"), v.literal("low")),
-            evidence: v.optional(
-              v.object({
-                path: v.string(),
-                snippet: v.string(),
-                explanation: v.string(),
-              }),
-            ),
-            userImpact: v.string(),
-            recommendation: v.string(),
-          }),
-        ),
-      ),
-      riskSummary: v.optional(
-        v.object({
-          abnormal_behavior_control: v.object({
-            status: v.union(v.literal("none"), v.literal("note"), v.literal("concern")),
-            summary: v.string(),
-            highestSeverity: v.optional(v.string()),
-          }),
-          permission_boundary: v.object({
-            status: v.union(v.literal("none"), v.literal("note"), v.literal("concern")),
-            summary: v.string(),
-            highestSeverity: v.optional(v.string()),
-          }),
-          sensitive_data_protection: v.object({
-            status: v.union(v.literal("none"), v.literal("note"), v.literal("concern")),
-            summary: v.string(),
-            highestSeverity: v.optional(v.string()),
-          }),
-        }),
-      ),
-      model: v.optional(v.string()),
-      checkedAt: v.number(),
-    }),
+    llmAnalysis: llmAnalysisValidator,
   },
   handler: async (ctx, args) => {
     const version = await ctx.db.get(args.versionId);
