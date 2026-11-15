@@ -6,6 +6,10 @@ import {
   canonicalTrendingCardValidator,
   canonicalTrendingSourceRefValidator,
 } from "./lib/canonicalTrending";
+import {
+  catalogClassificationConfidenceValidator,
+  catalogClassificationResultValidator,
+} from "./lib/catalogClassificationContract";
 import { displayManifestStatusValidator, displayManifestValidator } from "./lib/displayManifest";
 import { analyticsBuildValidator, analyticsSnapshotValidator } from "./lib/downloadAnalytics";
 import { EMBEDDING_DIMENSIONS } from "./lib/embeddings";
@@ -793,12 +797,6 @@ const skillCardGenerationJobSourceValidator = v.union(
 
 const packageFilesValidator = storedFilesValidator;
 
-const catalogClassificationConfidenceValidator = v.union(
-  v.literal("high"),
-  v.literal("medium"),
-  v.literal("low"),
-);
-
 const catalogClassificationApplyStatusValidator = v.union(
   v.literal("preview"),
   v.literal("applied"),
@@ -806,30 +804,6 @@ const catalogClassificationApplyStatusValidator = v.union(
   v.literal("skipped-author"),
   v.literal("error"),
 );
-
-const catalogCategoryCandidateValidator = v.object({
-  category: v.string(),
-  score: v.number(),
-  sources: v.array(v.string()),
-  evidence: v.array(v.string()),
-  strongEvidence: v.optional(v.boolean()),
-  primaryEvidence: v.optional(v.boolean()),
-  strongPrimaryEvidence: v.optional(v.boolean()),
-  primaryEvidenceCount: v.optional(v.number()),
-});
-
-const catalogTopicCandidateValidator = v.object({
-  topic: v.string(),
-  slug: v.string(),
-  score: v.number(),
-  sources: v.array(v.string()),
-  evidence: v.array(v.string()),
-  primaryEvidence: v.boolean(),
-  primarySourceCount: v.number(),
-  strongEvidence: v.boolean(),
-  confidence: catalogClassificationConfidenceValidator,
-  suppressedBy: v.optional(v.string()),
-});
 
 const skillScanRequestSourceKindValidator = v.union(
   v.literal("upload"),
@@ -1792,26 +1766,7 @@ const pluginCategoryRefreshes = defineTable({
   .index("by_status", ["status"]);
 
 const catalogClassificationResults = defineTable({
-  targetKind: v.union(v.literal("skill"), v.literal("plugin")),
-  skillId: v.optional(v.id("skills")),
-  packageId: v.optional(v.id("packages")),
-  skillVersionId: v.optional(v.id("skillVersions")),
-  packageReleaseId: v.optional(v.id("packageReleases")),
-  categories: v.array(v.string()),
-  topics: v.array(v.string()),
-  categoryCandidates: v.array(catalogCategoryCandidateValidator),
-  topicCandidates: v.array(catalogTopicCandidateValidator),
-  categoryCandidateCount: v.number(),
-  topicCandidateCount: v.number(),
-  categoryConfidence: catalogClassificationConfidenceValidator,
-  topicConfidence: catalogClassificationConfidenceValidator,
-  categoryNeedsReview: v.boolean(),
-  topicNeedsReview: v.boolean(),
-  unknownSignals: v.array(v.string()),
-  classifierVersion: v.string(),
-  topicClassifierVersion: v.string(),
-  inputHash: v.string(),
-  topicInputHash: v.string(),
+  ...catalogClassificationResultValidator.fields,
   applyStatus: catalogClassificationApplyStatusValidator,
   error: v.optional(v.string()),
   classifiedAt: v.number(),
