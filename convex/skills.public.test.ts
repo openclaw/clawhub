@@ -386,31 +386,7 @@ describe("skills.getBySlug", () => {
 
   it("sanitizes owner fields in the public response", async () => {
     const ctx = makeCtx({
-      skill: {
-        _id: "skills:1",
-        _creationTime: 1,
-        slug: "demo",
-        displayName: "Demo",
-        summary: "Public demo skill",
-        ownerUserId: "users:1",
-        canonicalSkillId: undefined,
-        forkOf: undefined,
-        latestVersionId: null,
-        tags: {},
-        stats: {
-          downloads: 10,
-          installsCurrent: 2,
-          installsAllTime: 5,
-          stars: 3,
-          versions: 1,
-          comments: 0,
-        },
-        createdAt: 1,
-        updatedAt: 2,
-        moderationStatus: "active",
-        moderationFlags: undefined,
-        softDeletedAt: undefined,
-      },
+      skill: makeSkill(),
       owner: {
         _id: "users:1",
         _creationTime: 1,
@@ -556,31 +532,7 @@ describe("skills.getBySlug", () => {
 
   it("hides skills whose owner is deleted or banned", async () => {
     const ctx = makeCtx({
-      skill: {
-        _id: "skills:1",
-        _creationTime: 1,
-        slug: "demo",
-        displayName: "Demo",
-        summary: "Public demo skill",
-        ownerUserId: "users:1",
-        canonicalSkillId: undefined,
-        forkOf: undefined,
-        latestVersionId: null,
-        tags: {},
-        stats: {
-          downloads: 10,
-          installsCurrent: 2,
-          installsAllTime: 5,
-          stars: 3,
-          versions: 1,
-          comments: 0,
-        },
-        createdAt: 1,
-        updatedAt: 2,
-        moderationStatus: "active",
-        moderationFlags: undefined,
-        softDeletedAt: undefined,
-      },
+      skill: makeSkill(),
       owner: {
         _id: "users:1",
         _creationTime: 1,
