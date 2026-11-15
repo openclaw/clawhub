@@ -470,6 +470,81 @@ function makeTrustedPackagePublishToken(ref = "refs/heads/main") {
   };
 }
 
+function makeOpenClawV2PublishToken(inventoryDigest: string) {
+  return {
+    _id: "packagePublishTokens:v2",
+    packageId: "packages:demo",
+    version: "1.0.0",
+    provider: "github-actions",
+    repository: "openclaw/openclaw",
+    repositoryId: "1",
+    repositoryOwner: "openclaw",
+    repositoryOwnerId: "2",
+    workflowFilename: "plugin-clawhub-release.yml",
+    environment: "clawhub-release",
+    runId: "100",
+    runAttempt: "1",
+    sha: "c".repeat(40),
+    ref: "refs/tags/release-publish/tooling",
+    scope: "publish",
+    inventoryDigest,
+    authorizationVersion: 2,
+    authorizationRoute: "automated-awaited",
+    authorizationTransactionKey: "exact-transaction",
+    authorizationKey: "exact-transaction:publish",
+    authorizationArtifactId: "101",
+    authorizationArtifactDigest: `sha256:${"a".repeat(64)}`,
+    trustedToolingIdentityJson: '{"version":2}',
+    candidateRepository: "openclaw/openclaw",
+    candidateSha: "b".repeat(40),
+    parentRepository: "openclaw/openclaw",
+    parentWorkflow: ".github/workflows/openclaw-release-publish.yml",
+    parentRunId: "99",
+    parentRunAttempt: "1",
+    consumedAt: Date.now(),
+    expiresAt: Date.now() - 1,
+  };
+}
+
+function makeLegacyTemplateRetryPayload(artifactSha256: string) {
+  return {
+    name: "demo-claw",
+    displayName: "Demo Template",
+    family: "template",
+    version: "1.0.0",
+    changelog: "retry",
+    ownerHandle: "owner",
+    expectedArtifactSha256: artifactSha256,
+    files: [
+      { path: "package.json", size: 1, storageId: "storage:package", sha256: "package" },
+      {
+        path: "manifests/CLAW.md",
+        size: 1,
+        storageId: "storage:claw",
+        sha256: "template",
+      },
+      {
+        path: "profiles/openclaw.yml",
+        size: 1,
+        storageId: "storage:profile",
+        sha256: "profile",
+      },
+    ],
+    artifact: {
+      kind: "npm-pack",
+      storageId: "storage:archive",
+      sha256: artifactSha256,
+      size: 3,
+      format: "tgz",
+      npmIntegrity: "sha512-demo",
+      npmShasum: "b".repeat(40),
+      npmTarballName: "demo-claw-1.0.0.tgz",
+      npmUnpackedSize: 3,
+      npmFileCount: 3,
+    },
+  };
+}
+
 function makePackageManifestStorage() {
   return {
     get: vi.fn(async (id: string) =>
@@ -9188,39 +9263,7 @@ describe("packages public queries", () => {
 
   it("keeps v2 releases pending until the exact parent succeeds", async () => {
     const inventoryDigest = "d".repeat(64);
-    const token = {
-      _id: "packagePublishTokens:v2",
-      packageId: "packages:demo",
-      version: "1.0.0",
-      provider: "github-actions",
-      repository: "openclaw/openclaw",
-      repositoryId: "1",
-      repositoryOwner: "openclaw",
-      repositoryOwnerId: "2",
-      workflowFilename: "plugin-clawhub-release.yml",
-      environment: "clawhub-release",
-      runId: "100",
-      runAttempt: "1",
-      sha: "c".repeat(40),
-      ref: "refs/tags/release-publish/tooling",
-      scope: "publish",
-      inventoryDigest,
-      authorizationVersion: 2,
-      authorizationRoute: "automated-awaited",
-      authorizationTransactionKey: "exact-transaction",
-      authorizationKey: "exact-transaction:publish",
-      authorizationArtifactId: "101",
-      authorizationArtifactDigest: `sha256:${"a".repeat(64)}`,
-      trustedToolingIdentityJson: '{"version":2}',
-      candidateRepository: "openclaw/openclaw",
-      candidateSha: "b".repeat(40),
-      parentRepository: "openclaw/openclaw",
-      parentWorkflow: ".github/workflows/openclaw-release-publish.yml",
-      parentRunId: "99",
-      parentRunAttempt: "1",
-      consumedAt: Date.now(),
-      expiresAt: Date.now() - 1,
-    };
+    const token = makeOpenClawV2PublishToken(inventoryDigest);
     const runMutation = vi.fn(async (_ref: unknown, args: unknown) => {
       if (typeof args === "object" && args !== null && "attemptId" in args && !("error" in args)) {
         return {
@@ -9272,39 +9315,7 @@ describe("packages public queries", () => {
 
   it("publishes a staged v2 release only after terminal parent authorization", async () => {
     const inventoryDigest = "d".repeat(64);
-    const token = {
-      _id: "packagePublishTokens:v2",
-      packageId: "packages:demo",
-      version: "1.0.0",
-      provider: "github-actions",
-      repository: "openclaw/openclaw",
-      repositoryId: "1",
-      repositoryOwner: "openclaw",
-      repositoryOwnerId: "2",
-      workflowFilename: "plugin-clawhub-release.yml",
-      environment: "clawhub-release",
-      runId: "100",
-      runAttempt: "1",
-      sha: "c".repeat(40),
-      ref: "refs/tags/release-publish/tooling",
-      scope: "publish",
-      inventoryDigest,
-      authorizationVersion: 2,
-      authorizationRoute: "automated-awaited",
-      authorizationTransactionKey: "exact-transaction",
-      authorizationKey: "exact-transaction:publish",
-      authorizationArtifactId: "101",
-      authorizationArtifactDigest: `sha256:${"a".repeat(64)}`,
-      trustedToolingIdentityJson: '{"version":2}',
-      candidateRepository: "openclaw/openclaw",
-      candidateSha: "b".repeat(40),
-      parentRepository: "openclaw/openclaw",
-      parentWorkflow: ".github/workflows/openclaw-release-publish.yml",
-      parentRunId: "99",
-      parentRunAttempt: "1",
-      consumedAt: Date.now(),
-      expiresAt: Date.now() - 1,
-    };
+    const token = makeOpenClawV2PublishToken(inventoryDigest);
     const authorization = {
       identity: {
         candidateRepository: token.candidateRepository,
@@ -11711,42 +11722,7 @@ describe("packages public queries", () => {
     await expect(
       publishPackageForUserInternalHandler(ctx as never, {
         actorUserId: "users:owner",
-        payload: {
-          name: "demo-claw",
-          displayName: "Demo Template",
-          family: "template",
-          version: "1.0.0",
-          changelog: "retry",
-          ownerHandle: "owner",
-          expectedArtifactSha256: artifactSha256,
-          files: [
-            { path: "package.json", size: 1, storageId: "storage:package", sha256: "package" },
-            {
-              path: "manifests/CLAW.md",
-              size: 1,
-              storageId: "storage:claw",
-              sha256: "template",
-            },
-            {
-              path: "profiles/openclaw.yml",
-              size: 1,
-              storageId: "storage:profile",
-              sha256: "profile",
-            },
-          ],
-          artifact: {
-            kind: "npm-pack",
-            storageId: "storage:archive",
-            sha256: artifactSha256,
-            size: 3,
-            format: "tgz",
-            npmIntegrity: "sha512-demo",
-            npmShasum: "b".repeat(40),
-            npmTarballName: "demo-claw-1.0.0.tgz",
-            npmUnpackedSize: 3,
-            npmFileCount: 3,
-          },
-        },
+        payload: makeLegacyTemplateRetryPayload(artifactSha256),
       }),
     ).resolves.toMatchObject({
       ok: true,
@@ -11799,42 +11775,7 @@ describe("packages public queries", () => {
     await expect(
       publishPackageForUserInternalHandler(ctx as never, {
         actorUserId: "users:owner",
-        payload: {
-          name: "demo-claw",
-          displayName: "Demo Template",
-          family: "template",
-          version: "1.0.0",
-          changelog: "retry",
-          ownerHandle: "owner",
-          expectedArtifactSha256: artifactSha256,
-          files: [
-            { path: "package.json", size: 1, storageId: "storage:package", sha256: "package" },
-            {
-              path: "manifests/CLAW.md",
-              size: 1,
-              storageId: "storage:claw",
-              sha256: "template",
-            },
-            {
-              path: "profiles/openclaw.yml",
-              size: 1,
-              storageId: "storage:profile",
-              sha256: "profile",
-            },
-          ],
-          artifact: {
-            kind: "npm-pack",
-            storageId: "storage:archive",
-            sha256: artifactSha256,
-            size: 3,
-            format: "tgz",
-            npmIntegrity: "sha512-demo",
-            npmShasum: "b".repeat(40),
-            npmTarballName: "demo-claw-1.0.0.tgz",
-            npmUnpackedSize: 3,
-            npmFileCount: 3,
-          },
-        },
+        payload: makeLegacyTemplateRetryPayload(artifactSha256),
       }),
     ).rejects.toThrow("profiles/openclaw.yml: Template profiles are no longer supported.");
     expect(runMutation).toHaveBeenCalledTimes(2);
