@@ -278,6 +278,77 @@ function makeSkillScanQuery<TSkill, TVersion>(
   });
 }
 
+function makeModeratedSkillQuery<TSkill, TVersion>(
+  selectedSkill: TSkill,
+  selectedVersion0: TVersion,
+) {
+  let slugLookupCount = 0;
+  return vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+    if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+      return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+    }
+
+    if ("slug" in args) {
+      slugLookupCount += 1;
+      if (slugLookupCount === 1) return null;
+      return selectedSkill;
+    }
+
+    return null;
+  });
+}
+
+function makeMissingSkillVersionQuery<TSkill>(selectedSkill: TSkill) {
+  return vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+    if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+      return { status: "not_found" };
+    }
+
+    if ("slug" in args) {
+      return {
+        skill: selectedSkill,
+        latestVersion: null,
+        owner: null,
+        moderationInfo: null,
+      };
+    }
+
+    return null;
+  });
+}
+
+function makeHistoricalSkillScanQuery<TSkill, TVersion, TModeration extends { _id: string }>(
+  selectedSkill: TSkill,
+  selectedVersion0: TVersion,
+  moderationVersion: TModeration,
+) {
+  return vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+    if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+      if (args.versionId === moderationVersion._id)
+        return { status: "available", skill: selectedSkill, version: moderationVersion };
+
+      return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+    }
+
+    if ("slug" in args) {
+      return {
+        skill: selectedSkill,
+        latestVersion: moderationVersion,
+        owner: { _id: "users:1", handle: "owner", displayName: "Owner" },
+        moderationInfo: {
+          isPendingScan: false,
+          isMalwareBlocked: false,
+          isSuspicious: false,
+          isHiddenByMod: false,
+          isRemoved: false,
+        },
+      };
+    }
+
+    return null;
+  });
+}
+
 function makeVersionDetailQuery<TSkill, TVersion>(
   selectedSkill: TSkill,
   selectedVersion0: TVersion,
@@ -5364,7 +5435,6 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("blocks version detail for moderated skills", async () => {
-    let slugLookupCount = 0;
     const selectedSkill = {
       _id: "skills:1",
       slug: "demo",
@@ -5376,19 +5446,7 @@ describe("httpApiV1 handlers", () => {
       moderationSourceVersionId: "skillVersions:1",
     };
     const selectedVersion0 = makeSkillVersionFixture();
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
-      }
-
-      if ("slug" in args) {
-        slugLookupCount += 1;
-        if (slugLookupCount === 1) return null;
-        return selectedSkill;
-      }
-
-      return null;
-    });
+    const runQuery = makeModeratedSkillQuery(selectedSkill, selectedVersion0);
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/versions/1.0.0"),
@@ -5637,7 +5695,6 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("blocks latest scan status while security review is pending", async () => {
-    let slugLookupCount = 0;
     const selectedSkill = {
       _id: "skills:1",
       slug: "demo",
@@ -5653,19 +5710,7 @@ describe("httpApiV1 handlers", () => {
       ...makeSkillVersionFixture(),
       capabilityTags: ["posts-externally", "requires-oauth-token"],
     };
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
-      }
-
-      if ("slug" in args) {
-        slugLookupCount += 1;
-        if (slugLookupCount === 1) return null;
-        return selectedSkill;
-      }
-
-      return null;
-    });
+    const runQuery = makeModeratedSkillQuery(selectedSkill, selectedVersion0);
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/scan"),
@@ -5785,7 +5830,6 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("blocks exact scan status when the moderated skill is unavailable publicly", async () => {
-    let slugLookupCount = 0;
     const selectedSkill = {
       _id: "skills:1",
       slug: "demo",
@@ -5800,19 +5844,7 @@ describe("httpApiV1 handlers", () => {
     const selectedVersion0 = makeSkillVersionFixture({
       changelog: "c1",
     });
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
-      }
-
-      if ("slug" in args) {
-        slugLookupCount += 1;
-        if (slugLookupCount === 1) return null;
-        return selectedSkill;
-      }
-
-      return null;
-    });
+    const runQuery = makeModeratedSkillQuery(selectedSkill, selectedVersion0);
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/scan?version=1.0.0"),
@@ -5822,7 +5854,6 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("blocks tagged scan status when the moderated skill is unavailable publicly", async () => {
-    let slugLookupCount = 0;
     const selectedSkill = {
       _id: "skills:1",
       slug: "demo",
@@ -5837,19 +5868,7 @@ describe("httpApiV1 handlers", () => {
     const selectedVersion0 = makeSkillVersionFixture({
       changelog: "c1",
     });
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
-      }
-
-      if ("slug" in args) {
-        slugLookupCount += 1;
-        if (slugLookupCount === 1) return null;
-        return selectedSkill;
-      }
-
-      return null;
-    });
+    const runQuery = makeModeratedSkillQuery(selectedSkill, selectedVersion0);
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/scan?tag=old"),
@@ -6054,31 +6073,11 @@ describe("httpApiV1 handlers", () => {
         checkedAt: 222,
       },
     };
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        if (args.versionId === moderationVersion._id)
-          return { status: "available", skill: selectedSkill, version: moderationVersion };
-
-        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
-      }
-
-      if ("slug" in args) {
-        return {
-          skill: selectedSkill,
-          latestVersion: moderationVersion,
-          owner: { _id: "users:1", handle: "owner", displayName: "Owner" },
-          moderationInfo: {
-            isPendingScan: false,
-            isMalwareBlocked: false,
-            isSuspicious: false,
-            isHiddenByMod: false,
-            isRemoved: false,
-          },
-        };
-      }
-
-      return null;
-    });
+    const runQuery = makeHistoricalSkillScanQuery(
+      selectedSkill,
+      selectedVersion0,
+      moderationVersion,
+    );
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/scan?version=1.0.0"),
@@ -6123,31 +6122,11 @@ describe("httpApiV1 handlers", () => {
         checkedAt: 222,
       },
     };
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        if (args.versionId === moderationVersion._id)
-          return { status: "available", skill: selectedSkill, version: moderationVersion };
-
-        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
-      }
-
-      if ("slug" in args) {
-        return {
-          skill: selectedSkill,
-          latestVersion: moderationVersion,
-          owner: { _id: "users:1", handle: "owner", displayName: "Owner" },
-          moderationInfo: {
-            isPendingScan: false,
-            isMalwareBlocked: false,
-            isSuspicious: false,
-            isHiddenByMod: false,
-            isRemoved: false,
-          },
-        };
-      }
-
-      return null;
-    });
+    const runQuery = makeHistoricalSkillScanQuery(
+      selectedSkill,
+      selectedVersion0,
+      moderationVersion,
+    );
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery }),
       new Request("https://example.com/api/v1/skills/demo/scan?tag=old"),
@@ -6167,22 +6146,7 @@ describe("httpApiV1 handlers", () => {
     const selectedSkill = makeSkillFixture({
       tags: { old: "skillVersions:other" },
     });
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "not_found" };
-      }
-
-      if ("slug" in args) {
-        return {
-          skill: selectedSkill,
-          latestVersion: null,
-          owner: null,
-          moderationInfo: null,
-        };
-      }
-
-      return null;
-    });
+    const runQuery = makeMissingSkillVersionQuery(selectedSkill);
 
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery }),
@@ -6659,22 +6623,7 @@ describe("httpApiV1 handlers", () => {
 
   it("does not serve Skill Cards from another skill's tagged version", async () => {
     const selectedSkill = makeSkillArtifactFixture({ old: "skillVersions:other" });
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "not_found" };
-      }
-
-      if ("slug" in args) {
-        return {
-          skill: selectedSkill,
-          latestVersion: null,
-          owner: null,
-          moderationInfo: null,
-        };
-      }
-
-      return null;
-    });
+    const runQuery = makeMissingSkillVersionQuery(selectedSkill);
     const storage = { get: vi.fn() };
 
     const response = await __handlers.skillsGetRouterV1Handler(
@@ -6719,22 +6668,7 @@ describe("httpApiV1 handlers", () => {
 
   it("does not verify another skill's tagged version", async () => {
     const selectedSkill = makeSkillArtifactFixture({ old: "skillVersions:other" });
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
-        return { status: "not_found" };
-      }
-
-      if ("slug" in args) {
-        return {
-          skill: selectedSkill,
-          latestVersion: null,
-          owner: null,
-          moderationInfo: null,
-        };
-      }
-
-      return null;
-    });
+    const runQuery = makeMissingSkillVersionQuery(selectedSkill);
 
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery }),
