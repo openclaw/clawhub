@@ -2879,7 +2879,6 @@ export async function runContinuouslyRefilledWorkerPool<TJob>(options: {
         ({ claimedCount, jobs } = await options.claimJobs(remainingJobs));
       } catch (error) {
         totalClaimFailures += 1;
-        totalFailed += 1;
         consecutiveClaimFailures += 1;
         const retry =
           !workerMustStop &&
@@ -2889,6 +2888,10 @@ export async function runContinuouslyRefilledWorkerPool<TJob>(options: {
         const retryDelayMs = retry
           ? 1000 * 2 ** (consecutiveClaimFailures - 1) + Math.floor(Math.random() * 500)
           : null;
+        // Only a claim failure that ends claiming fails the worker. A transient
+        // error recovered by retry stays visible in totalClaimFailures, but must
+        // not set a non-zero exit code on a shard whose scans all completed.
+        if (!retry) totalFailed += 1;
         queueDrained = !retry;
         const message = error instanceof Error ? error.message : String(error);
         logger.error(

@@ -3,7 +3,7 @@ import {
   normalizeInferredCatalogTopics,
   normalizePluginCategories,
   normalizeSkillCategories,
-} from "clawhub-schema";
+} from "clawhub-schema/catalogMetadata";
 import { convexToJson, ConvexError, type Infer, v } from "convex/values";
 import { components, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";

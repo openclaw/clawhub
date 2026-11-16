@@ -28,7 +28,7 @@ import { DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
 import { useDownloadsSidebarMetricBlock } from "./DownloadsMetricCard";
 import { InlineMarkdownSummary } from "./InlineMarkdownSummary";
 import { SidebarMetadata } from "./SidebarMetadata";
-import { buildSkillHref } from "./skillDetailUtils";
+import { buildSkillInstallTarget, buildSkillHref } from "./skillDetailUtils";
 import { SkillCommandLineCard } from "./SkillInstallSurface";
 import { SkillPublicationNotice } from "./SkillPublicationNotice";
 import { Badge } from "./ui/badge";
@@ -218,6 +218,9 @@ export function SkillDetailPageView({
   cliHelp,
   category,
   categories,
+  staffVisibilityTag,
+  isAutoHidden,
+  isRemoved,
   staffVisibilityAlert,
   postInstallContent,
   securityAuditSummary,
@@ -264,6 +267,40 @@ export function SkillDetailPageView({
   const [isSummaryExpanded, setIsSummaryExpanded] = useState(false);
   const [mobileDetailPanel, setMobileDetailPanel] = useState<MobileDetailPanel>("content");
   const isMobileDetailLayout = useMediaQuery("(max-width: 900px)");
+
+  // Do not fall back to a globally ambiguous slug, a display name or an owner ID.
+  const appInstallTarget = ownerHandle?.trim()
+    ? buildSkillInstallTarget(ownerHandle, installOwnerId, skill.slug)
+    : null;
+  const canOpenInstall = Boolean(
+    appInstallTarget &&
+    latestVersion &&
+    skill.installKind !== "github" &&
+    installContent === undefined &&
+    !isPendingPublication &&
+    !isRemoved &&
+    !isAutoHidden &&
+    !staffVisibilityTag &&
+    !modInfo?.isPendingScan &&
+    !modInfo?.isMalwareBlocked &&
+    !modInfo?.isHiddenByMod &&
+    !modInfo?.isRemoved &&
+    modInfo?.verdict !== "malicious",
+  );
+  const installCommandCard = !isPendingPublication
+    ? (installContent ?? (
+        <SkillCommandLineCard
+          slug={skill.slug}
+          ownerHandle={ownerHandle}
+          ownerId={installOwnerId}
+          desktopInstall={
+            canOpenInstall && appInstallTarget
+              ? { family: "skills", name: appInstallTarget }
+              : undefined
+          }
+        />
+      ))
+    : null;
 
   const renderStarAction = () => (
     <SignedInActionTooltip
@@ -430,6 +467,7 @@ export function SkillDetailPageView({
                   {renderStarAction()}
                 </div>
               ) : null}
+              {!isMobileDetailLayout ? installCommandCard : null}
               <div className="detail-sidebar-stats">{desktopStatsContent}</div>
             </div>
           }
@@ -608,16 +646,8 @@ export function SkillDetailPageView({
             </>
           }
         >
-          {!isPendingPublication ? (
-            <div className="detail-mobile-install">
-              {installContent ?? (
-                <SkillCommandLineCard
-                  slug={skill.slug}
-                  ownerHandle={ownerHandle}
-                  ownerId={installOwnerId}
-                />
-              )}
-            </div>
+          {isMobileDetailLayout && installCommandCard ? (
+            <div className="detail-mobile-install">{installCommandCard}</div>
           ) : null}
 
           <div className="detail-mobile-master-tabs" data-active={mobileDetailPanel}>

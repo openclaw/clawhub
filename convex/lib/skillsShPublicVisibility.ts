@@ -1,4 +1,5 @@
-import { getClawHubRolloutCapabilities, type ClawHubRolloutEnvironment } from "clawhub-schema";
+import type { ClawHubRolloutEnvironment } from "clawhub-schema";
+import { getClawHubRolloutCapabilities } from "clawhub-schema/rolloutCapabilities";
 import type { SkillsShMirrorDigest } from "./skillsShMirrorPublic";
 import { buildUnclaimedSkillsShInstallResolution } from "./skillsShMirrorPublic";
 

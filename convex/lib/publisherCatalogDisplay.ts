@@ -9,7 +9,7 @@ export type GitHubSkillCatalogSource = {
 
 export type GitHubSkillCatalogItem = {
   _id: string;
-  kind: "skill" | "plugin";
+  kind: "skill" | "plugin" | "template";
   displayName: string;
   slug?: string | null;
   sourceBacked?: boolean;

@@ -111,7 +111,8 @@ unchanged, and catalog metadata becomes visible only after publication.
   verifies the archive's `package.json` name against it.
 - Detail pages present release security-audit status and details in the Security
   audit sidebar, not repeated as inline subtext beneath the install command. This is
-  presentational only: CLI and prompt copy remain unavailable unless the package
+  presentational only: the identity-only native Install CTA and command copy
+  remain unavailable unless the package
   scan status is clean and a current release exists. Missing, pending, not-run,
   suspicious, and malicious scan states do not become ready to add.
 

@@ -18,8 +18,15 @@ type PluginListItemProps = {
   item: PackageListItem;
   variant?: "list" | "card";
   href?: string;
+  /** Templates share this row layout but are not plugins; callers pass their own `href`. */
+  itemKind?: "plugin" | "template";
   showOfficialBadge?: boolean;
 };
+
+const ITEM_KIND_COPY = {
+  plugin: { label: "Plugin", fallbackSummary: "Plugin package for agent workflows." },
+  template: { label: "Template", fallbackSummary: "Agent template." },
+} as const;
 
 function getPluginTaxonomyDisplay(item: PackageListItem) {
   const topics = (item.topics ?? []).filter((topic) => topic.trim());
@@ -43,8 +50,10 @@ export function PluginListItem({
   item,
   variant = "list",
   href,
+  itemKind = "plugin",
   showOfficialBadge = true,
 }: PluginListItemProps) {
+  const kindCopy = ITEM_KIND_COPY[itemKind];
   const isOfficial = item.isOfficial || item.ownerOfficial === true;
   const downloads = formatCompactStat(item.stats?.downloads ?? 0);
   const taxonomy = getPluginTaxonomyDisplay(item);
@@ -53,6 +62,8 @@ export function PluginListItem({
   const pluginHref = href ?? buildPluginDetailHref(item.name, { ownerHandle: item.ownerHandle });
   const displayName = presentationTitle(item.displayName, item.name);
   const recordSelection = () => {
+    // Plugin selection analytics identify plugin packages only.
+    if (itemKind !== "plugin") return;
     if (item.channel === "official" || item.channel === "community")
       emitAnalytics("select_content", {
         content_type: "plugin",
@@ -68,7 +79,7 @@ export function PluginListItem({
           to={pluginHref}
           onClick={recordSelection}
           className="plugin-detail-link"
-          aria-label={`Plugin: ${displayName}`}
+          aria-label={`${kindCopy.label}: ${displayName}`}
         />
         <div className="skill-card-header">
           <MarketplaceIcon
@@ -93,9 +104,7 @@ export function PluginListItem({
           </div>
         </div>
         <p className="skill-card-summary plugin-summary">
-          <InlineMarkdownSummary>
-            {item.summary ?? "Plugin package for agent workflows."}
-          </InlineMarkdownSummary>
+          <InlineMarkdownSummary>{item.summary ?? kindCopy.fallbackSummary}</InlineMarkdownSummary>
         </p>
         <CatalogTopicList topics={taxonomy.labels} limit={2} ariaLabel={taxonomy.ariaLabel} />
         <div className="skill-card-footer">
@@ -129,7 +138,7 @@ export function PluginListItem({
         to={pluginHref}
         onClick={recordSelection}
         className="plugin-detail-link"
-        aria-label={`Plugin: ${displayName}`}
+        aria-label={`${kindCopy.label}: ${displayName}`}
       />
       <MarketplaceIcon
         kind="plugin"
@@ -153,9 +162,7 @@ export function PluginListItem({
           <CatalogTopicList topics={taxonomy.labels} limit={2} ariaLabel={taxonomy.ariaLabel} />
         </div>
         <p className="skill-list-item-summary plugin-summary">
-          <InlineMarkdownSummary>
-            {item.summary ?? "Plugin package for agent workflows."}
-          </InlineMarkdownSummary>
+          <InlineMarkdownSummary>{item.summary ?? kindCopy.fallbackSummary}</InlineMarkdownSummary>
         </p>
       </div>
       <div className="skill-list-item-meta">

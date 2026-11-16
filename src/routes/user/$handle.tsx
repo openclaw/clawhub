@@ -113,7 +113,7 @@ type PublisherMemberResult = {
   }>;
 };
 
-type ProfileCatalogTab = "skills" | "plugins" | "stars";
+type ProfileCatalogTab = "skills" | "plugins" | "templates" | "stars";
 type ProfileCatalogSort = "downloads" | "recent" | "stars";
 
 const VISIBLE_ORG_CHIPS = 2;
@@ -134,11 +134,21 @@ function formatCatalogTabCount(value: number) {
   return formatBrowseCount(value) ?? formatCompactStat(value);
 }
 
+/** Templates are stored as packages; older backends report them in `packages` only. */
+function readPluginCount(publisher: Pick<PublicPublisherProfileItem, "stats">) {
+  return publisher.stats.plugins ?? publisher.stats.packages;
+}
+
+function hasTemplatesTab(publisher: Pick<PublicPublisherProfileItem, "stats">) {
+  return publisher.stats.templates !== undefined;
+}
+
 export function resolveDefaultCatalogTab(
   publisher: Pick<PublicPublisherProfileItem, "stats">,
-): Extract<ProfileCatalogTab, "skills" | "plugins"> {
+): Extract<ProfileCatalogTab, "skills" | "plugins" | "templates"> {
   if (publisher.stats.skills > 0) return "skills";
-  if (publisher.stats.packages > 0) return "plugins";
+  if (readPluginCount(publisher) > 0) return "plugins";
+  if ((publisher.stats.templates ?? 0) > 0) return "templates";
   return "skills";
 }
 
@@ -156,9 +166,16 @@ function buildCatalogTabOptions(publisher: PublicPublisherProfileItem) {
     {
       value: "plugins",
       label: "Plugins",
-      count: formatCatalogTabCount(publisher.stats.packages),
+      count: formatCatalogTabCount(readPluginCount(publisher)),
     },
   ];
+  if (publisher.stats.templates !== undefined) {
+    options.push({
+      value: "templates",
+      label: "Templates",
+      count: formatCatalogTabCount(publisher.stats.templates),
+    });
+  }
   if (publisher.kind === "user") {
     options.push({
       value: "stars",
@@ -475,12 +492,21 @@ export function PublisherProfilePage({
   const [catalogTab, setCatalogTab] = useState<ProfileCatalogTab>(() =>
     resolveDefaultCatalogTab(loaderPublisher),
   );
+  const queriedPublisher = useQuery(api.publishers.getProfileByHandle, { handle }) as
+    | PublicPublisherProfileItem
+    | null
+    | undefined;
+  const publisher = queriedPublisher === undefined ? loaderPublisher : queriedPublisher;
+  // The tab list comes from the live profile, so the hash must accept the same tabs.
+  // The two can differ when the backend deploys while this page is open.
+  const templatesTabAvailable = hasTemplatesTab(publisher ?? loaderPublisher);
   useEffect(() => {
     const syncTabFromHash = () => {
       const hash = window.location.hash.slice(1);
       const tab =
         hash === "skills" ||
         hash === "plugins" ||
+        (hash === "templates" && templatesTabAvailable) ||
         (hash === "stars" && loaderPublisher.kind === "user")
           ? hash
           : resolveDefaultCatalogTab(loaderPublisher);
@@ -489,7 +515,7 @@ export function PublisherProfilePage({
     syncTabFromHash();
     window.addEventListener("hashchange", syncTabFromHash);
     return () => window.removeEventListener("hashchange", syncTabFromHash);
-  }, [handle, loaderPublisher]);
+  }, [handle, loaderPublisher, templatesTabAvailable]);
   const [catalogSort, setCatalogSort] = useState<ProfileCatalogSort>(DEFAULT_PROFILE_CATALOG_SORT);
   const [catalogSearch, setCatalogSearch] = useState("");
   const [selectedCatalogGroup, setSelectedCatalogGroup] = useState("all");
@@ -512,19 +538,15 @@ export function PublisherProfilePage({
   const publishedQueryArgs = useMemo(() => {
     const base = { handle, sort: apiSort as "downloads" | "recent" };
     if (catalogTab === "plugins") return { ...base, kind: "plugin" as const };
+    if (catalogTab === "templates") return { ...base, kind: "template" as const };
     return { ...base, kind: "skill" as const };
   }, [handle, catalogTab, apiSort]);
 
-  const queriedPublisher = useQuery(api.publishers.getProfileByHandle, { handle }) as
-    | PublicPublisherProfileItem
-    | null
-    | undefined;
-  const publisher = queriedPublisher === undefined ? loaderPublisher : queriedPublisher;
   const githubHandle = publisher?.kind === "org" ? publisher.githubHandle : publisher?.handle;
 
   const publishedDisplay = useQuery(
     api.publishers.getPublishedDisplayManifest,
-    catalogTab === "skills" ? publishedQueryArgs : "skip",
+    catalogTab === "skills" && publishedQueryArgs.kind === "skill" ? publishedQueryArgs : "skip",
   ) as PublicPublisherCatalogDisplay | null | undefined;
 
   const members = useQuery(api.publishers.listMembers, { publisherHandle: handle }) as
@@ -698,8 +720,10 @@ export function PublisherProfilePage({
     catalogTab === "stars"
       ? (publisher.starredCount ?? starredItems.length)
       : catalogTab === "plugins"
-        ? publisher.stats.packages
-        : publisher.stats.skills;
+        ? readPluginCount(publisher)
+        : catalogTab === "templates"
+          ? (publisher.stats.templates ?? 0)
+          : publisher.stats.skills;
   const showCatalogSearch = catalogCount >= CATALOG_SEARCH_THRESHOLD;
   const catalogTabOptions = buildCatalogTabOptions(publisher);
 
@@ -936,7 +960,9 @@ export function PublisherProfilePage({
                           ? "No bookmarks yet"
                           : catalogTab === "plugins"
                             ? "No published plugins yet"
-                            : "No published skills yet"
+                            : catalogTab === "templates"
+                              ? "No published templates yet"
+                              : "No published skills yet"
                   }
                   action={
                     showCatalogLoadMore
@@ -1234,13 +1260,14 @@ export function PublishedItemCard({
   item: PublicPublisherCatalogItem;
   showOfficialBadge?: boolean;
 }) {
-  if (item.kind === "plugin") {
+  if (item.kind === "plugin" || item.kind === "template") {
     const plugin = catalogItemToPackageListItem(item);
     return (
       <PluginListItem
         item={plugin}
         variant="list"
         href={item.href}
+        itemKind={item.kind}
         showOfficialBadge={showOfficialBadge}
       />
     );

@@ -1,4 +1,5 @@
-import { getPluginDiscoveryExclusion, PACKAGE_TRENDING_LEADERBOARD_LIMIT } from "clawhub-schema";
+import { PACKAGE_TRENDING_LEADERBOARD_LIMIT } from "clawhub-schema/packageLimits";
+import { getPluginDiscoveryExclusion } from "clawhub-schema/pluginCategories";
 import {
   type PaginationResult,
   paginationOptsValidator,

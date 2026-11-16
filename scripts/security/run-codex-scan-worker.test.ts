@@ -294,7 +294,8 @@ describe("run-codex-scan-worker diagnostics", () => {
       totalClaimed: 2,
       totalCompleted: 1,
       totalClaimFailures: 1,
-      totalFailed: 2,
+      // Only the failed scan counts; the recovered claim error does not.
+      totalFailed: 1,
     });
     expect(processClaimedJob.mock.calls.map(([job]) => job.id)).toEqual([
       "permanent-failure",
@@ -314,7 +315,8 @@ describe("run-codex-scan-worker diagnostics", () => {
       processClaimedJob: vi.fn(),
       sleep,
     });
-    expect(result).toMatchObject({ totalClaimed: 0, totalClaimFailures: 4 });
+    // The final failure ends claiming, so it alone fails the worker.
+    expect(result).toMatchObject({ totalClaimed: 0, totalClaimFailures: 4, totalFailed: 1 });
     expect(claimJobs).toHaveBeenCalledTimes(4);
     const delays = sleep.mock.calls.map(([delay]) => delay);
     expect(delays).toHaveLength(3);
@@ -344,7 +346,13 @@ describe("run-codex-scan-worker diagnostics", () => {
       })),
       sleep,
     });
-    expect(result).toMatchObject({ totalClaimed: 2, totalCompleted: 2, totalClaimFailures: 1 });
+    // The claim window closed during backoff; that is a normal stop, not a failure.
+    expect(result).toMatchObject({
+      totalClaimed: 2,
+      totalCompleted: 2,
+      totalClaimFailures: 1,
+      totalFailed: 0,
+    });
     expect(claimJobs).toHaveBeenCalledTimes(2);
     expect(sleep).toHaveBeenCalledTimes(1);
   });
@@ -392,7 +400,12 @@ describe("run-codex-scan-worker diagnostics", () => {
       })),
       sleep,
     });
-    expect(result).toMatchObject({ totalClaimed: 2, totalCompleted: 2, totalClaimFailures: 2 });
+    expect(result).toMatchObject({
+      totalClaimed: 2,
+      totalCompleted: 2,
+      totalClaimFailures: 2,
+      totalFailed: 0,
+    });
     expect(claimJobs).toHaveBeenCalledTimes(4);
     expect(sleep.mock.calls.every(([ms]) => ms >= 1000 && ms < 1500)).toBe(true);
   });

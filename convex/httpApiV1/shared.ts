@@ -1,12 +1,8 @@
 export { contentDispositionAttachment } from "../lib/contentDisposition";
-import {
-  CliPublishRequestSchema,
-  decodeUtf8Text,
-  getClawHubRuntimeEnvironment,
-  normalizeContentType,
-  parseArk,
-  type ArkValidator,
-} from "clawhub-schema";
+import type { ArkValidator } from "clawhub-schema";
+import { CliPublishRequestSchema, parseArk } from "clawhub-schema";
+import { getClawHubRuntimeEnvironment } from "clawhub-schema/rolloutCapabilities";
+import { decodeUtf8Text, normalizeContentType } from "clawhub-schema/textFiles";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";

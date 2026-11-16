@@ -1,5 +1,5 @@
+import type { SkillAppealListStatus, SkillReportListStatus } from "clawhub-schema";
 import {
-  ApiRoutes,
   ApiV1SkillUploadUrlRequestSchema,
   ApiV1SkillBulkRescanBatchRequestSchema,
   ApiV1SkillBulkRescanStatusRequestSchema,
@@ -12,12 +12,11 @@ import {
   SkillAppealResolveRequestSchema,
   SkillReportTriageRequestSchema,
   SkillVersionRevokeRequestSchema,
-  formatSecurityAuditOverview,
-  normalizeContentType,
   parseArk,
-  type SkillAppealListStatus,
-  type SkillReportListStatus,
 } from "clawhub-schema";
+import { ApiRoutes } from "clawhub-schema/routes";
+import { formatSecurityAuditOverview } from "clawhub-schema/securityAudit";
+import { normalizeContentType } from "clawhub-schema/textFiles";
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";

@@ -1,17 +1,17 @@
 import { tryNormalizePackageName } from "./packageReadName";
 export { tryNormalizePackageName } from "./packageReadName";
-import {
-  assertManagedMcpUrl,
-  bundlePluginRuntimeId,
-  listMissingOpenClawExternalCodePluginFieldPaths,
-  normalizeOpenClawExternalPluginCompatibility,
-} from "clawhub-schema";
 import type {
   BundlePublishMetadata,
   PackageCompatibility,
   PackageVerificationSummary,
   PublishSource as SourceInfo,
 } from "clawhub-schema";
+import { assertManagedMcpUrl } from "clawhub-schema/managedMcpUrls";
+import {
+  listMissingOpenClawExternalCodePluginFieldPaths,
+  normalizeOpenClawExternalPluginCompatibility,
+} from "clawhub-schema/openclawContract";
+import { bundlePluginRuntimeId } from "clawhub-schema/pluginInput";
 import { ConvexError } from "convex/values";
 import semver from "semver";
 import type { ActionCtx } from "../_generated/server";
@@ -19,9 +19,10 @@ import {
   formatReservedUnscopedPackageNameMessage,
   isReservedUnscopedPackageName,
 } from "./publicRouteReservations";
-import { getFrontmatterValue, parseFrontmatter, sanitizePath } from "./skills";
+import { getFrontmatterValue } from "./skills/frontmatterValue";
+import { parseFrontmatter, sanitizePath } from "./skills/skillMarkdown";
 
-export { PLUGIN_BUNDLE_MANIFESTS as REAL_BUNDLE_MANIFESTS } from "clawhub-schema";
+export { PLUGIN_BUNDLE_MANIFESTS as REAL_BUNDLE_MANIFESTS } from "clawhub-schema/pluginInput";
 
 type PublishFile = {
   path: string;

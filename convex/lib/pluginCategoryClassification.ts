@@ -1,13 +1,13 @@
+import type { PluginCategorySlug } from "clawhub-schema";
+import { PLUGIN_CATEGORY_DEFINITIONS } from "clawhub-schema/catalogMetadata";
 import {
   getDeclaredPluginCategoriesFromManifest,
   isCurrentPluginCategoryAssignment,
-  PLUGIN_CATEGORY_DEFINITIONS,
-  type PluginCategorySlug,
-} from "clawhub-schema";
+} from "clawhub-schema/pluginCategories";
 import { convexToJson, type Value } from "convex/values";
 import type { ActionCtx } from "../_generated/server";
 import { applicationReasoning } from "./applicationModelPolicy";
-import { sha256Hex } from "./clawpack";
+import { sha256Hex } from "./hash";
 import { extractResponseText } from "./openaiResponse";
 import { derivePluginManifestSummary, toConvexSafeJsonValue } from "./packageRegistry";
 import type { PluginCategoryClassification } from "./pluginCategoryClassificationContract";

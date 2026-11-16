@@ -1209,6 +1209,18 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
   const cliInstallTarget =
     isPlugin && !installTarget.includes("/") ? `${installTarget}@latest` : installTarget;
   const installCommand = `openclaw ${isPlugin ? "plugins" : "skills"} install ${isPlugin ? "clawhub:" : ""}${cliInstallTarget}`;
+  const installCommandCard = (
+    <InstallCommandCard
+      cliCommand={installCommand}
+      prompt={formatOpenClawPrompt(installTarget, isPlugin ? "package" : "skill")}
+      cliCopyAriaLabel={isPlugin ? "Copy plugin install command" : "Copy skill install command"}
+      desktopInstall={
+        isPlugin && pkg.latestVersion && !isDownloadBlocked
+          ? { family: "plugins", name: pkg.name }
+          : undefined
+      }
+    />
+  );
 
   const compatibility = latestRelease?.compatibility ?? pkg.compatibility;
   const pluginManifestSummary = latestRelease?.pluginManifestSummary ?? null;
@@ -1756,6 +1768,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
           }
           sidebar={
             <div className="skill-hero-sidebar-stack">
+              {!isMobileDetailLayout ? installCommandCard : null}
               {pluginSidebarStatsContent && !isMobileDetailLayout ? (
                 <div className="detail-sidebar-stats">{pluginSidebarStatsContent}</div>
               ) : null}
@@ -1805,16 +1818,12 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
               hidden={mobileDetailPanel !== "content"}
             >
               {validationPanel}
-              <div className="plugin-install-stack detail-mobile-install">
-                {validationAvailabilityAlert}
-                <InstallCommandCard
-                  cliCommand={installCommand}
-                  prompt={formatOpenClawPrompt(installTarget, isPlugin ? "package" : "skill")}
-                  cliCopyAriaLabel={
-                    isPlugin ? "Copy plugin install command" : "Copy skill install command"
-                  }
-                />
-              </div>
+              {validationAvailabilityAlert}
+              {isMobileDetailLayout ? (
+                <div className="plugin-install-stack detail-mobile-install">
+                  {installCommandCard}
+                </div>
+              ) : null}
               <PluginDetailTabs
                 activeTab={activeTab}
                 setActiveTab={setActiveTab}
