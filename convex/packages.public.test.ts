@@ -14404,6 +14404,140 @@ describe("packages public queries", () => {
     });
   });
 
+  describe("native-only package findings", () => {
+    const nativeOnlyFindings = [
+      {
+        id: "totem:package-json-missing",
+        code: "package-json-missing",
+        level: "warning",
+        message: "fixture has no package.json to describe install and plugin entrypoint metadata",
+        authorRemediation: { summary: "Add a package.json to the plugin package." },
+      },
+      {
+        id: "totem:package-openclaw-entry-missing",
+        code: "package-openclaw-entry-missing",
+        level: "warning",
+        message: "package openclaw metadata does not declare plugin entrypoints",
+        authorRemediation: { summary: "Declare OpenClaw package entrypoints." },
+      },
+      {
+        id: "totem:deprecated-api",
+        code: "deprecated-api",
+        level: "warning",
+        message: "The API is deprecated but still available.",
+        authorRemediation: { summary: "Migrate before a future release." },
+      },
+    ];
+
+    async function ingestFindingsFor(family: "bundle-plugin" | "code-plugin") {
+      const insert = vi.fn().mockResolvedValue("packageInspectorScanStates:demo");
+      const ctx = {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "packages:demo") {
+              return {
+                _id: "packages:demo",
+                name: "demo-plugin",
+                family,
+                ownerUserId: "users:owner",
+              };
+            }
+            if (id === "packageReleases:demo-1") {
+              return {
+                _id: "packageReleases:demo-1",
+                packageId: "packages:demo",
+                version: "1.0.0",
+              };
+            }
+            return null;
+          }),
+          query: vi.fn(() => ({
+            withIndex: vi.fn(() => ({
+              collect: vi.fn().mockResolvedValue([]),
+              unique: vi.fn().mockResolvedValue(null),
+            })),
+          })),
+          insert,
+          patch: vi.fn(),
+          replace: vi.fn(),
+          delete: vi.fn(),
+          normalizeId: vi.fn((tableName: string, id: string) =>
+            id.startsWith(`${tableName}:`) ? id : null,
+          ),
+        },
+      };
+      await ingestPackageInspectorScanResultsInternalHandler(ctx as never, {
+        packageId: "packages:demo",
+        releaseId: "packageReleases:demo-1",
+        inspectorVersion: "0.4.6",
+        targetOpenClawVersion: "2026.8.0",
+        findings: nativeOnlyFindings,
+      });
+      return insert.mock.calls
+        .filter(([table]) => table === "packageInspectorWarnings")
+        .map(([, doc]) => (doc as { code: string }).code);
+    }
+
+    it("does not store native package findings for a bundle plugin", async () => {
+      await expect(ingestFindingsFor("bundle-plugin")).resolves.toEqual(["deprecated-api"]);
+    });
+
+    it("records a configuration-only bundle scan as clean when only native findings fired", async () => {
+      const insert = vi.fn().mockResolvedValue("packageInspectorScanStates:demo");
+      const ctx = {
+        db: {
+          get: vi.fn(async (id: string) =>
+            id === "packages:demo"
+              ? {
+                  _id: "packages:demo",
+                  name: "totem",
+                  family: "bundle-plugin",
+                  ownerUserId: "users:o",
+                }
+              : { _id: "packageReleases:demo-1", packageId: "packages:demo", version: "0.3.2" },
+          ),
+          query: vi.fn(() => ({
+            withIndex: vi.fn(() => ({
+              collect: vi.fn().mockResolvedValue([]),
+              unique: vi.fn().mockResolvedValue(null),
+            })),
+          })),
+          insert,
+          patch: vi.fn(),
+          replace: vi.fn(),
+          delete: vi.fn(),
+          normalizeId: vi.fn((tableName: string, id: string) =>
+            id.startsWith(`${tableName}:`) ? id : null,
+          ),
+        },
+      };
+
+      await expect(
+        ingestPackageInspectorScanResultsInternalHandler(ctx as never, {
+          packageId: "packages:demo",
+          releaseId: "packageReleases:demo-1",
+          inspectorVersion: "0.4.6",
+          targetOpenClawVersion: "2026.8.0",
+          findings: nativeOnlyFindings.slice(0, 2),
+        }),
+      ).resolves.toEqual({ ok: true, inserted: 0, shouldEmailOwner: false });
+
+      expect(insert).not.toHaveBeenCalledWith("packageInspectorWarnings", expect.anything());
+      expect(insert).toHaveBeenCalledWith(
+        "packageInspectorScanStates",
+        expect.objectContaining({ outcome: "clean" }),
+      );
+    });
+
+    it("keeps native package findings for a code plugin", async () => {
+      await expect(ingestFindingsFor("code-plugin")).resolves.toEqual([
+        "package-json-missing",
+        "package-openclaw-entry-missing",
+        "deprecated-api",
+      ]);
+    });
+  });
+
   it("stores nightly errors and does not reuse an earlier target's email dedupe", async () => {
     const insert = vi.fn();
     const ctx = {
