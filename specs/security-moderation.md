@@ -1071,8 +1071,13 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   an empty queue. Once any lease commits, the action must return it even if
   a later round fails; the worker then reads the short claim as a drain, which
   costs refills for that run but never strands a lease. The planner query takes
-  `now` from the action (slightly ahead, for clock skew) because queries must
-  not read the clock; the admission mutation checks readiness on its own clock.
+  `now` from the action because queries must not read the clock; the admission
+  mutation checks readiness on its own clock. Because the action's clock can
+  trail the mutation that enqueued a job, each tier also plans rows due within
+  a one-second allowance, but only up to one claim's worth, and they never
+  count toward the head window. Not-yet-due rows must not fill the window:
+  admission skips them, so ready work in lower tiers would go unplanned and the
+  worker would read the short claim as a drained queue and stop refilling.
   The catalog lane, the Test deployment's catalog source, and blocked legacy
   rows deeper than one bounded scan keep the legacy claim (a planned claim that
   hits them hands its remaining limit to the legacy claim).

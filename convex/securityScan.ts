@@ -3132,9 +3132,10 @@ async function leaseQueuedSecurityScanJob(
 const CLAIM_PLAN_MIN_WINDOW = 128;
 const CLAIM_PLAN_WINDOW_FACTOR = 4;
 const MAX_CLAIM_PLAN_ROUNDS = 4;
-// Queries must not read the clock, so the action passes `now`. Its clock can trail
-// the mutation that enqueued a job; plan slightly ahead and let the admission
-// mutation, which checks readiness on its own clock, be the authority.
+// Queries must not read the clock, so the action passes its own as `now`. That
+// clock can trail the mutation that enqueued a job, so each tier also plans up to
+// one claim's worth of rows due within this allowance. The admission mutation,
+// which checks readiness on its own clock, is the authority.
 const CLAIM_PLAN_CLOCK_ALLOWANCE_MS = 1_000;
 
 type ClaimPlanCandidate = { jobId: Id<"securityScanJobs">; tier: number };
@@ -3156,65 +3157,96 @@ export async function planCodexScanClaimsHandler(
   args: { lane: "shared" | "priority"; limit: number; now: number },
 ): Promise<ClaimPlan> {
   const now = args.now;
+  const lookaheadUntil = now + CLAIM_PLAN_CLOCK_ALLOWANCE_MS;
   const environment = getSkillsShFixtureEnvironmentPolicy();
   // The Test-only catalog source has admission gates owned by the legacy claim.
   if (environment.allowed && environment.environment === "test") {
     return { candidates: [], requiresLegacyClaim: true };
   }
   const githubSkillSyncEnabled = getRuntimeRolloutCapabilities().githubSkillSync.runtimeEnabled;
+  const limit = normalizeLimit(args.limit);
   const window = Math.min(
     MAX_CODEX_SCAN_CLAIM_LIMIT,
-    Math.max(normalizeLimit(args.limit) * CLAIM_PLAN_WINDOW_FACTOR, CLAIM_PLAN_MIN_WINDOW),
+    Math.max(limit * CLAIM_PLAN_WINDOW_FACTOR, CLAIM_PLAN_MIN_WINDOW),
   );
-  const candidates: ClaimPlanCandidate[] = [];
+  // Only rows due on the action's clock fill the window. Rows due within the
+  // allowance are planned apart, at most `limit` per tier: if they filled the
+  // window, admission would skip them all as not yet due, ready work in lower
+  // tiers would never be planned, and the worker would read the short claim as
+  // a drained queue.
+  const ready: ClaimPlanCandidate[] = [];
+  const early: ClaimPlanCandidate[] = [];
+  const plan = (requiresLegacyClaim: boolean): ClaimPlan => ({
+    // Ready rows always fit; not-yet-due rows take what is left of the admission bound.
+    candidates: [...ready, ...early.slice(0, MAX_CODEX_SCAN_CLAIM_LIMIT - ready.length)].sort(
+      (a, b) => a.tier - b.tier,
+    ),
+    requiresLegacyClaim,
+  });
   const seen = new Set<Id<"securityScanJobs">>();
-  const addCandidate = (job: Doc<"securityScanJobs">, tier: number) => {
-    if (seen.has(job._id) || job.nextRunAt > now) return;
-    seen.add(job._id);
-    candidates.push({ jobId: job._id, tier });
-  };
   const isClaimable = (job: Doc<"securityScanJobs">) =>
     isSecurityScanJobRolloutClaimable(ctx, job, githubSkillSyncEnabled);
+  const planTier = (tier: number) => {
+    let earlyCount = 0;
+    return {
+      // Rows arrive in nextRunAt order, so every row after the first
+      // not-yet-due one is not yet due either.
+      wants: (job: Doc<"securityScanJobs">) =>
+        job.nextRunAt > now ? earlyCount < limit : ready.length < window,
+      add: async (job: Doc<"securityScanJobs">) => {
+        if (seen.has(job._id) || !(await isClaimable(job))) return;
+        seen.add(job._id);
+        if (job.nextRunAt > now) {
+          earlyCount += 1;
+          early.push({ jobId: job._id, tier });
+        } else {
+          ready.push({ jobId: job._id, tier });
+        }
+      },
+    };
+  };
   // Mirrors the legacy order: manual, malicious signal, then CLAIM_SOURCE_ORDER.
   const addSource = async (source: SecurityScanJobSource, tier: number) => {
     let scanned = 0;
+    const tierPlan = planTier(tier);
     for await (const job of readySourceJobsForClaimQuery(
       ctx,
       source,
-      now,
+      lookaheadUntil,
       !githubSkillSyncEnabled,
     )) {
-      if (candidates.length >= window) return true;
+      if (!tierPlan.wants(job)) return true;
       // Blocked legacy rows deeper than one bounded scan need the paginated claim.
       if (scanned >= MAX_CODEX_SCAN_CLAIM_LIMIT) return false;
       scanned += 1;
-      if (await isClaimable(job)) addCandidate(job, tier);
+      await tierPlan.add(job);
     }
     return true;
   };
 
   let tier = 0;
-  if (!(await addSource("manual", tier++))) return { candidates, requiresLegacyClaim: true };
-  if (candidates.length < window) {
+  if (!(await addSource("manual", tier++))) return plan(true);
+  if (ready.length < window) {
     const malicious = await ctx.db
       .query("securityScanJobs")
       .withIndex("by_status_malicious_signal_next_run_at", (q) =>
-        q.eq("status", "queued").eq("hasMaliciousSignal", true).lte("nextRunAt", now),
+        q.eq("status", "queued").eq("hasMaliciousSignal", true).lte("nextRunAt", lookaheadUntil),
       )
       .order("asc")
-      .take(window - candidates.length);
-    const maliciousTier = tier++;
+      .take(window - ready.length + limit);
+    const tierPlan = planTier(tier++);
     for (const job of malicious) {
-      if (await isClaimable(job)) addCandidate(job, maliciousTier);
+      if (!tierPlan.wants(job)) break;
+      await tierPlan.add(job);
     }
   }
   for (const source of CLAIM_SOURCE_ORDER) {
-    if (candidates.length >= window) break;
+    if (ready.length >= window) break;
     if (source === "skills-sh-catalog-test") continue;
-    if (!(await addSource(source, tier++))) return { candidates, requiresLegacyClaim: true };
+    if (!(await addSource(source, tier++))) return plan(true);
     if (args.lane === "priority" && source === "publish") break;
   }
-  return { candidates, requiresLegacyClaim: false };
+  return plan(false);
 }
 
 export const planCodexScanClaimsInternal = internalQuery({
@@ -4004,7 +4036,7 @@ export const claimCodexScanJobLeases = action({
           {
             lane,
             limit: limit - claimed.length,
-            now: Date.now() + CLAIM_PLAN_CLOCK_ALLOWANCE_MS,
+            now: Date.now(),
           },
         );
         if (plan.requiresLegacyClaim) {
