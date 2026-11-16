@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "nod
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
+import { parseLastJsonObject } from "../helpers/convexOutput";
 import { localConvexDeployment } from "../helpers/localConvex";
 import { completeMockPrePublicationChecks } from "./helpers";
 
@@ -13,20 +14,6 @@ test.skip(
   process.env.VITE_ENABLE_DEV_AUTH !== "1",
   "exact Template artifact proof requires the local dev auth runner",
 );
-
-function extractLastJsonObject(output: string) {
-  const trimmed = output.trim();
-  for (let index = 0; index < trimmed.length; index += 1) {
-    if (trimmed[index] !== "{") continue;
-    const candidate = trimmed.slice(index);
-    try {
-      return JSON.parse(candidate) as Record<string, unknown>;
-    } catch {
-      // Convex and the CLI may print status lines before their JSON payload.
-    }
-  }
-  throw new Error(`No JSON object in output:\n${output}`);
-}
 
 function runDevSeed<T>(functionName: string, args: Record<string, unknown>) {
   const result = spawnSync(
@@ -52,7 +39,7 @@ function runDevSeed<T>(functionName: string, args: Record<string, unknown>) {
       [`Failed to run ${functionName}.`, result.stdout.trim(), result.stderr.trim()].join("\n"),
     );
   }
-  return extractLastJsonObject(result.stdout) as T;
+  return parseLastJsonObject<Record<string, unknown>>(result.stdout, "output") as T;
 }
 
 function sha256(bytes: Uint8Array) {
@@ -240,7 +227,10 @@ test("publishes, polls, retries, and downloads the exact Template tarball", asyn
       version,
     });
     expect(claim.claim.artifactFingerprint).toBe(artifactSha256);
-    const published = extractLastJsonObject((await publication).stdout);
+    const published = parseLastJsonObject<Record<string, unknown>>(
+      (await publication).stdout,
+      "output",
+    );
     expect(published).toMatchObject({
       publicationStatus: "published",
       artifactSha256,
@@ -255,7 +245,10 @@ test("publishes, polls, retries, and downloads the exact Template tarball", asyn
     const downloadedSha256 = sha256(downloadedBytes);
     expect(downloadedSha256).toBe(artifactSha256);
 
-    const retried = extractLastJsonObject((await runCli(publishArgs, cliEnv)).stdout);
+    const retried = parseLastJsonObject<Record<string, unknown>>(
+      (await runCli(publishArgs, cliEnv)).stdout,
+      "output",
+    );
     expect(retried).toMatchObject({
       publicationStatus: "published",
       artifactSha256,
