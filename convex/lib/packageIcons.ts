@@ -5,7 +5,7 @@ import {
   isDecodableSkillPresentationRaster,
   storeSkillPresentationAsset,
 } from "../skillPresentationAssets";
-import { sha256Hex } from "./clawpack";
+import { sha256Hex } from "./hash";
 import {
   buildSkillPresentationIconPath,
   MAX_SKILL_PRESENTATION_ICON_BYTES,

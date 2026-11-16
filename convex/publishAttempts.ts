@@ -10,6 +10,7 @@ import { resolvePackageReleaseFamily } from "./lib/packageReleaseFamily";
 import { sdkUsageReportStorageId } from "./lib/packageSdkUsageStorage";
 import { assertPluginScanEvidence } from "./lib/pluginScanRouting";
 import { bindExpiredFinalizationRecovery } from "./lib/publishAttemptOperationalRecovery";
+import { failedPublishAttemptPatch, PUBLISH_ATTEMPT_STATUSES } from "./lib/publishAttemptState";
 import { assertScannerSource } from "./lib/scannerSource";
 import {
   aigAnalysisValidator,
@@ -29,16 +30,6 @@ const SECURITY_SCAN_ENQUEUE_BACKUP_DELAY_MS = 15_000;
 const FINALIZATION_CLAIM_LEASE_MS = 10 * 60 * 1000;
 const MISSING_AIG_EVIDENCE_ERROR = "A.I.G evidence is required before a skill can be published.";
 const ACTIVE_CLAIM_OUTCOME = { outcome: "active_claim" as const };
-const PUBLISH_ATTEMPT_STATUSES = [
-  "pending_checks",
-  "ready_to_finalize",
-  "finalizing",
-  "finalized",
-  "blocked",
-  "failed",
-  "expired",
-] as const;
-export const ACTIVE_PUBLISH_ATTEMPT_STATUSES = PUBLISH_ATTEMPT_STATUSES.slice(0, 3);
 
 const publishResultValidator = v.object({
   skillId: v.id("skills"),
@@ -158,27 +149,6 @@ function isTerminalFinalizationConflict(error: string | undefined) {
       error.includes("OpenClaw release parent terminal state") ||
       error.includes("Recovered package publication authorization"))
   );
-}
-
-export function failedPublishAttemptPatch(
-  status: Doc<"publishAttempts">["status"],
-  error: string | undefined,
-  now: number,
-) {
-  return {
-    status: "failed" as const,
-    checkClaimId: undefined,
-    checkClaimedAt: undefined,
-    checkClaimExpiresAt: undefined,
-    checkClaimLastError: status === "pending_checks" ? error : undefined,
-    checkFailureCount: undefined,
-    finalizationClaimId: undefined,
-    finalizationClaimedAt: undefined,
-    finalizationClaimExpiresAt: undefined,
-    finalizationLastError: status === "pending_checks" ? undefined : error,
-    failedAt: now,
-    updatedAt: now,
-  };
 }
 
 function releaseFinalizationClaimPatch(error: string | undefined, now: number) {

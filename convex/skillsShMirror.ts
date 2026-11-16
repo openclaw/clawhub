@@ -2,7 +2,7 @@ import {
   getCatalogTopicSlugs,
   normalizeCatalogTopic,
   normalizeCatalogTopics,
-} from "clawhub-schema";
+} from "clawhub-schema/catalogMetadata";
 import { paginationOptsValidator } from "convex/server";
 import { ConvexError, type Infer, v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";

@@ -2,7 +2,7 @@ import {
   getCatalogTopicSlugs,
   INTERNAL_UNCATEGORIZED_CATEGORY,
   normalizeCatalogTopic,
-} from "clawhub-schema";
+} from "clawhub-schema/catalogMetadata";
 import { matchesAllTokens, matchesExploratoryTokenPrefixes, tokenize } from "./searchText";
 
 type CatalogTextDocument = {

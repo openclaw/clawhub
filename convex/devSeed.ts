@@ -5,7 +5,7 @@ import {
   normalizeCatalogTopics,
   normalizePluginCategories,
   resolvePluginCategories,
-} from "clawhub-schema";
+} from "clawhub-schema/catalogMetadata";
 import { type Infer, type ObjectType, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
