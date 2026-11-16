@@ -8,6 +8,8 @@
 
 - Catalog: keep package search versions aligned with the current release when editing metadata on packages with stale version summaries. Package mutations now rely on the shared trigger to refresh search projections.
 
+- Skill publish: a bad upload ticket is a client error. The messages stay "Skill upload ticket is missing, used, or expired", "Uploaded file does not match its skill upload ticket", and "Skill upload ticket does not match this publish".
+
 - Scanning: reuse the shared subprocess runner for legacy pre-publication scanners, bounding captured output to 32 MiB stdout and 1 MiB stderr while preserving scanner verdict exit codes.
 
 ## 0.26.0 - 2026-11-12
