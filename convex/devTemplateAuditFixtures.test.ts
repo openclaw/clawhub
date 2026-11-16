@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { parseTemplateDocument } from "../src/lib/templateDetail";
 import { seed } from "./devTemplateAuditFixtures";
 
@@ -12,12 +13,9 @@ describe("local Template audit fixture", () => {
       vi.stubEnv("DEV_AUTH_CONVEX_DEPLOYMENT", "");
       vi.stubEnv("CONVEX_SITE_URL", "http://127.0.0.1:3661");
       const storage = { store: vi.fn() };
-      await expect(
-        (seed as unknown as { _handler: (ctx: unknown, args: {}) => Promise<unknown> })._handler(
-          { storage } as never,
-          {},
-        ),
-      ).rejects.toThrow("Local Template audit fixture only");
+      await expect(getTestHandler<{}>(seed)({ storage } as never, {})).rejects.toThrow(
+        "Local Template audit fixture only",
+      );
       expect(storage.store).not.toHaveBeenCalled();
     },
   );
@@ -29,7 +27,7 @@ describe("local Template audit fixture", () => {
     const runMutation = vi
       .fn()
       .mockResolvedValue({ name: "openclaw-music-manager", simulated: true });
-    await (seed as unknown as { _handler: (ctx: unknown, args: {}) => Promise<unknown> })._handler(
+    await getTestHandler<{}>(seed)(
       {
         storage: {
           store: vi.fn(async (blob: Blob) => {
