@@ -1,6 +1,9 @@
 "use node";
 
-import { assertManagedMcpClientMetadataUrl, assertManagedMcpUrl } from "clawhub-schema";
+import {
+  assertManagedMcpClientMetadataUrl,
+  assertManagedMcpUrl,
+} from "clawhub-schema/managedMcpUrls";
 import { requestPublicResource } from "../../server/og/requestPublicImage";
 
 export type McpPublicInspection = {

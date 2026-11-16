@@ -1,5 +1,6 @@
 import type { PackageListItem } from "clawhub-schema";
 import { compareRecommendationStats } from "./recommendationScore";
+import { isCuratedSearchResult } from "./searchRanking";
 
 type CatalogListItem = PackageListItem & { ownerOfficial?: boolean };
 type CatalogSort = "recommended" | "updated" | "downloads" | "installs" | "trending";
@@ -141,4 +142,31 @@ export function compareCatalogItemsForSort(
     if (downloads !== 0) return downloads;
   }
   return compareCatalogItems(a, b);
+}
+
+export type CatalogSearchEntry = {
+  score: number;
+  rankTier?: number;
+  package: CatalogListItem;
+};
+
+export function compareCatalogSearchEntries(a: CatalogSearchEntry, b: CatalogSearchEntry) {
+  return (
+    Number(
+      isCuratedSearchResult({
+        isOfficial: b.package.isOfficial,
+        featured: typeof b.package.featuredAt === "number",
+      }),
+    ) -
+      Number(
+        isCuratedSearchResult({
+          isOfficial: a.package.isOfficial,
+          featured: typeof a.package.featuredAt === "number",
+        }),
+      ) ||
+    (a.rankTier ?? Number.POSITIVE_INFINITY) - (b.rankTier ?? Number.POSITIVE_INFINITY) ||
+    b.score - a.score ||
+    Number(b.package.isOfficial) - Number(a.package.isOfficial) ||
+    compareCatalogItems(a.package, b.package)
+  );
 }

@@ -1,7 +1,7 @@
 import {
   findTemplatePackagePathHierarchyCollision,
   isSafeTemplatePackagePath,
-} from "clawhub-schema";
+} from "clawhub-schema/templatePaths";
 import { Zip, ZipDeflate, zipSync } from "fflate";
 
 type ZipEntry = {

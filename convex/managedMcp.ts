@@ -1,8 +1,6 @@
-import {
-  MANAGED_MCP_DEFINITION_PATH,
-  parseManagedMcpDefinition,
-  type ManagedMcpDefinition,
-} from "clawhub-schema";
+import type { ManagedMcpDefinition } from "clawhub-schema";
+import { parseManagedMcpDefinition } from "clawhub-schema";
+import { MANAGED_MCP_DEFINITION_PATH } from "clawhub-schema/managedMcpUrls";
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";

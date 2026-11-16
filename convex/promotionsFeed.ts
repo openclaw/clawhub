@@ -1,9 +1,9 @@
+import type { PromotionsFeedEntry } from "clawhub-schema";
 import {
   PROMOTIONS_FEED_DESCRIPTION,
   PROMOTIONS_FEED_ID,
   PROMOTIONS_FEED_SCHEMA_VERSION,
   serializePromotionsFeed,
-  type PromotionsFeedEntry,
 } from "clawhub-schema";
 import type { Doc } from "./_generated/dataModel";
 import { internalMutation } from "./functions";

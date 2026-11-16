@@ -310,6 +310,7 @@ describe("built CLI artifact", () => {
       "schemaShared",
       "templateAgent",
       "templateBundled",
+      "templateManifestSummary",
       "templatePackage",
       "templatePaths",
       "templates",

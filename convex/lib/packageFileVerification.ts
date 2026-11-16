@@ -1,7 +1,7 @@
 import { ConvexError } from "convex/values";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
-import { sha256Hex } from "./clawpack";
+import { sha256Hex } from "./hash";
 import type { normalizePublishFiles } from "./packageRegistry";
 
 const FILE_VERIFICATION_BATCH_SIZE = 16;

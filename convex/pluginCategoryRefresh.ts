@@ -1,7 +1,7 @@
 import {
   getDeclaredPluginCategoriesFromManifest,
   isCurrentPluginCategoryAssignment,
-} from "clawhub-schema";
+} from "clawhub-schema/pluginCategories";
 import { paginationOptsValidator } from "convex/server";
 import { convexToJson, ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";

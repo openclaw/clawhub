@@ -1,3 +1,8 @@
+import type {
+  CatalogFeedPluginEntry,
+  CatalogFeedSkillEntry,
+  ExperimentalTemplateFeedEntry,
+} from "clawhub-schema";
 import {
   CATALOG_FEED_GITHUB_SOURCE_REF,
   CATALOG_FEED_ID,
@@ -12,9 +17,6 @@ import {
   serializeCatalogFeed,
   serializeExperimentalTemplateFeed,
   parseExperimentalTemplateFeed,
-  type CatalogFeedPluginEntry,
-  type CatalogFeedSkillEntry,
-  type ExperimentalTemplateFeedEntry,
 } from "clawhub-schema";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
