@@ -3132,6 +3132,10 @@ async function leaseQueuedSecurityScanJob(
 const CLAIM_PLAN_MIN_WINDOW = 128;
 const CLAIM_PLAN_WINDOW_FACTOR = 4;
 const MAX_CLAIM_PLAN_ROUNDS = 4;
+// Queries must not read the clock, so the action passes `now`. Its clock can trail
+// the mutation that enqueued a job; plan slightly ahead and let the admission
+// mutation, which checks readiness on its own clock, be the authority.
+const CLAIM_PLAN_CLOCK_ALLOWANCE_MS = 1_000;
 
 type ClaimPlanCandidate = { jobId: Id<"securityScanJobs">; tier: number };
 type ClaimPlan = { candidates: ClaimPlanCandidate[]; requiresLegacyClaim: boolean };
@@ -3149,11 +3153,9 @@ function isPlannedClaimLaneEligible(job: Doc<"securityScanJobs">, lane: "shared"
 
 export async function planCodexScanClaimsHandler(
   ctx: Pick<QueryCtx, "db">,
-  args: { lane: "shared" | "priority"; limit: number },
+  args: { lane: "shared" | "priority"; limit: number; now: number },
 ): Promise<ClaimPlan> {
-  // Read readiness on the transaction clock, as the legacy claim did. An action's
-  // clock can trail the enqueue mutation and hide a just-enqueued job.
-  const now = Date.now();
+  const now = args.now;
   const environment = getSkillsShFixtureEnvironmentPolicy();
   // The Test-only catalog source has admission gates owned by the legacy claim.
   if (environment.allowed && environment.environment === "test") {
@@ -3219,6 +3221,7 @@ export const planCodexScanClaimsInternal = internalQuery({
   args: {
     lane: v.union(v.literal("shared"), v.literal("priority")),
     limit: v.number(),
+    now: v.number(),
   },
   handler: planCodexScanClaimsHandler,
 });
@@ -3246,10 +3249,11 @@ export const claimPlannedJobsInternal = internalMutation({
     for (const jobId of new Set(args.jobIds)) {
       if (jobs.length >= limit) break;
       const job = await ctx.db.get(jobId);
+      // Planned slightly ahead of this clock; a row not ready yet is not contention.
+      if (job?.status === "queued" && job.nextRunAt > now) continue;
       if (
         !job ||
         job.status !== "queued" ||
-        job.nextRunAt > now ||
         !isPlannedClaimLaneEligible(job, args.lane) ||
         !(await isSecurityScanJobRolloutClaimable(ctx, job, githubSkillSyncEnabled))
       ) {
@@ -3971,14 +3975,14 @@ export const claimCodexScanJobLeases = action({
     assertWorkerToken(args.token);
     const lane = args.lane ?? "shared";
     const limit = normalizeLimit(args.limit);
-    const legacyClaim = () =>
+    const legacyClaim = (legacyLimit = limit) =>
       runMutationRef<Array<Doc<"securityScanJobs"> & { leaseToken: string }>>(
         ctx,
         internalRefs.securityScan.claimQueuedJobsInternal,
         {
           workerId: args.workerId,
           lane,
-          limit,
+          limit: legacyLimit,
           leaseMs: args.leaseMs,
           targetedJobIds: args.targetedJobIds,
           assignedJobIds: args.assignedJobIds,
@@ -3997,11 +4001,15 @@ export const claimCodexScanJobLeases = action({
         const plan = await runQueryRef<ClaimPlan>(
           ctx,
           internalRefs.securityScan.planCodexScanClaimsInternal,
-          { lane, limit: limit - claimed.length },
+          {
+            lane,
+            limit: limit - claimed.length,
+            now: Date.now() + CLAIM_PLAN_CLOCK_ALLOWANCE_MS,
+          },
         );
         if (plan.requiresLegacyClaim) {
-          if (claimed.length > 0) break;
-          return await legacyClaim();
+          claimed.push(...(await legacyClaim(limit - claimed.length)));
+          break;
         }
         if (plan.candidates.length === 0) break;
         result = await runMutationRef<PlannedClaimResult>(
@@ -4017,7 +4025,9 @@ export const claimCodexScanJobLeases = action({
         );
       } catch (error) {
         // Committed leases must reach the worker; an unreturned lease would sit
-        // unprocessed until expiry. Report them and let the worker claim again.
+        // unprocessed until expiry. The worker reads this short claim as a drained
+        // queue and stops refilling for the rest of its run; that costs throughput,
+        // never a lease. With nothing committed, the error reaches the worker's retry.
         if (claimed.length > 0) break;
         throw error;
       }

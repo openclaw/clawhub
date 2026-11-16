@@ -95,6 +95,7 @@ it("skips candidates another worker leased after planning", async () => {
   const plan = await t.query(internal.securityScan.planCodexScanClaimsInternal, {
     lane: "shared",
     limit: 2,
+    now: Date.now(),
   });
   expect(plan.requiresLegacyClaim).toBe(false);
   expect(plan.candidates.map((candidate) => nameOf.get(candidate.jobId))).toEqual([

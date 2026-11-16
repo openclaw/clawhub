@@ -1066,8 +1066,13 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   eligibility and rollout claimability per row and skips a stale row. The action
   replans a short claim that saw stale rows, so contention is not reported as
   an empty queue. Once any lease commits, the action must return it even if
-  a later round fails. The catalog lane, the Test deployment's catalog source,
-  and blocked legacy rows deeper than one bounded scan keep the legacy claim.
+  a later round fails; the worker then reads the short claim as a drain, which
+  costs refills for that run but never strands a lease. The planner query takes
+  `now` from the action (slightly ahead, for clock skew) because queries must
+  not read the clock; the admission mutation checks readiness on its own clock.
+  The catalog lane, the Test deployment's catalog source, and blocked legacy
+  rows deeper than one bounded scan keep the legacy claim (a planned claim that
+  hits them hands its remaining limit to the legacy claim).
 - Recoverable bulk skill requests use administrator-scoped request IDs. Their
   job identities, cursor boundary and counters commit atomically in the permanent
   batch audit entry. An identical replay returns that receipt before traversing
