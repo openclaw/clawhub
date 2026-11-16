@@ -72,10 +72,6 @@
       "types": "./dist/pluginInput.d.ts",
       "default": "./dist/pluginInput.js"
     },
-    "./templateBundled": {
-      "types": "./dist/templateBundled.d.ts",
-      "default": "./dist/templateBundled.js"
-    },
     "./templateManifestSummary": {
       "types": "./dist/templateManifestSummary.d.ts",
       "default": "./dist/templateManifestSummary.js"

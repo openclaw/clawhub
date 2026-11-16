@@ -1,4 +1,5 @@
 /* @vitest-environment node */
+import { readFileSync } from "node:fs";
 import { getFunctionName, type FunctionReference } from "convex/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../_generated/dataModel";
@@ -13,7 +14,7 @@ const { rate, token, stream } = vi.hoisted(() => ({
 vi.mock("./httpRateLimit", () => ({ applyRateLimit: rate }));
 vi.mock("./apiTokenAuth", () => ({ getOptionalApiTokenUserId: token }));
 vi.mock("./packageArchiveHttp", () => ({ streamClawPackRelease: stream }));
-import { readTemplatePackageHttp } from "./templatePackageHttpRead";
+import { readTemplatePackageHttp, UNSCOPED_ROUTER_SEGMENTS } from "./templatePackageHttpRead";
 function fixture(
   options: { family?: string; missing?: boolean; missingVersion?: boolean; legacy?: boolean } = {},
 ) {
@@ -213,6 +214,15 @@ describe("Template HTTP reads", () => {
         ),
       ).toBeNull();
     expect(f.runQuery).not.toHaveBeenCalled();
+  });
+  it("lists every endpoint word the canonical GET router matches before package names", () => {
+    const router = readFileSync(new URL("../httpApiV1/packagesV1.ts", import.meta.url), "utf8");
+    const handler = router.slice(
+      router.indexOf("export async function packagesGetRouterV1Handler"),
+    );
+    const words = [...handler.matchAll(/\bsegments\[0\] === "([^"]+)"/g)].map((match) => match[1]!);
+    expect(words.length).toBeGreaterThan(3);
+    for (const word of words) expect(UNSCOPED_ROUTER_SEGMENTS, word).toContain(word);
   });
   it("retains quota denial before any package lookup", async () => {
     const f = fixture(),

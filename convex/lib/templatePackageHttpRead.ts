@@ -14,9 +14,11 @@ import { tryNormalizePackageName } from "./packageReadName";
 import { toPackageMetadataResponse, toPackageVersionResponse } from "./packageReadProjection";
 import { toPublicPackageFamily } from "./templateStorage";
 
-// Unscoped first segments that name router endpoints rather than packages. A word missing
-// here is still safe: no package has that name, so its lookup falls back to the router.
-const UNSCOPED_ROUTER_SEGMENTS = new Set([
+// Unscoped first segments that the canonical router treats as endpoints, not package names.
+// Most of these words are also publishable package names, so this set must contain every
+// endpoint word the router matches; templatePackageHttpRead.test.ts checks it against the
+// router source.
+export const UNSCOPED_ROUTER_SEGMENTS = new Set([
   "-",
   "appeals",
   "migrations",
