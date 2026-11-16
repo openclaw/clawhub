@@ -1,13 +1,13 @@
 import { sha256Hex } from "./hash";
 import { buildSkillPublishAttemptIdempotencyKey } from "./skillPublishAttemptKey";
 export { buildSkillPublishAttemptIdempotencyKey } from "./skillPublishAttemptKey";
+import type { PublishSource } from "clawhub-schema";
 import {
   normalizeCatalogTopics,
-  type PublishSource,
-  normalizeContentType,
   normalizeSkillCategories,
   resolveSkillCategories,
-} from "clawhub-schema";
+} from "clawhub-schema/catalogMetadata";
+import { normalizeContentType } from "clawhub-schema/textFiles";
 import { decodeUtf8Text } from "clawhub-schema/textFiles";
 import { ConvexError } from "convex/values";
 import semver from "semver";
@@ -46,16 +46,15 @@ import {
   type QualityAssessment,
   toStructuralFingerprint,
 } from "./skillQuality";
+import { hashSkillFiles } from "./skills/fileHash";
+import { getFrontmatterValue } from "./skills/frontmatterValue";
 import {
   buildEmbeddingText,
   getFrontmatterMetadata,
-  getFrontmatterValue,
-  hashSkillFiles,
   isMacJunkPath,
-  parseClawdisMetadata,
   parseFrontmatter,
   sanitizePath,
-} from "./skills";
+} from "./skills/skillMarkdown";
 import { assertValidSkillSlug, normalizeSkillSlug } from "./skillSlugValidator";
 import { generateSkillSummary } from "./skillSummary";
 import { normalizeSkillTags } from "./skillTags";
@@ -258,6 +257,9 @@ export async function publishVersionForUser(
 
   const readmeText = await fetchText(ctx, readmeFile.storageId);
   const frontmatter = parseFrontmatter(readmeText);
+  // Only publication validates declared metadata with the schema library; loading it here
+  // keeps skill reads in modules that import this file from evaluating it.
+  const { parseClawdisMetadata } = await import("./skills");
   const clawdis = parseClawdisMetadata(frontmatter);
   const owner = (await ctx.runQuery(internal.users.getByIdInternal, {
     userId,
@@ -907,7 +909,7 @@ async function fetchPreviewText(
   storageId: Id<"_storage">,
 ) {
   const blob = await ctx.storage.get(storageId);
-  if (!blob) throw new Error("File missing in storage");
+  if (!blob) throw new ConvexError("File missing in storage");
   if (blob.size > MAX_ANALYZED_FILE_BYTES) return null;
   const bytes = new Uint8Array(await blob.arrayBuffer());
   return decodeUtf8Text(bytes);

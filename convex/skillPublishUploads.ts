@@ -1,4 +1,4 @@
-import { normalizeContentType } from "clawhub-schema";
+import { normalizeContentType } from "clawhub-schema/textFiles";
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";

@@ -22,8 +22,10 @@ import { TemplateDependencyInventorySchema, TemplateManifestSummarySchema } from
 
 export * from "./packageShared.js";
 
-export const PACKAGE_TRENDING_LEADERBOARD_LIMIT = 200;
-export const PACKAGE_CATEGORY_BATCH_LIMIT = 200;
+export {
+  PACKAGE_CATEGORY_BATCH_LIMIT,
+  PACKAGE_TRENDING_LEADERBOARD_LIMIT,
+} from "./packageLimits.js";
 
 export {
   normalizePackageOwnerHandle,

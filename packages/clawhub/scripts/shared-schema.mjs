@@ -15,6 +15,7 @@ const sharedSchemaModules = [
   "schemaShared",
   "templateAgent",
   "templateBundled",
+  "templateManifestSummary",
   "templatePackage",
   "templatePaths",
   "templates",

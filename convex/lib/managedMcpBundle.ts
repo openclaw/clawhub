@@ -1,4 +1,5 @@
-import { MANAGED_MCP_DEFINITION_PATH, parseManagedMcpDefinition } from "clawhub-schema";
+import { parseManagedMcpDefinition } from "clawhub-schema";
+import { MANAGED_MCP_DEFINITION_PATH } from "clawhub-schema/managedMcpUrls";
 import { validateSkillPresentationIcon } from "./skillPresentation";
 
 const WRAPPER_LICENSE = `MIT License

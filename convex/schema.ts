@@ -1,5 +1,5 @@
 import { authTables } from "@convex-dev/auth/server";
-import { createTemplateManifestSummarySchema } from "clawhub-schema";
+import { createTemplateManifestSummarySchema } from "clawhub-schema/templateManifestSummary";
 import { defineSchema, defineTable } from "convex/server";
 import { type GenericValidator, v } from "convex/values";
 import {

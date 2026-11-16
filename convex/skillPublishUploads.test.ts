@@ -3,32 +3,21 @@
 import { ConvexError } from "convex/values";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockDb } from "../src/__tests__/helpers/convexDb";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import {
   attachSkillPublishUploadInternal,
   cleanupSkillPublishUploadInternal,
   consumeSkillPublishUploads,
 } from "./skillPublishUploads";
 
-type AttachHandler = {
-  _handler: (
-    ctx: unknown,
-    args: {
-      userId: "users:1";
-      uploadTicket: "skillPublishUploadTickets:1";
-      storageId: "storage:1";
-    },
-  ) => Promise<unknown>;
-};
-
-type CleanupHandler = {
-  _handler: (
-    ctx: unknown,
-    args: { uploadTicket: "skillPublishUploadTickets:1" },
-  ) => Promise<unknown>;
-};
-
-const attachHandler = (attachSkillPublishUploadInternal as unknown as AttachHandler)._handler;
-const cleanupHandler = (cleanupSkillPublishUploadInternal as unknown as CleanupHandler)._handler;
+const attachHandler = getTestHandler<{
+  userId: "users:1";
+  uploadTicket: "skillPublishUploadTickets:1";
+  storageId: "storage:1";
+}>(attachSkillPublishUploadInternal);
+const cleanupHandler = getTestHandler<{ uploadTicket: "skillPublishUploadTickets:1" }>(
+  cleanupSkillPublishUploadInternal,
+);
 const HELLO_SHA256_HEX = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824";
 const HELLO_SHA256_BASE64 = "LPJNul+wow4m6DsqxbninhsWHlwfp0JecwQzYpOLmCQ=";
 

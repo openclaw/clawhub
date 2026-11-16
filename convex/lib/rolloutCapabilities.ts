@@ -1,4 +1,5 @@
-import { getClawHubRolloutCapabilities, type ClawHubRolloutEnvironment } from "clawhub-schema";
+import type { ClawHubRolloutEnvironment } from "clawhub-schema";
+import { getClawHubRolloutCapabilities } from "clawhub-schema/rolloutCapabilities";
 import { ConvexError } from "convex/values";
 
 export const LEGACY_NVIDIA_SKILL_SOURCE = "nvidia/skills";

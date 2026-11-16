@@ -1,15 +1,14 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
+import type { ApiV1SkillPublicationResponse, SkillCategorySlug } from "clawhub-schema";
 import {
-  decodeUtf8Text,
   getCatalogTopicSlugs,
   isSkillCategorySlug,
   normalizeCatalogTopic,
   normalizeCatalogTopics,
   resolveSkillCategories,
   resolveStoredSkillCategories,
-  type ApiV1SkillPublicationResponse,
-  type SkillCategorySlug,
-} from "clawhub-schema";
+} from "clawhub-schema/catalogMetadata";
+import { decodeUtf8Text } from "clawhub-schema/textFiles";
 import { getPage, type IndexKey, paginator } from "convex-helpers/server/pagination";
 import { paginationOptsValidator, type PaginationResult } from "convex/server";
 import { ConvexError, v } from "convex/values";
@@ -166,7 +165,8 @@ import {
   qualityAssessmentValidator,
   type StoredQualityAssessment,
 } from "./lib/skillQualityContract";
-import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
+import { hashSkillFiles } from "./lib/skills/fileHash";
+import { getFrontmatterValue } from "./lib/skills/frontmatterValue";
 import { getPublicSkillMetadataOwner } from "./lib/skills/publicVersions";
 import {
   getSkillBySlugForPublisher,

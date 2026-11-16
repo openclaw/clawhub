@@ -1,32 +1,32 @@
+import type {
+  PackageArtifactSummary,
+  ApiV1PackageVersionPublicationResponse,
+  PackageChannel,
+  PackageFamily as PublicPackageFamily,
+  PluginCategorySlug,
+  PackageModerationQueueStatus,
+  PackageOfficialMigrationListPhase,
+  PackageOfficialMigrationPhase,
+  ServerPackagePublishRequest,
+} from "clawhub-schema";
 import {
-  ServerPackagePublishRequestSchema,
-  MANAGED_MCP_DEFINITION_PATH,
-  PACKAGE_CATEGORY_BATCH_LIMIT,
-  validateTemplatePackageContents,
-  templateBundledMetadataPaths,
-  getPackageScopeOwnerMismatch,
-  getPluginDiscoveryExclusion,
   INTERNAL_UNCATEGORIZED_CATEGORY,
   isPluginCategorySlug,
   isTemplateCategorySlug,
   normalizeCatalogTopic,
   normalizeCatalogTopics,
   normalizePluginCategories,
-  parseArk,
   resolvePluginCategories,
+} from "clawhub-schema/catalogMetadata";
+import { MANAGED_MCP_DEFINITION_PATH } from "clawhub-schema/managedMcpUrls";
+import { validateOpenClawExternalCodePluginPackageContents } from "clawhub-schema/openclawContract";
+import { PACKAGE_CATEGORY_BATCH_LIMIT } from "clawhub-schema/packageLimits";
+import { getPackageScopeOwnerMismatch } from "clawhub-schema/packageNames";
+import {
+  getPluginDiscoveryExclusion,
   resolveStoredPluginCategories,
-  selectPluginManifest,
-  validateOpenClawExternalCodePluginPackageContents,
-  type PackageArtifactSummary,
-  type ApiV1PackageVersionPublicationResponse,
-  type PackageChannel,
-  type PackageFamily as PublicPackageFamily,
-  type PluginCategorySlug,
-  type PackageModerationQueueStatus,
-  type PackageOfficialMigrationListPhase,
-  type PackageOfficialMigrationPhase,
-  type ServerPackagePublishRequest,
-} from "clawhub-schema";
+} from "clawhub-schema/pluginCategories";
+import { selectPluginManifest } from "clawhub-schema/pluginInput";
 import { getPage, type IndexKey } from "convex-helpers/server/pagination";
 import { paginationOptsValidator, type PaginationOptions } from "convex/server";
 import { ConvexError, v } from "convex/values";
@@ -43,7 +43,6 @@ import {
   query,
   syncPackageSearchDigestForPackageId,
 } from "./functions";
-import { compareCatalogSearchEntries } from "./httpApiV1/packagesV1";
 import {
   assertAdmin,
   assertModerator,
@@ -61,12 +60,12 @@ import {
   readArtifactReportStatus,
   appendPackageModerationEventLog,
 } from "./lib/artifactModeration";
+import { compareCatalogSearchEntries } from "./lib/catalogPage";
 import {
   type CatalogTextMatch as PackageSearchMatch,
   matchCatalogText,
 } from "./lib/catalogTextMatch";
 import { generatePackageChangelogPreview } from "./lib/changelog";
-import { sha256Hex } from "./lib/clawpack";
 import {
   ACTIVITY_TREND_DAYS,
   buildDailyMetricTrends,
@@ -84,6 +83,7 @@ import { runActionRef, runMutationRef, runQueryRef } from "./lib/functionRefs";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
 import { readGlobalPublicPluginsCount } from "./lib/globalStats";
+import { sha256Hex } from "./lib/hash";
 import {
   decodeIndexCursor as decodePackageIndexCursor,
   decodeIndexKeyValue as decodePackageIndexKeyValue,
@@ -209,6 +209,10 @@ import {
 import { toPublicPublisher } from "./lib/public";
 import { assertOperationalPackageRetryFinalization } from "./lib/publishAttemptOperationalRecovery";
 import {
+  ACTIVE_PUBLISH_ATTEMPT_STATUSES,
+  failedPublishAttemptPatch,
+} from "./lib/publishAttemptState";
+import {
   assertCanManageOwnedResource,
   canAccessPublisherOwnerScope,
   getPublisherByHandle,
@@ -245,7 +249,8 @@ import {
   aigAnalysisValidator,
   skillSpectorAnalysisValidator,
 } from "./lib/securityAnalysisValidators";
-import { buildPackageInventoryDigest, hashSkillFiles } from "./lib/skills";
+import { hashSkillFiles } from "./lib/skills/fileHash";
+import { buildPackageInventoryDigest } from "./lib/skills/skillMarkdown";
 import { buildDeterministicPackageZip } from "./lib/skillZip";
 import { classifyTemplateCategories } from "./lib/templateCategoryClassification";
 import {
@@ -255,7 +260,6 @@ import {
   type StoredPackageFamily,
 } from "./lib/templateStorage";
 import { PACKAGE_TRENDING_LEADERBOARD_KIND } from "./packageLeaderboards";
-import { ACTIVE_PUBLISH_ATTEMPT_STATUSES, failedPublishAttemptPatch } from "./publishAttempts";
 import schema, { llmAnalysisValidator } from "./schema";
 type PackageFamily = StoredPackageFamily;
 
@@ -8052,6 +8056,14 @@ async function publishPackageImpl(
   rawPayload: unknown,
   options: PackagePublishOptions = {},
 ) {
+  // Only publication validates with the schema library. Loading it here keeps every other
+  // function in this module, including public package reads, from evaluating it.
+  const {
+    ServerPackagePublishRequestSchema,
+    parseArk,
+    templateBundledMetadataPaths,
+    validateTemplatePackageContents,
+  } = await import("clawhub-schema");
   const payload = parseArk<ServerPackagePublishRequest>(
     ServerPackagePublishRequestSchema,
     rawPayload,
