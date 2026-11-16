@@ -59,6 +59,30 @@
     "./packageUploadLimits": {
       "types": "./dist/packageUploadLimits.d.ts",
       "default": "./dist/packageUploadLimits.js"
+    },
+    "./managedMcpUrls": {
+      "types": "./dist/managedMcpUrls.d.ts",
+      "default": "./dist/managedMcpUrls.js"
+    },
+    "./packageLimits": {
+      "types": "./dist/packageLimits.d.ts",
+      "default": "./dist/packageLimits.js"
+    },
+    "./pluginInput": {
+      "types": "./dist/pluginInput.d.ts",
+      "default": "./dist/pluginInput.js"
+    },
+    "./templateBundled": {
+      "types": "./dist/templateBundled.d.ts",
+      "default": "./dist/templateBundled.js"
+    },
+    "./templateManifestSummary": {
+      "types": "./dist/templateManifestSummary.d.ts",
+      "default": "./dist/templateManifestSummary.js"
+    },
+    "./templatePaths": {
+      "types": "./dist/templatePaths.d.ts",
+      "default": "./dist/templatePaths.js"
     }
   },
   "scripts": {
