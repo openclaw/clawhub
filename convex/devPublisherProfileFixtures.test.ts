@@ -1,11 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { seedMixedCatalogPublisher } from "./devPublisherProfileFixtures";
 
-const handler = (
-  seedMixedCatalogPublisher as unknown as {
-    _handler: (ctx: unknown, args: Record<string, never>) => Promise<unknown>;
-  }
-)._handler;
+const handler = getTestHandler<Record<string, never>>(seedMixedCatalogPublisher);
 
 afterEach(() => vi.unstubAllEnvs());
 
