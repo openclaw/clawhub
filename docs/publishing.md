@@ -280,7 +280,9 @@ The current reusable package publish workflow supports secretless trusted
 publishing for `workflow_dispatch` publishes when `id-token: write` is
 available. Tag-push real publishes still need `clawhub_token`, so keep
 `CLAWHUB_TOKEN` available for tag releases, first publishes, untrusted packages,
-or break-glass publishes.
+or break-glass publishes. When the CLI falls back from trusted publishing,
+it uses a saved token for the target registry. If no fallback token is available,
+it reports the original trusted-publishing error rather than a login error.
 
 Real publishes through the reusable workflow wait for the staged attempt to
 become public by default. The workflow fails when security checks block or fail

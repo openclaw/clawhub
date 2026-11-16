@@ -3536,7 +3536,7 @@ describe("package commands", () => {
       );
       await writeDeclaredDistEntry(folder);
 
-      authTokenMocks.requireAuthToken.mockResolvedValueOnce("fallback-token");
+      authTokenMocks.getOptionalAuthToken.mockResolvedValueOnce("fallback-token");
       if (mintError) {
         httpMocks.apiRequest.mockRejectedValueOnce(mintError);
       }

@@ -3050,7 +3050,10 @@ async function resolvePackagePublishToken(params: {
     if (params.spinner) {
       params.spinner.text = "Trusted publishing unavailable, falling back to ClawHub token";
     }
-    return { kind: "user" as const, token: await requireAuthToken(params.registry) };
+    // Do not let a missing fallback token hide the trusted-publishing failure.
+    const token = await getOptionalAuthToken(params.registry);
+    if (!token) throw error;
+    return { kind: "user" as const, token };
   }
 }
 
