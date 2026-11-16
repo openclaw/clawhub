@@ -49,7 +49,7 @@ under a shared 20-minute preparation ceiling.
 The worker copies the artifact into a disposable directory and normalizes it for
 npm: it renames `npm-shrinkwrap.json` to `package-lock.json` and drops
 `workspace:` dev dependencies, which published packages cannot resolve. It also
-removes a `packageManager` value naming pnpm and any `pnpm-workspace.yaml`.
+removes a `packageManager` value naming pnpm and any `pnpm-workspace.yaml` beside a `package.json`.
 Either one makes `endorctl` demand the pnpm binary at host-check, even when an
 npm lockfile is present, though neither changes what npm resolves. Without a
 pnpm lockfile, these packages scan like any other npm package. Runtime
