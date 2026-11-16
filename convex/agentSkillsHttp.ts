@@ -377,7 +377,8 @@ function skillArchiveResult(entries: Record<string, Uint8Array>, rootPath?: stri
       return {
         ok: false as const,
         status: 422,
-        message: error.message,
+        message:
+          "Skill archive is missing SKILL.md. Ask the publisher to publish a version containing SKILL.md.",
       };
     }
     throw error;

@@ -261,7 +261,9 @@ describe("Agent Skills discovery HTTP handler", () => {
 
     expect(response.status).toBe(422);
     expect(response.headers.get("Cache-Control")).toBeNull();
-    expect(await response.text()).toBe("Skill archive is missing SKILL.md");
+    expect(await response.text()).toBe(
+      "Skill archive is missing SKILL.md. Ask the publisher to publish a version containing SKILL.md.",
+    );
   });
 
   it("returns not found for malformed percent escapes", async () => {

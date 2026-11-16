@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Agent Skills download: an archive with no SKILL.md returns "Skill archive is missing SKILL.md" instead of a server failure.
+- Agent Skills download: an archive with no SKILL.md returns "Skill archive is missing SKILL.md. Ask the publisher to publish a version containing SKILL.md." instead of a server failure.
 
 - Catalog: keep package search versions aligned with the current release when editing metadata on packages with stale version summaries. Package mutations now rely on the shared trigger to refresh search projections.
 
