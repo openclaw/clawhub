@@ -3324,42 +3324,57 @@ describe("securityScan", () => {
     expect(getUrl).toHaveBeenCalledWith("storage:skill");
   });
 
-  it("claims several lightweight leases in one mutation without hydrating signed URLs", async () => {
+  it("replans a contended claim instead of reporting a short queue", async () => {
     vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
-    const leases = Array.from({ length: 4 }, (_, index) => ({
+    const lease = (id: string) => ({
       ...claimedJob,
-      _id: `securityScanJobs:${index}`,
-      leaseToken: `lease-${index}`,
-    }));
-    const runMutation = vi.fn(async () => leases);
-    const runQuery = vi.fn();
+      _id: `securityScanJobs:${id}`,
+      leaseToken: id,
+    });
+    const plan = (ids: string[]) => ({
+      candidates: ids.map((id) => ({ jobId: `securityScanJobs:${id}`, tier: 0 })),
+      requiresLegacyClaim: false,
+    });
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(plan(["a", "b"]))
+      .mockResolvedValueOnce(plan(["c"]));
+    // Another worker won "b" between planning and admission.
+    const runMutation = vi
+      .fn()
+      .mockResolvedValueOnce({ jobs: [lease("a")], staleCount: 1 })
+      .mockResolvedValueOnce({ jobs: [lease("c")], staleCount: 0 });
     const getUrl = vi.fn();
 
     const result = await claimCodexScanJobLeasesHandler(
-      {
-        runMutation,
-        runQuery,
-        storage: { getUrl, generateUploadUrl: async () => "https://storage.example/report-upload" },
-      },
-      {
-        token: "worker-secret",
-        workerId: "worker-1",
-        lane: "shared",
-        limit: 4,
-      },
+      { runMutation, runQuery, storage: { getUrl } },
+      { token: "worker-secret", workerId: "worker-1", lane: "shared", limit: 2 },
     );
 
-    expect(runMutation).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        workerId: "worker-1",
-        lane: "shared",
-        limit: 4,
-      }),
-    );
-    expect(result).toEqual(leases);
-    expect(runQuery).not.toHaveBeenCalled();
+    expect(result).toEqual([lease("a"), lease("c")]);
+    expect(runQuery.mock.calls.map(([, args]) => args.limit)).toEqual([2, 1]);
+    expect(runMutation.mock.calls.map(([, args]) => args.limit)).toEqual([2, 1]);
     expect(getUrl).not.toHaveBeenCalled();
+  });
+
+  it("returns committed leases when a later claim round fails", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
+    const committed = { ...claimedJob, _id: "securityScanJobs:a", leaseToken: "a" };
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({
+        candidates: [{ jobId: "securityScanJobs:a", tier: 0 }],
+        requiresLegacyClaim: false,
+      })
+      .mockRejectedValueOnce(new Error("Server Error"));
+    const runMutation = vi.fn().mockResolvedValueOnce({ jobs: [committed], staleCount: 1 });
+
+    await expect(
+      claimCodexScanJobLeasesHandler(
+        { runMutation, runQuery, storage: { getUrl: vi.fn() } },
+        { token: "worker-secret", workerId: "worker-1", lane: "shared", limit: 2 },
+      ),
+    ).resolves.toEqual([committed]);
   });
 
   it("forwards exact Test GitHub Skill Sync job IDs to the lease mutation", async () => {
