@@ -1,5 +1,6 @@
 /* @vitest-environment node */
 
+import { ConvexError } from "convex/values";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockDb } from "../src/__tests__/helpers/convexDb";
 import {
@@ -113,20 +114,20 @@ describe("skill publish upload tickets", () => {
       expiresAt: 10_000,
     });
 
-    await expect(
-      consumeSkillPublishUploads(ctx as never, {
-        userId: "users:1" as never,
-        uploadTickets: ["skillPublishUploadTickets:1" as never],
-        files: [
-          {
-            path: "SKILL.md",
-            size: 6,
-            sha256: "a".repeat(64),
-            storageId: "storage:1" as never,
-          },
-        ],
-      }),
-    ).rejects.toThrow("does not match this publish");
+    const rejected = consumeSkillPublishUploads(ctx as never, {
+      userId: "users:1" as never,
+      uploadTickets: ["skillPublishUploadTickets:1" as never],
+      files: [
+        {
+          path: "SKILL.md",
+          size: 6,
+          sha256: "a".repeat(64),
+          storageId: "storage:1" as never,
+        },
+      ],
+    });
+    await expect(rejected).rejects.toBeInstanceOf(ConvexError);
+    await expect(rejected).rejects.toThrow("does not match this publish");
     expect(ctx.db.patch).not.toHaveBeenCalled();
   });
 
