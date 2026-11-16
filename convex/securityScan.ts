@@ -85,7 +85,7 @@ const SKILL_SCAN_ASYNC_NOTE = "Scans are asynchronous and may take time to compl
 const artifactBackedLlmAnalysisStatuses = new Set(["clean", "benign", "suspicious", "malicious"]);
 
 async function isGitHubSkillScanAllowed(
-  ctx: Pick<MutationCtx, "db">,
+  ctx: Pick<QueryCtx, "db">,
   githubSourceId: Id<"githubSkillSources">,
 ) {
   if (getRuntimeRolloutCapabilities().githubSkillSync.runtimeEnabled) return true;
@@ -249,6 +249,7 @@ const internalRefs = internal as unknown as {
     updateReleaseSkillSpectorAnalysisInternal: unknown;
   };
   securityScan: {
+    claimPlannedJobsInternal: unknown;
     claimQueuedJobsInternal: unknown;
     createUploadedSkillScanRequestInternal: unknown;
     createPublishedSkillScanRequestInternal: unknown;
@@ -259,6 +260,7 @@ const internalRefs = internal as unknown as {
     getSkillScanRequestForUserInternal: unknown;
     getJobTargetInternal: unknown;
     listReadySourceJobsForClaimInternal: unknown;
+    planCodexScanClaimsInternal: unknown;
     recordGitHubSkillScanResultInternal: unknown;
     completeCatalogSkillScanJobInternal: unknown;
     recordSkillScanRequestFailedInternal: unknown;
@@ -2863,20 +2865,8 @@ export const claimQueuedJobsInternal = internalMutation({
       }
     };
     const githubSkillSyncEnabled = getRuntimeRolloutCapabilities().githubSkillSync.runtimeEnabled;
-    const isJobRolloutClaimable = async (job: Doc<"securityScanJobs">) => {
-      if (await isRetiredAutomaticPluginScan(ctx, job)) return false;
-      if (
-        githubSkillSyncEnabled ||
-        job.targetKind !== "skillScanRequest" ||
-        !job.skillScanRequestId
-      ) {
-        return true;
-      }
-      const request = await ctx.db.get(job.skillScanRequestId);
-      if (request?.sourceKind !== "github" || !request.githubSkillScanId) return true;
-      const scan = await ctx.db.get(request.githubSkillScanId);
-      return scan ? await isGitHubSkillScanAllowed(ctx, scan.githubSourceId) : false;
-    };
+    const isJobRolloutClaimable = (job: Doc<"securityScanJobs">) =>
+      isSecurityScanJobRolloutClaimable(ctx, job, githubSkillSyncEnabled);
     const takeReadySourceJobs = async (source: SecurityScanJobSource) => {
       if (remainingCapacity() === 0) return [];
       let takeLimit = remainingCapacity();
@@ -3068,24 +3058,11 @@ export const claimQueuedJobsInternal = internalMutation({
         }
         catalogAttemptId = attempt._id;
       }
-      const leaseMs = securityScanLeaseMs(job.targetKind, job.scanMode, requestedLeaseMs);
-      const leaseToken = crypto.randomUUID();
-      await ctx.db.patch(job._id, {
-        status: "running",
-        attempts: job.attempts + 1,
-        leaseToken,
-        leaseExpiresAt: now + leaseMs,
+      const lease = await leaseQueuedSecurityScanJob(ctx, job, {
         workerId: args.workerId,
-        lastError: undefined,
-        updatedAt: now,
+        requestedLeaseMs,
+        now,
       });
-      if (job.targetKind === "skillScanRequest" && job.skillScanRequestId) {
-        await ctx.db.patch(job.skillScanRequestId, {
-          status: "running",
-          lastError: undefined,
-          updatedAt: now,
-        });
-      }
       if (catalogAttemptId) {
         await ctx.db.patch(catalogAttemptId, {
           status: "running",
@@ -3093,18 +3070,259 @@ export const claimQueuedJobsInternal = internalMutation({
         });
         catalogClaims += 1;
       }
-      claimed.push({
-        ...job,
-        status: "running" as const,
-        attempts: job.attempts + 1,
-        leaseToken,
-        leaseExpiresAt: now + leaseMs,
-        workerId: args.workerId,
-      });
+      claimed.push(lease);
     }
     return claimed;
   },
 });
+
+async function isSecurityScanJobRolloutClaimable(
+  ctx: Pick<QueryCtx, "db">,
+  job: Doc<"securityScanJobs">,
+  githubSkillSyncEnabled: boolean,
+) {
+  if (await isRetiredAutomaticPluginScan(ctx, job)) return false;
+  if (githubSkillSyncEnabled || job.targetKind !== "skillScanRequest" || !job.skillScanRequestId) {
+    return true;
+  }
+  const request = await ctx.db.get(job.skillScanRequestId);
+  if (request?.sourceKind !== "github" || !request.githubSkillScanId) return true;
+  const scan = await ctx.db.get(request.githubSkillScanId);
+  return scan ? await isGitHubSkillScanAllowed(ctx, scan.githubSourceId) : false;
+}
+
+async function leaseQueuedSecurityScanJob(
+  ctx: MutationCtx,
+  job: Doc<"securityScanJobs">,
+  args: { workerId: string; requestedLeaseMs: number; now: number },
+) {
+  const leaseMs = securityScanLeaseMs(job.targetKind, job.scanMode, args.requestedLeaseMs);
+  const leaseToken = crypto.randomUUID();
+  const leaseExpiresAt = args.now + leaseMs;
+  await ctx.db.patch(job._id, {
+    status: "running",
+    attempts: job.attempts + 1,
+    leaseToken,
+    leaseExpiresAt,
+    workerId: args.workerId,
+    lastError: undefined,
+    updatedAt: args.now,
+  });
+  if (job.targetKind === "skillScanRequest" && job.skillScanRequestId) {
+    await ctx.db.patch(job.skillScanRequestId, {
+      status: "running",
+      lastError: undefined,
+      updatedAt: args.now,
+    });
+  }
+  return {
+    ...job,
+    status: "running" as const,
+    attempts: job.attempts + 1,
+    leaseToken,
+    leaseExpiresAt,
+    workerId: args.workerId,
+  };
+}
+
+// Queue claims are planned by a read-only query and admitted by point reads.
+// A mutation that reads the shared queue-head index ranges conflicts with every
+// concurrent claim that leases a row from those ranges; under fast shard refills
+// Convex exhausted its OCC retries and surfaced "Server Error" to workers.
+const CLAIM_PLAN_MIN_WINDOW = 128;
+const CLAIM_PLAN_WINDOW_FACTOR = 4;
+const MAX_CLAIM_PLAN_ROUNDS = 4;
+// Queries must not read the clock, so the action passes its own as `now`. That
+// clock can trail the mutation that enqueued a job, so each tier also plans up to
+// one claim's worth of rows due within this allowance. The admission mutation,
+// which checks readiness on its own clock, is the authority.
+const CLAIM_PLAN_CLOCK_ALLOWANCE_MS = 1_000;
+
+type ClaimPlanCandidate = { jobId: Id<"securityScanJobs">; tier: number };
+type ClaimPlan = { candidates: ClaimPlanCandidate[]; requiresLegacyClaim: boolean };
+type PlannedClaimResult = {
+  jobs: Array<Doc<"securityScanJobs"> & { leaseToken: string }>;
+  staleCount: number;
+};
+
+function isPlannedClaimLaneEligible(job: Doc<"securityScanJobs">, lane: "shared" | "priority") {
+  if (job.source === "skills-sh-catalog-test") return false;
+  if (lane === "shared") return true;
+  // The priority lane never claims bulk sources; malicious-signal work is the exception.
+  return job.source === "manual" || job.source === "publish" || job.hasMaliciousSignal === true;
+}
+
+export async function planCodexScanClaimsHandler(
+  ctx: Pick<QueryCtx, "db">,
+  args: { lane: "shared" | "priority"; limit: number; now: number },
+): Promise<ClaimPlan> {
+  const now = args.now;
+  const lookaheadUntil = now + CLAIM_PLAN_CLOCK_ALLOWANCE_MS;
+  const environment = getSkillsShFixtureEnvironmentPolicy();
+  // The Test-only catalog source has admission gates owned by the legacy claim.
+  if (environment.allowed && environment.environment === "test") {
+    return { candidates: [], requiresLegacyClaim: true };
+  }
+  const githubSkillSyncEnabled = getRuntimeRolloutCapabilities().githubSkillSync.runtimeEnabled;
+  const limit = normalizeLimit(args.limit);
+  const window = Math.min(
+    MAX_CODEX_SCAN_CLAIM_LIMIT,
+    Math.max(limit * CLAIM_PLAN_WINDOW_FACTOR, CLAIM_PLAN_MIN_WINDOW),
+  );
+  // Only rows due on the action's clock fill the window. Rows due within the
+  // allowance are planned apart, at most `limit` per tier: if they filled the
+  // window, admission would skip them all as not yet due, ready work in lower
+  // tiers would never be planned, and the worker would read the short claim as
+  // a drained queue.
+  const ready: ClaimPlanCandidate[] = [];
+  const early: ClaimPlanCandidate[] = [];
+  const plan = (requiresLegacyClaim: boolean): ClaimPlan => ({
+    // Ready rows always fit; not-yet-due rows take what is left of the admission bound.
+    candidates: [...ready, ...early.slice(0, MAX_CODEX_SCAN_CLAIM_LIMIT - ready.length)].sort(
+      (a, b) => a.tier - b.tier,
+    ),
+    requiresLegacyClaim,
+  });
+  const seen = new Set<Id<"securityScanJobs">>();
+  const isClaimable = (job: Doc<"securityScanJobs">) =>
+    isSecurityScanJobRolloutClaimable(ctx, job, githubSkillSyncEnabled);
+  const planTier = (tier: number) => {
+    let earlyCount = 0;
+    return {
+      // Rows arrive in nextRunAt order, so every row after the first
+      // not-yet-due one is not yet due either.
+      wants: (job: Doc<"securityScanJobs">) =>
+        job.nextRunAt > now ? earlyCount < limit : ready.length < window,
+      add: async (job: Doc<"securityScanJobs">) => {
+        if (seen.has(job._id) || !(await isClaimable(job))) return;
+        seen.add(job._id);
+        if (job.nextRunAt > now) {
+          earlyCount += 1;
+          early.push({ jobId: job._id, tier });
+        } else {
+          ready.push({ jobId: job._id, tier });
+        }
+      },
+    };
+  };
+  // Mirrors the legacy order: manual, malicious signal, then CLAIM_SOURCE_ORDER.
+  const addSource = async (source: SecurityScanJobSource, tier: number) => {
+    let scanned = 0;
+    const tierPlan = planTier(tier);
+    for await (const job of readySourceJobsForClaimQuery(
+      ctx,
+      source,
+      lookaheadUntil,
+      !githubSkillSyncEnabled,
+    )) {
+      if (!tierPlan.wants(job)) return true;
+      // Blocked legacy rows deeper than one bounded scan need the paginated claim.
+      if (scanned >= MAX_CODEX_SCAN_CLAIM_LIMIT) return false;
+      scanned += 1;
+      await tierPlan.add(job);
+    }
+    return true;
+  };
+
+  let tier = 0;
+  if (!(await addSource("manual", tier++))) return plan(true);
+  if (ready.length < window) {
+    const malicious = await ctx.db
+      .query("securityScanJobs")
+      .withIndex("by_status_malicious_signal_next_run_at", (q) =>
+        q.eq("status", "queued").eq("hasMaliciousSignal", true).lte("nextRunAt", lookaheadUntil),
+      )
+      .order("asc")
+      .take(window - ready.length + limit);
+    const tierPlan = planTier(tier++);
+    for (const job of malicious) {
+      if (!tierPlan.wants(job)) break;
+      await tierPlan.add(job);
+    }
+  }
+  for (const source of CLAIM_SOURCE_ORDER) {
+    if (ready.length >= window) break;
+    if (source === "skills-sh-catalog-test") continue;
+    if (!(await addSource(source, tier++))) return plan(true);
+    if (args.lane === "priority" && source === "publish") break;
+  }
+  return plan(false);
+}
+
+export const planCodexScanClaimsInternal = internalQuery({
+  args: {
+    lane: v.union(v.literal("shared"), v.literal("priority")),
+    limit: v.number(),
+    now: v.number(),
+  },
+  handler: planCodexScanClaimsHandler,
+});
+
+export const claimPlannedJobsInternal = internalMutation({
+  args: {
+    workerId: v.string(),
+    lane: v.union(v.literal("shared"), v.literal("priority")),
+    limit: v.number(),
+    leaseMs: v.optional(v.number()),
+    jobIds: v.array(v.id("securityScanJobs")),
+  },
+  handler: async (ctx, args): Promise<PlannedClaimResult> => {
+    if (args.jobIds.length > MAX_CODEX_SCAN_CLAIM_LIMIT) {
+      throw new ConvexError("Too many planned claim candidates");
+    }
+    const now = Date.now();
+    const limit = normalizeLimit(args.limit);
+    const requestedLeaseMs = args.leaseMs ?? DEFAULT_LEASE_MS;
+    const githubSkillSyncEnabled = getRuntimeRolloutCapabilities().githubSkillSync.runtimeEnabled;
+    const jobs: PlannedClaimResult["jobs"] = [];
+    let staleCount = 0;
+    // Point reads only: this mutation conflicts with another claim only when both
+    // pick the same row, and Convex's retry then skips the row the winner leased.
+    for (const jobId of new Set(args.jobIds)) {
+      if (jobs.length >= limit) break;
+      const job = await ctx.db.get(jobId);
+      // Planned slightly ahead of this clock; a row not ready yet is not contention.
+      if (job?.status === "queued" && job.nextRunAt > now) continue;
+      if (
+        !job ||
+        job.status !== "queued" ||
+        !isPlannedClaimLaneEligible(job, args.lane) ||
+        !(await isSecurityScanJobRolloutClaimable(ctx, job, githubSkillSyncEnabled))
+      ) {
+        staleCount += 1;
+        continue;
+      }
+      jobs.push(
+        await leaseQueuedSecurityScanJob(ctx, job, {
+          workerId: args.workerId,
+          requestedLeaseMs,
+          now,
+        }),
+      );
+    }
+    return { jobs, staleCount };
+  },
+});
+
+/** Keep tier order, but spread concurrent workers across each tier's queue head. */
+function shuffleClaimCandidatesWithinTiers(candidates: ClaimPlanCandidate[]) {
+  const tiers = new Map<number, Id<"securityScanJobs">[]>();
+  for (const candidate of candidates) {
+    const ids = tiers.get(candidate.tier) ?? [];
+    ids.push(candidate.jobId);
+    tiers.set(candidate.tier, ids);
+  }
+  return [...tiers.keys()]
+    .sort((a, b) => a - b)
+    .flatMap((tier) => {
+      const ids = tiers.get(tier) ?? [];
+      for (let index = ids.length - 1; index > 0; index -= 1) {
+        const swap = Math.floor(Math.random() * (index + 1));
+        [ids[index], ids[swap]] = [ids[swap], ids[index]];
+      }
+      return ids;
+    });
+}
 
 async function readCatalogClaimHealth(ctx: MutationCtx, control: Doc<"skillsShCatalogControls">) {
   const nativeSources = ["publish", "vt-update", "backfill", "bulk-rescan", "manual"] as const;
@@ -3787,18 +4005,71 @@ export const claimCodexScanJobLeases = action({
   },
   handler: async (ctx, args) => {
     assertWorkerToken(args.token);
-    return await runMutationRef<Array<Doc<"securityScanJobs"> & { leaseToken: string }>>(
-      ctx,
-      internalRefs.securityScan.claimQueuedJobsInternal,
-      {
-        workerId: args.workerId,
-        lane: args.lane ?? "shared",
-        limit: normalizeLimit(args.limit),
-        leaseMs: args.leaseMs,
-        targetedJobIds: args.targetedJobIds,
-        assignedJobIds: args.assignedJobIds,
-      },
-    );
+    const lane = args.lane ?? "shared";
+    const limit = normalizeLimit(args.limit);
+    const legacyClaim = (legacyLimit = limit) =>
+      runMutationRef<Array<Doc<"securityScanJobs"> & { leaseToken: string }>>(
+        ctx,
+        internalRefs.securityScan.claimQueuedJobsInternal,
+        {
+          workerId: args.workerId,
+          lane,
+          limit: legacyLimit,
+          leaseMs: args.leaseMs,
+          targetedJobIds: args.targetedJobIds,
+          assignedJobIds: args.assignedJobIds,
+        },
+      );
+    // Assigned and targeted claims already use point reads; the catalog lane
+    // keeps its admission gates in the legacy mutation.
+    if (lane === "catalog" || args.assignedJobIds !== undefined || args.targetedJobIds) {
+      return await legacyClaim();
+    }
+
+    const claimed: PlannedClaimResult["jobs"] = [];
+    for (let round = 0; round < MAX_CLAIM_PLAN_ROUNDS && claimed.length < limit; round += 1) {
+      let result: PlannedClaimResult;
+      try {
+        const plan = await runQueryRef<ClaimPlan>(
+          ctx,
+          internalRefs.securityScan.planCodexScanClaimsInternal,
+          {
+            lane,
+            limit: limit - claimed.length,
+            now: Date.now(),
+          },
+        );
+        if (plan.requiresLegacyClaim) {
+          claimed.push(...(await legacyClaim(limit - claimed.length)));
+          break;
+        }
+        if (plan.candidates.length === 0) break;
+        result = await runMutationRef<PlannedClaimResult>(
+          ctx,
+          internalRefs.securityScan.claimPlannedJobsInternal,
+          {
+            workerId: args.workerId,
+            lane,
+            limit: limit - claimed.length,
+            leaseMs: args.leaseMs,
+            jobIds: shuffleClaimCandidatesWithinTiers(plan.candidates),
+          },
+        );
+      } catch (error) {
+        // Committed leases must reach the worker; an unreturned lease would sit
+        // unprocessed until expiry. The worker reads this short claim as a drained
+        // queue and stops refilling for the rest of its run; that costs throughput,
+        // never a lease. With nothing committed, the error reaches the worker's retry.
+        if (claimed.length > 0) break;
+        throw error;
+      }
+      claimed.push(...result.jobs);
+      // Without stale candidates the plan saw the whole ready head, so a short
+      // claim means the queue is short. A stale candidate means another worker
+      // won it: replan so this worker does not mistake contention for a drain.
+      if (result.staleCount === 0) break;
+    }
+    return claimed;
   },
 });
 

@@ -4,7 +4,7 @@ import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createActiveSkillSeedDefaults } from "../src/__tests__/helpers/activeSkillSeed";
 import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { dispatchGitHubRepositoryEvent } from "./lib/githubRepositoryDispatch";
 import schema from "./schema";
@@ -218,6 +218,23 @@ describe("retired automatic plugin queue heads", () => {
     ).rejects.toThrow("Lease mismatch");
     expect(await readReleases(f)).toEqual(releases);
     await assertScheduledFunctionsSucceeded(f);
+  });
+
+  it("never leases retired automatic plugin scans through the planned worker claim", async () => {
+    const f = await fixture("queued", 7);
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "fixture-worker-token");
+    const claimed = await f.t
+      .action(api.securityScan.claimCodexScanJobLeases, {
+        token: "fixture-worker-token",
+        workerId: "eligible-worker",
+        lane: "shared",
+        limit: 20,
+      })
+      .finally(() => vi.unstubAllEnvs());
+    expect(new Set(claimed.map((job) => job._id))).toEqual(new Set(f.eligibleIds));
+    for (const job of await readJobs(f, f.retiredIds)) {
+      expect(job).toMatchObject({ status: "queued", attempts: 2 });
+    }
   });
 
   it.each([true, false])(
