@@ -1051,6 +1051,9 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Security workers back off and retry a transient claim API failure up to three
   times before draining their existing leases. Every failed call remains in
   claim-health counters, and the claim window/max-jobs limits still apply.
+  Only a claim failure that stops claiming (retries exhausted or a
+  non-transient error) counts as a worker failure and sets a non-zero exit;
+  a claim error recovered by retry does not fail an otherwise healthy shard.
   This does not retry terminal scan failures or change their job identities.
   Authentication/validation failures do not enter this transient retry path.
 - Shared and priority queue claims (`claimCodexScanJobLeases` without

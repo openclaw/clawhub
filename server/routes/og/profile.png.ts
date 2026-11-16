@@ -11,6 +11,7 @@ import {
   getClawHubLogoDataUrl,
   getPublisherFontBuffers,
 } from "../../og/ogAssets";
+import { cleanString } from "../../og/ogRequest";
 import { pngResponse } from "../../og/pngResponse";
 import { buildPublisherOgSvg } from "../../og/publisherOgSvg";
 import { buildOgDownloadsStat } from "../../og/registryOgSvg";
@@ -27,11 +28,6 @@ type OgQuery = {
   avatar?: string;
   v?: string;
 };
-
-function cleanString(value: unknown) {
-  if (typeof value !== "string") return "";
-  return value.trim();
-}
 
 function getConvexUrl() {
   return process.env.VITE_CONVEX_URL?.trim() || process.env.CONVEX_URL?.trim() || null;
