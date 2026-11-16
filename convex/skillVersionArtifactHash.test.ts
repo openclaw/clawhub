@@ -3,6 +3,7 @@
 import { getFunctionName } from "convex/server";
 import { describe, expect, it, vi } from "vitest";
 import { createMockDb } from "../src/__tests__/helpers/convexDb";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { sha256Hex } from "./lib/hash";
 import { buildDeterministicZip } from "./lib/skillZip";
 import {
@@ -10,9 +11,7 @@ import {
   computeSkillVersionArtifactHashInternal,
 } from "./skillVersionArtifactHash";
 
-type Handler = (ctx: unknown, args: { versionId: string }) => Promise<unknown>;
-const handler = (computeSkillVersionArtifactHashInternal as unknown as { _handler: Handler })
-  ._handler;
+const handler = getTestHandler<{ versionId: string }>(computeSkillVersionArtifactHashInternal);
 
 const encoder = new TextEncoder();
 
@@ -106,13 +105,11 @@ describe("computeSkillVersionArtifactHashInternal", () => {
   });
 });
 
-type BackfillHandler = (
-  ctx: unknown,
-  args: { cursor?: string | null; batchSize?: number; dryRun?: boolean },
-) => Promise<unknown>;
-const backfillHandler = (
-  backfillMissingSkillVersionArtifactHashesInternal as unknown as { _handler: BackfillHandler }
-)._handler;
+const backfillHandler = getTestHandler<{
+  cursor?: string | null;
+  batchSize?: number;
+  dryRun?: boolean;
+}>(backfillMissingSkillVersionArtifactHashesInternal);
 
 function makeBackfillCtx(page: Array<Record<string, unknown>>, isDone: boolean) {
   const runAfter = vi.fn(async () => undefined);
