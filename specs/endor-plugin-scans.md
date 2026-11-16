@@ -48,7 +48,11 @@ under a shared 20-minute preparation ceiling.
 
 The worker copies the artifact into a disposable directory and normalizes it for
 npm: it renames `npm-shrinkwrap.json` to `package-lock.json` and drops
-`workspace:` dev dependencies, which published packages cannot resolve. Runtime
+`workspace:` dev dependencies, which published packages cannot resolve. It also
+removes a `packageManager` value naming pnpm and any `pnpm-workspace.yaml`.
+Either one makes `endorctl` demand the pnpm binary at host-check, even when an
+npm lockfile is present, though neither changes what npm resolves. Without a
+pnpm lockfile, these packages scan like any other npm package. Runtime
 dependencies are unchanged. The uploaded artifact remains the source of truth.
 
 Endor runs with `docker run --rm` from a digest-pinned image built by the manual
