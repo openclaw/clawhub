@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Package publish: a missing uploaded package tarball is a client error. The message stays "Package tarball upload no longer exists".
+
 - Skill reads: a missing stored skill file is a client error for the readme, skill card, file text, and publish preview text. The message stays "File missing in storage".
 
 - Catalog: keep package search versions aligned with the current release when editing metadata on packages with stale version summaries. Package mutations now rely on the shared trigger to refresh search projections.

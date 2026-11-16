@@ -1,4 +1,5 @@
 import type { PackagePublishMetadata, ServerPackagePublishRequest } from "clawhub-schema";
+import { ConvexError } from "convex/values";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { parseClawPack, sha256Hex } from "./clawpack";
@@ -132,7 +133,7 @@ async function storeClawPackFiles(
 
 export async function readStoredPackageTarball(ctx: ActionCtx, storageId: Id<"_storage">) {
   const blob = await ctx.storage.get(storageId);
-  if (!blob) throw new Error("Package tarball upload no longer exists");
+  if (!blob) throw new ConvexError("Package tarball upload no longer exists");
   if (blob.size > MAX_CLAWPACK_BYTES) {
     throw new Error(getClawPackSizeError("uploaded ClawPack"));
   }
