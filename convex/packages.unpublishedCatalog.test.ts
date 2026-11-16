@@ -1,16 +1,13 @@
 /* @vitest-environment node */
 
 import { describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { listAuditPage } from "./packages";
 
-const listAuditPageHandler = (
-  listAuditPage as unknown as {
-    _handler: (
-      ctx: unknown,
-      args: { paginationOpts: { cursor: null; numItems: number } },
-    ) => Promise<{ page: Array<{ package: { displayName: string; name: string } }> }>;
-  }
-)._handler;
+const listAuditPageHandler = getTestHandler<
+  { paginationOpts: { cursor: null; numItems: number } },
+  { page: Array<{ package: { displayName: string; name: string } }> }
+>(listAuditPage);
 
 describe("packages.listAuditPage", () => {
   it("omits a package that has no published release", async () => {
