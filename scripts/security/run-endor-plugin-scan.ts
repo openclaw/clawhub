@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { chmod, cp, lstat, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { chmod, cp, lstat, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { z } from "zod";
 import type { EndorAnalysis } from "../../convex/lib/endorAnalysis";
@@ -86,6 +86,7 @@ async function normalizePackageRoot(scanRoot: string, manifestDirectory: string)
     throw new Error(`Endor scan package.json is invalid at ${packageRoot}`, { cause: error });
   }
   const manifest = unknownRecordSchema.parse(parsedManifest);
+  let manifestChanged = false;
   const devDependenciesValue = manifest.devDependencies;
   if (devDependenciesValue !== undefined) {
     const devDependencies = unknownRecordSchema.safeParse(devDependenciesValue);
@@ -99,9 +100,21 @@ async function normalizePackageRoot(scanRoot: string, manifestDirectory: string)
     if (workspaceDependencyNames.length > 0) {
       for (const name of workspaceDependencyNames) delete devDependencies.data[name];
       manifest.devDependencies = devDependencies.data;
-      await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+      manifestChanged = true;
     }
   }
+  // endorctl requires the pnpm binary whenever packageManager names pnpm, even
+  // next to an npm lockfile. A root pnpm-lock.yaml is skipped before this runs,
+  // so these packages resolve with npm like any lockfile-less package.
+  if (typeof manifest.packageManager === "string" && /^pnpm(@|$)/.test(manifest.packageManager)) {
+    delete manifest.packageManager;
+    manifestChanged = true;
+  }
+  if (manifestChanged) {
+    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+  }
+  // pnpm-workspace.yaml makes endorctl require pnpm too; npm never reads it.
+  await rm(join(manifestDirectory, "pnpm-workspace.yaml"), { force: true, recursive: true });
 
   const shrinkwrapPath = join(manifestDirectory, "npm-shrinkwrap.json");
   const packageLockPath = join(manifestDirectory, "package-lock.json");
@@ -111,10 +124,11 @@ async function normalizePackageRoot(scanRoot: string, manifestDirectory: string)
 }
 
 async function normalizePackageTree(scanRoot: string, directory = scanRoot): Promise<void> {
-  const entries = await readdir(directory, { withFileTypes: true });
   if (await isRegularFile(join(directory, "package.json"))) {
     await normalizePackageRoot(scanRoot, directory);
   }
+  // List after normalizing, which can remove entries.
+  const entries = await readdir(directory, { withFileTypes: true });
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.name === ".git" || entry.name === "node_modules") continue;
     await normalizePackageTree(scanRoot, join(directory, entry.name));
