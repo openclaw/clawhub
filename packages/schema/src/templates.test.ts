@@ -773,3 +773,29 @@ describe("Template manifest contract", () => {
     ).toBe(false);
   });
 });
+
+describe("preferred Template models", () => {
+  it.each([
+    "anthropic/claude-sonnet-4-5",
+    "openrouter/anthropic/claude-sonnet-4.5",
+    "a/" + "m".repeat(198),
+  ])("accepts a portable model preference without configuring a provider: %s", (model) => {
+    expect(validateTemplateManifest({ schemaVersion: 1, agent: { id: "writer", model } }).ok).toBe(
+      true,
+    );
+  });
+
+  it.each([
+    "",
+    "sonnet",
+    "claude-sonnet-4-5",
+    "anthropic/model@work",
+    " anthropic/model",
+    "anthropic/",
+    "a/" + "m".repeat(199),
+  ])("rejects a non-portable model preference: %s", (model) => {
+    expect(validateTemplateManifest({ schemaVersion: 1, agent: { id: "writer", model } }).ok).toBe(
+      false,
+    );
+  });
+});

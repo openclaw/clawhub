@@ -25,6 +25,13 @@ Its `agent` object carries identity and purpose plus supported native `groupChat
 `tools.profile` selects a bounded tool policy. The existing bounded tool, memory
 consent, path and environment restrictions remain enforced.
 
+`agent.model` is an optional preference naming one exact `provider/model`
+reference of at most 200 characters, without aliases or auth-profile suffixes.
+ClawHub validates only its shape. It does not make the provider a dependency,
+carry credentials, or promise availability: OpenClaw applies the preference at
+Add only when the Gateway reports that model as available and permitted, and
+otherwise leaves the agent on the Gateway's default model.
+
 Top-level `skills` and `plugins` contain exact `{ref, version}` ClawHub references
 or strict `{path}` package-local directories. A single source-aware inventory
 (`kind`, `source`, and either `ref`/`version` or `path`/optional metadata `name`) drives
