@@ -39,8 +39,8 @@ function InstallCardSkeleton() {
       <div className="skill-install-command-header">
         <Skeleton className="h-5 w-16" />
         <div className="detail-skeleton-install-tabs" aria-hidden="true">
-          <Skeleton className="h-4 w-14" />
           <Skeleton className="h-4 w-8" />
+          <Skeleton className="h-4 w-14" />
         </div>
       </div>
       <Skeleton className="detail-skeleton-install-action" />

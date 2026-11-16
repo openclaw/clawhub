@@ -191,12 +191,14 @@ This note preserves the complete UI direction established during the June 2026 d
 
 ## Identity-only native Install handoff
 
-The primary action lives inside the shared install card in the desktop right
-rail, not the hero. The existing flat terminal toggle becomes **Desktop | CLI**,
-with the same vertical divider, type and active text treatment. Eligible hosted
-skills, plugins and Templates default to Desktop with the red, text-only
-**Install in OpenClaw** CTA; switching to CLI uses the existing command shell, `$` marker,
-syntax treatment and inline copy icon, with no separate Copy bar. There is no
+The install card lives in the desktop right rail, not the hero. The existing
+flat terminal toggle becomes **CLI | Desktop**, with the same vertical divider,
+type and active text treatment. Eligible hosted skills, plugins and Templates
+open on CLI, with the existing command shell, `$` marker, syntax treatment and
+inline copy icon and no separate Copy bar; the Desktop tab holds the red,
+text-only **Install in OpenClaw** CTA. CLI comes first for now because the page
+cannot tell whether the installed desktop app handles the link, and released
+builds do not all handle it yet. Make Desktop the default again once they do. There is no
 platform label, icon, helper copy or secondary download CTA. The card appears
 once before content on mobile (900px and below). The Install heading has no
 horizontal divider; its content-height row has no leftover divider padding or

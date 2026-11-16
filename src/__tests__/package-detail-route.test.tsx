@@ -249,7 +249,7 @@ describe("plugin detail route", () => {
     vi.unstubAllGlobals();
   });
 
-  it("offers a right-rail Install link with the existing Desktop and CLI tabs for a published plugin", async () => {
+  it("offers a right-rail Install link behind the Desktop tab, after CLI, for a published plugin", async () => {
     loaderDataMock.detail.package = {
       ...loaderDataMock.detail.package!,
       name: "@owner/scoped-plugin",
@@ -260,6 +260,12 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
+    const tabs = within(screen.getByRole("group", { name: "Install option" })).getAllByRole(
+      "button",
+    );
+    expect(tabs.map((tab) => tab.textContent)).toEqual(["CLI", "Desktop"]);
+    expect(screen.queryByRole("link", { name: "Install in OpenClaw" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Desktop" }));
     const link = screen.getByRole("link", { name: "Install in OpenClaw" });
     expect(link.closest(".skill-install-command-card")).not.toBeNull();
     expect(link.getAttribute("href")).toBe(
@@ -288,19 +294,18 @@ describe("plugin detail route", () => {
       const Component = route.__config.component as ComponentType;
       render(<Component />);
 
-      const link = screen.getByRole("link", { name: "Install in OpenClaw" });
-      expect(link.closest(".skill-install-command-card")).not.toBeNull();
       const cards = screen.getAllByRole("article", { name: "Install" });
       expect(cards).toHaveLength(1);
       expect(Boolean(cards[0].closest("aside"))).toBe(width > 900);
       expect(Boolean(cards[0].closest(".detail-mobile-install"))).toBe(width <= 900);
       expect(
-        within(cards[0]).getByRole("button", { name: "Desktop" }).getAttribute("aria-pressed"),
+        within(cards[0]).getByRole("button", { name: "CLI" }).getAttribute("aria-pressed"),
       ).toBe("true");
-      fireEvent.click(within(cards[0]).getByRole("button", { name: "CLI" }));
       expect(
         within(cards[0]).getByRole("button", { name: "Copy plugin install command" }),
       ).toBeTruthy();
+      fireEvent.click(within(cards[0]).getByRole("button", { name: "Desktop" }));
+      expect(within(cards[0]).getByRole("link", { name: "Install in OpenClaw" })).toBeTruthy();
     },
   );
 
@@ -323,6 +328,7 @@ describe("plugin detail route", () => {
       const route = await loadRoute();
       const Component = route.__config.component as ComponentType;
       render(<Component />);
+      fireEvent.click(screen.getByRole("button", { name: "Desktop" }));
       expect(screen.getByRole("link", { name: "Install in OpenClaw" }).getAttribute("href")).toBe(
         href,
       );

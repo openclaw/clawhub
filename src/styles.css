@@ -6360,7 +6360,7 @@ a.skills-sh-security-audit-row:focus-visible {
   padding-block: 8px;
 }
 
-/* Reuse the existing flat terminal tabs for Desktop | CLI and legacy sources. */
+/* Reuse the existing flat terminal tabs for CLI | Desktop and legacy sources. */
 .skill-install-command-card .skill-install-tab-toggle {
   display: inline-flex;
   align-items: center;

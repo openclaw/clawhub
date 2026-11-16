@@ -323,11 +323,11 @@ describe("Template detail composition and interactions", () => {
       const card = screen.getByRole("article", { name: "Install" });
       expect(card.closest(".template-detail-main")).not.toBeNull();
       expect(document.querySelectorAll(".skill-install-command-card")).toHaveLength(1);
+      expect(screen.getByRole("button", { name: "Copy template install command" })).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "Desktop" }));
       expect(
         screen.getByRole("link", { name: "Install in OpenClaw" }).closest(".template-detail-main"),
       ).not.toBeNull();
-      fireEvent.click(screen.getByRole("button", { name: "CLI" }));
-      expect(screen.getByRole("button", { name: "Copy template install command" })).toBeTruthy();
     } finally {
       vi.unstubAllGlobals();
     }
@@ -335,6 +335,7 @@ describe("Template detail composition and interactions", () => {
 
   it("offers the exact Template package identity and one desktop rail command card", () => {
     renderTemplate();
+    fireEvent.click(screen.getByRole("button", { name: "Desktop" }));
     const link = screen.getByRole("link", { name: "Install in OpenClaw" });
     expect(link.getAttribute("href")).toBe(
       "openclaw://templates/install?name=%40maker%2Frelease-brief",
@@ -603,13 +604,13 @@ describe("Template detail composition and interactions", () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
     renderTemplate({ name: "release-brief" });
-    expect(screen.getByRole("link", { name: "Install in OpenClaw" }).getAttribute("href")).toBe(
-      "openclaw://templates/install?name=%40maker%2Frelease-brief",
-    );
-    fireEvent.click(screen.getByRole("button", { name: "CLI" }));
     fireEvent.click(screen.getByRole("button", { name: "Copy template install command" }));
     await waitFor(() =>
       expect(writeText).toHaveBeenCalledWith("openclaw templates add @maker/release-brief"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Desktop" }));
+    expect(screen.getByRole("link", { name: "Install in OpenClaw" }).getAttribute("href")).toBe(
+      "openclaw://templates/install?name=%40maker%2Frelease-brief",
     );
   });
 

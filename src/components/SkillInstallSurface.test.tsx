@@ -1,6 +1,6 @@
 /* @vitest-environment jsdom */
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   InstallCommandCard,
@@ -77,7 +77,7 @@ describe("skill install commands", () => {
   });
 
   it.each(["plugins", "skills", "templates"] as const)(
-    "defaults a supported %s identity to Desktop and reuses the CLI shell when switched",
+    "opens a supported %s identity on CLI and offers the app link on the Desktop tab",
     async (family) => {
       const command = `openclaw ${family} install @owner/example`;
       render(
@@ -92,6 +92,19 @@ describe("skill install commands", () => {
           }}
         />,
       );
+      const tabs = within(screen.getByRole("group", { name: "Install option" })).getAllByRole(
+        "button",
+      );
+      expect(tabs.map((tab) => tab.textContent)).toEqual(["CLI", "Desktop"]);
+      expect(screen.getByRole("button", { name: "CLI" }).getAttribute("aria-pressed")).toBe("true");
+      expect(screen.queryByRole("link", { name: "Install in OpenClaw" })).toBeNull();
+      expect(document.querySelector(".skill-install-command-shell-cli pre")?.textContent).toBe(
+        command,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Copy OpenClaw CLI command" }));
+      await waitFor(() => expect(writeTextMock).toHaveBeenCalledWith(command));
+
+      fireEvent.click(screen.getByRole("button", { name: "Desktop" }));
       const link = screen.getByRole("link", { name: "Install in OpenClaw" });
       expect(link.getAttribute("href")).toBe(
         `openclaw://${family}/install?name=%40owner%2Fexample`,
@@ -100,19 +113,9 @@ describe("skill install commands", () => {
       expect(screen.getByRole("button", { name: "Desktop" }).getAttribute("aria-pressed")).toBe(
         "true",
       );
-      expect(screen.queryByRole("button", { name: "Prompt" })).toBeNull();
-      expect(screen.queryByRole("button", { name: "npx skills" })).toBeNull();
       expect(document.querySelector(".skill-install-command-shell")).toBeNull();
-
       fireEvent.click(screen.getByRole("button", { name: "CLI" }));
       expect(screen.queryByRole("link", { name: "Install in OpenClaw" })).toBeNull();
-      expect(document.querySelector(".skill-install-command-shell-cli pre")?.textContent).toBe(
-        command,
-      );
-      fireEvent.click(screen.getByRole("button", { name: "Copy OpenClaw CLI command" }));
-      await waitFor(() => expect(writeTextMock).toHaveBeenCalledWith(command));
-      fireEvent.click(screen.getByRole("button", { name: "Desktop" }));
-      expect(screen.getByRole("link", { name: "Install in OpenClaw" })).toBeTruthy();
     },
   );
 
@@ -147,6 +150,7 @@ describe("skill install commands", () => {
         desktopInstall={{ family: "skills", name: "@owner/example" }}
       />,
     );
+    fireEvent.click(screen.getByRole("button", { name: "Desktop" }));
     expect(screen.getByRole("link", { name: "Install in OpenClaw" })).toBeTruthy();
     rerender(<InstallCommandCard {...props} />);
     expect(screen.queryByRole("link", { name: "Install in OpenClaw" })).toBeNull();
