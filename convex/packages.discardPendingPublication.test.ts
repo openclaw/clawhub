@@ -1,14 +1,16 @@
 /* @vitest-environment node */
 
 import { describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { discardPendingPackagePublicationInternal } from "./packages";
 import { getPackagePublishAttemptStatusInternal } from "./publishAttempts";
 
-type Handler = {
-  _handler: (ctx: unknown, args: Record<string, unknown>) => Promise<Record<string, unknown>>;
-};
-const discard = (discardPendingPackagePublicationInternal as unknown as Handler)._handler;
-const getStatus = (getPackagePublishAttemptStatusInternal as unknown as Handler)._handler;
+const discard = getTestHandler<Record<string, unknown>, Record<string, unknown>>(
+  discardPendingPackagePublicationInternal,
+);
+const getStatus = getTestHandler<Record<string, unknown>, Record<string, unknown>>(
+  getPackagePublishAttemptStatusInternal,
+);
 const packageId = "packages:demo";
 const releaseId = "packageReleases:pending";
 const attemptId = "publishAttempts:pending";
