@@ -208,6 +208,15 @@ cover multiple/late containers, ownership mismatches, daemon/removal failures,
 unknown finality and contained overview cancellation. There is no real local
 Docker-daemon claim; native image qualification remains the upstream evidence.
 
+Once container removal is confirmed, the Codex scan worker deletes the
+workspace on a best-effort basis. Docker sandboxes leave root-owned files in
+the bind mount, so that delete can fail with EACCES after the job outcome is
+already recorded. The worker logs `security_scan_workspace_cleanup_failed` and
+keeps the recorded result. It does not fail the job or the shard, because the
+hosted runner is discarded after the run. This applies only after removal is
+confirmed. An unconfirmed removal still preserves the workspace and stops the
+worker.
+
 Repair validation: four cleanup/worker seam suites passed 213 tests; full unit
 coverage with serialized file execution passed 8993 tests, 5 skipped. Full
 TypeScript/build, lint and installed formatter passed. A prior parallel run

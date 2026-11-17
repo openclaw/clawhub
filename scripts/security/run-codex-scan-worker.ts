@@ -2818,8 +2818,29 @@ export async function processJob(
         "preserving scan workspace because container removal was not confirmed",
       );
     } else {
-      await rm(workspace, { recursive: true, force: true });
+      await removeScanWorkspace(workspace, job.job._id);
     }
+  }
+}
+
+// Docker sandboxes leave root-owned files in the bind-mounted workspace, so
+// removal can fail with EACCES after the outcome is already recorded. A throw
+// here would replace the job result and fail the whole shard; the hosted
+// runner is discarded after the run, so log the leftover and continue.
+export async function removeScanWorkspace(workspace: string, jobId: string) {
+  try {
+    await rm(workspace, { recursive: true, force: true });
+    return true;
+  } catch (error) {
+    logger.warn(
+      {
+        event: "security_scan_workspace_cleanup_failed",
+        jobId,
+        code: (error as NodeJS.ErrnoException | undefined)?.code ?? "unknown",
+      },
+      "security scan workspace cleanup failed; leaving it for runner teardown",
+    );
+    return false;
   }
 }
 

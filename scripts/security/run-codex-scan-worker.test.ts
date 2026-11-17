@@ -1,6 +1,6 @@
 /* @vitest-environment node */
 import { createHash } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTestTempDirectories } from "../lib/testTempDirectories";
@@ -11,6 +11,7 @@ import {
   normalizeSkillSpectorAnalysis,
   publishWorkerHealthSummary,
   processJob,
+  removeScanWorkspace,
   runContinuouslyRefilledWorkerPool,
   writeArtifactWorkspace,
   writeJobDiagnostic,
@@ -31,6 +32,32 @@ function unsafeFixtureLabels() {
     workerValue: "worker-token-fixture",
   };
 }
+
+// Docker sandboxes leave root-owned files behind; EACCES used to escape
+// processJob after the outcome was recorded and fail the whole shard.
+it.skipIf(process.getuid?.() === 0)(
+  "logs and survives a workspace that cannot be removed",
+  async () => {
+    const workspace = await tempDirs.create();
+    const locked = join(workspace, "sandbox-output");
+    await mkdir(locked);
+    await writeFile(join(locked, "log.txt"), "root-owned in production");
+    await chmod(locked, 0o500);
+    const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    try {
+      await expect(removeScanWorkspace(workspace, "securityScanJobs:locked")).resolves.toBe(false);
+      const logged = stdoutWrite.mock.calls.map((call) => String(call[0])).join("\n");
+      expect(logged).toContain("security_scan_workspace_cleanup_failed");
+      expect(logged).toContain("EACCES");
+    } finally {
+      stdoutWrite.mockRestore();
+      await chmod(locked, 0o700);
+    }
+
+    await expect(removeScanWorkspace(workspace, "securityScanJobs:unlocked")).resolves.toBe(true);
+    await expect(stat(workspace)).rejects.toMatchObject({ code: "ENOENT" });
+  },
+);
 
 describe("run-codex-scan-worker diagnostics", () => {
   it("publishes the worker report to the Actions summary and diagnostics artifact", async () => {
