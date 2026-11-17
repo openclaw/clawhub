@@ -3514,11 +3514,11 @@ export const report = mutation({
     const { userId } = await requireUser(ctx);
     const skill = await ctx.db.get(args.skillId);
     if (!skill || skill.softDeletedAt || skill.moderationStatus === "removed") {
-      throw new Error("Skill not found");
+      throw new ConvexError("Skill not found");
     }
     const reason = args.reason.trim();
     if (!reason) {
-      throw new Error("Report reason required.");
+      throw new ConvexError("Report reason required.");
     }
 
     const existing = await ctx.db
@@ -3529,7 +3529,9 @@ export const report = mutation({
 
     const activeReports = await countActiveReportsForUser(ctx, userId);
     if (activeReports >= MAX_ACTIVE_REPORTS_PER_USER) {
-      throw new Error("Report limit reached. Please wait for moderation before reporting more.");
+      throw new ConvexError(
+        "Report limit reached. Please wait for moderation before reporting more.",
+      );
     }
 
     const now = Date.now();
