@@ -1,6 +1,7 @@
 /* @vitest-environment node */
-import { createHash } from "node:crypto";
-import { chmod, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { chmod, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTestTempDirectories } from "../lib/testTempDirectories";
@@ -11,7 +12,6 @@ import {
   normalizeSkillSpectorAnalysis,
   publishWorkerHealthSummary,
   processJob,
-  removeScanWorkspace,
   runContinuouslyRefilledWorkerPool,
   writeArtifactWorkspace,
   writeJobDiagnostic,
@@ -32,32 +32,6 @@ function unsafeFixtureLabels() {
     workerValue: "worker-token-fixture",
   };
 }
-
-// Docker sandboxes leave root-owned files behind; EACCES used to escape
-// processJob after the outcome was recorded and fail the whole shard.
-it.skipIf(process.getuid?.() === 0)(
-  "logs and survives a workspace that cannot be removed",
-  async () => {
-    const workspace = await tempDirs.create();
-    const locked = join(workspace, "sandbox-output");
-    await mkdir(locked);
-    await writeFile(join(locked, "log.txt"), "root-owned in production");
-    await chmod(locked, 0o500);
-    const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    try {
-      await expect(removeScanWorkspace(workspace, "securityScanJobs:locked")).resolves.toBe(false);
-      const logged = stdoutWrite.mock.calls.map((call) => String(call[0])).join("\n");
-      expect(logged).toContain("security_scan_workspace_cleanup_failed");
-      expect(logged).toContain("EACCES");
-    } finally {
-      stdoutWrite.mockRestore();
-      await chmod(locked, 0o700);
-    }
-
-    await expect(removeScanWorkspace(workspace, "securityScanJobs:unlocked")).resolves.toBe(true);
-    await expect(stat(workspace)).rejects.toMatchObject({ code: "ENOENT" });
-  },
-);
 
 describe("run-codex-scan-worker diagnostics", () => {
   it("publishes the worker report to the Actions summary and diagnostics artifact", async () => {
@@ -1174,6 +1148,59 @@ describe("run-codex-scan-worker diagnostics", () => {
     if (previousGitHubActions === undefined) delete process.env.GITHUB_ACTIONS;
     else process.env.GITHUB_ACTIONS = previousGitHubActions;
   });
+
+  // Docker sandboxes leave root-owned files in the workspace. Their EACCES
+  // used to replace processJob's result and fail the whole shard.
+  it.skipIf(process.getuid?.() === 0)(
+    "keeps a recorded result when the workspace cannot be deleted",
+    async () => {
+      const jobId = `securityScanJobs:locked-${randomUUID()}`;
+      let lockedDir: string | undefined;
+      const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      const client = {
+        action: vi.fn(async (..._args: unknown[]) => {
+          const workspaceName = (await readdir(tmpdir())).find((name) =>
+            name.startsWith(`clawhub-codex-scan-${jobId}-`),
+          );
+          if (!workspaceName) throw new Error("scan workspace not found");
+          const workspace = join(tmpdir(), workspaceName);
+          tempDirs.track(workspace);
+          lockedDir = join(workspace, "sandbox-output");
+          await mkdir(lockedDir);
+          await writeFile(join(lockedDir, "log.txt"), "root-owned in production");
+          await chmod(lockedDir, 0o500);
+          return null;
+        }),
+      };
+
+      try {
+        await expect(
+          processJob(
+            client,
+            "worker-token",
+            {
+              job: {
+                _id: jobId,
+                hasMaliciousSignal: false,
+                leaseToken: "lease-token",
+                scanMode: "endor-report-only",
+                source: "publish",
+                targetKind: "packageRelease",
+              },
+              target: {},
+            },
+            undefined,
+          ),
+        ).resolves.toEqual({ completed: true, hardFailed: false, retryableFailed: false });
+        const logged = stdoutWrite.mock.calls.map((call) => String(call[0])).join("\n");
+        expect(logged).toContain("security_scan_workspace_cleanup_failed");
+        expect(logged).toContain("EACCES");
+        expect(logged).not.toContain(tmpdir());
+      } finally {
+        if (lockedDir) await chmod(lockedDir, 0o700);
+      }
+    },
+  );
 
   it("retains full ClawScan artifact and scanner outputs with secret-safe redaction", async () => {
     const diagnosticsRoot = await tempDirs.create();
