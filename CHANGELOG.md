@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- CLI: add `clawhub skill publication <skill> --version <version>`. It prints the owner-only publication stage for that exact skill version, including whether a retry is already waiting and how to download a stored scan report.
+
 - Package publish: a missing uploaded package tarball is a client error. The message stays "Package tarball upload no longer exists".
 
 - Skill reads: a missing stored skill file is a client error for the readme, skill card, file text, and publish preview text. The message stays "File missing in storage".

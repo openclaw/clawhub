@@ -153,6 +153,22 @@ guidance; it does not retry checks or release the upload. JSON places the status
 in `publication` and recovery guidance in `nextSteps`. Held content is not returned
 by `--file` or `--files`; these requests exit unsuccessfully after showing status.
 
+### `skill publication <skill>`
+
+- Shows the publication stage of one exact skill version to its owner.
+- Calls `GET /api/v1/skills/{slug}/versions/{version}/publication`.
+- `--version` is required. The public latest version is a different question: a held upload is omitted from the public version list.
+- Prints the stage, whether a retry is already waiting, and the `clawhub scan download` command when a stored report may exist.
+- The text does not include worker errors, findings, attempt ids, or storage ids.
+- `--json` prints the response object unchanged.
+- Log in first. Anonymous and unauthorized callers get the same refusal as the HTTP route.
+
+Example:
+
+```bash
+clawhub skill publication @owner/slug --version 1.2.3
+```
+
 ### `install @owner/slug`
 
 - Resolves latest version for the named owner and skill.
