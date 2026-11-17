@@ -16,6 +16,19 @@ export function titleCase(value: string) {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+const ARCHIVE_EXTENSION_PATTERN = /\.(?:tgz|tar\.gz)$/i;
+const VERSION_SUFFIX_PATTERN = /[-_@]v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+
+/**
+ * Title-cases a package folder or tarball basename for use as a fallback display
+ * name, dropping the archive extension and trailing version that `npm pack`-style
+ * filenames carry (`demo-claw-1.0.0.tgz` -> `Demo Claw`).
+ */
+export function displayNameFromPath(value: string) {
+  const stem = value.trim().replace(ARCHIVE_EXTENSION_PATTERN, "");
+  return titleCase(stem.replace(VERSION_SUFFIX_PATTERN, "") || stem);
+}
+
 export function parseSkillRef(skillArg: string) {
   const value = skillArg.trim().toLowerCase();
   if (!value) fail("Skill required");

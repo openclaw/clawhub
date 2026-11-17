@@ -3155,12 +3155,82 @@ describe("package commands", () => {
         version: "1.0.0",
         expectedArtifactSha256: artifactSha256,
         categories: ["automation"],
+        displayName: "Demo Claw",
       });
       expect(mockWarn).not.toHaveBeenCalled();
       const uploaded = getPublishForm().get("clawpack");
       expect(uploaded).toBeInstanceOf(File);
       const parsed = parseClawPack(new Uint8Array(await (uploaded as File).arrayBuffer()));
       expect(parsed.entries.map((entry) => entry.path)).toContain("CLAW.md");
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("uses the Template agent name as the display name before the tarball filename", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const packName = "cooking-companion-0.2.0.tgz";
+      await writeFile(
+        join(workdir, packName),
+        npmPackFixture({
+          "package/package.json": JSON.stringify({
+            name: "cooking-companion",
+            version: "0.2.0",
+            openclaw: { template: "CLAW.md" },
+          }),
+          "package/CLAW.md":
+            "---\nschemaVersion: 1\nagent:\n  id: cooking-companion\n  name: Cooking Companion\n---\n# Cooking Companion\n",
+        }),
+      );
+      const packBytes = new Uint8Array(await readFile(join(workdir, packName)));
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        packageId: "pkg_claw",
+        releaseId: "rel_claw",
+        artifactSha256: artifactIdentity(packBytes).sha256,
+      });
+
+      await cmdPublishPackage(makeOpts(workdir), packName);
+
+      expect(getPublishPayload()).toMatchObject({
+        name: "cooking-companion",
+        family: "template",
+        displayName: "Cooking Companion",
+      });
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("prefers an explicit display name over the Template agent name", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const packName = "demo-claw-1.0.0.tgz";
+      await writeFile(
+        join(workdir, packName),
+        npmPackFixture({
+          "package/package.json": JSON.stringify({
+            name: "demo-claw",
+            displayName: "Demo Claw Deluxe",
+            version: "1.0.0",
+            openclaw: { template: "CLAW.md" },
+          }),
+          "package/CLAW.md":
+            "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n  name: Demo Agent\n---\n# Demo Template\n",
+        }),
+      );
+      const packBytes = new Uint8Array(await readFile(join(workdir, packName)));
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        packageId: "pkg_claw",
+        releaseId: "rel_claw",
+        artifactSha256: artifactIdentity(packBytes).sha256,
+      });
+
+      await cmdPublishPackage(makeOpts(workdir), packName);
+
+      expect(getPublishPayload()).toMatchObject({ displayName: "Demo Claw Deluxe" });
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }
