@@ -1193,8 +1193,11 @@ describe("run-codex-scan-worker diagnostics", () => {
           ),
         ).resolves.toEqual({ completed: true, hardFailed: false, retryableFailed: false });
         const logged = stdoutWrite.mock.calls.map((call) => String(call[0])).join("\n");
-        expect(logged).toContain("security_scan_workspace_cleanup_failed");
-        expect(logged).toContain("EACCES");
+        const cleanupLog = logged
+          .split("\n")
+          .find((line) => line.includes('"security_scan_workspace_cleanup_failed"'));
+        // Node reports EACCES here; Bun may report ENOTEMPTY for the same tree.
+        expect(JSON.parse(cleanupLog ?? "null")).toMatchObject({ jobId, code: "EACCES" });
         expect(logged).not.toContain(tmpdir());
       } finally {
         if (lockedDir) await chmod(lockedDir, 0o700);

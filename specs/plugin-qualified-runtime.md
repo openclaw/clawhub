@@ -70,6 +70,20 @@ production execution. The local native Convex authority fixture separately prove
 allowed Endor-only writes and rejection of stale/retired/substituted authority;
 only its Endor subprocess transport is simulated. Production was untouched.
 
+## Scan workspace cleanup
+
+Deleting a Codex scan workspace must never change the job's result or error.
+When the workspace is not preserved for container custody, the worker deletes
+it on a best-effort basis. Docker sandboxes leave root-owned files in the bind
+mount, so the delete can fail (EACCES on Linux). Bun's `rm` stops at the first
+error and may leave most of the workspace, including the extracted artifact.
+The worker logs `security_scan_workspace_cleanup_failed` with the errno code and
+keeps going. Leftover workspaces can pile up until the runner is torn down. That
+is accepted on hosted runners, which are discarded after each run. Local runs
+(`CLAWHUB_ALLOW_LOCAL_CODEX_SCAN=1`) leave them in the temp dir. Removing them
+for real would need the scoped privileged helper used by
+`template-qualification-workspace.ts`.
+
 ## Historical preparation record (superseded)
 
 The following source56/c3 records describe earlier preparation, not current
@@ -207,13 +221,6 @@ unchanged. Real process-supervisor tests and executable mocked-daemon tests
 cover multiple/late containers, ownership mismatches, daemon/removal failures,
 unknown finality and contained overview cancellation. There is no real local
 Docker-daemon claim; native image qualification remains the upstream evidence.
-
-When the workspace is not preserved for container custody, the Codex scan
-worker deletes it on a best-effort basis. Docker sandboxes leave root-owned
-files in the bind mount, so the delete can fail with EACCES after the job
-outcome is recorded. The worker logs `security_scan_workspace_cleanup_failed`
-with the errno code and keeps the recorded result instead of failing the job or
-shard; the hosted runner is discarded after the run.
 
 Repair validation: four cleanup/worker seam suites passed 213 tests; full unit
 coverage with serialized file execution passed 8993 tests, 5 skipped. Full

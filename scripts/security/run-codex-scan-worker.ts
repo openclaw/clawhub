@@ -2823,9 +2823,9 @@ export async function processJob(
   }
 }
 
-// Docker sandboxes leave root-owned files in the bind mount, so this can fail
-// with EACCES. The job outcome is already recorded and the hosted runner is
-// discarded after the run, so log and keep the result instead of throwing.
+// Cleanup must never replace processJob's result or error. Docker sandboxes
+// leave root-owned files in the bind mount, so this can fail; hosted runners
+// are discarded after the run, so the leftover is logged and accepted.
 async function removeScanWorkspace(workspace: string, jobId: string) {
   try {
     await rm(workspace, { recursive: true, force: true });
@@ -2837,7 +2837,7 @@ async function removeScanWorkspace(workspace: string, jobId: string) {
         jobId,
         code: typeof code === "string" ? code : "unknown",
       },
-      "security scan workspace cleanup failed; leaving it for runner teardown",
+      "security scan workspace cleanup failed; leaving it in place",
     );
   }
 }
