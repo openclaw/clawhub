@@ -68,7 +68,7 @@ import { pathExists } from "../fs.js";
 import { withLoaderErrorHandling } from "../loader.js";
 import { writeJsonIfRequested } from "../output.js";
 import { getRegistry } from "../registry.js";
-import { titleCase } from "../slug.js";
+import { displayNameFromArchive, titleCase } from "../slug.js";
 import type { GlobalOpts } from "../types.js";
 import {
   createCrabLoader,
@@ -2749,13 +2749,12 @@ async function preparePackagePublishPlan(
     packageJsonString(pluginManifest, "id") ||
     packageJsonString(bundleManifest, "id") ||
     basename(folder).trim().toLowerCase();
-  const displayName =
+  const declaredDisplayName =
     options.displayName?.trim() ||
     packageJsonString(pluginManifest, "name") ||
     packageJsonString(packageJson, "displayName") ||
-    packageJsonString(bundleManifest, "name") ||
-    readReadmeH1FromPackageFiles(filesOnDisk) ||
-    titleCase(basename(folder));
+    packageJsonString(bundleManifest, "name");
+  let templateAgentName: string | undefined;
   const ownerHandle = options.owner?.trim().replace(/^@+/, "");
   const version =
     options.version?.trim() ||
@@ -2766,7 +2765,6 @@ async function preparePackagePublishPlan(
   const source = buildSource(options, inferredSource);
 
   if (!name) fail("--name required");
-  if (!displayName) fail("--display-name required");
   if (!version) fail("--version required");
   if (family === "code-plugin" && !fileSet.has("openclaw.plugin.json")) {
     fail("openclaw.plugin.json required");
@@ -2800,10 +2798,20 @@ async function preparePackagePublishPlan(
     if (!validation.ok) {
       fail(validation.issues.map((issue) => `${issue.path}: ${issue.message}`).join(" "));
     }
+    templateAgentName = validation.value.manifest.agent.name?.trim() || undefined;
     if (!clawpackOnDisk) {
       fail("Template publication requires an already-built package tarball (.tgz)");
     }
   }
+
+  const displayName =
+    declaredDisplayName ||
+    templateAgentName ||
+    (family === "template" ? undefined : readReadmeH1FromPackageFiles(filesOnDisk)) ||
+    (parsedClawpack
+      ? displayNameFromArchive(basename(folder), parsedClawpack.packageVersion)
+      : titleCase(basename(folder)));
+  if (!displayName) fail("--display-name required");
 
   if (family === "code-plugin" && !clawpackOnDisk) {
     const packDestination = await mkdtemp(join(tmpdir(), "clawhub-clawpack-"));

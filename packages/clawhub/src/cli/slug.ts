@@ -16,6 +16,17 @@ export function titleCase(value: string) {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+const ARCHIVE_EXTENSION_PATTERN = /\.(?:tgz|tar\.gz)$/i;
+/** Title-cases an archive basename without its extension or known artifact version. */
+export function displayNameFromArchive(value: string, artifactVersion: string) {
+  const stem = value.trim().replace(ARCHIVE_EXTENSION_PATTERN, "");
+  // Guessing semver here can consume version-looking text in the package name.
+  const suffix = ["-", "_", "@"]
+    .flatMap((separator) => [`${separator}${artifactVersion}`, `${separator}v${artifactVersion}`])
+    .find((candidate) => stem.endsWith(candidate));
+  return titleCase((suffix ? stem.slice(0, -suffix.length) : stem) || stem);
+}
+
 export function parseSkillRef(skillArg: string) {
   const value = skillArg.trim().toLowerCase();
   if (!value) fail("Skill required");

@@ -2269,7 +2269,7 @@ describe("package commands", () => {
     },
   );
 
-  it("uses the README H1 as a package display name fallback", async () => {
+  it("keeps the README H1 as a plugin display name fallback", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const folder = join(workdir, "clawhub-github-publish-clh4hR");
@@ -3155,12 +3155,209 @@ describe("package commands", () => {
         version: "1.0.0",
         expectedArtifactSha256: artifactSha256,
         categories: ["automation"],
+        displayName: "Demo Claw",
       });
       expect(mockWarn).not.toHaveBeenCalled();
       const uploaded = getPublishForm().get("clawpack");
       expect(uploaded).toBeInstanceOf(File);
       const parsed = parseClawPack(new Uint8Array(await (uploaded as File).arrayBuffer()));
       expect(parsed.entries.map((entry) => entry.path)).toContain("CLAW.md");
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("uses the Template agent name as the display name before the tarball filename", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const packName = "cooking-companion-0.2.0.tgz";
+      await writeFile(
+        join(workdir, packName),
+        npmPackFixture({
+          "package/package.json": JSON.stringify({
+            name: "cooking-companion",
+            version: "0.2.0",
+            openclaw: { template: "CLAW.md" },
+          }),
+          "package/CLAW.md":
+            "---\nschemaVersion: 1\nagent:\n  id: cooking-companion\n  name: Cooking Companion\n---\n# Cooking Companion\n",
+        }),
+      );
+      const packBytes = new Uint8Array(await readFile(join(workdir, packName)));
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        packageId: "pkg_claw",
+        releaseId: "rel_claw",
+        artifactSha256: artifactIdentity(packBytes).sha256,
+      });
+
+      await cmdPublishPackage(makeOpts(workdir), packName);
+
+      expect(getPublishPayload()).toMatchObject({
+        name: "cooking-companion",
+        family: "template",
+        displayName: "Cooking Companion",
+      });
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    {
+      label: "explicit CLI name",
+      displayName: "CLI Display",
+      packageDisplayName: "Package Display",
+      agentName: "Template Agent",
+      expected: "CLI Display",
+    },
+    {
+      label: "explicit package name",
+      displayName: undefined,
+      packageDisplayName: "Package Display",
+      agentName: "Template Agent",
+      expected: "Package Display",
+    },
+    {
+      label: "CLAW.md agent name",
+      displayName: undefined,
+      packageDisplayName: undefined,
+      agentName: "Template Agent",
+      expected: "Template Agent",
+    },
+    {
+      label: "cleaned filename without an agent name",
+      displayName: undefined,
+      packageDisplayName: undefined,
+      agentName: undefined,
+      expected: "Demo Claw",
+    },
+  ])("ignores Template README headings in favor of $label", async (testCase) => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const packName = "demo-claw-1.0.0.tgz";
+      await writeFile(
+        join(workdir, packName),
+        npmPackFixture({
+          "package/package.json": JSON.stringify({
+            name: "demo-claw",
+            version: "1.0.0",
+            displayName: testCase.packageDisplayName,
+            openclaw: { template: "CLAW.md" },
+          }),
+          "package/CLAW.md": [
+            "---",
+            "schemaVersion: 1",
+            "agent:",
+            "  id: demo-claw",
+            ...(testCase.agentName ? [`  name: ${testCase.agentName}`] : []),
+            "---",
+          ].join("\n"),
+          "package/README.md": "# Unrelated README Heading\n",
+        }),
+      );
+
+      await cmdPublishPackage(makeOpts(workdir), packName, {
+        dryRun: true,
+        json: true,
+        displayName: testCase.displayName,
+      });
+
+      const output = JSON.parse(String(mockWrite.mock.calls[0]?.[0] ?? ""));
+      expect(output).toMatchObject({ displayName: testCase.expected });
+      expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("preserves version-looking package-name text in an archive fallback", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const packName = "http-1.0.0-helper-2.0.0.tgz";
+      await writeFile(
+        join(workdir, packName),
+        npmPackFixture({
+          "package/package.json": JSON.stringify({
+            name: "http-1.0.0-helper",
+            version: "2.0.0",
+            openclaw: { template: "CLAW.md" },
+          }),
+          "package/CLAW.md": "---\nschemaVersion: 1\nagent:\n  id: http-helper\n---\n# Template\n",
+        }),
+      );
+
+      await cmdPublishPackage(makeOpts(workdir), packName, { dryRun: true, json: true });
+
+      const output = JSON.parse(String(mockWrite.mock.calls[0]?.[0] ?? ""));
+      expect(output).toMatchObject({ displayName: "Http 1.0.0 Helper", version: "2.0.0" });
+      expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it.each(["demo-plugin-2.0.0", "http-1.0.0-helper"])(
+    "preserves the ordinary folder fallback for %s",
+    async (folderName) => {
+      const workdir = await makeTmpWorkdir();
+      try {
+        const folder = join(workdir, folderName);
+        await mkdir(join(folder, "dist"), { recursive: true });
+        await writeCodePluginMetadata(
+          folder,
+          { name: "demo-plugin", version: "2.0.0" },
+          { id: "demo.plugin" },
+        );
+        await writeDeclaredDistEntry(folder);
+
+        await cmdPublishPackage(makeOpts(workdir), folderName, {
+          dryRun: true,
+          json: true,
+          sourceRepo: "openclaw/demo-plugin",
+          sourceCommit: "abc123",
+        });
+
+        const output = JSON.parse(String(mockWrite.mock.calls[0]?.[0] ?? ""));
+        expect(output).toMatchObject({
+          displayName:
+            folderName === "demo-plugin-2.0.0" ? "Demo Plugin 2.0.0" : "Http 1.0.0 Helper",
+        });
+        expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
+      } finally {
+        await rm(workdir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("prefers an explicit display name over the Template agent name", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const packName = "demo-claw-1.0.0.tgz";
+      await writeFile(
+        join(workdir, packName),
+        npmPackFixture({
+          "package/package.json": JSON.stringify({
+            name: "demo-claw",
+            displayName: "Demo Claw Deluxe",
+            version: "1.0.0",
+            openclaw: { template: "CLAW.md" },
+          }),
+          "package/CLAW.md":
+            "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n  name: Demo Agent\n---\n# Demo Template\n",
+        }),
+      );
+      const packBytes = new Uint8Array(await readFile(join(workdir, packName)));
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        packageId: "pkg_claw",
+        releaseId: "rel_claw",
+        artifactSha256: artifactIdentity(packBytes).sha256,
+      });
+
+      await cmdPublishPackage(makeOpts(workdir), packName);
+
+      expect(getPublishPayload()).toMatchObject({ displayName: "Demo Claw Deluxe" });
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }

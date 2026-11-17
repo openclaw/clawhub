@@ -226,6 +226,12 @@ The `family: template` path preserves ownership, moderation, scanning, and relea
 invariants. OpenClaw independently controls local discovery and addition through
 Settings > Labs (`gateway.controlUi.experimental.templates`).
 
+The CLI chooses a Template display name from explicit display metadata, then the
+validated `CLAW.md` `agent.name`, then the archive filename with its extension and
+known artifact-version suffix removed. README headings never supply Template
+identity: README is optional documentation, while `CLAW.md` is the required
+manifest. Non-Template package README and source-folder fallbacks stay unchanged.
+
 Experimental Template publication is exact-artifact-only:
 
 - The publisher must submit an already-built npm-pack `.tgz`; source folders,
