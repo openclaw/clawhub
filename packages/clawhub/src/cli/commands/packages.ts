@@ -2807,7 +2807,7 @@ async function preparePackagePublishPlan(
   const displayName =
     declaredDisplayName ||
     templateAgentName ||
-    readReadmeH1FromPackageFiles(filesOnDisk) ||
+    (family === "template" ? undefined : readReadmeH1FromPackageFiles(filesOnDisk)) ||
     (parsedClawpack
       ? displayNameFromArchive(basename(folder), parsedClawpack.packageVersion)
       : titleCase(basename(folder)));

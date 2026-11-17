@@ -2269,7 +2269,7 @@ describe("package commands", () => {
     },
   );
 
-  it("uses the README H1 as a package display name fallback", async () => {
+  it("keeps the README H1 as a plugin display name fallback", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const folder = join(workdir, "clawhub-github-publish-clh4hR");
@@ -3198,6 +3198,74 @@ describe("package commands", () => {
         family: "template",
         displayName: "Cooking Companion",
       });
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    {
+      label: "explicit CLI name",
+      displayName: "CLI Display",
+      packageDisplayName: "Package Display",
+      agentName: "Template Agent",
+      expected: "CLI Display",
+    },
+    {
+      label: "explicit package name",
+      displayName: undefined,
+      packageDisplayName: "Package Display",
+      agentName: "Template Agent",
+      expected: "Package Display",
+    },
+    {
+      label: "CLAW.md agent name",
+      displayName: undefined,
+      packageDisplayName: undefined,
+      agentName: "Template Agent",
+      expected: "Template Agent",
+    },
+    {
+      label: "cleaned filename without an agent name",
+      displayName: undefined,
+      packageDisplayName: undefined,
+      agentName: undefined,
+      expected: "Demo Claw",
+    },
+  ])("ignores Template README headings in favor of $label", async (testCase) => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const packName = "demo-claw-1.0.0.tgz";
+      await writeFile(
+        join(workdir, packName),
+        npmPackFixture({
+          "package/package.json": JSON.stringify({
+            name: "demo-claw",
+            version: "1.0.0",
+            displayName: testCase.packageDisplayName,
+            openclaw: { template: "CLAW.md" },
+          }),
+          "package/CLAW.md": [
+            "---",
+            "schemaVersion: 1",
+            "agent:",
+            "  id: demo-claw",
+            ...(testCase.agentName ? [`  name: ${testCase.agentName}`] : []),
+            "---",
+          ].join("\n"),
+          "package/README.md": "# Unrelated README Heading\n",
+        }),
+      );
+
+      await cmdPublishPackage(makeOpts(workdir), packName, {
+        dryRun: true,
+        json: true,
+        displayName: testCase.displayName,
+      });
+
+      const output = JSON.parse(String(mockWrite.mock.calls[0]?.[0] ?? ""));
+      expect(output).toMatchObject({ displayName: testCase.expected });
+      expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }
