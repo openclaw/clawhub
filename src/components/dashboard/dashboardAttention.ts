@@ -5,6 +5,7 @@ import {
   buildPluginValidationHref,
 } from "../../lib/pluginRoutes";
 import { formatValidationFindingMessage } from "../../lib/pluginValidationFormat";
+import { buildTemplateSecurityAuditHref } from "../../lib/templateRoutes";
 import { buildSkillHref } from "../skillDetailUtils";
 import {
   packageSecurityStatus,
@@ -145,7 +146,10 @@ function pushPackageAttention(
   pkg: DashboardPackage,
   ownerHandle: string,
 ) {
-  const auditHref = buildPluginSecurityAuditHref(pkg.name, { ownerHandle });
+  const auditHref =
+    pkg.family === "template"
+      ? buildTemplateSecurityAuditHref(pkg.name, ownerHandle)!
+      : buildPluginSecurityAuditHref(pkg.name, { ownerHandle });
   const warningCount = pkg.inspectorWarningCount ?? 0;
   const security = packageSecurityStatus(pkg);
   const validationPreview = pluginValidationPreview(pkg);
@@ -154,6 +158,7 @@ function pushPackageAttention(
     items.push({
       id: `plugin:${pkg._id}:retirement`,
       kind: "plugin",
+      packageFamily: pkg.family,
       packageName: pkg.name,
       ownerHandle,
       version: pkg.latestVersion ?? pkg.latestRelease?.version ?? undefined,
@@ -173,6 +178,7 @@ function pushPackageAttention(
     items.push({
       id: `plugin:${pkg._id}:validation`,
       kind: "plugin",
+      packageFamily: pkg.family,
       packageName: pkg.name,
       ownerHandle,
       version: pkg.latestVersion ?? pkg.latestRelease?.version ?? undefined,
@@ -190,6 +196,7 @@ function pushPackageAttention(
     items.push({
       id: `plugin:${pkg._id}:blocked`,
       kind: "plugin",
+      packageFamily: pkg.family,
       packageName: pkg.name,
       ownerHandle,
       version: pkg.latestVersion ?? pkg.latestRelease?.version ?? undefined,
@@ -207,6 +214,7 @@ function pushPackageAttention(
     items.push({
       id: `plugin:${pkg._id}:pending-scan`,
       kind: "plugin",
+      packageFamily: pkg.family,
       packageName: pkg.name,
       ownerHandle,
       version: pkg.latestVersion ?? pkg.latestRelease?.version ?? undefined,
@@ -222,6 +230,7 @@ function pushPackageAttention(
     items.push({
       id: `plugin:${pkg._id}:review`,
       kind: "plugin",
+      packageFamily: pkg.family,
       packageName: pkg.name,
       ownerHandle,
       version: pkg.latestVersion ?? pkg.latestRelease?.version ?? undefined,

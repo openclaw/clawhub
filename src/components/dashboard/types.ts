@@ -50,7 +50,7 @@ export type DashboardPackage = {
   _id: string;
   name: string;
   displayName: string;
-  family: "skill" | "code-plugin" | "bundle-plugin";
+  family: "skill" | "code-plugin" | "bundle-plugin" | "template";
   channel: "official" | "community" | "private";
   isOfficial: boolean;
   runtimeId?: string | null;
@@ -94,7 +94,7 @@ export type DashboardPublisherEntry = {
   role: "owner" | "admin" | "publisher";
 };
 
-export type DashboardKindFilter = "all" | "skill" | "plugin" | "attention";
+export type DashboardKindFilter = "all" | "skill" | "plugin" | "template" | "attention";
 export type DashboardSortKey = "name" | "downloads" | "updated";
 export type DashboardSortDir = "asc" | "desc";
 export type DashboardView = "list" | "grid";
@@ -102,6 +102,7 @@ export type DashboardView = "list" | "grid";
 export type DashboardAttentionItem = {
   id: string;
   kind: "skill" | "plugin";
+  packageFamily?: DashboardPackage["family"];
   slug?: string;
   ownerHandle?: string;
   packageName?: string;
