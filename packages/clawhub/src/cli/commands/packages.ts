@@ -68,7 +68,7 @@ import { pathExists } from "../fs.js";
 import { withLoaderErrorHandling } from "../loader.js";
 import { writeJsonIfRequested } from "../output.js";
 import { getRegistry } from "../registry.js";
-import { displayNameFromPath } from "../slug.js";
+import { displayNameFromArchive, titleCase } from "../slug.js";
 import type { GlobalOpts } from "../types.js";
 import {
   createCrabLoader,
@@ -2808,7 +2808,9 @@ async function preparePackagePublishPlan(
     declaredDisplayName ||
     templateAgentName ||
     readReadmeH1FromPackageFiles(filesOnDisk) ||
-    displayNameFromPath(basename(folder));
+    (parsedClawpack
+      ? displayNameFromArchive(basename(folder), parsedClawpack.packageVersion)
+      : titleCase(basename(folder)));
   if (!displayName) fail("--display-name required");
 
   if (family === "code-plugin" && !clawpackOnDisk) {

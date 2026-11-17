@@ -3203,6 +3203,65 @@ describe("package commands", () => {
     }
   });
 
+  it("preserves version-looking package-name text in an archive fallback", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const packName = "http-1.0.0-helper-2.0.0.tgz";
+      await writeFile(
+        join(workdir, packName),
+        npmPackFixture({
+          "package/package.json": JSON.stringify({
+            name: "http-1.0.0-helper",
+            version: "2.0.0",
+            openclaw: { template: "CLAW.md" },
+          }),
+          "package/CLAW.md": "---\nschemaVersion: 1\nagent:\n  id: http-helper\n---\n# Template\n",
+        }),
+      );
+
+      await cmdPublishPackage(makeOpts(workdir), packName, { dryRun: true, json: true });
+
+      const output = JSON.parse(String(mockWrite.mock.calls[0]?.[0] ?? ""));
+      expect(output).toMatchObject({ displayName: "Http 1.0.0 Helper", version: "2.0.0" });
+      expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it.each(["demo-plugin-2.0.0", "http-1.0.0-helper"])(
+    "preserves the ordinary folder fallback for %s",
+    async (folderName) => {
+      const workdir = await makeTmpWorkdir();
+      try {
+        const folder = join(workdir, folderName);
+        await mkdir(join(folder, "dist"), { recursive: true });
+        await writeCodePluginMetadata(
+          folder,
+          { name: "demo-plugin", version: "2.0.0" },
+          { id: "demo.plugin" },
+        );
+        await writeDeclaredDistEntry(folder);
+
+        await cmdPublishPackage(makeOpts(workdir), folderName, {
+          dryRun: true,
+          json: true,
+          sourceRepo: "openclaw/demo-plugin",
+          sourceCommit: "abc123",
+        });
+
+        const output = JSON.parse(String(mockWrite.mock.calls[0]?.[0] ?? ""));
+        expect(output).toMatchObject({
+          displayName:
+            folderName === "demo-plugin-2.0.0" ? "Demo Plugin 2.0.0" : "Http 1.0.0 Helper",
+        });
+        expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
+      } finally {
+        await rm(workdir, { recursive: true, force: true });
+      }
+    },
+  );
+
   it("prefers an explicit display name over the Template agent name", async () => {
     const workdir = await makeTmpWorkdir();
     try {

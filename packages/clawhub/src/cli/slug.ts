@@ -17,16 +17,14 @@ export function titleCase(value: string) {
 }
 
 const ARCHIVE_EXTENSION_PATTERN = /\.(?:tgz|tar\.gz)$/i;
-const VERSION_SUFFIX_PATTERN = /[-_@]v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
-
-/**
- * Title-cases a package folder or tarball basename for use as a fallback display
- * name, dropping the archive extension and trailing version that `npm pack`-style
- * filenames carry (`demo-claw-1.0.0.tgz` -> `Demo Claw`).
- */
-export function displayNameFromPath(value: string) {
+/** Title-cases an archive basename without its extension or known artifact version. */
+export function displayNameFromArchive(value: string, artifactVersion: string) {
   const stem = value.trim().replace(ARCHIVE_EXTENSION_PATTERN, "");
-  return titleCase(stem.replace(VERSION_SUFFIX_PATTERN, "") || stem);
+  // Guessing semver here can consume version-looking text in the package name.
+  const suffix = ["-", "_", "@"]
+    .flatMap((separator) => [`${separator}${artifactVersion}`, `${separator}v${artifactVersion}`])
+    .find((candidate) => stem.endsWith(candidate));
+  return titleCase((suffix ? stem.slice(0, -suffix.length) : stem) || stem);
 }
 
 export function parseSkillRef(skillArg: string) {
