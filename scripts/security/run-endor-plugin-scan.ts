@@ -25,6 +25,8 @@ const CHILD_RUNTIME_ENV_KEYS = [
 ] as const;
 const DEFAULT_ENDOR_TIMEOUT_MS = 20 * 60 * 1000;
 const DOCKER_REMOVE_TIMEOUT_MS = 10_000;
+// Hosted ubuntu-22.04 runners have 16 GB, and a shard runs up to 4 scans at once.
+const ENDOR_CONTAINER_MEMORY = "3g";
 // Community packages with large dependency trees produce reports over 8 MiB.
 // Only the bounded summary is kept; diagnostics are capped separately.
 const MAX_ENDOR_REPORT_BYTES = 64 * 1024 * 1024;
@@ -281,6 +283,14 @@ export async function runEndorPluginScan(input: {
     "--security-opt",
     "no-new-privileges:true",
     "--read-only",
+    // The npm tree, npm cache and call graph all live in the /tmp tmpfs, which
+    // counts against this cap. Uncapped, concurrent scans of large packages
+    // exhausted the hosted runner and the kernel killed the worker or the VM.
+    // With the cap, only this scan is killed and its report fails.
+    "--memory",
+    ENDOR_CONTAINER_MEMORY,
+    "--memory-swap",
+    ENDOR_CONTAINER_MEMORY,
     "--entrypoint",
     "/usr/local/bin/clawhub-endor-entrypoint",
     "--tmpfs",

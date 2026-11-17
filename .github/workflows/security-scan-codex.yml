@@ -214,6 +214,17 @@ jobs:
           ENDOR_API_CREDENTIALS_KEY: ${{ secrets.ENDOR_API_CREDENTIALS_KEY }}
           ENDOR_API_CREDENTIALS_SECRET: ${{ secrets.ENDOR_API_CREDENTIALS_SECRET }}
         run: |
+          # Shards that run out of memory lose the runner before later steps can
+          # upload diagnostics, so sample memory here, in the worker step.
+          (
+            while sleep 60; do
+              echo "runner-resources $(date -u +%T) $(free -m | awk '/^Mem:/ {printf "mem_used_mb=%s mem_total_mb=%s", $3, $2} /^Swap:/ {printf " swap_used_mb=%s", $3}') root_disk_used=$(df --output=pcent / | tail -1 | tr -d ' ')"
+              docker stats --no-stream --format 'runner-resources   container={{.Name}} mem={{.MemUsage}}' 2>/dev/null || true
+              sudo -n dmesg 2>/dev/null | grep -i 'killed process' | tail -2 | sed 's/^/runner-resources   oom: /' || true
+            done
+          ) &
+          sampler=$!
+          trap 'kill "$sampler" 2>/dev/null || true' EXIT
           bun scripts/security/run-codex-scan-worker.ts \
             --batch-limit "$CODEX_SECURITY_SCAN_LIMIT" \
             --lane "$CODEX_SECURITY_SCAN_LANE" \

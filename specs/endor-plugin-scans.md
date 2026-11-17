@@ -64,6 +64,11 @@ Endor runs with `docker run --rm` from a digest-pinned image built by the manual
 - installs firewall rules blocking private, link-local and special-use IPv4/IPv6
   destinations, then drops all capabilities and runs as the unprivileged `node`
   user (it uses public DNS resolvers because the firewall blocks private ones);
+- is capped at 3 GB of memory with no extra swap. The `/tmp` tmpfs, which
+  holds the npm tree, npm cache and call graph, counts against the cap. Before
+  the cap, concurrent scans of large packages exhausted the 16 GB hosted runner
+  from 2026-11-07, and the kernel killed the worker or the whole VM. Now an
+  oversized scan is killed on its own and only its report fails;
 - runs npm and Yarn through shims that strip Endor credentials and disable
   dependency scripts. The image pins an npm version that also suppresses Git
   dependency `prepare` scripts; the isolation proof below checks this.
