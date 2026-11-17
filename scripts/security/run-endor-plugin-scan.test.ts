@@ -173,6 +173,7 @@ describe("runEndorPluginScan", () => {
     expect(runArgs).toContain("--rm");
     // Without a cap, concurrent large scans exhaust the hosted runner's memory;
     // a swap limit equal to the memory limit keeps the container off swap.
+    expect(runArgs).toEqual(expect.arrayContaining(["--memory", "--memory-swap"]));
     const memory = runArgs[runArgs.indexOf("--memory") + 1];
     expect(memory).toMatch(/^\d+g$/);
     expect(runArgs[runArgs.indexOf("--memory-swap") + 1]).toBe(memory);
