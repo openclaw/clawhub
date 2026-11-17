@@ -159,6 +159,7 @@ by `--file` or `--files`; these requests exit unsuccessfully after showing statu
 - Calls `GET /api/v1/skills/{slug}/versions/{version}/publication`.
 - `--version` is required. The public latest version is a different question: a held upload is omitted from the public version list.
 - Prints the stage, whether a retry is already waiting, and the `clawhub scan download` command when a stored report may exist.
+- `published` means publication of that version is complete. It does not mean the skill is currently visible. A moderation hold can still restrict public reads.
 - The text does not include worker errors, findings, attempt ids, or storage ids.
 - `--json` prints the response object unchanged.
 - Log in first. Anonymous and unauthorized callers get the same refusal as the HTTP route.

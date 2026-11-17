@@ -861,7 +861,9 @@ describe("cmdSkillPublication", () => {
     await cmdSkillPublication(makeGlobalOpts(), "demo", { version: "1.2.3" });
 
     expect(loggedOutput()).toContain("Published");
-    expect(loggedOutput()).toContain("This version is public.");
+    expect(loggedOutput()).toContain("Publication of this version is complete.");
+    expect(loggedOutput()).toContain("Current visibility can still be restricted.");
+    expect(loggedOutput()).not.toContain("This version is public.");
     expect(loggedOutput()).not.toContain("not public or installable");
   });
 

@@ -482,7 +482,9 @@ export async function cmdSkillPublication(
   console.log(`${result.skill.displayName} (${skillRef}) ${result.publication.version}`);
   if (result.publication.stage === "published") {
     console.log("Published");
-    console.log("This version is public.");
+    console.log(
+      "Publication of this version is complete. Current visibility can still be restricted.",
+    );
     return;
   }
   printPublicationGuidance(result, skillRef);

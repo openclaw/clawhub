@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- CLI: add `clawhub skill publication <skill> --version <version>`. It prints the owner-only publication stage for that exact skill version, including whether a retry is already waiting and how to download a stored scan report.
+- CLI: add `clawhub skill publication <skill> --version <version>`. It prints the owner-only publication stage for that exact skill version, including whether a retry is already waiting and how to download a stored scan report. A completed publication does not claim the skill is currently visible.
 
 - Package publish: a missing uploaded package tarball is a client error. The message stays "Package tarball upload no longer exists".
 
