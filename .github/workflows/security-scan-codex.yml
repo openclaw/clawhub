@@ -225,8 +225,9 @@ jobs:
             done
           ) &
           sampler=$!
+          # Stop the pending sleep first so it can't hold the step's output open.
           # Under -e, a failing trap command replaces the worker's exit status.
-          trap 'kill "$sampler" 2>/dev/null || true' EXIT
+          trap 'pkill -P "$sampler" 2>/dev/null; kill "$sampler" 2>/dev/null || true' EXIT
           bun scripts/security/run-codex-scan-worker.ts \
             --batch-limit "$CODEX_SECURITY_SCAN_LIMIT" \
             --lane "$CODEX_SECURITY_SCAN_LANE" \
