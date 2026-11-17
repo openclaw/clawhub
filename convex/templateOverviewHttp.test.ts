@@ -1,15 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 
 vi.mock("./lib/httpRateLimit", () => ({
   applyRateLimit: async () => ({ ok: true, headers: { "X-RateLimit-Remaining": "99" } }),
 }));
 import { get } from "./templateOverviewHttp";
 
-const handler = (
-  get as unknown as {
-    _handler: (ctx: unknown, request: Request) => Promise<Response>;
-  }
-)._handler;
+const handler = getTestHandler<Request, Response>(get);
 const request = () => new Request("https://example.invalid/api/v1/templates/overview?limit=8");
 
 describe("Template overview budget fallback", () => {

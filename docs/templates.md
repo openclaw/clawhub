@@ -119,6 +119,12 @@ Supported groups are `groupChat`, `sandbox`, `tools`, `memory`, `heartbeat`, and
 `humanDelay`, alongside identity and purpose. `tools.profile` remains a native tool
 policy selection; bounded tool-grant and memory-consent checks still apply.
 
+`agent.model` may name one preferred model as an exact `provider/model` reference,
+such as `anthropic/claude-sonnet-4-5`. It is a preference, not a requirement:
+OpenClaw uses it when the Gateway adding the Template already has that model
+available and permitted, and otherwise keeps the Gateway's default model. A
+Template does not install a provider or supply credentials for it.
+
 ```yaml
 schemaVersion: 1
 agent:
