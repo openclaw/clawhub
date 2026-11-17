@@ -46,6 +46,7 @@ import {
   PUBLISHER_HANDLE_REQUIREMENTS_MESSAGE,
   normalizePublisherHandle,
 } from "./lib/publishers";
+import { publisherHasBaseStats } from "./lib/publisherStats";
 import {
   getLatestActiveReservedHandle,
   isHandleReservedForAnotherUser,
@@ -295,16 +296,6 @@ function clampInt(value: number, min: number, max: number) {
 
 function emptyPublisherListStats(): PublisherListStats {
   return { skills: 0, packages: 0, installs: 0, downloads: 0, stars: 0 };
-}
-
-function hasPublisherStats(publisher: Doc<"publishers">) {
-  return (
-    typeof publisher.publishedSkills === "number" &&
-    typeof publisher.publishedPackages === "number" &&
-    typeof publisher.totalInstalls === "number" &&
-    typeof publisher.totalDownloads === "number" &&
-    typeof publisher.totalStars === "number"
-  );
 }
 
 type PublicPublisherVisibility = {
@@ -764,7 +755,7 @@ async function toPublisherListItem(
       ? withoutPrivatePackages(publishedRows)
       : await getPublisherPublishedPreviewRows(ctx, publisher._id);
   const stats =
-    !options.forceComputedStats && hasPublisherStats(publisher)
+    !options.forceComputedStats && publisherHasBaseStats(publisher)
       ? getPublisherDenormalizedStats(publisher)
       : getIndexedPublisherStatsFromRows(await getRows());
   const publishedItems = options.includePublishedItems
@@ -818,7 +809,7 @@ async function toVisiblePublisherListSummary(
 ): Promise<PublisherListSummary | null> {
   const visibility = await getPublicPublisherVisibility(ctx, publisher);
   if (!visibility) return null;
-  if (!hasPublisherStats(visibility.publisher)) {
+  if (!publisherHasBaseStats(visibility.publisher)) {
     const item = await toPublisherListItem(ctx, visibility.publisher, {
       forceComputedStats: true,
       visibility,
@@ -841,7 +832,7 @@ async function toHomePublisherSummary(
   ctx: Pick<QueryCtx, "db">,
   publisher: Doc<"publishers"> | null,
 ) {
-  if (!publisher || !isPublisherActive(publisher) || !hasPublisherStats(publisher)) return null;
+  if (!publisher || !isPublisherActive(publisher) || !publisherHasBaseStats(publisher)) return null;
   if (publisher.kind === "user" && !publisher.linkedUserId) return null;
 
   const visibility = await getPublicPublisherVisibility(ctx, publisher);
@@ -2629,7 +2620,7 @@ export const getOgMetaByHandle = query({
     const publicPublisher = await toPublicPublisherWithOfficial(ctx, visibility.publisher);
     if (!publicPublisher) return null;
     const visibleUserId = visibility.publisher.kind === "user" ? visibility.linkedUser?._id : null;
-    const stats = hasPublisherStats(visibility.publisher)
+    const stats = publisherHasBaseStats(visibility.publisher)
       ? getPublisherDenormalizedStats(visibility.publisher)
       : getIndexedPublisherStatsFromRows(
           withoutPrivatePackages(await getPublisherPublishedRows(ctx, visibility.publisher._id)),
