@@ -6,6 +6,14 @@ import {
 import { collectAttentionItems } from "./dashboardAttention";
 
 describe("collectAttentionItems", () => {
+  it("routes template security review to the template audit page", () => {
+    const items = collectAttentionItems(
+      [],
+      [createPackage({ family: "template", name: "@local/hopper", scanStatus: "malicious" })],
+      "local",
+    );
+    expect(items[0]?.href).toBe("/local/templates/hopper/security-audit");
+  });
   it("offers a separate informational API nudge without warning counts", () => {
     const apiRetirements = [
       { deprecatedApi: "oldApi", replacement: "newApi", removeAfter: "2026-12-31" },

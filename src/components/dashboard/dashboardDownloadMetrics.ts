@@ -14,6 +14,8 @@ export type DashboardDownloadMetrics = {
   plugins: {
     allTimeDownloads: number;
     points: DashboardDownloadMetricPoint[];
+    hasTemplates?: boolean;
+    hasPlugins?: boolean;
   };
 };
 

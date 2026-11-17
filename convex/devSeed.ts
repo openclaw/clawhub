@@ -801,6 +801,93 @@ export const seedLocalFixtures: ReturnType<typeof internalAction> = internalActi
   handler: seedLocalFixturesHandler,
 });
 
+/** Local User persona fixture for template identity and whole-package deletion. */
+export const seedDashboardTemplateFixture: ReturnType<typeof internalAction> = internalAction({
+  args: {},
+  handler: async (ctx): Promise<Id<"packages">> => {
+    if (!isLocalDevAuthEnabled())
+      throw new Error("Template dashboard fixture requires local dev auth");
+    const contents =
+      "---\nschemaVersion: 1\nagent:\n  id: hopper\n  name: Hopper\n  description: A focused assistant for everyday work.\n---\n# Hopper\nHelp the user organize their work.\n";
+    const storageId = await ctx.storage.store(new Blob([contents], { type: "text/markdown" }));
+    return await ctx.runMutation(internal.devSeed.seedDashboardTemplateFixtureMutation, {
+      storageId,
+      size: contents.length,
+    });
+  },
+});
+
+export const seedDashboardTemplateFixtureMutation = internalMutation({
+  args: { storageId: v.id("_storage"), size: v.number() },
+  handler: async (ctx, args): Promise<Id<"packages">> => {
+    if (!isLocalDevAuthEnabled())
+      throw new Error("Template dashboard fixture requires local dev auth");
+    const { userId, publisherId } = await ensureLocalSeedUser(ctx);
+    const name = "@local-user/hopper";
+    const existing = await ctx.db
+      .query("packages")
+      .withIndex("by_name", (q) => q.eq("normalizedName", name))
+      .unique();
+    if (existing)
+      throw new Error(
+        "Template dashboard fixture already exists; use a fresh disposable deployment",
+      );
+    const now = Date.now();
+    const createdAt = now - 4 * 86_400_000;
+    const packageId = await ctx.db.insert("packages", {
+      name,
+      normalizedName: name,
+      displayName: "Hopper",
+      summary: "A focused assistant for everyday work.",
+      ownerUserId: userId,
+      ownerPublisherId: publisherId,
+      family: "claw",
+      channel: "community",
+      isOfficial: false,
+      scanStatus: "clean",
+      tags: {},
+      stats: { downloads: 11, installs: 3, stars: 0, versions: 2 },
+      createdAt,
+      updatedAt: createdAt,
+    });
+    let latestReleaseId: Id<"packageReleases"> | undefined;
+    for (const version of ["0.0.1", "0.1.0"]) {
+      latestReleaseId = await ctx.db.insert("packageReleases", {
+        packageId,
+        version,
+        changelog: "Local dashboard fixture.",
+        distTags: version === "0.1.0" ? ["latest"] : [],
+        files: [
+          {
+            path: "CLAW.md",
+            storageId: args.storageId,
+            size: args.size,
+            sha256: "local-dashboard-template",
+            contentType: "text/markdown",
+          },
+        ],
+        sha256hash: "local-dashboard-template",
+        integritySha256: "local-dashboard-template",
+        createdBy: userId,
+        createdAt,
+      });
+    }
+    await ctx.db.patch(packageId, {
+      latestReleaseId,
+      latestVersionSummary: { version: "0.1.0", createdAt, changelog: "Local dashboard fixture." },
+      tags: { latest: latestReleaseId! },
+    });
+    await ensurePublicCorpusPackageDailyStats(ctx, {
+      packageId,
+      key: name,
+      downloads: 11,
+      installs: 3,
+      now,
+    });
+    return packageId;
+  },
+});
+
 export const seedPluginApiRetirementFixtures = internalMutation({
   args: {},
   handler: async (ctx) => {

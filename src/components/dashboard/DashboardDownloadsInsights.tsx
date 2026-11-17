@@ -48,6 +48,13 @@ export function DashboardDownloadsInsights({
     [insight, skills, packages],
   );
   const isFiltered = selection.scope !== "all" && !filtered.missing;
+  // Metrics cover the complete inventory, unlike the capped dashboard list.
+  const packageMetricLabel =
+    metrics.plugins.hasTemplates === true && metrics.plugins.hasPlugins === false
+      ? "Templates"
+      : metrics.plugins.hasTemplates === false && metrics.plugins.hasPlugins === true
+        ? "Plugins"
+        : "Plugins & templates";
 
   const insightOptions = useMemo(
     () => buildDownloadInsightOptions(skills, packages),
@@ -166,7 +173,7 @@ export function DashboardDownloadsInsights({
                 delta={skillDelta}
               />
               <CompactStat
-                label="Plugins"
+                label={packageMetricLabel}
                 total={
                   range === "all"
                     ? metrics.plugins.allTimeDownloads

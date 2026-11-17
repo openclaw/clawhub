@@ -1,12 +1,29 @@
 import { Link } from "@tanstack/react-router";
-import { ExternalLink, MoreHorizontal, Settings, Upload } from "lucide-react";
+import { useMutation } from "convex/react";
+import { ExternalLink, MoreHorizontal, Settings, Trash2, Upload } from "lucide-react";
+import { useRef, useState, type RefObject } from "react";
+import { toast } from "sonner";
+import { api } from "../../../convex/_generated/api";
+import type { Id } from "../../../convex/_generated/dataModel";
+import { getUserFacingConvexError } from "../../lib/convexError";
 import { buildSkillSettingsHref } from "../../lib/ownerRoute";
 import { buildPluginDetailHref } from "../../lib/pluginRoutes";
+import { buildTemplateDetailHref } from "../../lib/templateRoutes";
 import { buildSkillHref } from "../skillDetailUtils";
+import { Button } from "../ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
@@ -31,6 +48,118 @@ type RowAction = {
 };
 
 export function CatalogRowMenu({ item, ownerHandle, canManage }: CatalogRowMenuProps) {
+  if (item.kind === "plugin" && item.data.family === "template" && canManage) {
+    return <TemplateRowMenu item={item} ownerHandle={ownerHandle} />;
+  }
+  return <RowMenu item={item} ownerHandle={ownerHandle} canManage={canManage} />;
+}
+
+function TemplateRowMenu({
+  item,
+  ownerHandle,
+}: {
+  item: Extract<DashboardCatalogItem, { kind: "plugin" }>;
+  ownerHandle: string;
+}) {
+  const softDelete = useMutation(api.packages.softDeletePackage);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const inFlight = useRef(false);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  async function deleteTemplate() {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setIsDeleting(true);
+    setError(null);
+    try {
+      await softDelete({ packageId: item.id as Id<"packages"> });
+      setConfirmOpen(false);
+      toast.success(`${item.name} deleted`);
+    } catch (cause) {
+      setError(getUserFacingConvexError(cause, "Could not delete this template. Try again."));
+    } finally {
+      inFlight.current = false;
+      setIsDeleting(false);
+    }
+  }
+
+  return (
+    <>
+      <RowMenu
+        item={item}
+        ownerHandle={ownerHandle}
+        canManage
+        triggerRef={triggerRef}
+        onDelete={() => {
+          setError(null);
+          setConfirmOpen(true);
+        }}
+      />
+      <Dialog
+        open={confirmOpen}
+        onOpenChange={(open) => {
+          if (!inFlight.current) setConfirmOpen(open);
+        }}
+      >
+        <DialogContent
+          showCloseButton={!isDeleting}
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            cancelRef.current?.focus();
+          }}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            triggerRef.current?.focus();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Delete {item.name}?</DialogTitle>
+            <DialogDescription>
+              This removes the template and all its versions from the public catalog and prevents
+              new downloads. Existing installations are not removed.
+            </DialogDescription>
+          </DialogHeader>
+          {error ? (
+            <p role="alert" className="text-sm text-status-error-fg">
+              {error}
+            </p>
+          ) : null}
+          <DialogFooter>
+            <Button
+              ref={cancelRef}
+              variant="ghost"
+              disabled={isDeleting}
+              onClick={() => setConfirmOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              loading={isDeleting}
+              onClick={() => void deleteTemplate()}
+            >
+              Delete template
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function RowMenu({
+  item,
+  ownerHandle,
+  canManage,
+  onDelete,
+  triggerRef,
+}: CatalogRowMenuProps & {
+  onDelete?: () => void;
+  triggerRef?: RefObject<HTMLButtonElement | null>;
+}) {
   const actions = buildRowActions(item, ownerHandle);
 
   return (
@@ -38,6 +167,7 @@ export function CatalogRowMenu({ item, ownerHandle, canManage }: CatalogRowMenuP
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
+            ref={triggerRef}
             type="button"
             className="dashboard-row-btn"
             aria-label={`Open actions for ${item.name}`}
@@ -88,6 +218,15 @@ export function CatalogRowMenu({ item, ownerHandle, canManage }: CatalogRowMenuP
               </DropdownMenuItem>
             );
           })}
+          {onDelete ? (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem variant="destructive" onSelect={onDelete}>
+                <Trash2 size={14} aria-hidden="true" />
+                Delete template
+              </DropdownMenuItem>
+            </>
+          ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
@@ -136,6 +275,26 @@ function buildRowActions(item: DashboardCatalogItem, ownerHandle: string): RowAc
   }
 
   const pkg = item.data;
+  if (pkg.family === "template") {
+    return [
+      {
+        id: "public",
+        label: "View page",
+        ariaLabel: `View public page for ${pkg.displayName}`,
+        href: buildTemplateDetailHref(pkg.name, ownerHandle)!,
+        external: true,
+        icon: ExternalLink,
+      },
+      {
+        id: "new-version",
+        label: "New version",
+        ariaLabel: `How to publish a new version of ${pkg.displayName}`,
+        href: "/docs/templates#validate-build-and-publish",
+        external: true,
+        icon: Upload,
+      },
+    ];
+  }
   const detailHref = buildPluginDetailHref(pkg.name, { ownerHandle });
 
   return [

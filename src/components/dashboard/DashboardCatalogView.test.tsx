@@ -2,6 +2,8 @@
 
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { makeDashboardPackage } from "../../__tests__/helpers/dashboard";
+import { mergeDashboardItems } from "./dashboardCatalog";
 import { DashboardCatalogView } from "./DashboardCatalogView";
 import type { DashboardCatalogItem, DashboardSkill } from "./types";
 
@@ -46,6 +48,18 @@ const item: DashboardCatalogItem = {
 };
 
 describe("DashboardCatalogView", () => {
+  it.each(["list", "grid"] as const)("labels and links templates correctly in %s view", (view) => {
+    const items = mergeDashboardItems(
+      [],
+      [makeDashboardPackage({ family: "template", name: "@owner/hopper", displayName: "Hopper" })],
+    );
+    render(
+      <DashboardCatalogView items={items} view={view} ownerHandle="owner" canManage={false} />,
+    );
+    expect(screen.getByText("Template")).toBeTruthy();
+    expect(screen.queryByText("Plugin")).toBeNull();
+    expect(screen.getByRole("link").getAttribute("href")).toBe("/owner/templates/hopper");
+  });
   it("lets publishers inspect independently attributed metric sources", () => {
     render(
       <DashboardCatalogView items={[item]} view="list" ownerHandle="owner" canManage={true} />,
