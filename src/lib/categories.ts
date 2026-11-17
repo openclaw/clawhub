@@ -90,15 +90,7 @@ export function resolveSkillBrowseCategorySlug(
   ];
 }
 
-type SkillCategoryCandidate = {
-  categories?: readonly string[] | null;
-  inferredCategories?: readonly string[] | null;
-  latestVersionId?: string | null;
-  inferredFromVersionId?: string | null;
-  slug: string;
-  displayName: string;
-  summary?: string | null;
-};
+type SkillCategoryCandidate = Parameters<typeof resolveStoredSkillCategories>[0];
 
 type SkillIconCategoryCandidate = Pick<
   SkillCategoryCandidate,

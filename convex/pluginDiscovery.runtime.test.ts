@@ -2,6 +2,7 @@
 /* @vitest-environment edge-runtime */
 import { convexTest } from "convex-test";
 import { expect, it } from "vitest";
+import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
 import { api, internal } from "./_generated/api";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
 import schema from "./schema";
@@ -29,21 +30,18 @@ async function fixture(setupCount = 0, workflowCategories = ["documents-files"])
     ] as const;
     for (const [name, category, isOfficial] of variants) {
       const packageId = await ctx.db.insert("packages", {
+        ...createPackageSeedDefaults(),
         name,
         normalizedName: name,
         displayName: name,
         summary:
           "Search the web and summarize research findings with citations to original sources.",
         ownerUserId,
-        family: "code-plugin",
         channel: isOfficial ? "official" : "community",
         isOfficial,
         categories: name === "official-workflow" ? workflowCategories : [category],
         scanStatus: "clean",
-        tags: {},
         stats: { downloads: 1, installs: 1, stars: 0, versions: 1 },
-        createdAt: 1,
-        updatedAt: 1,
       });
       const releaseId = await ctx.db.insert("packageReleases", {
         packageId,

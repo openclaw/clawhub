@@ -2,6 +2,7 @@
 
 import { getFunctionName } from "convex/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { tokenize } from "./lib/searchText";
 import {
   __test,
@@ -36,68 +37,49 @@ vi.mock("./lib/badges", () => ({
   isSkillOfficial: (skill: { badges?: Record<string, unknown> }) => Boolean(skill.badges?.official),
 }));
 
-type WrappedHandler<Result = { skill: { slug: string; _id: string } }> = {
-  _handler: (ctx: unknown, args: unknown) => Promise<Array<Result>>;
-};
-
-const searchSkillsHandler = (
-  searchNativeSkills as unknown as WrappedHandler<{
+const searchSkillsHandler = getTestHandler<
+  unknown,
+  Array<{
     skill: { slug: string; _id: string };
     score: number;
     semanticScore: number;
   }>
-)._handler;
-const canonicalSearchSkillsHandler = (
-  canonicalSearchSkills as unknown as {
-    _handler: (ctx: unknown, args: unknown) => Promise<Array<Record<string, unknown>>>;
-  }
-)._handler;
-const lexicalFallbackSkillsHandler = (lexicalFallbackSkills as unknown as WrappedHandler)._handler;
-const directPrefixSkillMatchesHandler = (directPrefixSkillMatches as unknown as WrappedHandler)
-  ._handler;
-const getExactSkillSlugMatchHandler = (
-  getExactSkillSlugMatch as unknown as {
-    _handler: (
-      ctx: unknown,
-      args: unknown,
-    ) => Promise<
-      Array<{
-        skill: { slug: string; _id: string };
-        ownerHandle: string | null;
-        owner: { official?: boolean } | null;
-      }>
-    >;
-  }
-)._handler;
-const getOwnerQualifiedSkillMatchHandler = (
-  getOwnerQualifiedSkillMatch as unknown as {
-    _handler: (
-      ctx: unknown,
-      args: unknown,
-    ) => Promise<Array<{ skill: { slug: string }; ownerHandle: string | null }>>;
-  }
-)._handler;
-const getExternalSkillSearchCandidatesHandler = (
-  getExternalSkillSearchCandidates as unknown as {
-    _handler: (ctx: unknown, args: unknown) => Promise<Array<{ externalId: string }>>;
-  }
-)._handler;
-const getRollingSkillSearchUsageHandler = (
-  getRollingSkillSearchUsage as unknown as {
-    _handler: (
-      ctx: unknown,
-      args: unknown,
-    ) => Promise<Array<{ skillId: string; installs: number; bookmarks: number }>>;
-  }
-)._handler;
-const hydrateResultsHandler = (
-  hydrateResults as unknown as {
-    _handler: (
-      ctx: unknown,
-      args: unknown,
-    ) => Promise<Array<{ skill: { slug: string; _id: string }; ownerHandle: string | null }>>;
-  }
-)._handler;
+>(searchNativeSkills);
+const canonicalSearchSkillsHandler = getTestHandler<unknown, Array<Record<string, unknown>>>(
+  canonicalSearchSkills,
+);
+const lexicalFallbackSkillsHandler = getTestHandler<
+  unknown,
+  Array<{ skill: { slug: string; _id: string } }>
+>(lexicalFallbackSkills);
+const directPrefixSkillMatchesHandler = getTestHandler<
+  unknown,
+  Array<{ skill: { slug: string; _id: string } }>
+>(directPrefixSkillMatches);
+const getExactSkillSlugMatchHandler = getTestHandler<
+  unknown,
+  Array<{
+    skill: { slug: string; _id: string };
+    ownerHandle: string | null;
+    owner: { official?: boolean } | null;
+  }>
+>(getExactSkillSlugMatch);
+const getOwnerQualifiedSkillMatchHandler = getTestHandler<
+  unknown,
+  Array<{ skill: { slug: string }; ownerHandle: string | null }>
+>(getOwnerQualifiedSkillMatch);
+const getExternalSkillSearchCandidatesHandler = getTestHandler<
+  unknown,
+  Array<{ externalId: string }>
+>(getExternalSkillSearchCandidates);
+const getRollingSkillSearchUsageHandler = getTestHandler<
+  unknown,
+  Array<{ skillId: string; installs: number; bookmarks: number }>
+>(getRollingSkillSearchUsage);
+const hydrateResultsHandler = getTestHandler<
+  unknown,
+  Array<{ skill: { slug: string; _id: string }; ownerHandle: string | null }>
+>(hydrateResults);
 
 describe("search helpers", () => {
   it.each([{ highlightedOnly: true }, { officialOnly: true }, { createdAfter: 0 }])(
@@ -146,12 +128,10 @@ describe("search helpers", () => {
   it("returns fallback results when vector candidates are empty", async () => {
     generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
     const fallback = [
-      {
-        skill: makePublicSkill({ id: "skills:orf", slug: "orf", displayName: "ORF" }),
-        version: null,
-        ownerHandle: "steipete",
-        owner: null,
-      },
+      makeSearchResult(
+        makePublicSkill({ id: "skills:orf", slug: "orf", displayName: "ORF" }),
+        "steipete",
+      ),
     ];
     // Slug-like queries now do an indexed exact-slug lookup before lexical fallback.
     const runQuery = vi
@@ -179,12 +159,10 @@ describe("search helpers", () => {
   it("falls back to lexical skill search when embedding generation fails", async () => {
     generateEmbeddingMock.mockRejectedValueOnce(new Error("API unavailable"));
     const fallback = [
-      {
-        skill: makePublicSkill({ id: "skills:orf", slug: "orf", displayName: "ORF" }),
-        version: null,
-        ownerHandle: "steipete",
-        owner: null,
-      },
+      makeSearchResult(
+        makePublicSkill({ id: "skills:orf", slug: "orf", displayName: "ORF" }),
+        "steipete",
+      ),
     ];
     const vectorSearch = vi.fn().mockRejectedValue(new Error("should not be called"));
     const runQuery = vi
@@ -213,28 +191,24 @@ describe("search helpers", () => {
   it("applies normalized author topics before slicing search results", async () => {
     generateEmbeddingMock.mockRejectedValueOnce(new Error("API unavailable"));
     const directMatches = [
-      {
-        skill: makePublicSkill({
+      makeSearchResult(
+        makePublicSkill({
           id: "skills:calendar",
           slug: "calendar-workflow",
           displayName: "Calendar Workflow",
           topics: ["google-calendar"],
         }),
-        version: null,
-        ownerHandle: "steipete",
-        owner: null,
-      },
-      {
-        skill: makePublicSkill({
+        "steipete",
+      ),
+      makeSearchResult(
+        makePublicSkill({
           id: "skills:legacy",
           slug: "calendar-workflow-legacy",
           displayName: "Calendar Workflow Legacy",
           topics: ["legacy"],
         }),
-        version: null,
-        ownerHandle: "steipete",
-        owner: null,
-      },
+        "steipete",
+      ),
     ];
     const runQuery = vi.fn().mockResolvedValueOnce(directMatches).mockResolvedValueOnce([]);
 
@@ -255,30 +229,26 @@ describe("search helpers", () => {
 
   it("passes normalized selected categories through every skill recall path", async () => {
     generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
-    const development = {
-      embeddingId: "skillEmbeddings:development",
-      skill: makePublicSkill({
+    const development = makeEmbeddedSearchResult(
+      "skillEmbeddings:development",
+      makePublicSkill({
         id: "skills:development",
         slug: "development-helper",
         displayName: "Development Helper",
         categories: ["development"],
       }),
-      version: null,
-      ownerHandle: "owner",
-      owner: null,
-    };
-    const automation = {
-      embeddingId: "skillEmbeddings:automation",
-      skill: makePublicSkill({
+      "owner",
+    );
+    const automation = makeEmbeddedSearchResult(
+      "skillEmbeddings:automation",
+      makePublicSkill({
         id: "skills:automation",
         slug: "automation-helper",
         displayName: "Automation Helper",
         categories: ["automation"],
       }),
-      version: null,
-      ownerHandle: "owner",
-      owner: null,
-    };
+      "owner",
+    );
     const runQuery = vi
       .fn()
       .mockResolvedValueOnce(null) // getExactSkillSlugMatch
@@ -306,18 +276,16 @@ describe("search helpers", () => {
   it("uses stored categories as skill search evidence", async () => {
     generateEmbeddingMock.mockRejectedValueOnce(new Error("API unavailable"));
     const fallback = [
-      {
-        skill: makePublicSkill({
+      makeSearchResult(
+        makePublicSkill({
           id: "skills:category-match",
           slug: "focused-helper",
           displayName: "Focused Helper",
           summary: "Keeps projects tidy.",
           categories: ["development"],
         }),
-        version: null,
-        ownerHandle: "steipete",
-        owner: null,
-      },
+        "steipete",
+      ),
     ];
     const runQuery = vi
       .fn()
@@ -422,16 +390,14 @@ describe("search helpers", () => {
   });
 
   it("exact mode bypasses vector and fallback recall", async () => {
-    const exactEntry = {
-      skill: makePublicSkill({
+    const exactEntry = makeSearchResult(
+      makePublicSkill({
         id: "skills:exact",
         slug: "exact-skill",
         displayName: "Exact Skill",
       }),
-      version: null,
-      ownerHandle: "owner",
-      owner: null,
-    };
+      "owner",
+    );
     const runQuery = vi.fn().mockResolvedValueOnce([exactEntry]);
     const vectorSearch = vi.fn();
 
@@ -1487,16 +1453,16 @@ describe("search helpers", () => {
 
   it("preserves rolling adoption ranking when usage reads require smaller transactions", async () => {
     generateEmbeddingMock.mockRejectedValueOnce(new Error("embedding unavailable"));
-    const native = Array.from({ length: 100 }, (_, index) => ({
-      skill: makePublicSkill({
-        id: `skills:calendar-${index}`,
-        slug: `calendar-${index}`,
-        displayName: `Calendar ${index}`,
-      }),
-      version: null,
-      ownerHandle: "openclaw",
-      owner: null,
-    }));
+    const native = Array.from({ length: 100 }, (_, index) =>
+      makeSearchResult(
+        makePublicSkill({
+          id: `skills:calendar-${index}`,
+          slug: `calendar-${index}`,
+          displayName: `Calendar ${index}`,
+        }),
+        "openclaw",
+      ),
+    );
     const runQuery = vi.fn(
       async (ref: Parameters<typeof getFunctionName>[0], args?: { skillIds?: string[] }) => {
         switch (getFunctionName(ref)) {
@@ -1536,16 +1502,14 @@ describe("search helpers", () => {
   });
 
   it("keeps exact mode deterministic across canonical sources", async () => {
-    const native = {
-      skill: makePublicSkill({
+    const native = makeSearchResult(
+      makePublicSkill({
         id: "skills:calendar",
         slug: "calendar",
         displayName: "Calendar",
       }),
-      version: null,
-      ownerHandle: "openclaw",
-      owner: null,
-    };
+      "openclaw",
+    );
     const exactExternal = makeExternalSearchDigest({ externalId: "acme/skills/calendar" });
     const prefixExternal = makeExternalSearchDigest({
       externalId: "acme/skills/calendar-tools",
@@ -1651,27 +1615,25 @@ describe("search helpers", () => {
 
   it("keeps exact-token native recall ahead of semantic prefix hits at the candidate bound", async () => {
     generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
-    const exact = {
-      skill: makePublicSkill({
+    const exact = makeSearchResult(
+      makePublicSkill({
         id: "skills:exact-calendar-sync",
         slug: "sync-tool-exact",
         displayName: "Calendar",
       }),
-      version: null,
-      ownerHandle: "openclaw",
-      owner: null,
-    };
-    const prefixes = Array.from({ length: 100 }, (_, index) => ({
-      embeddingId: `skillEmbeddings:prefix-${index}`,
-      skill: makePublicSkill({
-        id: `skills:prefix-${index}`,
-        slug: `calendars-synchronizer-${index}`,
-        displayName: `Calendars Synchronizer ${index}`,
-      }),
-      version: null,
-      ownerHandle: "community",
-      owner: null,
-    }));
+      "openclaw",
+    );
+    const prefixes = Array.from({ length: 100 }, (_, index) =>
+      makeEmbeddedSearchResult(
+        `skillEmbeddings:prefix-${index}`,
+        makePublicSkill({
+          id: `skills:prefix-${index}`,
+          slug: `calendars-synchronizer-${index}`,
+          displayName: `Calendars Synchronizer ${index}`,
+        }),
+        "community",
+      ),
+    );
     const runQuery = vi.fn(async (ref: Parameters<typeof getFunctionName>[0]) => {
       switch (getFunctionName(ref)) {
         case "search:directPrefixSkillMatches":
@@ -1944,54 +1906,46 @@ describe("search helpers", () => {
   it("dedupes overlap and enforces rank + limit across vector and fallback", async () => {
     generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
     const vectorEntries = [
-      {
-        embeddingId: "skillEmbeddings:a",
-        skill: makePublicSkill({
+      makeEmbeddedSearchResult(
+        "skillEmbeddings:a",
+        makePublicSkill({
           id: "skills:a",
           slug: "foo-a",
           displayName: "Foo Alpha",
           downloads: 10,
         }),
-        version: null,
-        ownerHandle: "one",
-        owner: null,
-      },
-      {
-        embeddingId: "skillEmbeddings:b",
-        skill: makePublicSkill({
+        "one",
+      ),
+      makeEmbeddedSearchResult(
+        "skillEmbeddings:b",
+        makePublicSkill({
           id: "skills:b",
           slug: "foo-b",
           displayName: "Foo Beta",
           downloads: 2,
         }),
-        version: null,
-        ownerHandle: "two",
-        owner: null,
-      },
+        "two",
+      ),
     ];
     const fallbackEntries = [
-      {
-        skill: makePublicSkill({
+      makeSearchResult(
+        makePublicSkill({
           id: "skills:a",
           slug: "foo-a",
           displayName: "Foo Alpha",
           downloads: 10,
         }),
-        version: null,
-        ownerHandle: "one",
-        owner: null,
-      },
-      {
-        skill: makePublicSkill({
+        "one",
+      ),
+      makeSearchResult(
+        makePublicSkill({
           id: "skills:c",
           slug: "foo-c",
           displayName: "Foo Classic",
           downloads: 1,
         }),
-        version: null,
-        ownerHandle: "three",
-        owner: null,
-      },
+        "three",
+      ),
     ];
 
     const runQuery = vi
@@ -2022,21 +1976,21 @@ describe("search helpers", () => {
   it("uses a stable recall pool without lifetime popularity changing the first page", async () => {
     generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
 
-    const vectorEntries = Array.from({ length: 25 }, (_, index) => ({
-      embeddingId: `skillEmbeddings:${index}`,
-      skill: makePublicSkill({
-        id: `skills:${index}`,
-        slug: `image-vector-${index}`,
-        displayName: `Image Vector ${index}`,
-        downloads: 10,
-      }),
-      version: null,
-      ownerHandle: "owner",
-      owner: null,
-    }));
+    const vectorEntries = Array.from({ length: 25 }, (_, index) =>
+      makeEmbeddedSearchResult(
+        `skillEmbeddings:${index}`,
+        makePublicSkill({
+          id: `skills:${index}`,
+          slug: `image-vector-${index}`,
+          displayName: `Image Vector ${index}`,
+          downloads: 10,
+        }),
+        "owner",
+      ),
+    );
     const fallbackEntries = [
-      {
-        skill: makePublicSkill({
+      makeSearchResult(
+        makePublicSkill({
           id: "skills:fallback",
           slug: "antigravity-image-generator",
           displayName: "Antigravity Image Generator",
@@ -2044,10 +1998,8 @@ describe("search helpers", () => {
           installs: 1_000,
           stars: 100,
         }),
-        version: null,
-        ownerHandle: "owner",
-        owner: null,
-      },
+        "owner",
+      ),
     ];
 
     const runQuery = vi
@@ -2080,19 +2032,17 @@ describe("search helpers", () => {
 
   it("orders lexical name matches above summary-only matches before popularity", async () => {
     generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
-    const exactName = {
-      skill: makePublicSkill({
+    const exactName = makeSearchResult(
+      makePublicSkill({
         id: "skills:postgres",
         slug: "postgres",
         displayName: "Postgres",
         downloads: 0,
       }),
-      version: null,
-      ownerHandle: "owner",
-      owner: null,
-    };
-    const summaryOnly = {
-      skill: {
+      "owner",
+    );
+    const summaryOnly = makeSearchResult(
+      {
         ...makePublicSkill({
           id: "skills:database-tools",
           slug: "database-tools",
@@ -2101,10 +2051,8 @@ describe("search helpers", () => {
         }),
         summary: "Postgres database helper.",
       },
-      version: null,
-      ownerHandle: "owner",
-      owner: null,
-    };
+      "owner",
+    );
     const runQuery = vi
       .fn()
       .mockResolvedValueOnce(null) // getExactSkillSlugMatch
@@ -2126,9 +2074,9 @@ describe("search helpers", () => {
 
   it("admits strong semantic recall without promoting it above lexical tiers", async () => {
     generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
-    const summaryOnly = {
-      embeddingId: "skillEmbeddings:ai",
-      skill: {
+    const summaryOnly = makeEmbeddedSearchResult(
+      "skillEmbeddings:ai",
+      {
         ...makePublicSkill({
           id: "skills:ai-summary",
           slug: "general-helper",
@@ -2137,10 +2085,8 @@ describe("search helpers", () => {
         }),
         summary: "AI helper for teams.",
       },
-      version: null,
-      ownerHandle: "owner",
-      owner: null,
-    };
+      "owner",
+    );
     const runQuery = vi
       .fn()
       .mockResolvedValueOnce(null) // getExactSkillSlugMatch
@@ -2163,30 +2109,28 @@ describe("search helpers", () => {
   it("always includes an exact slug match even when vector exact matches already fill the limit", async () => {
     generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
 
-    const vectorEntries = Array.from({ length: 10 }, (_, index) => ({
-      embeddingId: `skillEmbeddings:${index}`,
-      skill: makePublicSkill({
-        id: `skills:${index}`,
-        slug: `downloader-${index}`,
-        displayName: `Skill Downloader ${index}`,
-        downloads: 100 - index,
-      }),
-      version: null,
-      ownerHandle: "owner",
-      owner: null,
-    }));
+    const vectorEntries = Array.from({ length: 10 }, (_, index) =>
+      makeEmbeddedSearchResult(
+        `skillEmbeddings:${index}`,
+        makePublicSkill({
+          id: `skills:${index}`,
+          slug: `downloader-${index}`,
+          displayName: `Skill Downloader ${index}`,
+          downloads: 100 - index,
+        }),
+        "owner",
+      ),
+    );
 
-    const exactSlugEntry = {
-      skill: makePublicSkill({
+    const exactSlugEntry = makeSearchResult(
+      makePublicSkill({
         id: "skills:exact",
         slug: "skill-downloader",
         displayName: "Skill Downloader",
         downloads: 1,
       }),
-      version: null,
-      ownerHandle: "yyang100",
-      owner: null,
-    };
+      "yyang100",
+    );
 
     const runQuery = vi
       .fn()
@@ -2217,18 +2161,16 @@ describe("search helpers", () => {
     generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
 
     const vectorEntries = [
-      {
-        embeddingId: "skillEmbeddings:1",
-        skill: makePublicSkill({
+      makeEmbeddedSearchResult(
+        "skillEmbeddings:1",
+        makePublicSkill({
           id: "skills:1",
           slug: "downloader-1",
           displayName: "Skill Downloader 1",
           downloads: 50,
         }),
-        version: null,
-        ownerHandle: "owner",
-        owner: null,
-      },
+        "owner",
+      ),
     ];
 
     const runQuery = vi
@@ -2253,22 +2195,20 @@ describe("search helpers", () => {
   it("omits exact slug injection when highlightedOnly excludes it", async () => {
     generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
 
-    const exactSlugEntry = {
-      skill: makePublicSkill({
+    const exactSlugEntry = makeSearchResult(
+      makePublicSkill({
         id: "skills:exact",
         slug: "skill-downloader",
         displayName: "Skill Downloader",
         downloads: 1,
       }),
-      version: null,
-      ownerHandle: "yyang100",
-      owner: null,
-    };
+      "yyang100",
+    );
 
     const vectorEntries = [
-      {
-        embeddingId: "skillEmbeddings:1",
-        skill: {
+      makeEmbeddedSearchResult(
+        "skillEmbeddings:1",
+        {
           ...makePublicSkill({
             id: "skills:1",
             slug: "downloader-1",
@@ -2277,10 +2217,8 @@ describe("search helpers", () => {
           }),
           badges: { highlighted: { byUserId: "users:mod", at: 1 } },
         },
-        version: null,
-        ownerHandle: "owner",
-        owner: null,
-      },
+        "owner",
+      ),
     ];
 
     const runQuery = vi
@@ -2311,32 +2249,19 @@ describe("search helpers", () => {
       displayName: "Skill Downloader",
       downloads: 100,
     });
-    const exactSlugEntry = {
-      skill: sharedSkill,
-      version: null,
-      ownerHandle: "yyang100",
-      owner: null,
-    };
+    const exactSlugEntry = makeSearchResult(sharedSkill, "yyang100");
     const vectorEntries = [
-      {
-        embeddingId: "skillEmbeddings:exact",
-        skill: sharedSkill,
-        version: null,
-        ownerHandle: "yyang100",
-        owner: null,
-      },
-      {
-        embeddingId: "skillEmbeddings:other",
-        skill: makePublicSkill({
+      makeEmbeddedSearchResult("skillEmbeddings:exact", sharedSkill, "yyang100"),
+      makeEmbeddedSearchResult(
+        "skillEmbeddings:other",
+        makePublicSkill({
           id: "skills:other",
           slug: "downloader-2",
           displayName: "Skill Downloader 2",
           downloads: 50,
         }),
-        version: null,
-        ownerHandle: "owner",
-        owner: null,
-      },
+        "owner",
+      ),
     ];
 
     const runQuery = vi
@@ -2365,16 +2290,14 @@ describe("search helpers", () => {
     generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
 
     const fallbackEntries = [
-      {
-        skill: makePublicSkill({
+      makeSearchResult(
+        makePublicSkill({
           id: "skills:orf",
           slug: "orf",
           displayName: "ORF",
         }),
-        version: null,
-        ownerHandle: "steipete",
-        owner: null,
-      },
+        "steipete",
+      ),
     ];
 
     const runQuery = vi
@@ -2699,9 +2622,9 @@ describe("search helpers", () => {
 
   it("does not use lifetime installs or downloads in native candidate scoring", async () => {
     generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
-    const installed = {
-      embeddingId: "skillEmbeddings:installed",
-      skill: makePublicSkill({
+    const installed = makeEmbeddedSearchResult(
+      "skillEmbeddings:installed",
+      makePublicSkill({
         id: "skills:installed",
         slug: "tool-installed",
         displayName: "Tool",
@@ -2709,13 +2632,11 @@ describe("search helpers", () => {
         installs: 1_000,
         stars: 0,
       }),
-      version: null,
-      ownerHandle: "owner",
-      owner: null,
-    };
-    const downloaded = {
-      embeddingId: "skillEmbeddings:downloaded",
-      skill: makePublicSkill({
+      "owner",
+    );
+    const downloaded = makeEmbeddedSearchResult(
+      "skillEmbeddings:downloaded",
+      makePublicSkill({
         id: "skills:downloaded",
         slug: "tool-downloaded",
         displayName: "Tool",
@@ -2723,10 +2644,8 @@ describe("search helpers", () => {
         installs: 0,
         stars: 0,
       }),
-      version: null,
-      ownerHandle: "owner",
-      owner: null,
-    };
+      "owner",
+    );
     const runQuery = vi
       .fn()
       .mockResolvedValueOnce(null) // getExactSkillSlugMatch
@@ -2750,8 +2669,8 @@ describe("search helpers", () => {
 
   it("does not use lifetime stars, installs, or downloads as a native tie-breaker", async () => {
     generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
-    const installedOnly = {
-      skill: makePublicSkill({
+    const installedOnly = makeSearchResult(
+      makePublicSkill({
         id: "skills:installed",
         slug: "tool-installed",
         displayName: "Tool",
@@ -2759,12 +2678,10 @@ describe("search helpers", () => {
         installs: 1_000,
         stars: 1_000,
       }),
-      version: null,
-      ownerHandle: "owner",
-      owner: null,
-    };
-    const downloadedOnly = {
-      skill: makePublicSkill({
+      "owner",
+    );
+    const downloadedOnly = makeSearchResult(
+      makePublicSkill({
         id: "skills:downloaded",
         slug: "tool-downloaded",
         displayName: "Tool",
@@ -2772,10 +2689,8 @@ describe("search helpers", () => {
         installs: 0,
         stars: 1_000,
       }),
-      version: null,
-      ownerHandle: "owner",
-      owner: null,
-    };
+      "owner",
+    );
     const runQuery = vi
       .fn()
       .mockResolvedValueOnce(null) // getExactSkillSlugMatch
@@ -2795,8 +2710,8 @@ describe("search helpers", () => {
 
   it("keeps native and combined lifetime downloads out of native tie-breakers", async () => {
     generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
-    const indexed = {
-      skill: makePublicSkill({
+    const indexed = makeSearchResult(
+      makePublicSkill({
         id: "skills:indexed",
         slug: "tool-indexed",
         displayName: "Tool",
@@ -2804,12 +2719,10 @@ describe("search helpers", () => {
         installs: 0,
         stars: 0,
       }),
-      version: null,
-      ownerHandle: "owner",
-      owner: null,
-    };
-    const native = {
-      skill: makePublicSkill({
+      "owner",
+    );
+    const native = makeSearchResult(
+      makePublicSkill({
         id: "skills:native",
         slug: "tool-native",
         displayName: "Tool",
@@ -2817,10 +2730,8 @@ describe("search helpers", () => {
         installs: 0,
         stars: 0,
       }),
-      version: null,
-      ownerHandle: "owner",
-      owner: null,
-    };
+      "owner",
+    );
     const runQuery = vi
       .fn()
       .mockResolvedValueOnce(null) // getExactSkillSlugMatch
@@ -2980,17 +2891,17 @@ describe("search helpers", () => {
         }
         if (args.embeddingIds) {
           hydrateCalls.push(args.embeddingIds);
-          return args.embeddingIds.map((embeddingId: string) => ({
-            embeddingId,
-            skill: makePublicSkill({
-              id: `skills:${embeddingId.split(":")[1]}`,
-              slug: `skill-${embeddingId.split(":")[1]}`,
-              displayName: `Skill ${embeddingId.split(":")[1]}`,
-            }),
-            version: null,
-            ownerHandle: "owner",
-            owner: null,
-          }));
+          return args.embeddingIds.map((embeddingId: string) =>
+            makeEmbeddedSearchResult(
+              embeddingId,
+              makePublicSkill({
+                id: `skills:${embeddingId.split(":")[1]}`,
+                slug: `skill-${embeddingId.split(":")[1]}`,
+                displayName: `Skill ${embeddingId.split(":")[1]}`,
+              }),
+              "owner",
+            ),
+          );
         }
         return []; // lexicalFallbackSkills
       },
@@ -3053,20 +2964,8 @@ describe("search helpers", () => {
       .fn()
       .mockResolvedValueOnce([]) // directPrefixSkillMatches
       .mockResolvedValueOnce([
-        {
-          embeddingId: "skillEmbeddings:a",
-          skill: skillA,
-          version: null,
-          ownerHandle: "owner",
-          owner: null,
-        },
-        {
-          embeddingId: "skillEmbeddings:b",
-          skill: skillB,
-          version: null,
-          ownerHandle: "owner",
-          owner: null,
-        },
+        makeEmbeddedSearchResult("skillEmbeddings:a", skillA, "owner"),
+        makeEmbeddedSearchResult("skillEmbeddings:b", skillB, "owner"),
       ])
       // lexicalFallbackSkills (exactMatches < limit after loop exits)
       .mockResolvedValueOnce([]);
@@ -3089,16 +2988,14 @@ describe("search helpers", () => {
   it("preserves vector scores when a direct lexical match shadows the hydrated candidate", async () => {
     generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
 
-    const lexicalEntry = {
-      skill: makePublicSkill({
+    const lexicalEntry = makeSearchResult(
+      makePublicSkill({
         id: "skills:the-news",
         slug: "the-news",
         displayName: "The News",
       }),
-      version: null,
-      ownerHandle: "owner",
-      owner: null,
-    };
+      "owner",
+    );
     const vectorEntry = {
       ...lexicalEntry,
       embeddingId: "skillEmbeddings:the-news",
@@ -3128,28 +3025,24 @@ describe("search helpers", () => {
 
   it("filters pending scans before applying the search result limit", async () => {
     generateEmbeddingMock.mockRejectedValueOnce(new Error("embedding unavailable"));
-    const pending = {
-      skill: makePublicSkill({
+    const pending = makeSearchResult(
+      makePublicSkill({
         id: "skills:pending",
         slug: "search-term-pending",
         displayName: "Search Term Pending",
         githubScanStatus: "pending",
       }),
-      version: null,
-      ownerHandle: "owner",
-      owner: null,
-    };
-    const clean = {
-      skill: makePublicSkill({
+      "owner",
+    );
+    const clean = makeSearchResult(
+      makePublicSkill({
         id: "skills:clean",
         slug: "search-term-clean",
         displayName: "Search Term Clean",
         githubScanStatus: "clean",
       }),
-      version: null,
-      ownerHandle: "owner",
-      owner: null,
-    };
+      "owner",
+    );
     const runQuery = vi.fn().mockResolvedValueOnce([pending, clean]).mockResolvedValueOnce([]);
 
     const result = await searchSkillsHandler(
@@ -3163,37 +3056,31 @@ describe("search helpers", () => {
   it("keeps a later official hit when higher-ranked hits are ineligible", async () => {
     generateEmbeddingMock.mockRejectedValueOnce(new Error("embedding unavailable"));
     const matches = [
-      {
-        skill: makePublicSkill({
+      makeSearchResult(
+        makePublicSkill({
           id: "skills:exact-community",
           slug: "helper",
           displayName: "Helper",
         }),
-        version: null,
-        ownerHandle: "community",
-        owner: null,
-      },
-      {
-        skill: makePublicSkill({
+        "community",
+      ),
+      makeSearchResult(
+        makePublicSkill({
           id: "skills:community",
           slug: "helper-community",
           displayName: "Helper Community",
         }),
-        version: null,
-        ownerHandle: "community",
-        owner: null,
-      },
-      {
-        skill: makePublicSkill({
+        "community",
+      ),
+      makeSearchResult(
+        makePublicSkill({
           id: "skills:official",
           slug: "helper-official",
           displayName: "Helper Official",
           official: true,
         }),
-        version: null,
-        ownerHandle: "official",
-        owner: null,
-      },
+        "official",
+      ),
     ];
     const runQuery = vi
       .fn()
@@ -3212,39 +3099,33 @@ describe("search helpers", () => {
   it("keeps a later new hit when higher-ranked hits predate the window", async () => {
     generateEmbeddingMock.mockRejectedValueOnce(new Error("embedding unavailable"));
     const matches = [
-      {
-        skill: makePublicSkill({
+      makeSearchResult(
+        makePublicSkill({
           id: "skills:exact-old",
           slug: "helper",
           displayName: "Helper",
           createdAt: 10,
         }),
-        version: null,
-        ownerHandle: "owner",
-        owner: null,
-      },
-      {
-        skill: makePublicSkill({
+        "owner",
+      ),
+      makeSearchResult(
+        makePublicSkill({
           id: "skills:older",
           slug: "helper-older",
           displayName: "Helper Older",
           createdAt: 20,
         }),
-        version: null,
-        ownerHandle: "owner",
-        owner: null,
-      },
-      {
-        skill: makePublicSkill({
+        "owner",
+      ),
+      makeSearchResult(
+        makePublicSkill({
           id: "skills:new",
           slug: "helper-new",
           displayName: "Helper New",
           createdAt: 200,
         }),
-        version: null,
-        ownerHandle: "owner",
-        owner: null,
-      },
+        "owner",
+      ),
     ];
     const runQuery = vi
       .fn()
@@ -3260,6 +3141,14 @@ describe("search helpers", () => {
     expect(result.map((entry) => entry.skill.slug)).toEqual(["helper-new"]);
   });
 });
+
+function makeSearchResult<T>(skill: T, ownerHandle: string) {
+  return { skill, version: null, ownerHandle, owner: null };
+}
+
+function makeEmbeddedSearchResult<T>(embeddingId: string, skill: T, ownerHandle: string) {
+  return { embeddingId, ...makeSearchResult(skill, ownerHandle) };
+}
 
 function makePublicSkill(params: {
   id: string;
@@ -3770,11 +3659,7 @@ describe("batched canonical search for intelligence", () => {
           return lexicalFallbackSkillsHandler(queryContext, args);
         case "search:lexicalFallbackSkillsBatchInternal": {
           fallbackQueries.push(...args.queries);
-          return (
-            lexicalFallbackSkillsBatchInternal as unknown as {
-              _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
-            }
-          )._handler(queryContext, args);
+          return getTestHandler<unknown>(lexicalFallbackSkillsBatchInternal)(queryContext, args);
         }
         case "search:getExactSkillSlugMatch":
         case "search:directPrefixSkillMatches":
@@ -3837,11 +3722,7 @@ describe("batched canonical search for intelligence", () => {
         }),
       );
     const ctx = makeLexicalCtx(fixture);
-    const handler = (
-      lexicalFallbackSkillsBatchInternal as unknown as {
-        _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
-      }
-    )._handler;
+    const handler = getTestHandler<unknown>(lexicalFallbackSkillsBatchInternal);
     await expect(handler(ctx, { queries })).resolves.toEqual(expected);
     expect(ctx.takeLimits).toEqual([200, 200]);
     expect(
@@ -3899,16 +3780,16 @@ describe("batched canonical search for intelligence", () => {
       failed = resolve;
     });
     const error = new Error("later primary failed");
-    const rich = Array.from({ length: 100 }, (_, index) => ({
-      skill: makePublicSkill({
-        id: `skills:rich-${index}`,
-        slug: `rich-${index}`,
-        displayName: `Rich ${index}`,
-      }),
-      version: null,
-      owner: null,
-      ownerHandle: "owner",
-    }));
+    const rich = Array.from({ length: 100 }, (_, index) =>
+      makeSearchResult(
+        makePublicSkill({
+          id: `skills:rich-${index}`,
+          slug: `rich-${index}`,
+          displayName: `Rich ${index}`,
+        }),
+        "owner",
+      ),
+    );
     const batched: string[][] = [];
     const runQuery = vi.fn(async (ref, args) => {
       if (getFunctionName(ref) === "search:lexicalFallbackSkillsBatchInternal") {
@@ -3961,17 +3842,17 @@ describe("batched canonical search for intelligence", () => {
   });
 
   it("reads adoption only for candidates that can enter the top three, including the entire cutoff tie", async () => {
-    const native = Array.from({ length: 100 }, (_, index) => ({
-      skill: makePublicSkill({
-        id: `skills:calendar-${index}`,
-        slug: `calendar-${index}`,
-        displayName: `Calendar ${index}`,
-        featured: index < 2,
-      }),
-      version: null,
-      ownerHandle: "acme",
-      owner: null,
-    }));
+    const native = Array.from({ length: 100 }, (_, index) =>
+      makeSearchResult(
+        makePublicSkill({
+          id: `skills:calendar-${index}`,
+          slug: `calendar-${index}`,
+          displayName: `Calendar ${index}`,
+          featured: index < 2,
+        }),
+        "acme",
+      ),
+    );
     // Two curated results consume two slots; four exact-name matches compete
     // for the third. All remaining prefix matches lose before adoption is read.
     for (const index of [2, 3, 4, 5]) native[index].skill.displayName = "Calendar";
@@ -4059,16 +3940,14 @@ describe("batched canonical search for intelligence", () => {
   ])(
     "preserves mixed-source ranking for $slug with $installs installs",
     async ({ slug, installs, expected, readsUsage }) => {
-      const native = {
-        skill: makePublicSkill({
+      const native = makeSearchResult(
+        makePublicSkill({
           id: "skills:calendar",
           slug,
           displayName: slug === "calendar-native" ? "Calendar" : slug,
         }),
-        version: null,
-        ownerHandle: "acme",
-        owner: null,
-      };
+        "acme",
+      );
       const external = ["a", "b", "c"].map((owner) => ({
         ...makeExternalSearchDigest({ externalId: `${owner}/skills/calendar` }),
         lastObservedAt: 2,

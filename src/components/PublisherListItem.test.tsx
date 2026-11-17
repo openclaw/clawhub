@@ -58,18 +58,6 @@ describe("PublisherListItem", () => {
     expect(screen.getByText("downloads")).toBeTruthy();
     expect(container.querySelector(".publisher-card-stat-separator")?.textContent).toBe("·");
   });
-
-  it("renders legacy preview metrics as downloads", () => {
-    const publisher = makePublisher();
-    publisher.publishedItems = [
-      { kind: "skill", displayName: "Legacy Skill", downloads: 12 } as never,
-    ];
-
-    render(<PublisherListItem publisher={publisher} variant="highlight" />);
-
-    expect(screen.getAllByText("12")).toHaveLength(2);
-    expect(screen.getByText("downloads")).toBeTruthy();
-  });
 });
 
 function makePublisher(): PublicPublisherListItem {

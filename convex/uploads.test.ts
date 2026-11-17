@@ -1,6 +1,8 @@
 /* @vitest-environment node */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createMockDb } from "../src/__tests__/helpers/convexDb";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import {
   consumePackagePublishUploadTicketInternal,
   createPackagePublishUploadForTokenInternal,
@@ -12,18 +14,13 @@ type ConsumeArgs = {
   auth: { kind: "user"; userId: string } | { kind: "github-actions"; publishTokenId: string };
 };
 
-type WrappedHandler<TArgs> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<void>;
-};
-
-const consumeHandler = (
-  consumePackagePublishUploadTicketInternal as unknown as WrappedHandler<ConsumeArgs>
-)._handler;
-const createForTokenHandler = (
-  createPackagePublishUploadForTokenInternal as unknown as WrappedHandler<{
+const consumeHandler = getTestHandler<ConsumeArgs, void>(consumePackagePublishUploadTicketInternal);
+const createForTokenHandler = getTestHandler<
+  {
     publishTokenId: string;
-  }>
-)._handler;
+  },
+  void
+>(createPackagePublishUploadForTokenInternal);
 
 function makeCtx(
   document: Record<string, unknown> | null | ((id: string) => Record<string, unknown> | null),
@@ -31,13 +28,9 @@ function makeCtx(
 ) {
   return {
     db: {
+      ...createMockDb(),
       get: vi.fn(async (id: string) => (typeof document === "function" ? document(id) : document)),
       insert: vi.fn(async () => "packagePublishUploadTickets:1"),
-      normalizeId: vi.fn(),
-      patch: vi.fn(),
-      query: vi.fn(),
-      replace: vi.fn(),
-      delete: vi.fn(),
       system: {
         get: vi.fn(async () => storage),
         query: vi.fn(),

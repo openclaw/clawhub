@@ -1,4 +1,4 @@
-import { ConvexError } from "convex/values";
+import { ConvexError, type Infer, v } from "convex/values";
 import type { DisplayManifest, DisplayManifestStatus } from "./displayManifest";
 import { sha256Hex } from "./hash";
 import {
@@ -34,30 +34,37 @@ export type GitHubSkillSourceMetadataSnapshot = Omit<GitHubSkillSourceSnapshot, 
   skills: DiscoveredGitHubSkillMetadata[];
 };
 
-export type DiscoveredGitHubSkill = {
-  slug: string;
-  displayName: string;
-  summary?: string;
-  upstreamVersion?: string;
-  path: string;
-  skillMarkdownPath: string;
-  skillMarkdown: string;
-  skillCardMarkdownPath?: string;
-  skillCardMarkdown?: string;
-  iconAsset?: {
-    path: string;
-    sha256: string;
-    contentType: string;
-    size: number;
-  };
+export const discoveredGitHubSkillContentValidator = v.object({
+  slug: v.string(),
+  displayName: v.string(),
+  summary: v.optional(v.string()),
+  upstreamVersion: v.optional(v.string()),
+  path: v.string(),
+  skillMarkdownPath: v.string(),
+  skillMarkdown: v.string(),
+  skillCardMarkdownPath: v.optional(v.string()),
+  skillCardMarkdown: v.optional(v.string()),
+  iconAsset: v.optional(
+    v.object({
+      path: v.string(),
+      sha256: v.string(),
+      contentType: v.string(),
+      size: v.number(),
+    }),
+  ),
+  contentHash: v.string(),
+});
+
+export const discoveredGitHubSkillMetadataValidator = discoveredGitHubSkillContentValidator.omit(
+  "skillMarkdown",
+  "skillCardMarkdown",
+);
+
+export type DiscoveredGitHubSkill = Infer<typeof discoveredGitHubSkillContentValidator> & {
   iconBytes?: Uint8Array;
-  contentHash: string;
 };
 
-export type DiscoveredGitHubSkillMetadata = Omit<
-  DiscoveredGitHubSkill,
-  "skillMarkdown" | "skillCardMarkdown" | "iconBytes"
->;
+export type DiscoveredGitHubSkillMetadata = Infer<typeof discoveredGitHubSkillMetadataValidator>;
 
 export type ExistingGitHubSkillForSync = {
   _id: string;

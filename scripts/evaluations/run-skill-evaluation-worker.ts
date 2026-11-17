@@ -7,6 +7,7 @@ import {
   NVIDIA_SKILL_EVALUATION_CONFIG,
   resolveSkillEvaluationRecipe,
 } from "../../convex/lib/skillEvaluationConfig";
+import { requireEnv } from "../lib/scriptConfig";
 import { createWorkerLogger } from "../lib/workerLogger";
 import { maskKnownWorkerSecrets, redactWorkerPublicText } from "../lib/workerRedaction";
 import { startOpenAiCapabilityBroker } from "./openai-capability-broker";
@@ -28,12 +29,6 @@ const VALIDATION_TIMEOUT_MS = 5 * 60 * 1000;
 // Recycle workers between evaluations instead of claiming late in an aging
 // runner's lifetime. An already claimed skill keeps its full timeout and lease.
 const CLAIM_WINDOW_MS = 60 * 60 * 1000;
-
-function requireEnv(name: string) {
-  const value = process.env[name]?.trim();
-  if (!value) throw new Error(`${name} is required`);
-  return value;
-}
 
 function workerId(env: NodeJS.ProcessEnv = process.env) {
   return (

@@ -223,136 +223,95 @@ describe("crons", () => {
     );
   });
 
-  it("runs GitHub skill source sync once per day", async () => {
+  it.each([
+    {
+      title: "runs GitHub skill source sync once per day",
+      name: "github-skill-source-sync",
+      interval: { hours: 24 },
+      ref: mocks.githubSkillSyncRef,
+      args: {},
+    },
+    {
+      title: "refreshes the promotions feed before its publication expires",
+      name: "promotions-feed-refresh",
+      interval: { hours: 6 },
+      ref: mocks.promotionsFeedPublishRef,
+      args: {},
+    },
+    {
+      title: "materializes the canonical Trending snapshot hourly",
+      name: "canonical-trending-snapshot",
+      interval: { hours: 1 },
+      ref: mocks.canonicalTrendingMaterializeRef,
+      args: {},
+    },
+    {
+      title: "prunes canonical Trending snapshots independently each hour",
+      name: "canonical-trending-prune",
+      interval: { hours: 1 },
+      ref: mocks.canonicalTrendingPruneRef,
+      args: {},
+    },
+    {
+      title: "prunes expired hourly skill stats independently each hour",
+      name: "skill-hourly-stats-prune",
+      interval: { hours: 1 },
+      ref: mocks.skillHourlyStatsPruneRef,
+      args: { batchSize: 500 },
+    },
+    {
+      title: "prunes expired skill scan requests in bounded continuation batches",
+      name: "skill-scan-request-prune",
+      interval: { hours: 6 },
+      ref: expect.anything(),
+      args: { batchSize: 10 },
+    },
+    {
+      title: "runs the security scan dispatch recovery watchdog every five minutes",
+      name: "codex-scan-dispatch-watchdog",
+      interval: { minutes: 5 },
+      ref: mocks.securityScanDispatchWatchdogRef,
+      args: {},
+    },
+    {
+      title: "logs pre-publication queue health every five minutes",
+      name: "prepublication-queue-health",
+      interval: { minutes: 5 },
+      ref: mocks.prepublicationQueueHealthRef,
+      args: {},
+    },
+    {
+      title: "recovers expired security scan leases outside the claim hot path",
+      name: "codex-scan-expired-lease-recovery",
+      interval: { minutes: 5 },
+      ref: mocks.securityScanExpiredLeaseRecoveryRef,
+      args: {},
+    },
+    {
+      title: "runs the skill evaluation dispatch watchdog every five minutes",
+      name: "skill-evaluation-dispatch-watchdog",
+      interval: { minutes: 5 },
+      ref: mocks.skillEvaluationDispatchWatchdogRef,
+      args: {},
+    },
+    {
+      title: "recovers expired skill evaluation leases outside the claim hot path",
+      name: "skill-evaluation-expired-lease-recovery",
+      interval: { minutes: 5 },
+      ref: mocks.skillEvaluationExpiredLeaseRecoveryRef,
+      args: {},
+    },
+    {
+      title: "prunes install telemetry dedupe rows daily",
+      name: "install-telemetry-dedupe-prune",
+      interval: { hours: 24 },
+      ref: mocks.installTelemetryDedupePruneRef,
+      args: {},
+    },
+  ])("$title", async ({ name, interval, ref, args }) => {
     await import("./crons");
 
-    expect(mocks.interval).toHaveBeenCalledWith(
-      "github-skill-source-sync",
-      { hours: 24 },
-      mocks.githubSkillSyncRef,
-      {},
-    );
-  });
-
-  it("refreshes the promotions feed before its publication expires", async () => {
-    await import("./crons");
-
-    expect(mocks.interval).toHaveBeenCalledWith(
-      "promotions-feed-refresh",
-      { hours: 6 },
-      mocks.promotionsFeedPublishRef,
-      {},
-    );
-  });
-
-  it("materializes the canonical Trending snapshot hourly", async () => {
-    await import("./crons");
-
-    expect(mocks.interval).toHaveBeenCalledWith(
-      "canonical-trending-snapshot",
-      { hours: 1 },
-      mocks.canonicalTrendingMaterializeRef,
-      {},
-    );
-  });
-
-  it("prunes canonical Trending snapshots independently each hour", async () => {
-    await import("./crons");
-
-    expect(mocks.interval).toHaveBeenCalledWith(
-      "canonical-trending-prune",
-      { hours: 1 },
-      mocks.canonicalTrendingPruneRef,
-      {},
-    );
-  });
-
-  it("prunes expired hourly skill stats independently each hour", async () => {
-    await import("./crons");
-
-    expect(mocks.interval).toHaveBeenCalledWith(
-      "skill-hourly-stats-prune",
-      { hours: 1 },
-      mocks.skillHourlyStatsPruneRef,
-      { batchSize: 500 },
-    );
-  });
-
-  it("prunes expired skill scan requests in bounded continuation batches", async () => {
-    await import("./crons");
-
-    expect(mocks.interval).toHaveBeenCalledWith(
-      "skill-scan-request-prune",
-      { hours: 6 },
-      expect.anything(),
-      { batchSize: 10 },
-    );
-  });
-
-  it("runs the security scan dispatch recovery watchdog every five minutes", async () => {
-    await import("./crons");
-
-    expect(mocks.interval).toHaveBeenCalledWith(
-      "codex-scan-dispatch-watchdog",
-      { minutes: 5 },
-      mocks.securityScanDispatchWatchdogRef,
-      {},
-    );
-  });
-
-  it("logs pre-publication queue health every five minutes", async () => {
-    await import("./crons");
-
-    expect(mocks.interval).toHaveBeenCalledWith(
-      "prepublication-queue-health",
-      { minutes: 5 },
-      mocks.prepublicationQueueHealthRef,
-      {},
-    );
-  });
-
-  it("recovers expired security scan leases outside the claim hot path", async () => {
-    await import("./crons");
-
-    expect(mocks.interval).toHaveBeenCalledWith(
-      "codex-scan-expired-lease-recovery",
-      { minutes: 5 },
-      mocks.securityScanExpiredLeaseRecoveryRef,
-      {},
-    );
-  });
-
-  it("runs the skill evaluation dispatch watchdog every five minutes", async () => {
-    await import("./crons");
-
-    expect(mocks.interval).toHaveBeenCalledWith(
-      "skill-evaluation-dispatch-watchdog",
-      { minutes: 5 },
-      mocks.skillEvaluationDispatchWatchdogRef,
-      {},
-    );
-  });
-
-  it("recovers expired skill evaluation leases outside the claim hot path", async () => {
-    await import("./crons");
-
-    expect(mocks.interval).toHaveBeenCalledWith(
-      "skill-evaluation-expired-lease-recovery",
-      { minutes: 5 },
-      mocks.skillEvaluationExpiredLeaseRecoveryRef,
-      {},
-    );
-  });
-
-  it("prunes install telemetry dedupe rows daily", async () => {
-    await import("./crons");
-
-    expect(mocks.interval).toHaveBeenCalledWith(
-      "install-telemetry-dedupe-prune",
-      { hours: 24 },
-      mocks.installTelemetryDedupePruneRef,
-      {},
-    );
+    expect(mocks.interval).toHaveBeenCalledWith(name, interval, ref, args);
   });
 
   it("registers publisher abuse cron jobs", async () => {

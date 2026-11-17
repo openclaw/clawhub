@@ -3,6 +3,7 @@
 
 import { convexTest } from "convex-test";
 import { describe, expect, it, vi } from "vitest";
+import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
 import { internal } from "./_generated/api";
 import schema from "./schema";
 
@@ -17,15 +18,12 @@ async function seedLargeScannedPackageReleases(t: ReturnType<typeof convexTest>,
   for (let index = 0; index < count; index += 1) {
     const packageId = await t.run(async (ctx) =>
       ctx.db.insert("packages", {
+        ...createPackageSeedDefaults(),
         name: `@runtime/backfill-${index}`,
         normalizedName: `@runtime/backfill-${index}`,
         displayName: `Backfill ${index}`,
         summary: LARGE_TEXT,
         ownerUserId: userId,
-        family: "code-plugin",
-        channel: "community",
-        isOfficial: false,
-        tags: {},
         compatibility: {},
         verification: { tier: "structural", scope: "artifact-only", scanStatus: "clean" },
         scanStatus: "clean",
@@ -126,19 +124,14 @@ async function seedBackfillPublicationStates(t: ReturnType<typeof convexTest>) {
   return await t.run(async (ctx) => {
     const userId = await ctx.db.insert("users", {});
     const packageId = await ctx.db.insert("packages", {
+      ...createPackageSeedDefaults(),
       name: "@runtime/backfill-publication-states",
       normalizedName: "@runtime/backfill-publication-states",
       displayName: "Backfill publication states",
       ownerUserId: userId,
-      family: "code-plugin",
-      channel: "community",
-      isOfficial: false,
-      tags: {},
       compatibility: {},
       scanStatus: "pending",
       stats: { downloads: 0, installs: 0, stars: 0, versions: 6 },
-      createdAt: 1,
-      updatedAt: 1,
     });
     const releaseIds = [];
     for (const [index, state] of [

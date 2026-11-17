@@ -255,7 +255,6 @@ function OfficialIndex() {
                   <PublisherListItem
                     key={publisher._id}
                     publisher={publisher}
-                    variant="list"
                     showOfficialBadge={false}
                     showPublishedRail={false}
                   />

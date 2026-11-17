@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
+import type { PublishSource } from "clawhub-schema";
 import { unzipSync } from "fflate";
 
 const GITHUB_API = resolveGitHubApi();
@@ -48,15 +49,7 @@ type GitHubRetryBudget = {
 
 type FetchedGitHubSource = {
   dir: string;
-  source: {
-    kind: "github";
-    url: string;
-    repo: string;
-    ref: string;
-    commit: string;
-    path: string;
-    importedAt: number;
-  };
+  source: PublishSource;
   cleanup: () => Promise<void>;
 };
 

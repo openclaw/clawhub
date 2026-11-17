@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { MutationCtx } from "./_generated/server";
 import { internalAction, internalMutation } from "./functions";
+import { runMutationRef } from "./lib/functionRefs";
 import { createGitHubAppInstallationToken, isGitHubAppConfigured } from "./lib/githubAuth";
 import {
   dispatchGitHubRepositoryEvent,
@@ -27,14 +28,6 @@ const internalRefs = internal as unknown as {
     finishSecurityScanDispatchInternal: unknown;
   };
 };
-
-async function runMutationRef<T>(
-  ctx: { runMutation: (ref: never, args: never) => Promise<unknown> },
-  ref: unknown,
-  args: unknown,
-): Promise<T> {
-  return (await ctx.runMutation(ref as never, args as never)) as T;
-}
 
 export function isSecurityScanEventDispatchEnabled(env: NodeJS.ProcessEnv = process.env) {
   return (

@@ -18,8 +18,10 @@ type ClawdbotConfig = {
 export async function resolveClawdbotDefaultWorkspace(): Promise<string | null> {
   const config = await readClawdbotConfig();
   const openclawConfig = await readOpenclawConfig();
-  if (!config && !openclawConfig) return null;
+  return resolveConfigWorkspace(config) || resolveConfigWorkspace(openclawConfig) || null;
+}
 
+function resolveConfigWorkspace(config: ClawdbotConfig | null) {
   const defaultsWorkspace = resolveUserPath(
     config?.agents?.defaults?.workspace ?? config?.agent?.workspace ?? "",
   );
@@ -29,20 +31,7 @@ export async function resolveClawdbotDefaultWorkspace(): Promise<string | null> 
   const defaultAgent =
     listedAgents.find((entry) => entry.default) ??
     listedAgents.find((entry) => entry.id === "main");
-  const listWorkspace = resolveUserPath(defaultAgent?.workspace ?? "");
-  if (listWorkspace) return listWorkspace;
-
-  if (!openclawConfig) return null;
-  const openclawDefaults = resolveUserPath(
-    openclawConfig.agents?.defaults?.workspace ?? openclawConfig.agent?.workspace ?? "",
-  );
-  if (openclawDefaults) return openclawDefaults;
-  const openclawAgents = getAgentList(openclawConfig);
-  const openclawDefaultAgent =
-    openclawAgents.find((entry) => entry.default) ??
-    openclawAgents.find((entry) => entry.id === "main");
-  const openclawWorkspace = resolveUserPath(openclawDefaultAgent?.workspace ?? "");
-  return openclawWorkspace || null;
+  return resolveUserPath(defaultAgent?.workspace ?? "");
 }
 
 function resolveClawdbotStateDir() {

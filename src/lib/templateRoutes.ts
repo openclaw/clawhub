@@ -23,6 +23,12 @@ export function buildTemplateDetailHref(name: string, ownerHandle?: string | nul
   return `/${routeSegment(owner)}/templates/${routeSegment(slug)}`;
 }
 
+/** Templates install by `@publisher/slug`, like skills, even when stored under an unscoped name. */
+export function buildTemplateInstallRef(name: string, ownerHandle?: string | null) {
+  const owner = normalizePublisherHandle(ownerHandle);
+  return name.startsWith("@") || !owner ? name : `@${owner}/${name}`;
+}
+
 export function isTemplateReadyToAdd(
   status: "clean" | "suspicious" | "malicious" | "pending" | "not-run" | null | undefined,
 ) {

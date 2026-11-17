@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
 import { getVercelOidcToken, verifyVercelOidcToken, type VercelOidcPayload } from "@vercel/oidc";
 import { getClawHubRolloutCapabilities } from "clawhub-schema";
+import type { Infer } from "convex/values";
 import { parse, type DefaultTreeAdapterMap } from "parse5";
 import { buildGitHubApiHeaders } from "../convex/lib/githubAuth";
+import type { skillsShMirrorDetailValidator } from "../convex/lib/skillsShMirrorContract";
 
 const SKILLS_SH_API_BASE = "https://skills.sh/api/v1";
 const MAX_SOURCE_PAGE_SIZE = 500;
@@ -79,8 +81,6 @@ type SkillsShMirrorControlledSupplement = {
   detailContentHash: string;
 };
 
-export const SKILLS_SH_MIRROR_CONTROLLED_SUPPLEMENT_COUNT =
-  SKILLS_SH_MIRROR_CONTROLLED_SUPPLEMENTS.length;
 export const SKILLS_SH_MIRROR_CONTROLLED_EXTERNAL_IDS = SKILLS_SH_MIRROR_CONTROLLED_SUPPLEMENTS.map(
   (row) => row.externalId,
 );
@@ -516,6 +516,14 @@ function isRetryableSkillsShHttpStatus(status: number) {
   return status === 408 || status === 429 || status >= 500;
 }
 
+async function deferSkillsShRateLimit(response: Response, attempt: number) {
+  if (response.status !== 429) return;
+  const retryAfterMs = skillsShRetryAfterMs(response, attempt);
+  if (attempt < MAX_SOURCE_ATTEMPTS - 1 && retryAfterMs <= MAX_INLINE_RETRY_AFTER_MS) return;
+  await cancelResponseBody(response);
+  throw new SkillsShSourceHttpError(429, Math.max(1, Math.ceil(retryAfterMs / 1_000)));
+}
+
 async function fetchSkillsShApiResponse(
   path: string,
   options: SkillsShFetchOptions,
@@ -535,17 +543,10 @@ async function fetchSkillsShApiResponse(
       await cancelResponseBody(response);
       return null;
     }
-    const retryAfterMs = response.status === 429 ? skillsShRetryAfterMs(response, attempt) : null;
-    if (
-      !isRetryableSkillsShHttpStatus(response.status) ||
-      attempt === MAX_SOURCE_ATTEMPTS - 1 ||
-      (retryAfterMs !== null && retryAfterMs > MAX_INLINE_RETRY_AFTER_MS)
-    ) {
+    await deferSkillsShRateLimit(response, attempt);
+    if (!isRetryableSkillsShHttpStatus(response.status) || attempt === MAX_SOURCE_ATTEMPTS - 1) {
       await cancelResponseBody(response);
-      throw new SkillsShSourceHttpError(
-        response.status,
-        retryAfterMs === null ? null : Math.max(1, Math.ceil(retryAfterMs / 1_000)),
-      );
+      throw new SkillsShSourceHttpError(response.status, null);
     }
     await cancelResponseBody(response);
     await waitForSkillsShRetry(response, attempt);
@@ -916,19 +917,7 @@ async function fetchSkillsShIdentityPage(
       }
       if (!response.ok) {
         if (isRetryableSkillsShHttpStatus(response.status)) {
-          const retryAfterMs =
-            response.status === 429 ? skillsShRetryAfterMs(response, attempt) : null;
-          if (
-            response.status === 429 &&
-            (attempt === MAX_SOURCE_ATTEMPTS - 1 ||
-              (retryAfterMs !== null && retryAfterMs > MAX_INLINE_RETRY_AFTER_MS))
-          ) {
-            await cancelResponseBody(response);
-            throw new SkillsShSourceHttpError(
-              response.status,
-              retryAfterMs === null ? null : Math.max(1, Math.ceil(retryAfterMs / 1_000)),
-            );
-          }
+          await deferSkillsShRateLimit(response, attempt);
           if (attempt < MAX_SOURCE_ATTEMPTS - 1) {
             await cancelResponseBody(response);
             await waitForSkillsShRetry(response, attempt);
@@ -1863,19 +1852,9 @@ async function fetchSkillsShProofText(
       }
       return new TextDecoder().decode(body.bytes);
     }
-    const retryAfterMs = response.status === 429 ? skillsShRetryAfterMs(response, attempt) : null;
-    if (
-      !isRetryableSkillsShHttpStatus(response.status) ||
-      attempt === MAX_SOURCE_ATTEMPTS - 1 ||
-      (retryAfterMs !== null && retryAfterMs > MAX_INLINE_RETRY_AFTER_MS)
-    ) {
+    await deferSkillsShRateLimit(response, attempt);
+    if (!isRetryableSkillsShHttpStatus(response.status) || attempt === MAX_SOURCE_ATTEMPTS - 1) {
       await cancelResponseBody(response);
-      if (response.status === 429) {
-        throw new SkillsShSourceHttpError(
-          response.status,
-          retryAfterMs === null ? null : Math.max(1, Math.ceil(retryAfterMs / 1_000)),
-        );
-      }
       throw new Error(`skills.sh proof metadata returned HTTP ${response.status}`);
     }
     await cancelResponseBody(response);
@@ -2271,15 +2250,7 @@ export async function fetchSkillsShMirrorBatch(
     | (ReturnType<typeof buildSkillsShMirrorObservation> & {
         upstreamScanners: SkillsShMirrorUpstreamScanners;
         sourceContentHash?: string;
-        detail?: {
-          contentKind: "skill-md" | "readme";
-          path: string;
-          content: string;
-          contentBytes: number;
-          sourceBytes: number;
-          sourceFileCount: number;
-          truncated: boolean;
-        };
+        detail?: Infer<typeof skillsShMirrorDetailValidator>;
       })
     | ReturnType<typeof safeMirrorIdentityError>
   >({ length: listRows.length });
@@ -2431,19 +2402,7 @@ export async function fetchSkillsShMirrorControlledBatch(
           );
         }
         if (response) {
-          const retryAfterMs =
-            response.status === 429 ? skillsShRetryAfterMs(response, attempt) : null;
-          if (
-            response.status === 429 &&
-            (attempt === MAX_SOURCE_ATTEMPTS - 1 ||
-              (retryAfterMs !== null && retryAfterMs > MAX_INLINE_RETRY_AFTER_MS))
-          ) {
-            await cancelResponseBody(response);
-            throw new SkillsShSourceHttpError(
-              response.status,
-              retryAfterMs === null ? null : Math.max(1, Math.ceil(retryAfterMs / 1_000)),
-            );
-          }
+          await deferSkillsShRateLimit(response, attempt);
           if (attempt === MAX_SOURCE_ATTEMPTS - 1) {
             await cancelResponseBody(response);
             break;
@@ -2737,48 +2696,6 @@ async function authorizeSkillsShCatalogTestRequest(
       ownerId: verified.payload.owner_id,
       projectId: verified.payload.project_id,
       environment: verified.payload.environment,
-    },
-  };
-}
-
-export async function fetchSkillsShCatalogTestPage(options: {
-  env?: SkillsShCatalogSourceEnv;
-  fetchImpl?: typeof fetch;
-  getOidcToken?: () => Promise<string>;
-  verifyOidcToken?: VerifyVercelOidc;
-  readConvexControl: () => Promise<SkillsShCatalogTestControl>;
-}) {
-  const authorization = await authorizeSkillsShCatalogTestRequest(options);
-  const control = await options.readConvexControl();
-  if (
-    control.mode !== "staging-live" ||
-    !control.discoveryEnabled ||
-    !control.writesEnabled ||
-    !control.scanPlanningEnabled ||
-    control.maxEntriesPerRun < 1 ||
-    control.maxEntriesPerRun > authorization.maxDiscoveryRows ||
-    control.publicVisibilityEnabled
-  ) {
-    throw new Error("skills.sh live Test discovery requires the dark Convex staging control");
-  }
-  const page = await fetchSkillsShCatalogPage(
-    { page: 0, perPage: authorization.maxDiscoveryRows },
-    {
-      env: options.env,
-      fetchImpl: options.fetchImpl,
-      oidcToken: authorization.oidcToken,
-    },
-  );
-  if (page.data.length > control.maxEntriesPerRun) {
-    throw new Error("skills.sh live Test discovery exceeded the Convex run budget");
-  }
-  return {
-    page,
-    verifiedIdentity: authorization.verifiedIdentity,
-    controls: {
-      maxDiscoveryRows: control.maxEntriesPerRun,
-      maxRealScanAdmissions: authorization.maxRealScanAdmissions,
-      publicVisibilityEnabled: false,
     },
   };
 }

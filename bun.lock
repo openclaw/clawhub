@@ -89,6 +89,7 @@
         "@vitejs/plugin-react": "6.2.1",
         "@vitest/coverage-v8": "5.1.0",
         "convex-test": "^0.0.67",
+        "esbuild": "0.28.1",
         "jsdom": "31.0.0",
         "nitro": "3.0.260610-beta",
         "only-allow": "1.2.2",

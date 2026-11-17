@@ -1,14 +1,4 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
+import { createSkillPublishRedirectOptions } from "../lib/publishRouteOptions";
 
-export const Route = createFileRoute("/publish-skill")({
-  validateSearch: (search) => ({
-    updateSlug: typeof search.updateSlug === "string" ? search.updateSlug : undefined,
-    ownerHandle: typeof search.ownerHandle === "string" ? search.ownerHandle : undefined,
-  }),
-  beforeLoad: ({ search }) => {
-    throw redirect({
-      to: "/skills/publish",
-      search,
-    });
-  },
-});
+export const Route = createFileRoute("/publish-skill")(createSkillPublishRedirectOptions());

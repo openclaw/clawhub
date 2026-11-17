@@ -4,6 +4,7 @@ import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { convexTest } from "convex-test";
 import { expect, it, vi } from "vitest";
 vi.mock("./lib/verifiedClientIp", () => ({ getVerifiedClientIp: async () => "203.0.113.1" }));
+import { createActiveSkillSeedDefaults } from "../src/__tests__/helpers/activeSkillSeed";
 import { internal } from "./_generated/api";
 import schema from "./schema";
 const modules = import.meta.glob("./**/*.ts");
@@ -22,15 +23,11 @@ it("withholds pending and blocked including deleted rows through query and HTTP"
   await t.run(async (ctx) => {
     const userId = await ctx.db.insert("users", { handle: "review-owner" });
     const skillId = await ctx.db.insert("skills", {
+      ...createActiveSkillSeedDefaults(),
       slug: "review-fixture",
       displayName: "Review fixture",
       ownerUserId: userId,
-      tags: {},
-      badges: {},
-      moderationStatus: "active",
       stats: { comments: 0, downloads: 0, stars: 0, versions: states.length },
-      createdAt: 1,
-      updatedAt: 1,
     });
     for (const state of states)
       await ctx.db.insert("skillVersions", {

@@ -1,5 +1,5 @@
+import type { SkillAppealListStatus, SkillReportListStatus } from "clawhub-schema";
 import {
-  ApiRoutes,
   ApiV1SkillUploadUrlRequestSchema,
   ApiV1SkillBulkRescanBatchRequestSchema,
   ApiV1SkillBulkRescanStatusRequestSchema,
@@ -12,12 +12,11 @@ import {
   SkillAppealResolveRequestSchema,
   SkillReportTriageRequestSchema,
   SkillVersionRevokeRequestSchema,
-  formatSecurityAuditOverview,
-  normalizeContentType,
   parseArk,
-  type SkillAppealListStatus,
-  type SkillReportListStatus,
 } from "clawhub-schema";
+import { ApiRoutes } from "clawhub-schema/routes";
+import { formatSecurityAuditOverview } from "clawhub-schema/securityAudit";
+import { normalizeContentType } from "clawhub-schema/textFiles";
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
@@ -38,6 +37,7 @@ import {
   type ClawHubVercelEnvironment,
   verifyClawHubVercelOidcToken,
 } from "../lib/clawhubVercelOidc";
+import { runMutationRef, runQueryRef } from "../lib/functionRefs";
 import {
   buildGitHubSkillHandoffDescriptor,
   getGitHubHandoffBlock,
@@ -45,6 +45,7 @@ import {
   type GitHubHandoffTarget,
   type ReadyGitHubHandoffTarget,
 } from "../lib/githubHandoff";
+import { toHex } from "../lib/hash";
 import { mergeHeaders } from "../lib/httpHeaders";
 import { applyRateLimit } from "../lib/httpRateLimit";
 import { parseBooleanQueryParam, resolveBooleanQueryParam } from "../lib/httpUtils";
@@ -411,14 +412,6 @@ const internalRefs = internal as unknown as {
     canAccessOwnerScopeInternal: unknown;
   };
 };
-
-async function runQueryRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
-  return (await ctx.runQuery(ref as never, args as never)) as T;
-}
-
-async function runMutationRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
-  return (await ctx.runMutation(ref as never, args as never)) as T;
-}
 
 function isMultipartRequest(request: Request) {
   return (
@@ -2994,9 +2987,7 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
         return text("Uploaded file size does not match its upload ticket", 400, rate.headers);
       }
       const digest = await crypto.subtle.digest("SHA-256", bytes);
-      const sha256 = Array.from(new Uint8Array(digest), (byte) =>
-        byte.toString(16).padStart(2, "0"),
-      ).join("");
+      const sha256 = toHex(new Uint8Array(digest));
       if (sha256 !== expected.sha256) {
         return text("Uploaded file SHA-256 does not match its upload ticket", 400, rate.headers);
       }

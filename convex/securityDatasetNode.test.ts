@@ -1,23 +1,18 @@
 /* @vitest-environment node */
 import { gunzipSync } from "node:zlib";
 import { describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { listArtifactExportBatchCompressed } from "./securityDatasetNode";
 
-type WrappedHandler<TArgs, TResult = unknown> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
-
-const listArtifactExportBatchCompressedHandler = (
-  listArtifactExportBatchCompressed as unknown as WrappedHandler<
-    {
-      token: string;
-      sourceKind: "skill";
-      paginationOpts: { cursor: string | null; numItems: number };
-      pageCount: number;
-    },
-    { encoding: "gzip-base64-json"; payload: string }
-  >
-)._handler;
+const listArtifactExportBatchCompressedHandler = getTestHandler<
+  {
+    token: string;
+    sourceKind: "skill";
+    paginationOpts: { cursor: string | null; numItems: number };
+    pageCount: number;
+  },
+  { encoding: "gzip-base64-json"; payload: string }
+>(listArtifactExportBatchCompressed);
 
 describe("security dataset worker export", () => {
   it("requires the shared worker token", async () => {

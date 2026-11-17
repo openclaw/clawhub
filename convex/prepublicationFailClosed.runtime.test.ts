@@ -3,6 +3,7 @@
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { convexTest } from "convex-test";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
 import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import schema from "./schema";
@@ -79,20 +80,15 @@ async function stagedFixture(kind: Kind) {
       scanStatus: "pending" as const,
     };
     const packageId = await ctx.db.insert("packages", {
+      ...createPackageSeedDefaults(),
       name: PACKAGE_NAME,
       normalizedName: PACKAGE_NAME,
       displayName: "Fail Closed Plugin",
       ownerUserId: userId,
-      family: "code-plugin",
-      channel: "community",
-      isOfficial: false,
-      tags: {},
       compatibility: {},
       verification,
       scanStatus: "pending",
       stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
-      createdAt: 1,
-      updatedAt: 1,
     });
     const releaseId = await ctx.db.insert("packageReleases", {
       packageId,

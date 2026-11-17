@@ -59,6 +59,16 @@ it("preserves anonymous curated pins, tied ordering, visibility and continuation
       paginationOpts: { cursor: null, numItems: 25 },
     }),
   );
+  expect(
+    await t.query(internal.packages.listPluginDiscoveryCategoryInternal, {
+      category: "channels",
+      paginationOpts: { cursor: null, numItems: 25 },
+    }),
+  ).toEqual(page);
+  const overview = { category: "channels", numItems: 5 };
+  expect(await t.query(internal.packages.listPluginOverviewCategoryInternal, overview)).toEqual(
+    await t.query(internal.publicPluginDiscovery.listPluginOverviewCategoryInternal, overview),
+  );
   expect(page.page).toHaveLength(25);
   const pins = getPluginDiscoveryPins("channels");
   expect(page.page.slice(0, pins.length).map((p) => p.name)).toEqual(pins);

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { toHex } from "./hash";
 
 export const MAX_PREPUBLICATION_REPORT_BYTES = 16 * 1024 * 1024;
 export const PREPUBLICATION_REPORT_ACTION = "publish_attempt.scanner_report_retained";
@@ -83,5 +84,5 @@ export type PrepublicationReport = z.infer<typeof prepublicationReportSchema>;
 
 export async function reportContentHash(bytes: ArrayBuffer) {
   const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return toHex(new Uint8Array(digest));
 }

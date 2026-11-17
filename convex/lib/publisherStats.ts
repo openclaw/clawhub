@@ -107,7 +107,9 @@ type PublisherWithSkillTotalStats = Doc<"publishers"> & {
   skillTotalStars: number;
 };
 
-function publisherHasBaseStats(publisher: Doc<"publishers">): publisher is PublisherWithBaseStats {
+export function publisherHasBaseStats(
+  publisher: Doc<"publishers">,
+): publisher is PublisherWithBaseStats {
   return (
     typeof publisher.publishedSkills === "number" &&
     typeof publisher.publishedPackages === "number" &&

@@ -5,6 +5,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
 import { internalAction, internalMutation, internalQuery, query } from "./functions";
 import { storedFileValidator } from "./lib/fileValidators";
+import { sha256Hex } from "./lib/hash";
 import { getRuntimeRolloutCapabilities } from "./lib/rolloutCapabilities";
 import {
   assertSkillsShCatalogControlMutationAllowed,
@@ -13,6 +14,7 @@ import {
 } from "./lib/skillsShCatalogEnvironment";
 import {
   getSkillsShCatalogFixture,
+  skillsShCatalogRowValidator as stagingLiveRowValidator,
   type SkillsShCatalogFixtureRow,
 } from "./lib/skillsShCatalogFixtures";
 import {
@@ -56,23 +58,6 @@ const scanVerdictValidator = v.union(
   v.literal("failed"),
 );
 const dispatchKindValidator = v.union(v.literal("deterministic"), v.literal("real"));
-const stagingLiveRowValidator = v.object({
-  externalId: v.string(),
-  githubOwnerId: v.number(),
-  owner: v.string(),
-  repo: v.string(),
-  slug: v.string(),
-  displayName: v.string(),
-  sourceUrl: v.string(),
-  githubRepoUrl: v.string(),
-  githubPath: v.optional(v.string()),
-  githubCommit: v.optional(v.string()),
-  githubContentHash: v.optional(v.string()),
-  claimPublisherHandle: v.optional(v.string()),
-  sourceContentHash: v.string(),
-  installs: v.number(),
-  githubStars: v.optional(v.number()),
-});
 const sourceVerificationValidator = v.object({
   githubOwnerId: v.number(),
   githubCommit: v.string(),
@@ -2854,11 +2839,6 @@ function fixtureObservationConflicts(
   sourceKind: Doc<"skillsShCatalogEntries">["sourceKind"],
 ) {
   return existing.sourceKind !== sourceKind || existing.githubOwnerId !== row.githubOwnerId;
-}
-
-async function sha256Hex(bytes: Uint8Array) {
-  const digest = await crypto.subtle.digest("SHA-256", new Uint8Array(bytes).buffer);
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 async function computeGitHubArtifactContentHash(files: StagingLiveArtifact["files"]) {

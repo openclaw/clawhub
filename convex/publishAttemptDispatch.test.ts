@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 
 vi.mock("./lib/githubAuth", () => ({
   createGitHubAppInstallationToken: vi.fn(),
@@ -13,21 +14,13 @@ const {
 } = await import("./publishAttemptDispatch");
 const { getPendingPublishAttemptDispatchTargetInternal } = await import("./publishAttempts");
 
-type WrappedHandler<TArgs, TResult = unknown> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
-
-const dispatchPublishAttemptHandler = (
-  dispatchPublishAttemptInternal as unknown as WrappedHandler<
-    { attemptId: string; retryCount: number },
-    { dispatched: boolean; reason?: string }
-  >
-)._handler;
-const getPendingDispatchTargetHandler = (
-  getPendingPublishAttemptDispatchTargetInternal as unknown as WrappedHandler<{
-    attemptId: string;
-  }>
-)._handler;
+const dispatchPublishAttemptHandler = getTestHandler<
+  { attemptId: string; retryCount: number },
+  { dispatched: boolean; reason?: string }
+>(dispatchPublishAttemptInternal);
+const getPendingDispatchTargetHandler = getTestHandler<{
+  attemptId: string;
+}>(getPendingPublishAttemptDispatchTargetInternal);
 
 function enableDispatch() {
   vi.stubEnv("SECURITY_SCAN_EVENT_DISPATCH_ENABLED", "1");

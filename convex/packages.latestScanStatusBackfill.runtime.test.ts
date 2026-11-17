@@ -3,6 +3,7 @@
 
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
 import { api } from "./_generated/api";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
 import schema from "./schema";
@@ -31,19 +32,14 @@ async function fixture() {
         scanStatus: "malicious" as const,
       };
       const packageId = await ctx.db.insert("packages", {
+        ...createPackageSeedDefaults(),
         name,
         normalizedName: name,
         displayName: name,
         ownerUserId: admin,
-        family: "code-plugin",
-        channel: "community",
-        isOfficial: false,
-        tags: {},
         verification,
         scanStatus: "malicious",
         stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
-        createdAt: 1,
-        updatedAt: 1,
       });
       const releaseId = await ctx.db.insert("packageReleases", {
         packageId,

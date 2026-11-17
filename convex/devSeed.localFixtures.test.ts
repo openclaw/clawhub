@@ -1,13 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { chainEq } from "../src/__tests__/helpers/convexQuery";
+import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
 import type { Id } from "./_generated/dataModel";
 import {
   backfillExistingPublicCorpusBatchRows,
-  currentUserSeedPackageName,
-  currentUserSeedSkillSlug,
   seedCatalogPresentationFixtures,
   seedCanonicalSearchFixture,
-  seedFeaturedPluginPackagesMutation,
   seedGitHubBackedSkillSourceMutation,
   seedLocalFixtures,
   seedLocalModerationFixturesHandler,
@@ -16,37 +15,25 @@ import {
   seedSkillMutation,
 } from "./devSeed";
 
-type WrappedHandler<TArgs> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<unknown>;
-};
-
-const seedSkillMutationHandler = (
-  seedSkillMutation as unknown as WrappedHandler<Record<string, unknown>>
-)._handler;
-const seedFeaturedPluginPackagesHandler = (
-  seedFeaturedPluginPackagesMutation as unknown as WrappedHandler<Record<string, unknown>>
-)._handler;
-const seedCatalogPresentationFixturesHandler = (
-  seedCatalogPresentationFixtures as unknown as WrappedHandler<Record<string, unknown>>
-)._handler;
-const seedCanonicalSearchFixtureHandler = (
-  seedCanonicalSearchFixture as unknown as WrappedHandler<Record<string, never>>
-)._handler;
-const seedGitHubBackedSkillSourceHandler = (
-  seedGitHubBackedSkillSourceMutation as unknown as WrappedHandler<Record<string, unknown>>
-)._handler;
-const seedLocalFixturesHandler = (
-  seedLocalFixtures as unknown as WrappedHandler<{ reset?: boolean }>
-)._handler;
-const seedPublicCorpusBatchActionHandler = (
-  seedPublicCorpusBatch as unknown as WrappedHandler<Record<string, unknown>>
-)._handler;
-const seedPublicCorpusBatchHandler = (
-  seedPublicCorpusBatchMutation as unknown as WrappedHandler<Record<string, unknown>>
-)._handler;
-const backfillExistingPublicCorpusBatchRowsHandler = (
-  backfillExistingPublicCorpusBatchRows as unknown as WrappedHandler<Record<string, unknown>>
-)._handler;
+const seedSkillMutationHandler = getTestHandler<Record<string, unknown>>(seedSkillMutation);
+const seedCatalogPresentationFixturesHandler = getTestHandler<Record<string, unknown>>(
+  seedCatalogPresentationFixtures,
+);
+const seedCanonicalSearchFixtureHandler = getTestHandler<Record<string, never>>(
+  seedCanonicalSearchFixture,
+);
+const seedGitHubBackedSkillSourceHandler = getTestHandler<Record<string, unknown>>(
+  seedGitHubBackedSkillSourceMutation,
+);
+const seedLocalFixturesHandler = getTestHandler<{ reset?: boolean }>(seedLocalFixtures);
+const seedPublicCorpusBatchActionHandler =
+  getTestHandler<Record<string, unknown>>(seedPublicCorpusBatch);
+const seedPublicCorpusBatchHandler = getTestHandler<Record<string, unknown>>(
+  seedPublicCorpusBatchMutation,
+);
+const backfillExistingPublicCorpusBatchRowsHandler = getTestHandler<Record<string, unknown>>(
+  backfillExistingPublicCorpusBatchRows,
+);
 
 function matches(doc: Record<string, unknown>, constraints: Record<string, unknown>) {
   return Object.entries(constraints).every(([key, value]) => doc[key] === value);
@@ -340,7 +327,7 @@ describe("devSeed local fixtures", () => {
       createdAt: 1,
       updatedAt: 1,
     })) as Id<"users">;
-    const scopedSlug = currentUserSeedSkillSlug(userId, "catalog-demo");
+    const scopedSlug = "dev-owner-catalog-demo";
 
     await seedSkillMutationHandler(
       createMutationCtx(db) as never,
@@ -679,19 +666,16 @@ describe("devSeed local fixtures", () => {
       updatedAt: 1,
     })) as Id<"publishers">;
     const packageId = (await db.insert("packages", {
+      ...createPackageSeedDefaults(),
       name: "gmail-agent-plugin",
       normalizedName: "gmail-agent-plugin",
       displayName: "Gmail Agent Plugin",
       summary: "Existing public corpus plugin fixture.",
       ownerUserId: userId,
       ownerPublisherId: publisherId,
-      family: "code-plugin",
-      channel: "community",
-      isOfficial: false,
       runtimeId: "gmail-agent-plugin",
       latestReleaseId: undefined,
       latestVersionSummary: undefined,
-      tags: {},
       compatibility: { pluginApiRange: ">=0.1.0" },
       verification: {
         tier: "structural",
@@ -701,8 +685,6 @@ describe("devSeed local fixtures", () => {
       },
       scanStatus: "clean",
       stats: { downloads: 57, installs: 13, stars: 2, versions: 1 },
-      createdAt: 1,
-      updatedAt: 1,
     })) as Id<"packages">;
     const releaseId = (await db.insert("packageReleases", {
       packageId,
@@ -776,19 +758,16 @@ describe("devSeed local fixtures", () => {
       updatedAt: 1,
     })) as Id<"publishers">;
     const packageId = (await db.insert("packages", {
+      ...createPackageSeedDefaults(),
       name: "gmail-agent-plugin",
       normalizedName: "gmail-agent-plugin",
       displayName: "Gmail Agent Plugin",
       summary: "A real package that happens to collide with the corpus fixture.",
       ownerUserId: userId,
       ownerPublisherId: publisherId,
-      family: "code-plugin",
-      channel: "community",
-      isOfficial: false,
       runtimeId: "gmail-agent-plugin",
       latestReleaseId: undefined,
       latestVersionSummary: undefined,
-      tags: {},
       categories: ["models"],
       topics: ["Original Topic"],
       compatibility: { pluginApiRange: ">=0.1.0" },
@@ -800,8 +779,6 @@ describe("devSeed local fixtures", () => {
       },
       scanStatus: "clean",
       stats: { downloads: 57, installs: 13, stars: 2, versions: 1 },
-      createdAt: 1,
-      updatedAt: 1,
     })) as Id<"packages">;
     const releaseId = (await db.insert("packageReleases", {
       packageId,
@@ -1161,10 +1138,10 @@ describe("devSeed local fixtures", () => {
       createdAt: 1,
       updatedAt: 1,
     })) as Id<"users">;
-    const flaggedSkillSlug = currentUserSeedSkillSlug(userId, "local-flagged-wallet-sync");
-    const scannedSkillSlug = currentUserSeedSkillSlug(userId, "local-agentic-risk-demo");
-    const flaggedPluginName = currentUserSeedPackageName(userId, "local-flagged-runtime-plugin");
-    const scannedPluginName = currentUserSeedPackageName(userId, "local-scanned-runtime-plugin");
+    const flaggedSkillSlug = "dev-owner-local-flagged-wallet-sync";
+    const scannedSkillSlug = "dev-owner-local-agentic-risk-demo";
+    const flaggedPluginName = "dev-owner-local-flagged-runtime-plugin";
+    const scannedPluginName = "dev-owner-local-scanned-runtime-plugin";
 
     await seedLocalModerationFixturesHandler(
       createMutationCtx(db) as never,
@@ -1283,28 +1260,6 @@ describe("devSeed local fixtures", () => {
     expect(deduplicatedReseedResult.storageIdsToDelete).toEqual([]);
     expect(fixtureStorageId(flaggedSkillSlug)).toBe("storage:skill-next");
     expect(fixtureStorageId(scannedSkillSlug)).toBe("storage:scanned-skill-next");
-    await seedFeaturedPluginPackagesHandler(
-      createMutationCtx(db) as never,
-      {
-        ownerUserId: userId,
-        packages: [
-          {
-            name: currentUserSeedPackageName(userId, "local-merge-notes-plugin"),
-            displayName: "Local Merge Notes",
-            summary: "Seeded local owner plugin.",
-            version: "0.1.0",
-            runtimeId: "local.merge.notes",
-            sourceRepo: "openclaw/local-merge-notes-plugin",
-            isOfficial: false,
-            capabilityTags: ["notes"],
-            stats: { downloads: 1, installs: 1, stars: 1, versions: 1 },
-            storageId: "storage:plugin-notes",
-            readmeSize: 16,
-          },
-        ],
-      } as never,
-    );
-
     expect(tables.users).toHaveLength(1);
     expect(tables.users?.[0]).toEqual(expect.objectContaining({ handle: "fuller-stack-dev" }));
     const seededSkills = tables.skills?.filter((skill) => skill._id !== staleProofSkillId);
@@ -1318,12 +1273,7 @@ describe("devSeed local fixtures", () => {
     expect(seededSkills?.every((skill) => skill.ownerUserId === userId)).toBe(true);
     expect(
       tables.packages?.map((pkg) => String(pkg.name)).sort((a, b) => a.localeCompare(b)),
-    ).toEqual([
-      flaggedPluginName,
-      currentUserSeedPackageName(userId, "local-merge-notes-plugin"),
-      scannedPluginName,
-      "local-truncation-runtime-plugin",
-    ]);
+    ).toEqual([flaggedPluginName, scannedPluginName, "local-truncation-runtime-plugin"]);
     expect(tables.packages?.every((pkg) => pkg.ownerUserId === userId)).toBe(true);
     expect(tables.packages).toEqual(
       expect.arrayContaining([
@@ -1527,37 +1477,40 @@ describe("devSeed local fixtures", () => {
     );
   });
 
-  it("resets featured plugin fixtures without stale package badges", async () => {
+  it("resets moderation plugin fixtures without stale package badges", async () => {
     const { db, tables, operations } = createDb();
     const args = {
-      packages: [
-        {
-          name: "@local/catalog-plugin",
-          displayName: "Catalog Plugin",
-          summary: "Seeded catalog plugin.",
-          version: "1.0.0",
-          runtimeId: "catalog-plugin",
-          sourceRepo: "openclaw/catalog-plugin",
-          isOfficial: false,
-          capabilityTags: ["catalog"],
-          stats: { downloads: 1, installs: 1, stars: 1, versions: 1 },
-          storageId: "storage:plugin",
-          readmeSize: 16,
-        },
-      ],
+      flaggedSkillStorageId: "storage:flagged-skill",
+      flaggedSkillMd: "# Flagged skill",
+      scannedSkillStorageId: "storage:scanned-skill",
+      scannedSkillMd: "# Scanned skill",
+      flaggedPluginStorageId: "storage:flagged-plugin",
+      flaggedPluginReadme: "# Flagged plugin",
+      scannedPluginStorageId: "storage:scanned-plugin",
+      scannedPluginReadme: "# Scanned plugin",
     };
 
-    await seedFeaturedPluginPackagesHandler(createMutationCtx(db) as never, args as never);
-    const oldPackageId = tables.packages?.[0]?._id;
-    const oldReleaseId = tables.packageReleases?.[0]?._id;
-    await seedFeaturedPluginPackagesHandler(
+    await seedLocalModerationFixturesHandler(createMutationCtx(db) as never, args as never);
+    const oldPackage = tables.packages?.find((pkg) => pkg.name === "local-scanned-runtime-plugin");
+    const oldPackageId = oldPackage?._id;
+    const oldReleaseId = oldPackage?.latestReleaseId;
+    expect(oldPackageId).toBeDefined();
+    expect(oldReleaseId).toBeDefined();
+    await db.insert("packageBadges", {
+      packageId: oldPackageId,
+      kind: "highlighted",
+      byUserId: oldPackage?.ownerUserId,
+      at: 1,
+    });
+
+    await seedLocalModerationFixturesHandler(
       createMutationCtx(db) as never,
       { ...args, reset: true } as never,
     );
 
-    expect(tables.packages).toHaveLength(1);
-    expect(tables.packageReleases).toHaveLength(1);
-    expect(tables.packageBadges).toHaveLength(1);
+    expect(tables.packages).toHaveLength(3);
+    expect(tables.packageReleases).toHaveLength(3);
+    expect(tables.packageBadges).toHaveLength(0);
     const oldPackageDeleteIndex = operations.findIndex(
       (op) => op.table === "packages" && op.id === oldPackageId,
     );
@@ -1640,20 +1593,15 @@ describe("devSeed local fixtures", () => {
       },
     });
     const packageId = (await db.insert("packages", {
+      ...createPackageSeedDefaults(),
       name: "presentation-plugin",
       normalizedName: "presentation-plugin",
       displayName: "Presentation Plugin",
       ownerUserId: userId,
       ownerPublisherId: sourcePublisherId,
-      family: "code-plugin",
-      channel: "community",
-      isOfficial: false,
       runtimeId: "presentation-plugin",
-      tags: {},
       stats: { downloads: 14, installs: 7, stars: 4, versions: 1 },
       softDeletedAt: undefined,
-      createdAt: 1,
-      updatedAt: 1,
     })) as Id<"packages">;
     const args = {
       orgs: [

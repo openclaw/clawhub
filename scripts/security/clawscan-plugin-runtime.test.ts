@@ -1,8 +1,8 @@
 /* @vitest-environment node */
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createTestTempDirectories } from "../lib/testTempDirectories";
 import {
   assertQualifiedPluginArtifact,
   qualifiedPluginCommand,
@@ -18,14 +18,13 @@ vi.mock("./prepublicationScannerSource", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./prepublicationScannerSource")>()),
   verifyInstalledClawScanSource: vi.fn(async () => ({ command: "/qualified/clawscan" })),
 }));
-const dirs: string[] = [];
+const dirs = createTestTempDirectories("plugin-runtime-");
 afterEach(async () => {
   vi.clearAllMocks();
-  await Promise.all(dirs.splice(0).map((path) => rm(path, { recursive: true, force: true })));
+  await dirs.cleanup();
 });
 async function source(profile: string) {
-  const root = await mkdtemp(join(tmpdir(), "plugin-runtime-"));
-  dirs.push(root);
+  const root = await dirs.create();
   await mkdir(join(root, "internal/profiles/clawhub"), { recursive: true });
   await writeFile(join(root, "internal/profiles/clawhub/clawscan.yml"), profile);
   return { CLAWSCAN_SOURCE_DIR: root };

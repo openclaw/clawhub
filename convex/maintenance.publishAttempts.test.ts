@@ -2,6 +2,7 @@
 
 import { getFunctionName } from "convex/server";
 import { describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import {
   discardStalePackagePublishAttempts,
   discardStalePackagePublishAttemptsInternal,
@@ -14,10 +15,9 @@ vi.mock("./lib/access", async (original) => ({
   requireUserFromAction: auth.requireUserFromAction,
 }));
 
-type Handler = { _handler: (ctx: unknown, args: Record<string, unknown>) => Promise<unknown> };
-const list = (listStalePackagePublishAttemptsInternal as unknown as Handler)._handler;
-const discard = (discardStalePackagePublishAttemptsInternal as unknown as Handler)._handler;
-const discardAsAdmin = (discardStalePackagePublishAttempts as unknown as Handler)._handler;
+const list = getTestHandler<Record<string, unknown>>(listStalePackagePublishAttemptsInternal);
+const discard = getTestHandler<Record<string, unknown>>(discardStalePackagePublishAttemptsInternal);
+const discardAsAdmin = getTestHandler<Record<string, unknown>>(discardStalePackagePublishAttempts);
 const version = "2026.9.1";
 const slugPrefix = "@openclaw/";
 

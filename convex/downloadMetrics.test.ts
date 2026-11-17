@@ -1,35 +1,29 @@
 /* @vitest-environment node */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createMockDb } from "../src/__tests__/helpers/convexDb";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import {
   __test,
   pruneDownloadMetricDedupesInternal,
   recordDownloadMetricInternal,
 } from "./downloadMetrics";
 
-type WrappedHandler<TArgs, TResult> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
+const recordDownloadMetricHandler = getTestHandler<
+  {
+    target: { kind: "skill"; id: string } | { kind: "package"; id: string };
+    identityKind: "user" | "ip";
+    identityHash: string;
+    dayStart: number;
+    occurredAt?: number;
+  },
+  void
+>(recordDownloadMetricInternal);
 
-const recordDownloadMetricHandler = (
-  recordDownloadMetricInternal as unknown as WrappedHandler<
-    {
-      target: { kind: "skill"; id: string } | { kind: "package"; id: string };
-      identityKind: "user" | "ip";
-      identityHash: string;
-      dayStart: number;
-      occurredAt?: number;
-    },
-    void
-  >
-)._handler;
-
-const pruneDownloadMetricDedupesHandler = (
-  pruneDownloadMetricDedupesInternal as unknown as WrappedHandler<
-    Record<string, never>,
-    { deleted: number; hasMore: boolean }
-  >
-)._handler;
+const pruneDownloadMetricDedupesHandler = getTestHandler<
+  Record<string, never>,
+  { deleted: number; hasMore: boolean }
+>(pruneDownloadMetricDedupesInternal);
 
 function makeQueryBuilder() {
   const builder = {
@@ -67,13 +61,10 @@ function makeDb(
   const delete_ = vi.fn();
   return {
     db: {
+      ...createMockDb(),
       query,
-      get: vi.fn(),
       insert,
-      patch: vi.fn(),
-      replace: vi.fn(),
       delete: delete_,
-      normalizeId: vi.fn(),
       system: {
         get: vi.fn(),
         query: vi.fn(),

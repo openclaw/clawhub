@@ -1,5 +1,6 @@
 /* @vitest-environment node */
 import { describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import {
   applyBanToOwnedSkillsBatchInternal,
   applyPublisherDeletionToOwnedSkillsBatchInternal,
@@ -7,43 +8,31 @@ import {
   restoreOwnedSkillsForUnbanBatchInternal,
 } from "./skills";
 
-type WrappedHandler<TArgs, TResult> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
+const restoreUnbanHandler = getTestHandler<
+  { ownerUserId: string; bannedAt: number; cursor?: string },
+  { restoredCount: number; scheduled: boolean; aborted?: boolean }
+>(restoreOwnedSkillsForUnbanBatchInternal);
 
-const restoreUnbanHandler = (
-  restoreOwnedSkillsForUnbanBatchInternal as unknown as WrappedHandler<
-    { ownerUserId: string; bannedAt: number; cursor?: string },
-    { restoredCount: number; scheduled: boolean; aborted?: boolean }
-  >
-)._handler;
+const applyBanHandler = getTestHandler<
+  { ownerUserId: string; bannedAt: number; hiddenBy?: string; cursor?: string },
+  { hiddenCount: number; scheduled: boolean; aborted?: boolean }
+>(applyBanToOwnedSkillsBatchInternal);
 
-const applyBanHandler = (
-  applyBanToOwnedSkillsBatchInternal as unknown as WrappedHandler<
-    { ownerUserId: string; bannedAt: number; hiddenBy?: string; cursor?: string },
-    { hiddenCount: number; scheduled: boolean; aborted?: boolean }
-  >
-)._handler;
+const applyPublisherDeletionHandler = getTestHandler<
+  { ownerPublisherId: string; actorUserId: string; deletedAt: number; cursor?: string },
+  { hiddenCount: number; scheduled: boolean; stale?: boolean }
+>(applyPublisherDeletionToOwnedSkillsBatchInternal);
 
-const applyPublisherDeletionHandler = (
-  applyPublisherDeletionToOwnedSkillsBatchInternal as unknown as WrappedHandler<
-    { ownerPublisherId: string; actorUserId: string; deletedAt: number; cursor?: string },
-    { hiddenCount: number; scheduled: boolean; stale?: boolean }
-  >
-)._handler;
-
-const hardDeleteHandler = (
-  hardDeleteInternal as unknown as WrappedHandler<
-    {
-      skillId: string;
-      actorUserId: string;
-      phase?: string;
-      source?: "admin" | "account.delete" | "publisher.delete";
-      ownerPublisherId?: string;
-    },
-    void
-  >
-)._handler;
+const hardDeleteHandler = getTestHandler<
+  {
+    skillId: string;
+    actorUserId: string;
+    phase?: string;
+    source?: "admin" | "account.delete" | "publisher.delete";
+    ownerPublisherId?: string;
+  },
+  void
+>(hardDeleteInternal);
 
 function makeCtx({
   user,

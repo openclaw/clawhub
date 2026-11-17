@@ -11,8 +11,18 @@ import {
   getPackageDownloadPath,
   type PackageDetailResponse,
 } from "../lib/packageApi";
-import { parseTemplateDocument } from "../lib/templateDetail";
-import { buildTemplateSecurityAuditHref, isTemplateReadyToAdd } from "../lib/templateRoutes";
+import {
+  parseTemplateDocument,
+  templateWorkspaceContents,
+  type TemplateWorkspaceContents,
+  type TemplateWorkspaceEntry,
+} from "../lib/templateDetail";
+import {
+  buildTemplateInstallRef,
+  buildTemplateSecurityAuditHref,
+  isTemplateReadyToAdd,
+} from "../lib/templateRoutes";
+import { useMediaQuery } from "../lib/useMediaQuery";
 import { DetailSecuritySummary, DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { SidebarMetadata } from "./SidebarMetadata";
@@ -38,6 +48,7 @@ export function TemplateDetailPage({
   llmAnalysis?: LlmAnalysis | null;
 }) {
   const pkg = detail.package!;
+  const isMobileDetailLayout = useMediaQuery("(max-width: 900px)");
   const { markdown, manifest } = useMemo(() => parseTemplateDocument(contents), [contents]);
   const [activeTab, setActiveTab] = useState<TemplateTab>("CLAW.md");
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -45,6 +56,10 @@ export function TemplateDetailPage({
   const summary = pkg.templateManifestSummary;
   const inventory =
     pkg.templateInventory ?? (manifest ? templateDependencyInventory(manifest) : null);
+  const workspaceContents = useMemo(
+    () => (manifest ? templateWorkspaceContents(manifest) : null),
+    [manifest],
+  );
   const categories = (pkg.categories ?? manifest?.categories ?? []).map(
     (slug) =>
       TEMPLATE_CATEGORY_DEFINITIONS.find((category) => category.slug === slug)?.label ?? slug,
@@ -68,7 +83,31 @@ export function TemplateDetailPage({
       ? getPackageArtifactDownloadPath(pkg.name, pkg.latestVersion)
       : getPackageDownloadPath(pkg.name, pkg.latestVersion)
     : null;
-  const installCommand = "openclaw templates add " + pkg.name;
+  const installRef = buildTemplateInstallRef(pkg.name, detail.owner?.handle ?? fallbackOwner);
+
+  const installSurface = (
+    <section className="template-detail-install" aria-label="Install Template">
+      <InstallCommandCard
+        cliCommand={"openclaw templates add " + installRef}
+        prompt={formatOpenClawPrompt(installRef, "template")}
+        cliCopyAriaLabel="Copy template install command"
+        copyEnabled={ready}
+        desktopInstall={ready ? { family: "templates", name: installRef } : undefined}
+      />
+      {manifestWarning ? (
+        <p className="template-detail-install-warning" role="status">
+          {manifestWarning} Ask the publisher to migrate or repair CLAW.md and publish a new
+          version. <a href="/docs/templates">Template migration guide</a>.
+          {archivePath ? (
+            <>
+              {" "}
+              <a href={archivePath}>Download release archive</a>.
+            </>
+          ) : null}
+        </p>
+      ) : null}
+    </section>
+  );
 
   return (
     <main className="template-detail-page">
@@ -95,26 +134,7 @@ export function TemplateDetailPage({
         </header>
         <div className="template-detail-layout">
           <div className="template-detail-main">
-            <section className="template-detail-install" aria-label="Install Template">
-              <InstallCommandCard
-                cliCommand={installCommand}
-                prompt={formatOpenClawPrompt(pkg.name, "template")}
-                cliCopyAriaLabel="Copy template install command"
-                copyEnabled={ready}
-              />
-              {manifestWarning ? (
-                <p className="template-detail-install-warning" role="status">
-                  {manifestWarning} Ask the publisher to migrate or repair CLAW.md and publish a new
-                  version. <a href="/docs/templates">Template migration guide</a>.
-                  {archivePath ? (
-                    <>
-                      {" "}
-                      <a href={archivePath}>Download release archive</a>.
-                    </>
-                  ) : null}
-                </p>
-              ) : null}
-            </section>
+            {isMobileDetailLayout ? installSurface : null}
             <section className="template-detail-contents" aria-label="Template contents">
               <div className="template-detail-tabs" role="tablist" aria-label="Template contents">
                 {tabs.map((tab, index) => (
@@ -188,9 +208,17 @@ export function TemplateDetailPage({
                       <TemplatePackages
                         inventory={inventory ?? []}
                         kind={tab === "Skills" ? "skill" : "plugin"}
+                        workspace={
+                          (tab === "Skills"
+                            ? workspaceContents?.skills
+                            : workspaceContents?.plugins) ?? []
+                        }
                       />
                     ) : tab === "Automations" ? (
-                      <TemplateAutomations manifest={manifest} />
+                      <TemplateAutomations
+                        manifest={manifest}
+                        heartbeat={workspaceContents?.heartbeat ?? null}
+                      />
                     ) : (
                       <TemplateWorkspace manifest={manifest} pkg={pkg} markdown={markdown} />
                     )
@@ -200,6 +228,7 @@ export function TemplateDetailPage({
             </section>
           </div>
           <aside className="template-detail-metadata" aria-label="Template metadata">
+            {!isMobileDetailLayout ? installSurface : null}
             <SidebarMetadata
               ariaLabel="Template metadata"
               density="compact"
@@ -306,12 +335,15 @@ function ContentMessage({ children }: { children: React.ReactNode }) {
 function TemplatePackages({
   inventory,
   kind,
+  workspace,
 }: {
   inventory: TemplateDependencyInventory;
   kind: "skill" | "plugin";
+  workspace: TemplateWorkspaceEntry[];
 }) {
   const packages = inventory.filter((entry) => entry.kind === kind);
-  if (!packages.length)
+  const total = packages.length + workspace.length;
+  if (!total)
     return (
       <ContentMessage>
         No {kind === "skill" ? "skills" : "plugins"} are included in this Template.
@@ -320,7 +352,7 @@ function TemplatePackages({
   return (
     <>
       <p className="template-detail-entry-meta">
-        {packages.length} declared {packages.length === 1 ? kind : kind + "s"}
+        {total} included {total === 1 ? kind : kind + "s"}
       </p>
       <ul
         className="template-detail-entry-list"
@@ -341,17 +373,32 @@ function TemplatePackages({
             </li>
           ),
         )}
+        {/* Installed through workspace.files rather than declared as a dependency. */}
+        {workspace.map((entry) => (
+          <li key={"workspace:" + entry.path}>
+            <strong>{entry.name}</strong>
+            <span className="template-detail-entry-meta">
+              Workspace file · <code>{entry.path}</code>
+            </span>
+          </li>
+        ))}
       </ul>
     </>
   );
 }
 
-function TemplateAutomations({ manifest }: { manifest: TemplateManifest }) {
-  if (!manifest.automations?.length)
+function TemplateAutomations({
+  manifest,
+  heartbeat,
+}: {
+  manifest: TemplateManifest;
+  heartbeat: TemplateWorkspaceContents["heartbeat"];
+}) {
+  if (!manifest.automations?.length && !heartbeat)
     return <ContentMessage>No automations are included in this Template.</ContentMessage>;
   return (
     <ul className="template-detail-entry-list" aria-label="Included automations">
-      {manifest.automations.map((job) => (
+      {(manifest.automations ?? []).map((job) => (
         <li key={job.id}>
           <strong>{job.name || job.id}</strong>
           <span className="template-detail-entry-meta">
@@ -367,6 +414,18 @@ function TemplateAutomations({ manifest }: { manifest: TemplateManifest }) {
           ) : null}
         </li>
       ))}
+      {heartbeat ? (
+        <li>
+          <strong>Heartbeat checklist</strong>
+          <span className="template-detail-entry-meta">
+            Workspace file · <code>{heartbeat.path}</code>
+            {heartbeat.every ? " · Every " + heartbeat.every : ""}
+          </span>
+          <p className="template-detail-job-message">
+            OpenClaw converts this checklist into interval automations when the Template is added.
+          </p>
+        </li>
+      ) : null}
     </ul>
   );
 }

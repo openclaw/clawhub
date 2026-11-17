@@ -1,3 +1,5 @@
+import { type Infer, v } from "convex/values";
+
 export const APPEALS_URL = "https://appeals.openclaw.ai/";
 export const MODERATION_GUIDELINES_URL = "https://docs.openclaw.ai/clawhub/moderation";
 export const CLAWHUB_DASHBOARD_URL = "https://clawhub.ai/dashboard";
@@ -41,10 +43,12 @@ const PUBLISHER_ABUSE_WARNING_REASON_PRIORITY = [
 ] as const;
 const MAX_PUBLISHER_ABUSE_WARNING_REASONS = 3;
 
-export type NotificationArtifact = {
-  kind: "skill" | "plugin";
-  name: string;
-};
+export const notificationArtifactValidator = v.object({
+  kind: v.union(v.literal("skill"), v.literal("plugin")),
+  name: v.string(),
+});
+
+export type NotificationArtifact = Infer<typeof notificationArtifactValidator>;
 
 export type BanNotificationSource = "manual" | "autoban";
 
@@ -102,18 +106,20 @@ export type PackageInspectorFindingsEmailArgs = {
   validationUrl: string;
 };
 
-export type PublisherAbuseWarningScore = {
-  modelVersion: string;
-  publishedSkills: number;
-  totalInstalls: number;
-  totalStars: number;
-  totalDownloads: number;
-  installsPerSkill: number;
-  starsPerSkill: number;
-  downloadsPerSkill: number;
-  zScore: number;
-  reasonCodes: string[];
-};
+export const publisherAbuseWarningScoreValidator = v.object({
+  modelVersion: v.string(),
+  publishedSkills: v.number(),
+  totalInstalls: v.number(),
+  totalStars: v.number(),
+  totalDownloads: v.number(),
+  installsPerSkill: v.number(),
+  starsPerSkill: v.number(),
+  downloadsPerSkill: v.number(),
+  zScore: v.number(),
+  reasonCodes: v.array(v.string()),
+});
+
+export type PublisherAbuseWarningScore = Infer<typeof publisherAbuseWarningScoreValidator>;
 
 export type PublisherAbuseWarningEmailArgs = {
   handle?: string;

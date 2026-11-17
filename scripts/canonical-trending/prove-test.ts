@@ -4,6 +4,7 @@ import { execFile } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { promisify } from "node:util";
+import { requireEnv } from "../lib/scriptConfig";
 import { assertFirstPageContract, latencySummary, type ProofSampleRow } from "./proof-contract";
 
 const OUTPUT_PATH = resolve("proof/claw-590/canonical-trending-test-proof.json");
@@ -13,12 +14,6 @@ const PAGE_LIMIT = 20;
 const MAX_PAGES = 1_000;
 const CONFIRM = "manage-claw-590-canonical-trending-test-proof";
 const execFileAsync = promisify(execFile);
-
-function requireEnv(name: string) {
-  const value = process.env[name]?.trim();
-  if (!value) throw new Error(`${name} is required`);
-  return value;
-}
 
 const deploySha = requireEnv("DEPLOY_SHA");
 if (!/^[0-9a-f]{40}$/.test(deploySha)) throw new Error("DEPLOY_SHA must be a full commit SHA");

@@ -41,6 +41,27 @@ function availableDownloadSelection(
   };
 }
 
+function mockDownloadQuery(makeVersion: () => Record<string, unknown>) {
+  return vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+    if ("slug" in args) {
+      return {
+        skill: {
+          _id: "skills:1",
+          ownerUserId: "users:1",
+          slug: "demo",
+          tags: {},
+          latestVersionId: "skillVersions:1",
+        },
+        moderationInfo: null,
+      };
+    }
+    if ("skillId" in args) {
+      return availableDownloadSelection(makeVersion());
+    }
+    return null;
+  });
+}
+
 function stubZipResponse() {
   class MockResponse {
     status: number;
@@ -239,31 +260,14 @@ describe("downloads helpers", () => {
   it("schedules zip download stats outside the response path", async () => {
     vi.stubEnv("TRUST_FORWARDED_IPS", "true");
 
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("slug" in args) {
-        return {
-          skill: {
-            _id: "skills:1",
-            ownerUserId: "users:1",
-            slug: "demo",
-            tags: {},
-            latestVersionId: "skillVersions:1",
-          },
-          moderationInfo: null,
-        };
-      }
-      if ("skillId" in args) {
-        return availableDownloadSelection({
-          _id: "skillVersions:1",
-          skillId: "skills:1",
-          version: "1.0.0",
-          createdAt: 3,
-          files: [{ path: "SKILL.md", storageId: "_storage:1" }],
-          softDeletedAt: undefined,
-        });
-      }
-      return null;
-    });
+    const runQuery = mockDownloadQuery(() => ({
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      createdAt: 3,
+      files: [{ path: "SKILL.md", storageId: "_storage:1" }],
+      softDeletedAt: undefined,
+    }));
     const runMutation = vi.fn(async (mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return { mutation, args };
@@ -325,34 +329,17 @@ describe("downloads helpers", () => {
     const jwks = JSON.stringify({ keys: [{ use: "sig", ...publicKey }] });
     vi.stubEnv("JWT_PRIVATE_KEY", privateKey);
     vi.stubEnv("JWKS", jwks);
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("slug" in args) {
-        return {
-          skill: {
-            _id: "skills:1",
-            ownerUserId: "users:1",
-            slug: "demo",
-            tags: {},
-            latestVersionId: "skillVersions:1",
-          },
-          moderationInfo: null,
-        };
-      }
-      if ("skillId" in args) {
-        return availableDownloadSelection({
-          _id: "skillVersions:1",
-          skillId: "skills:1",
-          version: "1.0.0+build",
-          createdAt: 3,
-          files: [
-            { path: "SKILL.md", storageId: "_storage:1" },
-            { path: "missing.txt", storageId: "_storage:missing" },
-          ],
-          softDeletedAt: undefined,
-        });
-      }
-      return null;
-    });
+    const runQuery = mockDownloadQuery(() => ({
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0+build",
+      createdAt: 3,
+      files: [
+        { path: "SKILL.md", storageId: "_storage:1" },
+        { path: "missing.txt", storageId: "_storage:missing" },
+      ],
+      softDeletedAt: undefined,
+    }));
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return null;
@@ -608,34 +595,17 @@ describe("downloads helpers", () => {
       }
       return null;
     });
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("slug" in args) {
-        return {
-          skill: {
-            _id: "skills:1",
-            ownerUserId: "users:1",
-            slug: "demo",
-            tags: {},
-            latestVersionId: "skillVersions:1",
-          },
-          moderationInfo: null,
-        };
-      }
-      if ("skillId" in args) {
-        return availableDownloadSelection({
-          _id: "skillVersions:1",
-          skillId: "skills:1",
-          version: "1.0.0",
-          createdAt: 3,
-          files: [
-            { path: "a.txt", storageId: "_storage:skill" },
-            { path: "b.txt", storageId: "_storage:notes" },
-          ],
-          softDeletedAt: undefined,
-        });
-      }
-      return null;
-    });
+    const runQuery = mockDownloadQuery(() => ({
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      createdAt: 3,
+      files: [
+        { path: "a.txt", storageId: "_storage:skill" },
+        { path: "b.txt", storageId: "_storage:notes" },
+      ],
+      softDeletedAt: undefined,
+    }));
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return null;
@@ -725,34 +695,17 @@ describe("downloads helpers", () => {
   });
 
   it("returns 410 when a skill archive blob is missing from storage", async () => {
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("slug" in args) {
-        return {
-          skill: {
-            _id: "skills:1",
-            ownerUserId: "users:1",
-            slug: "demo",
-            tags: {},
-            latestVersionId: "skillVersions:1",
-          },
-          moderationInfo: null,
-        };
-      }
-      if ("skillId" in args) {
-        return availableDownloadSelection({
-          _id: "skillVersions:1",
-          skillId: "skills:1",
-          version: "1.0.0",
-          createdAt: 3,
-          files: [
-            { path: "SKILL.md", storageId: "_storage:1" },
-            { path: "missing.txt", storageId: "_storage:missing" },
-          ],
-          softDeletedAt: undefined,
-        });
-      }
-      return null;
-    });
+    const runQuery = mockDownloadQuery(() => ({
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      createdAt: 3,
+      files: [
+        { path: "SKILL.md", storageId: "_storage:1" },
+        { path: "missing.txt", storageId: "_storage:missing" },
+      ],
+      softDeletedAt: undefined,
+    }));
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return null;
@@ -824,30 +777,13 @@ describe("downloads helpers", () => {
   });
 
   it("threads owner handle through the skill lookup", async () => {
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("slug" in args) {
-        return {
-          skill: {
-            _id: "skills:1",
-            ownerUserId: "users:1",
-            slug: "demo",
-            tags: {},
-            latestVersionId: "skillVersions:1",
-          },
-          moderationInfo: null,
-        };
-      }
-      if ("skillId" in args) {
-        return availableDownloadSelection({
-          _id: "skillVersions:1",
-          version: "1.0.0",
-          createdAt: 3,
-          files: [{ path: "SKILL.md", storageId: "_storage:1" }],
-          softDeletedAt: undefined,
-        });
-      }
-      return null;
-    });
+    const runQuery = mockDownloadQuery(() => ({
+      _id: "skillVersions:1",
+      version: "1.0.0",
+      createdAt: 3,
+      files: [{ path: "SKILL.md", storageId: "_storage:1" }],
+      softDeletedAt: undefined,
+    }));
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       return null;
@@ -1091,31 +1027,14 @@ describe("downloads helpers", () => {
     vi.stubEnv("TRUST_FORWARDED_IPS", "true");
     stubZipResponse();
 
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("slug" in args) {
-        return {
-          skill: {
-            _id: "skills:1",
-            ownerUserId: "users:1",
-            slug: "demo",
-            tags: {},
-            latestVersionId: "skillVersions:1",
-          },
-          moderationInfo: null,
-        };
-      }
-      if ("skillId" in args) {
-        return availableDownloadSelection({
-          _id: "skillVersions:1",
-          skillId: "skills:1",
-          version: "1.0.0",
-          createdAt: 3,
-          files: [{ path: "SKILL.md", storageId: "_storage:1" }],
-          softDeletedAt: undefined,
-        });
-      }
-      return null;
-    });
+    const runQuery = mockDownloadQuery(() => ({
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      createdAt: 3,
+      files: [{ path: "SKILL.md", storageId: "_storage:1" }],
+      softDeletedAt: undefined,
+    }));
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
       if (Object.keys(args).length === 0) return "https://upload.example";

@@ -49,12 +49,6 @@ const MALICIOUS_CODES = new Set<string>([
   REASON_CODES.KNOWN_BLOCKED_SIGNATURE,
 ]);
 
-const EXTERNALLY_CLEARABLE_SUSPICIOUS_CODES = new Set<string>([REASON_CODES.CREDENTIAL_HARVEST]);
-
-export function isExternallyClearableSuspiciousCode(code: string) {
-  return EXTERNALLY_CLEARABLE_SUSPICIOUS_CODES.has(code);
-}
-
 export function normalizeReasonCodes(codes: string[]) {
   return Array.from(new Set(codes.filter(Boolean))).sort((a, b) => a.localeCompare(b));
 }

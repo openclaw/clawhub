@@ -75,6 +75,26 @@ function contrastRatio(foreground: string, background: string) {
 }
 
 describe("restored UI design contract", () => {
+  it("keeps install heading spacing independent of divider-aligned metadata rows", () => {
+    const css = read("src/styles.css");
+    expect(cssRule(css, ".skill-install-command-card")).toContain("gap: 12px");
+    const header = cssRule(css, ".skill-install-command-header");
+    expect(header).toContain("min-height: 0");
+    expect(header).toContain("padding: 0");
+    expect(read("src/components/SkillInstallSurface.tsx")).not.toContain(
+      'className="skill-install-command-header detail-hero-summary-row"',
+    );
+  });
+
+  it("separates right-rail install content from metadata without changing its spacing", () => {
+    const css = read("src/styles.css");
+    const divider = cssRule(css, ".template-detail-metadata > .template-detail-install::after");
+    expect(css).toContain(".skill-hero-sidebar-stack > .skill-install-command-card::after,");
+    expect(divider).toContain("bottom: -12px");
+    expect(divider).toContain("border-bottom: 1px solid var(--line)");
+    expect(divider).toContain("pointer-events: none");
+  });
+
   const rootRoute = () => read("src/routes/__root.tsx");
   const home = () => read("src/routes/index.tsx");
   const styles = () => read("src/styles.css");
@@ -206,13 +226,6 @@ describe("restored UI design contract", () => {
     expect(cssRule(css, '[data-theme-resolved="light"] .home-v2-hero-bg::before')).toContain(
       "filter: none",
     );
-  });
-
-  it("keeps browse segmented labels stable across active state changes", () => {
-    const css = styles();
-
-    expect(cssRule(css, ".browse-tab")).toContain("font-weight: 600");
-    expect(cssRule(css, ".browse-tab.is-active")).not.toContain("font-weight");
   });
 
   it("keeps shared segmented controls visually quiet across homepage variants", () => {
@@ -445,9 +458,6 @@ describe("restored UI design contract", () => {
     );
     expect(cssRule(css, ".skill-hero-main-extra")).toContain("overflow-x: clip");
     expect(cssRule(css, ".skill-install-command-shell")).toContain("max-width: 100%");
-    expect(cssRule(css, ".skill-hero-action-grid")).toContain(
-      "grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr))",
-    );
   });
 
   it("keeps the promotion bar thin and horizontally bounded", () => {

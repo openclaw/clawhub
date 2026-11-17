@@ -7,6 +7,26 @@ function response(payload: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(payload), { status });
 }
 
+function runningLeaderboardCheckpoint(
+  snapshotId: string,
+  page: number,
+  offset: number,
+  sourceMeasuredAt = "2026-07-30T06:00:00.000Z",
+) {
+  return {
+    runId: "run-leaderboard",
+    snapshotId,
+    sourceView: "leaderboard",
+    sourceTotal: 1,
+    sourcePageSize: 500,
+    sourceMeasuredAt,
+    page,
+    offset,
+    status: "running",
+    startedAt: 1,
+  };
+}
+
 function completedRun(sourceView: "leaderboard" | "trending", scansPlanned = 0) {
   return {
     runId: `run-${sourceView}`,
@@ -382,20 +402,7 @@ describe("skills.sh synchronization runner", () => {
         case "status":
           return operations.length === 1
             ? response({
-                runs: [
-                  {
-                    runId: "run-leaderboard",
-                    snapshotId: "skills-sh:leaderboard:interrupted",
-                    sourceView: "leaderboard",
-                    sourceTotal: 1,
-                    sourcePageSize: 500,
-                    sourceMeasuredAt: "2026-07-30T06:00:00.000Z",
-                    page: 0,
-                    offset: 0,
-                    status: "running",
-                    startedAt: 1,
-                  },
-                ],
+                runs: [runningLeaderboardCheckpoint("skills-sh:leaderboard:interrupted", 0, 0)],
                 invariants: { publicVisible: false },
               })
             : response({ runs: [], invariants: { publicVisible: true } });
@@ -445,18 +452,12 @@ describe("skills.sh synchronization runner", () => {
       if (forceRefresh) refreshed = true;
       return refreshed ? "fresh-github-oidc" : "stale-github-oidc";
     });
-    const running = {
-      runId: "run-leaderboard",
-      snapshotId: "skills-sh:leaderboard:durable",
-      sourceView: "leaderboard",
-      sourceTotal: 1,
-      sourcePageSize: 500,
-      sourceMeasuredAt: "2026-08-01T05:32:30.080Z",
-      page: 17,
-      offset: 300,
-      status: "running",
-      startedAt: 1,
-    };
+    const running = runningLeaderboardCheckpoint(
+      "skills-sh:leaderboard:durable",
+      17,
+      300,
+      "2026-08-01T05:32:30.080Z",
+    );
     const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body)) as Record<string, unknown>;
       const bearer = String((init.headers as Record<string, string>).Authorization);
@@ -523,18 +524,7 @@ describe("skills.sh synchronization runner", () => {
     const requests: string[] = [];
     const sleep = vi.fn(async () => undefined);
     let stepAttempts = 0;
-    const running = {
-      runId: "run-leaderboard",
-      snapshotId: "skills-sh:leaderboard:durable",
-      sourceView: "leaderboard",
-      sourceTotal: 1,
-      sourcePageSize: 500,
-      sourceMeasuredAt: "2026-07-30T06:00:00.000Z",
-      page: 9,
-      offset: 50,
-      status: "running",
-      startedAt: 1,
-    };
+    const running = runningLeaderboardCheckpoint("skills-sh:leaderboard:durable", 9, 50);
     const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body)) as Record<string, unknown>;
       requests.push(
@@ -613,18 +603,12 @@ describe("skills.sh synchronization runner", () => {
     const sleep = vi.fn(async (ms: number) => {
       now += ms;
     });
-    const running = {
-      runId: "run-leaderboard",
-      snapshotId: "skills-sh:leaderboard:live-lease",
-      sourceView: "leaderboard",
-      sourceTotal: 1,
-      sourcePageSize: 500,
-      sourceMeasuredAt: "2026-08-25T06:00:00.000Z",
-      page: 9,
-      offset: 50,
-      status: "running",
-      startedAt: 1,
-    };
+    const running = runningLeaderboardCheckpoint(
+      "skills-sh:leaderboard:live-lease",
+      9,
+      50,
+      "2026-08-25T06:00:00.000Z",
+    );
     const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body)) as Record<string, unknown>;
       if (body.operation === "status") {
@@ -682,18 +666,12 @@ describe("skills.sh synchronization runner", () => {
     const sleep = vi.fn(async (ms: number) => {
       now += ms;
     });
-    const running = {
-      runId: "run-leaderboard",
-      snapshotId: "skills-sh:leaderboard:renewed-lease",
-      sourceView: "leaderboard",
-      sourceTotal: 1,
-      sourcePageSize: 500,
-      sourceMeasuredAt: "2026-08-25T06:00:00.000Z",
-      page: 9,
-      offset: 50,
-      status: "running",
-      startedAt: 1,
-    };
+    const running = runningLeaderboardCheckpoint(
+      "skills-sh:leaderboard:renewed-lease",
+      9,
+      50,
+      "2026-08-25T06:00:00.000Z",
+    );
     const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body)) as Record<string, unknown>;
       if (body.operation === "status") {
@@ -749,18 +727,12 @@ describe("skills.sh synchronization runner", () => {
   it("fails closed when an unchanged cursor retains a permanently renewed lease", async () => {
     let now = 1_000;
     let runReads = 0;
-    const running = {
-      runId: "run-leaderboard",
-      snapshotId: "skills-sh:leaderboard:stuck-lease",
-      sourceView: "leaderboard",
-      sourceTotal: 1,
-      sourcePageSize: 500,
-      sourceMeasuredAt: "2026-08-25T06:00:00.000Z",
-      page: 9,
-      offset: 50,
-      status: "running",
-      startedAt: 1,
-    };
+    const running = runningLeaderboardCheckpoint(
+      "skills-sh:leaderboard:stuck-lease",
+      9,
+      50,
+      "2026-08-25T06:00:00.000Z",
+    );
     const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body)) as Record<string, unknown>;
       if (body.operation === "status") {
@@ -797,18 +769,12 @@ describe("skills.sh synchronization runner", () => {
     ["missing", {}],
     ["malformed", { batchLeaseExpiresAt: "later" }],
   ])("fails closed on %s durable lease state", async (_label, leaseState) => {
-    const running = {
-      runId: "run-leaderboard",
-      snapshotId: "skills-sh:leaderboard:invalid-lease",
-      sourceView: "leaderboard",
-      sourceTotal: 1,
-      sourcePageSize: 500,
-      sourceMeasuredAt: "2026-08-25T06:00:00.000Z",
-      page: 9,
-      offset: 50,
-      status: "running",
-      startedAt: 1,
-    };
+    const running = runningLeaderboardCheckpoint(
+      "skills-sh:leaderboard:invalid-lease",
+      9,
+      50,
+      "2026-08-25T06:00:00.000Z",
+    );
     const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body)) as Record<string, unknown>;
       if (body.operation === "status") {
@@ -835,18 +801,7 @@ describe("skills.sh synchronization runner", () => {
 
   it("continues from the authoritative cursor when a timed-out step already committed", async () => {
     const stepCursors: string[] = [];
-    const running = {
-      runId: "run-leaderboard",
-      snapshotId: "skills-sh:leaderboard:durable",
-      sourceView: "leaderboard",
-      sourceTotal: 1,
-      sourcePageSize: 500,
-      sourceMeasuredAt: "2026-07-30T06:00:00.000Z",
-      page: 9,
-      offset: 50,
-      status: "running",
-      startedAt: 1,
-    };
+    const running = runningLeaderboardCheckpoint("skills-sh:leaderboard:durable", 9, 50);
     const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body)) as Record<string, unknown>;
       switch (body.operation) {

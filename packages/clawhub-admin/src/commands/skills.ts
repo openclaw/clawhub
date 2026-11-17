@@ -1,10 +1,11 @@
 import { requireAuthToken } from "../../../clawhub/src/cli/authToken.js";
+import { withLoaderErrorHandling } from "../../../clawhub/src/cli/loader.js";
+import { writeJsonIfRequested } from "../../../clawhub/src/cli/output.js";
 import { getRegistry } from "../../../clawhub/src/cli/registry.js";
 import type { GlobalOpts } from "../../../clawhub/src/cli/types.js";
 import {
   createCrabLoader,
   fail,
-  formatError,
   isInteractive,
   promptConfirm,
 } from "../../../clawhub/src/cli/ui.js";
@@ -55,7 +56,7 @@ export async function cmdHardDeleteSkill(
   const spinner = options.json
     ? null
     : createCrabLoader(`${dryRun ? "Planning hard delete for" : "Hard-deleting"} ${label}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -78,14 +79,9 @@ export async function cmdHardDeleteSkill(
         ? `Scheduled hard delete for @${result.ownerHandle}/${result.slug}`
         : `Dry run OK for @${result.ownerHandle}/${result.slug}: pass --apply --confirm ${result.confirmationToken}`,
     );
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    }
+    writeJsonIfRequested(options.json, result);
     return result;
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 function parseOwnerQualifiedSkillRef(value: string): OwnerQualifiedSkillRef {

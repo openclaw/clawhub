@@ -14,21 +14,17 @@ import {
   emitAnalytics,
   publicAnalyticsContentId,
 } from "../lib/analyticsEvents";
-import {
-  getUserFacingAuthError,
-  isBannedAccountAuthError,
-  routeToBannedAccountPage,
-} from "../lib/authErrorMessage";
 import { getSkillCategoriesForSkill, getSkillCategoryForSkill } from "../lib/categories";
 import { getUserFacingConvexError } from "../lib/convexError";
 import { isPublicAnalyticsSkill } from "../lib/googleAnalytics";
 import { buildSkillSecurityAuditHref } from "../lib/ownerRoute";
 import { hasPostPublishSearch } from "../lib/postPublishSearch";
 import { canManageSkill, isModerator } from "../lib/roles";
+import { handleSignInError } from "../lib/signInError";
 import { skillCardLoadKey } from "../lib/skillCards";
 import type { SkillBySlugResult, SkillPageInitialData } from "../lib/skillPage";
 import { resolveGitHubSkillReadmeHref } from "../lib/skillReadmeLinks";
-import { clearAuthError, setAuthError } from "../lib/useAuthError";
+import { clearAuthError } from "../lib/useAuthError";
 import { useAuthStatus } from "../lib/useAuthStatus";
 import { useDeferredSkillActivityTrend } from "../lib/useDeferredActivityTrend";
 import { DetailBody, DetailPageShell } from "./DetailPageShell";
@@ -815,14 +811,7 @@ export function SkillDetailPage({
       typeof window === "undefined"
         ? "/"
         : `${window.location.pathname}${window.location.search}${window.location.hash}`;
-    void signIn("github", redirectTo ? { redirectTo } : undefined).catch((error) => {
-      const message = getUserFacingAuthError(error, "Sign in failed. Please try again.");
-      if (isBannedAccountAuthError(message)) {
-        routeToBannedAccountPage();
-        return;
-      }
-      setAuthError(message);
-    });
+    void signIn("github", redirectTo ? { redirectTo } : undefined).catch(handleSignInError);
   };
 
   if (isLoadingSkill || wantsCanonicalRedirect) {

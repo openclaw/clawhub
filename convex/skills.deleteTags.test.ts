@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createActiveSkillSeedDefaults } from "../src/__tests__/helpers/activeSkillSeed";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -8,28 +10,18 @@ vi.mock("@convex-dev/auth/server", () => ({
 const { getAuthUserId } = await import("@convex-dev/auth/server");
 const { deleteTags, updateSummary, updateTags } = await import("./skills");
 
-type WrappedHandler<TArgs, TResult = unknown> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
-
-const deleteTagsHandler = (
-  deleteTags as unknown as WrappedHandler<{
-    skillId: string;
-    tags: string[];
-  }>
-)._handler;
-const updateSummaryHandler = (
-  updateSummary as unknown as WrappedHandler<{
-    skillId: string;
-    summary: string;
-  }>
-)._handler;
-const updateTagsHandler = (
-  updateTags as unknown as WrappedHandler<{
-    skillId: string;
-    tags: Array<{ tag: string; versionId: string }>;
-  }>
-)._handler;
+const deleteTagsHandler = getTestHandler<{
+  skillId: string;
+  tags: string[];
+}>(deleteTags);
+const updateSummaryHandler = getTestHandler<{
+  skillId: string;
+  summary: string;
+}>(updateSummary);
+const updateTagsHandler = getTestHandler<{
+  skillId: string;
+  tags: Array<{ tag: string; versionId: string }>;
+}>(updateTags);
 
 function buildGlobalStatsQuery(table: string) {
   if (table !== "globalStats") return null;
@@ -146,6 +138,7 @@ const otherUser = {
 };
 
 const baseSkill = {
+  ...createActiveSkillSeedDefaults(),
   _id: "skills:1",
   _creationTime: 1,
   slug: "demo-skill",
@@ -169,7 +162,6 @@ const baseSkill = {
     "old-tag": "versions:1",
   },
   capabilityTags: undefined,
-  badges: {},
   statsDownloads: 0,
   statsStars: 0,
   statsInstallsCurrent: 0,
@@ -182,14 +174,11 @@ const baseSkill = {
     versions: 0,
     comments: 0,
   },
-  moderationStatus: "active",
   moderationFlags: undefined,
   moderationVerdict: undefined,
   moderationReason: undefined,
   isSuspicious: undefined,
   softDeletedAt: undefined,
-  createdAt: 1,
-  updatedAt: 1,
 };
 
 const publisherSkill = {

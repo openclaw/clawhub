@@ -2,9 +2,11 @@ import { ConvexError } from "convex/values";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
+import { runActionRef, runMutationRef, runQueryRef } from "../lib/functionRefs";
 import { verifyGitHubActionsSkillsShSyncJwt } from "../lib/githubActionsOidc";
 import { buildGitHubApiHeaders } from "../lib/githubAuth";
 import { computeGitHubSkillFolderContentHash } from "../lib/githubSkillSync";
+import { sha256Hex } from "../lib/hash";
 import { applyRateLimit } from "../lib/httpRateLimit";
 import {
   buildSkillInstallResolution,
@@ -90,6 +92,22 @@ const internalRefs = internal as unknown as {
   };
   rolloutCapabilities: { getPublicCapabilitiesInternal: unknown };
 };
+const mirrorPageQueries = new Map<string, unknown>([
+  ["mirror-page", internalRefs.skillsShMirror.listDigestsPageInternal],
+  ["mirror-detail-page", internalRefs.skillsShMirror.listDetailsPageInternal],
+  ["mirror-facet-page", internalRefs.skillsShMirror.listFacetsPageInternal],
+]);
+const mirrorVisibilityActions = new Map<string, unknown>([
+  ["mirror-verify-activate", internalRefs.skillsShMirrorVisibility.verifyAndActivateInternal],
+  [
+    "mirror-prepare-native-trending",
+    internalRefs.skillsShMirrorVisibility.prepareNativeTrendingInternal,
+  ],
+  [
+    "mirror-deactivate-native-trending",
+    internalRefs.skillsShMirrorVisibility.deactivateAndMaterializeInternal,
+  ],
+]);
 const MAX_GITHUB_OWNER_RESOLUTIONS = 500;
 const GITHUB_OWNER_RESOLUTION_CONCURRENCY = 8;
 const CONTROLLED_CANARY_FIXTURE_ID = "patrick-html-canary-v1";
@@ -248,26 +266,6 @@ export async function resolveSkillsShVerify(
   };
 }
 
-async function runMutationRef<T>(
-  ctx: ActionCtx,
-  ref: unknown,
-  args: Record<string, unknown>,
-): Promise<T> {
-  return (await ctx.runMutation(ref as never, args as never)) as T;
-}
-
-async function runActionRef<T>(ctx: ActionCtx, ref: unknown, args: Record<string, unknown>) {
-  return (await ctx.runAction(ref as never, args as never)) as T;
-}
-
-async function runQueryRef<T>(
-  ctx: ActionCtx,
-  ref: unknown,
-  args: Record<string, unknown>,
-): Promise<T> {
-  return (await ctx.runQuery(ref as never, args as never)) as T;
-}
-
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -310,11 +308,6 @@ function requireStringArray(record: Record<string, unknown>, key: string, maxIte
     throw new Error(`${key} must contain between 1 and ${maxItems} strings`);
   }
   return value as string[];
-}
-
-async function sha256Hex(bytes: Uint8Array) {
-  const digest = await crypto.subtle.digest("SHA-256", new Uint8Array(bytes).buffer);
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 function decodeBase64(value: string) {
@@ -701,43 +694,14 @@ export async function skillsShCatalogTestV1Handler(ctx: ActionCtx, request: Requ
         rate.headers,
       );
     }
-    if (operation === "mirror-verify-activate") {
+    const visibilityAction = mirrorVisibilityActions.get(operation);
+    if (visibilityAction) {
       return json(
-        await runActionRef(ctx, internalRefs.skillsShMirrorVisibility.verifyAndActivateInternal, {
+        await runActionRef(ctx, visibilityAction, {
           actor,
           reason: requireString(body, "reason"),
           confirm: requireString(body, "confirm"),
         }),
-        200,
-        rate.headers,
-      );
-    }
-    if (operation === "mirror-prepare-native-trending") {
-      return json(
-        await runActionRef(
-          ctx,
-          internalRefs.skillsShMirrorVisibility.prepareNativeTrendingInternal,
-          {
-            actor,
-            reason: requireString(body, "reason"),
-            confirm: requireString(body, "confirm"),
-          },
-        ),
-        200,
-        rate.headers,
-      );
-    }
-    if (operation === "mirror-deactivate-native-trending") {
-      return json(
-        await runActionRef(
-          ctx,
-          internalRefs.skillsShMirrorVisibility.deactivateAndMaterializeInternal,
-          {
-            actor,
-            reason: requireString(body, "reason"),
-            confirm: requireString(body, "confirm"),
-          },
-        ),
         200,
         rate.headers,
       );
@@ -818,47 +782,12 @@ export async function skillsShCatalogTestV1Handler(ctx: ActionCtx, request: Requ
         rate.headers,
       );
     }
-    if (operation === "mirror-page") {
-      const cursor =
-        body.cursor === null || typeof body.cursor === "string"
-          ? body.cursor
-          : (() => {
-              throw new Error("cursor is required");
-            })();
+    const pageQuery = mirrorPageQueries.get(operation);
+    if (pageQuery) {
+      const cursor = body.cursor;
+      if (cursor !== null && typeof cursor !== "string") throw new Error("cursor is required");
       return json(
-        await runQueryRef(ctx, internalRefs.skillsShMirror.listDigestsPageInternal, {
-          cursor,
-          limit: requireNumber(body, "limit"),
-        }),
-        200,
-        rate.headers,
-      );
-    }
-    if (operation === "mirror-detail-page") {
-      const cursor =
-        body.cursor === null || typeof body.cursor === "string"
-          ? body.cursor
-          : (() => {
-              throw new Error("cursor is required");
-            })();
-      return json(
-        await runQueryRef(ctx, internalRefs.skillsShMirror.listDetailsPageInternal, {
-          cursor,
-          limit: requireNumber(body, "limit"),
-        }),
-        200,
-        rate.headers,
-      );
-    }
-    if (operation === "mirror-facet-page") {
-      const cursor =
-        body.cursor === null || typeof body.cursor === "string"
-          ? body.cursor
-          : (() => {
-              throw new Error("cursor is required");
-            })();
-      return json(
-        await runQueryRef(ctx, internalRefs.skillsShMirror.listFacetsPageInternal, {
+        await runQueryRef(ctx, pageQuery, {
           cursor,
           limit: requireNumber(body, "limit"),
         }),

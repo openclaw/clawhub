@@ -1,5 +1,6 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { requireAuthToken } from "../../../clawhub/src/cli/authToken.js";
+import { writeJsonIfRequested } from "../../../clawhub/src/cli/output.js";
 import { getRegistry } from "../../../clawhub/src/cli/registry.js";
 import type { GlobalOpts } from "../../../clawhub/src/cli/types.js";
 import { fail } from "../../../clawhub/src/cli/ui.js";
@@ -195,10 +196,7 @@ export async function cmdSearchInsights(
     return report;
   }
   const report = result.report;
-  if (options.json) {
-    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
-    return report;
-  }
+  if (writeJsonIfRequested(options.json, report)) return report;
   console.log(
     `Search demand · ${report.artifactKind} · ${report.scope ?? "all scopes"} · completed UTC days before ${new Date(report.window.endDay).toISOString()} · ${report.source ?? "both sources"}`,
   );

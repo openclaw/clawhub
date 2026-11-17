@@ -1,8 +1,8 @@
 /* @vitest-environment node */
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createTestTempDirectories } from "../lib/testTempDirectories";
 import { clawScanExposure, summarizeClawScanExposure } from "./clawscan-exposure";
 import completeReport from "./fixtures/skillspector-completed.json";
 import partialReport from "./fixtures/skillspector-usable-partial.json";
@@ -12,12 +12,10 @@ import {
 } from "./run-codex-scan-worker";
 import { runNativeClawScan } from "./run-prepublication-worker";
 
-const tempDirectories: string[] = [];
+const tempDirectories = createTestTempDirectories("clawhub-receipt-boundary-");
 afterEach(async () => {
   vi.unstubAllEnvs();
-  await Promise.all(
-    tempDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })),
-  );
+  await tempDirectories.cleanup();
 });
 
 function artifactFixture(verdict = "benign", additional: unknown[] = []) {
@@ -495,8 +493,7 @@ describe("versioned ClawScan receipt consumer", () => {
   )(
     "uses the shared mapper at prepublication for $targetKind $mode",
     async ({ targetKind, mode }) => {
-      const workspace = await mkdtemp(join(tmpdir(), "clawhub-receipt-boundary-"));
-      tempDirectories.push(workspace);
+      const workspace = await tempDirectories.create();
       await mkdir(join(workspace, "artifact"));
       await writeFile(join(workspace, "artifact/SKILL.md"), "# Inert\n");
       await writeFile(

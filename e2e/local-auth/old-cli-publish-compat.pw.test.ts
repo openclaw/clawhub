@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, type APIRequestContext, test } from "@playwright/test";
 import { buildPluginSecurityAuditHref } from "../../src/lib/pluginRoutes";
+import { parseLastJsonObject } from "../helpers/convexOutput";
 import {
   completeMockPrePublicationChecks,
   expectSingleMockPrePublicationCheckRejected,
@@ -22,20 +23,6 @@ type CliRoleHelpTokens = {
   admin: { handle: string; token: string };
   user: { handle: string; token: string };
 };
-
-function extractLastJsonObject(output: string) {
-  const trimmed = output.trim();
-  for (let index = 0; index < trimmed.length; index += 1) {
-    if (trimmed[index] !== "{") continue;
-    const candidate = trimmed.slice(index);
-    try {
-      return JSON.parse(candidate) as unknown;
-    } catch {
-      // Convex may print readiness lines before the JSON result.
-    }
-  }
-  throw new Error(`No JSON object in Convex output:\n${output}`);
-}
 
 function seedCliTokens() {
   const result = spawnSync(
@@ -61,7 +48,7 @@ function seedCliTokens() {
   if (result.status !== 0) {
     throw new Error(`Failed to seed old CLI tokens:\n${result.stderr || result.stdout}`);
   }
-  return extractLastJsonObject(result.stdout) as CliRoleHelpTokens;
+  return parseLastJsonObject(result.stdout, "Convex output") as CliRoleHelpTokens;
 }
 
 function runOldCli(args: string[], configPath: string) {

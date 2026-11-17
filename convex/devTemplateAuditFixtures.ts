@@ -3,6 +3,7 @@ import { makeFunctionReference } from "convex/server";
 import { v } from "convex/values";
 import { internalAction, internalMutation } from "./functions";
 import { isLocalDevAuthEnabled } from "./lib/devAuth";
+import { toHex } from "./lib/hash";
 import { hashSkillFiles } from "./lib/skills/fileHash";
 
 const name = "openclaw-music-manager";
@@ -46,9 +47,7 @@ export const seed = internalAction({
       "plugins/player/package.json": JSON.stringify({ name: "local-player", version: "1.0.0" }),
     })) {
       const bytes = new TextEncoder().encode(content);
-      const sha256 = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)))
-        .map((x) => x.toString(16).padStart(2, "0"))
-        .join("");
+      const sha256 = toHex(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)));
       files.push({
         path,
         size: bytes.length,

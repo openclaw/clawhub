@@ -1,4 +1,4 @@
-import { getPluginDiscoveryExclusion } from "clawhub-schema";
+import { getPluginDiscoveryExclusion } from "clawhub-schema/pluginCategories";
 import { v } from "convex/values";
 import type { QueryCtx } from "./_generated/server";
 import { internalQuery } from "./functions";

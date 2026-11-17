@@ -9,6 +9,7 @@ vi.mock("./lib/verifiedClientIp", () => ({
   getVerifiedClientIp: async () => "203.0.113.1",
 }));
 
+import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
 import type { Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import { mintPublishTokenV1Handler } from "./httpApiV1/packagesV1";
@@ -348,18 +349,14 @@ async function insertPackage(
 ) {
   return await t.run(async (ctx) => {
     return await ctx.db.insert("packages", {
+      ...createPackageSeedDefaults(),
       name: options.name,
       normalizedName: options.name,
       displayName: options.name,
       ownerUserId,
-      family: "code-plugin",
       channel: options.channel,
-      isOfficial: false,
       scanStatus: options.scanStatus,
-      tags: {},
       stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
-      createdAt: 1,
-      updatedAt: 1,
     });
   });
 }

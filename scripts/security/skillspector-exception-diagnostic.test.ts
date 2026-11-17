@@ -1,11 +1,11 @@
 /* @vitest-environment node */
 import { execFile } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { chmod, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, expect, it } from "vitest";
 import { parse } from "yaml";
+import { createTestTempDirectories } from "../lib/testTempDirectories";
 import { selectSolarisExceptionCase } from "./run-solaris-exception-diagnostic";
 import {
   installSkillSpectorExceptionObserver,
@@ -13,10 +13,8 @@ import {
   readSkillSpectorExceptionEvents,
 } from "./skillspector-exception-diagnostic";
 
-const roots: string[] = [];
-afterEach(async () => {
-  await Promise.all(roots.splice(0).map((p) => rm(p, { recursive: true, force: true })));
-});
+const roots = createTestTempDirectories("exception-observer-");
+afterEach(roots.cleanup);
 
 it("projects actual Python exceptions without their messages and preserves classifier behavior", async () => {
   const code = `
@@ -239,8 +237,7 @@ print(json.dumps({"trusted":projected,"forged":forged,"other":other,"oversize":o
 });
 
 it("installs only over the qualified venv entrypoint and reads private regular files only", async () => {
-  const root = await mkdtemp(join(tmpdir(), "exception-observer-"));
-  roots.push(root);
+  const root = await roots.create();
   const venv = join(root, "skillspector-source.control/.venv/bin");
   await mkdir(venv, { recursive: true });
   await writeFile(join(venv, "skillspector"), `#!${venv}/python3\n`);

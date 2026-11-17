@@ -2,9 +2,9 @@
 
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 
-const { upsertPackageSearchDigestMock, upsertSkillSearchDigestMock } = vi.hoisted(() => ({
-  upsertPackageSearchDigestMock: vi.fn(),
+const { upsertSkillSearchDigestMock } = vi.hoisted(() => ({
   upsertSkillSearchDigestMock: vi.fn(),
 }));
 
@@ -12,13 +12,6 @@ vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
   authTables: {},
 }));
-
-vi.mock("./lib/packageSearchDigest", async () => {
-  const actual = await vi.importActual<typeof import("./lib/packageSearchDigest")>(
-    "./lib/packageSearchDigest",
-  );
-  return { ...actual, upsertPackageSearchDigest: upsertPackageSearchDigestMock };
-});
 
 vi.mock("./lib/skillSearchDigest", async () => {
   const actual =
@@ -29,24 +22,22 @@ vi.mock("./lib/skillSearchDigest", async () => {
 const { setPackageCatalogMetadata } = await import("./packages");
 const { setCatalogMetadata } = await import("./skills");
 
-type WrappedHandler<TArgs> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<void>;
-};
-
-const setPackageCatalogMetadataHandler = (
-  setPackageCatalogMetadata as unknown as WrappedHandler<{
+const setPackageCatalogMetadataHandler = getTestHandler<
+  {
     packageId: string;
     categories?: string[];
     topics: string[];
-  }>
-)._handler;
-const setSkillCatalogMetadataHandler = (
-  setCatalogMetadata as unknown as WrappedHandler<{
+  },
+  void
+>(setPackageCatalogMetadata);
+const setSkillCatalogMetadataHandler = getTestHandler<
+  {
     skillId: string;
     categories?: string[];
     topics: string[];
-  }>
-)._handler;
+  },
+  void
+>(setCatalogMetadata);
 
 const user = {
   _id: "users:owner",
@@ -101,7 +92,6 @@ function makeCtx(
 
 beforeEach(() => {
   vi.mocked(getAuthUserId).mockResolvedValue(user._id as never);
-  upsertPackageSearchDigestMock.mockReset();
   upsertSkillSearchDigestMock.mockReset();
 });
 
@@ -213,13 +203,7 @@ describe("catalog metadata settings", () => {
       inferredTopicInputHash: undefined,
       updatedAt: expect.any(Number),
     });
-    expect(upsertPackageSearchDigestMock).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        categories: ["tools"],
-        topics: ["Local models"],
-      }),
-    );
+
     expect(insert).toHaveBeenCalledWith(
       "auditLogs",
       expect.objectContaining({ action: "package.catalog_metadata.set" }),
@@ -342,13 +326,6 @@ describe("catalog metadata settings", () => {
         topics: ["Local models"],
       }),
     );
-    expect(upsertPackageSearchDigestMock).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        categories: ["models"],
-        pluginCategoryTags: ["models"],
-      }),
-    );
   });
 
   it("rejects publisher edits to package-owned plugin categories", async () => {
@@ -381,7 +358,6 @@ describe("catalog metadata settings", () => {
       "Plugin categories come from openclaw.plugin.json; publish a new version to change them",
     );
     expect(patch).not.toHaveBeenCalled();
-    expect(upsertPackageSearchDigestMock).not.toHaveBeenCalled();
   });
 
   it("preserves legacy package categories when saving topics", async () => {
@@ -410,10 +386,6 @@ describe("catalog metadata settings", () => {
     expect(patch).toHaveBeenCalledWith(
       pkg._id,
       expect.not.objectContaining({ categories: expect.anything() }),
-    );
-    expect(upsertPackageSearchDigestMock).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ categories: ["tools"], pluginCategoryTags: ["tools"] }),
     );
   });
 });

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { chainEq } from "../src/__tests__/helpers/convexQuery";
 
 vi.mock("@convex-dev/auth/server", () => ({
@@ -19,69 +20,47 @@ import {
   transferSkillOwnerForUserInternal,
 } from "./skills";
 
-type WrappedHandler<TArgs, TResult = unknown> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
-
-const getSkillBySlugInternalHandler = (
-  getSkillBySlugInternal as unknown as WrappedHandler<{ slug: string }>
-)._handler;
-const getBySlugHandler = (
-  getBySlug as unknown as WrappedHandler<{ slug: string; ownerHandle?: string }>
-)._handler;
-const getSkillForPublishPreflightInternalHandler = (
-  getSkillForPublishPreflightInternal as unknown as WrappedHandler<{
-    userId: string;
-    slug: string;
-    ownerPublisherId?: string;
-    sourceOwnerPublisherId?: string;
-    migrateOwner?: boolean;
-  }>
-)._handler;
-const resolveVersionByHashHandler = (
-  resolveVersionByHash as unknown as WrappedHandler<{
-    slug: string;
-    hash: string;
-    ownerHandle?: string;
-  }>
-)._handler;
-const mergeOwnedSkillIntoCanonicalInternalHandler = (
-  mergeOwnedSkillIntoCanonicalInternal as unknown as WrappedHandler<{
-    actorUserId: string;
-    sourceSlug: string;
-    targetSlug: string;
-    sourceOwnerHandle?: string;
-    targetOwnerHandle?: string;
-  }>
-)._handler;
-const renameOwnedSkillInternalHandler = (
-  renameOwnedSkillInternal as unknown as WrappedHandler<{
-    actorUserId: string;
-    slug: string;
-    newSlug: string;
-  }>
-)._handler;
-const transferSkillOwnerForUserInternalHandler = (
-  transferSkillOwnerForUserInternal as unknown as WrappedHandler<{
-    actorUserId: string;
-    slug: string;
-    toOwner: string;
-    reason?: string;
-  }>
-)._handler;
-const changeOwnerHandler = (
-  changeOwner as unknown as WrappedHandler<{
-    skillId: string;
-    ownerUserId: string;
-  }>
-)._handler;
-const setDuplicateHandler = (
-  setDuplicate as unknown as WrappedHandler<{
-    skillId: string;
-    canonicalSlug?: string;
-    canonicalSkillId?: string;
-  }>
-)._handler;
+const getSkillBySlugInternalHandler = getTestHandler<{ slug: string }>(getSkillBySlugInternal);
+const getBySlugHandler = getTestHandler<{ slug: string; ownerHandle?: string }>(getBySlug);
+const getSkillForPublishPreflightInternalHandler = getTestHandler<{
+  userId: string;
+  slug: string;
+  ownerPublisherId?: string;
+  sourceOwnerPublisherId?: string;
+  migrateOwner?: boolean;
+}>(getSkillForPublishPreflightInternal);
+const resolveVersionByHashHandler = getTestHandler<{
+  slug: string;
+  hash: string;
+  ownerHandle?: string;
+}>(resolveVersionByHash);
+const mergeOwnedSkillIntoCanonicalInternalHandler = getTestHandler<{
+  actorUserId: string;
+  sourceSlug: string;
+  targetSlug: string;
+  sourceOwnerHandle?: string;
+  targetOwnerHandle?: string;
+}>(mergeOwnedSkillIntoCanonicalInternal);
+const renameOwnedSkillInternalHandler = getTestHandler<{
+  actorUserId: string;
+  slug: string;
+  newSlug: string;
+}>(renameOwnedSkillInternal);
+const transferSkillOwnerForUserInternalHandler = getTestHandler<{
+  actorUserId: string;
+  slug: string;
+  toOwner: string;
+  reason?: string;
+}>(transferSkillOwnerForUserInternal);
+const changeOwnerHandler = getTestHandler<{
+  skillId: string;
+  ownerUserId: string;
+}>(changeOwner);
+const setDuplicateHandler = getTestHandler<{
+  skillId: string;
+  canonicalSlug?: string;
+  canonicalSkillId?: string;
+}>(setDuplicate);
 
 afterEach(() => {
   vi.mocked(getAuthUserId).mockReset();
@@ -103,6 +82,82 @@ function makeOrgAdminMembershipQuery() {
       };
     },
   };
+}
+
+function makeLegacySlugQuery<T>(skills: T[]) {
+  return vi.fn((table: string) => {
+    if (table === "skills") {
+      return {
+        withIndex: (name: string) => {
+          if (name !== "by_slug") throw new Error(`unexpected skills index ${name}`);
+          return {
+            take: async () => skills,
+            unique: async () => {
+              throw new Error("unique should not be used for legacy duplicate reads");
+            },
+          };
+        },
+      };
+    }
+    if (table === "skillSlugAliases") {
+      return {
+        withIndex: (name: string) => {
+          if (name !== "by_slug") {
+            throw new Error(`unexpected skillSlugAliases index ${name}`);
+          }
+          return { take: async () => [] };
+        },
+      };
+    }
+    throw new Error(`unexpected table ${table}`);
+  });
+}
+
+function makeAmbiguousSlugQuery<T>(skills: T[]) {
+  return vi.fn((table: string) => {
+    return {
+      withIndex: (name: string) => {
+        if (table === "skills" && name !== "by_slug") {
+          throw new Error(`unexpected skills index ${name}`);
+        }
+        if (table === "skillSlugAliases" && name !== "by_slug") {
+          throw new Error(`unexpected skillSlugAliases index ${name}`);
+        }
+        if (table !== "skills" && table !== "skillSlugAliases") {
+          throw new Error(`unexpected table ${table}`);
+        }
+        return {
+          take: async () => (table === "skills" ? skills : []),
+          unique: async () => {
+            throw new Error("unique should not be used for legacy duplicate reads");
+          },
+        };
+      },
+    };
+  });
+}
+
+function makeOwnerTransferActorGet() {
+  return vi.fn(async (id: string) => {
+    if (id === "users:actor") return { _id: "users:actor", role: "user" };
+    if (id === "publishers:personal") {
+      return {
+        _id: "publishers:personal",
+        kind: "user",
+        handle: "actor",
+        linkedUserId: "users:actor",
+      };
+    }
+    if (id === "publishers:org") {
+      return {
+        _id: "publishers:org",
+        kind: "org",
+        handle: "team",
+        displayName: "Team",
+      };
+    }
+    return null;
+  });
 }
 
 const defaultSkillStats = {
@@ -308,32 +363,7 @@ describe("skills ownership", () => {
             }
             return skills.find((entry) => entry._id === id) ?? null;
           }),
-          query: vi.fn((table: string) => {
-            if (table === "skills") {
-              return {
-                withIndex: (name: string) => {
-                  if (name !== "by_slug") throw new Error(`unexpected skills index ${name}`);
-                  return {
-                    take: async () => skills,
-                    unique: async () => {
-                      throw new Error("unique should not be used for legacy duplicate reads");
-                    },
-                  };
-                },
-              };
-            }
-            if (table === "skillSlugAliases") {
-              return {
-                withIndex: (name: string) => {
-                  if (name !== "by_slug") {
-                    throw new Error(`unexpected skillSlugAliases index ${name}`);
-                  }
-                  return { take: async () => [] };
-                },
-              };
-            }
-            throw new Error(`unexpected table ${table}`);
-          }),
+          query: makeLegacySlugQuery(skills),
         },
       } as never,
       { slug: "demo" } as never,
@@ -366,32 +396,7 @@ describe("skills ownership", () => {
           normalizeId: vi.fn(() => null),
           system: {},
           get: vi.fn(async (id: string) => skills.find((entry) => entry._id === id) ?? null),
-          query: vi.fn((table: string) => {
-            if (table === "skills") {
-              return {
-                withIndex: (name: string) => {
-                  if (name !== "by_slug") throw new Error(`unexpected skills index ${name}`);
-                  return {
-                    take: async () => skills,
-                    unique: async () => {
-                      throw new Error("unique should not be used for legacy duplicate reads");
-                    },
-                  };
-                },
-              };
-            }
-            if (table === "skillSlugAliases") {
-              return {
-                withIndex: (name: string) => {
-                  if (name !== "by_slug") {
-                    throw new Error(`unexpected skillSlugAliases index ${name}`);
-                  }
-                  return { take: async () => [] };
-                },
-              };
-            }
-            throw new Error(`unexpected table ${table}`);
-          }),
+          query: makeLegacySlugQuery(skills),
         },
       } as never,
       { slug: "demo" } as never,
@@ -432,27 +437,7 @@ describe("skills ownership", () => {
             }
             return skills.find((entry) => entry._id === id) ?? null;
           }),
-          query: vi.fn((table: string) => {
-            return {
-              withIndex: (name: string) => {
-                if (table === "skills" && name !== "by_slug") {
-                  throw new Error(`unexpected skills index ${name}`);
-                }
-                if (table === "skillSlugAliases" && name !== "by_slug") {
-                  throw new Error(`unexpected skillSlugAliases index ${name}`);
-                }
-                if (table !== "skills" && table !== "skillSlugAliases") {
-                  throw new Error(`unexpected table ${table}`);
-                }
-                return {
-                  take: async () => (table === "skills" ? skills : []),
-                  unique: async () => {
-                    throw new Error("unique should not be used for legacy duplicate reads");
-                  },
-                };
-              },
-            };
-          }),
+          query: makeAmbiguousSlugQuery(skills),
         },
       } as never,
       { slug: "demo", hash: "a".repeat(64) } as never,
@@ -501,27 +486,7 @@ describe("skills ownership", () => {
             }
             return skills.find((entry) => entry._id === id) ?? null;
           }),
-          query: vi.fn((table: string) => {
-            return {
-              withIndex: (name: string) => {
-                if (table === "skills" && name !== "by_slug") {
-                  throw new Error(`unexpected skills index ${name}`);
-                }
-                if (table === "skillSlugAliases" && name !== "by_slug") {
-                  throw new Error(`unexpected skillSlugAliases index ${name}`);
-                }
-                if (table !== "skills" && table !== "skillSlugAliases") {
-                  throw new Error(`unexpected table ${table}`);
-                }
-                return {
-                  take: async () => (table === "skills" ? skills : []),
-                  unique: async () => {
-                    throw new Error("unique should not be used for legacy duplicate reads");
-                  },
-                };
-              },
-            };
-          }),
+          query: makeAmbiguousSlugQuery(skills),
           system: {},
         },
         auth: { getUserIdentity: vi.fn() },
@@ -1467,26 +1432,7 @@ describe("skills ownership", () => {
       {
         db: {
           normalizeId: vi.fn(() => null),
-          get: vi.fn(async (id: string) => {
-            if (id === "users:actor") return { _id: "users:actor", role: "user" };
-            if (id === "publishers:personal") {
-              return {
-                _id: "publishers:personal",
-                kind: "user",
-                handle: "actor",
-                linkedUserId: "users:actor",
-              };
-            }
-            if (id === "publishers:org") {
-              return {
-                _id: "publishers:org",
-                kind: "org",
-                handle: "team",
-                displayName: "Team",
-              };
-            }
-            return null;
-          }),
+          get: makeOwnerTransferActorGet(),
           query: vi.fn((table: string) => {
             if (table === "skills") {
               return {
@@ -1639,26 +1585,7 @@ describe("skills ownership", () => {
         {
           db: {
             normalizeId: vi.fn(() => null),
-            get: vi.fn(async (id: string) => {
-              if (id === "users:actor") return { _id: "users:actor", role: "user" };
-              if (id === "publishers:personal") {
-                return {
-                  _id: "publishers:personal",
-                  kind: "user",
-                  handle: "actor",
-                  linkedUserId: "users:actor",
-                };
-              }
-              if (id === "publishers:org") {
-                return {
-                  _id: "publishers:org",
-                  kind: "org",
-                  handle: "team",
-                  displayName: "Team",
-                };
-              }
-              return null;
-            }),
+            get: makeOwnerTransferActorGet(),
             query: vi.fn((table: string) => {
               if (table === "skills") {
                 return {

@@ -1006,6 +1006,10 @@ field to be absent when querying registries that predate it.
 Notes:
 
 - Skills and Templates can also resolve through this route in the unified catalog.
+- Package read routes also accept a Template's publisher-qualified reference:
+  `@publisher/slug` resolves an unscoped Template `slug` owned by `publisher`
+  when no package has that exact scoped name. The response keeps the stored
+  `package.name`. Plugins resolve by exact name only.
 - Template package metadata may include bounded `templateManifestSummary` and
   `templateProfilePolicyVersion: 1`. The summary exposes identity and resource
   counts, never the full manifest, prompt body, bootstrap, or profile contents.

@@ -1,5 +1,17 @@
+import type {
+  ApiV1PackageCategoriesBatchRequest,
+  ApiV1PackageSecurityResponse,
+  ApiV1PluginOverviewResponse,
+  PackageListItem,
+  PackagePublishMetadata,
+  PackageAppealListStatus,
+  PackageModerationQueueStatus,
+  PackageOfficialMigrationListPhase,
+  PackageReportListStatus,
+  PluginCategorySlug,
+  ServerPackagePublishRequest,
+} from "clawhub-schema";
 import {
-  ApiRoutes,
   ApiV1PackageScanBatchRequestSchema,
   ApiV1PackageScanBatchStatusRequestSchema,
   ApiV1PackageCategoriesBatchRequestSchema,
@@ -15,7 +27,6 @@ import {
   PackageAppealResolveRequestSchema,
   PackageAppealRequestSchema,
   PackageOfficialMigrationUpsertRequestSchema,
-  PACKAGE_CATEGORY_BATCH_LIMIT,
   PackageRepairNameRequestSchema,
   PackageRepairRuntimeIdRequestSchema,
   PackageReportRequestSchema,
@@ -25,24 +36,13 @@ import {
   PackageTransferRequestSchema,
   PackageTrustedPublisherUpsertRequestSchema,
   PublishTokenMintRequestSchema,
-  formatSecurityAuditOverview,
-  aggregateAuditVerdict,
-  normalizeContentType,
-  isTemplateCategorySlug,
-  isPluginCategorySlug,
   parseArk,
-  type ApiV1PackageCategoriesBatchRequest,
-  type ApiV1PackageSecurityResponse,
-  type ApiV1PluginOverviewResponse,
-  type PackageListItem,
-  type PackagePublishMetadata,
-  type PackageAppealListStatus,
-  type PackageModerationQueueStatus,
-  type PackageOfficialMigrationListPhase,
-  type PackageReportListStatus,
-  type PluginCategorySlug,
-  type ServerPackagePublishRequest,
 } from "clawhub-schema";
+import { isTemplateCategorySlug, isPluginCategorySlug } from "clawhub-schema/catalogMetadata";
+import { PACKAGE_CATEGORY_BATCH_LIMIT } from "clawhub-schema/packageLimits";
+import { ApiRoutes } from "clawhub-schema/routes";
+import { formatSecurityAuditOverview, aggregateAuditVerdict } from "clawhub-schema/securityAudit";
+import { normalizeContentType } from "clawhub-schema/textFiles";
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
@@ -51,8 +51,9 @@ import { getOptionalActiveAuthUserIdFromAction } from "../lib/access";
 import { getOptionalApiTokenUserId, requireApiTokenUser } from "../lib/apiTokenAuth";
 import {
   PLUGIN_CATALOG_CURSOR_PREFIX,
-  compareCatalogItems,
+  type CatalogSearchEntry,
   compareCatalogItemsForSort,
+  compareCatalogSearchEntries,
   encodePluginCatalogCursor,
   ensureCatalogSourcePage,
   finalizeCatalogSource,
@@ -66,6 +67,7 @@ import {
 import { recordCatalogSearchObservation } from "../lib/catalogSearchObservations";
 import { parseClawPack, sha256Base64, sha256Hex } from "../lib/clawpack";
 import { areDownloadMetricsPaused } from "../lib/downloadMetricsSwitch";
+import { runActionRef, runMutationRef, runQueryRef } from "../lib/functionRefs";
 import {
   fetchGitHubRepositoryIdentity,
   GitHubActionsOidcJwksUnavailableError,
@@ -114,7 +116,6 @@ import {
   MAX_CLAWPACK_BYTES,
   MAX_PUBLISH_FILE_BYTES,
 } from "../lib/publishLimits";
-import { isCuratedSearchResult } from "../lib/searchRanking";
 import {
   getPublicSkillVersionAccessBlock,
   getPublicSkillVersionDownloadBlock,
@@ -284,18 +285,6 @@ function packagePublishErrorToResponse(
   const transient = transientConvexErrorResponse(error, headers, options);
   if (transient) return transient;
   return text(formatUserFacingErrorMessage(error, "Publish failed"), 400, headers);
-}
-
-async function runQueryRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
-  return (await ctx.runQuery(ref as never, args as never)) as T;
-}
-
-async function runActionRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
-  return (await ctx.runAction(ref as never, args as never)) as T;
-}
-
-async function runMutationRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
-  return (await ctx.runMutation(ref as never, args as never)) as T;
 }
 
 async function getOptionalViewerUserIdForRequest(ctx: ActionCtx, request: Request) {
@@ -708,12 +697,6 @@ type PluginOverviewItem = CatalogListItem & {
   trendingRank?: number;
 };
 
-type CatalogSearchEntry = {
-  score: number;
-  rankTier?: number;
-  package: CatalogListItem;
-};
-
 const UNIFIED_CATALOG_CURSOR_PREFIX = "pkgcatalog:";
 const LEGACY_PLUGIN_SEARCH_CURSOR_PREFIX = "pkgpluginsearch:";
 const SKILL_CATALOG_CURSOR_PREFIX = "skillcat:";
@@ -867,27 +850,6 @@ function decodePluginCatalogCursor(raw: string | null | undefined): PluginCatalo
 
 function normalizePublicPackageSort(sort: (typeof PACKAGE_LIST_SORT_VALUES)[number] | undefined) {
   return sort === "installs" ? "downloads" : sort;
-}
-
-export function compareCatalogSearchEntries(a: CatalogSearchEntry, b: CatalogSearchEntry) {
-  return (
-    Number(
-      isCuratedSearchResult({
-        isOfficial: b.package.isOfficial,
-        featured: typeof b.package.featuredAt === "number",
-      }),
-    ) -
-      Number(
-        isCuratedSearchResult({
-          isOfficial: a.package.isOfficial,
-          featured: typeof a.package.featuredAt === "number",
-        }),
-      ) ||
-    (a.rankTier ?? Number.POSITIVE_INFINITY) - (b.rankTier ?? Number.POSITIVE_INFINITY) ||
-    b.score - a.score ||
-    Number(b.package.isOfficial) - Number(a.package.isOfficial) ||
-    compareCatalogItems(a.package, b.package)
-  );
 }
 
 function toPublicCatalogSearchEntry(entry: CatalogSearchEntry) {

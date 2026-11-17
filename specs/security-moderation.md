@@ -19,8 +19,9 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Offline metadata replaces all ASCII controls and DEL, collapses whitespace,
   trims, and applies its own length limit. Offline Markdown preserves bundle
   whitespace and applies its existing nullable-input and truncation rules.
-- Keep export authentication, storage access, file exclusions, and byte budgets
-  at their existing caller boundaries.
+- `convex/lib/securityDatasetContent.ts` owns shared storage-backed content reads,
+  file exclusions, and per-file/per-artifact byte budgets. Callers retain export
+  authentication, row validation, response-wide budgets, pagination, and transport.
 
 ## Anonymous API ingress
 
@@ -545,6 +546,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   exact pre-publication worker through the production GitHub App as soon as the
   attempt becomes pending; the scheduled worker remains recovery for missed
   dispatches.
+- Legacy pre-publication scanner subprocesses use the shared worker runner with
+  capture limits of 32 MiB stdout and 1 MiB stderr. Output overflow and timeout
+  failures keep the attempt unpublished; scanner verdict exit codes remain
+  scanner-specific.
 - For pending-check and ready-finalization attempts, duplicate targeted recovery
   against a live foreign lease returns no work. It preserves the existing claim
   ID and expiry without falling through to another claim path; the same claim
@@ -1046,8 +1051,36 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Security workers back off and retry a transient claim API failure up to three
   times before draining their existing leases. Every failed call remains in
   claim-health counters, and the claim window/max-jobs limits still apply.
+  Only a claim failure that stops claiming (retries exhausted or a
+  non-transient error) counts as a worker failure and sets a non-zero exit;
+  a claim error recovered by retry does not fail an otherwise healthy shard.
   This does not retry terminal scan failures or change their job identities.
   Authentication/validation failures do not enter this transient retry path.
+- Shared and priority queue claims (`claimCodexScanJobLeases` without
+  assigned or targeted IDs) plan candidates in a read-only query and lease
+  them in a mutation that uses point reads only. A claim mutation must not read
+  the shared queue-head index ranges: every concurrent claim leases rows out
+  of those ranges, so at shard refill rates the old range-reading claim hit
+  OCC retry exhaustion ("Server Error" at the worker, from 2026-11-15). The plan
+  keeps the legacy tier order (manual, malicious signal, then
+  `CLAIM_SOURCE_ORDER`; priority lane stops after publish) over a bounded head
+  window, and candidates are shuffled only within a tier, so ordering inside
+  that window is approximate. The mutation re-checks status, `nextRunAt`, lane
+  eligibility and rollout claimability per row and skips a stale row. The action
+  replans a short claim that saw stale rows, so contention is not reported as
+  an empty queue. Once any lease commits, the action must return it even if
+  a later round fails; the worker then reads the short claim as a drain, which
+  costs refills for that run but never strands a lease. The planner query takes
+  `now` from the action because queries must not read the clock; the admission
+  mutation checks readiness on its own clock. Because the action's clock can
+  trail the mutation that enqueued a job, each tier also plans rows due within
+  a one-second allowance, but only up to one claim's worth, and they never
+  count toward the head window. Not-yet-due rows must not fill the window:
+  admission skips them, so ready work in lower tiers would go unplanned and the
+  worker would read the short claim as a drained queue and stop refilling.
+  The catalog lane, the Test deployment's catalog source, and blocked legacy
+  rows deeper than one bounded scan keep the legacy claim (a planned claim that
+  hits them hands its remaining limit to the legacy claim).
 - Recoverable bulk skill requests use administrator-scoped request IDs. Their
   job identities, cursor boundary and counters commit atomically in the permanent
   batch audit entry. An identical replay returns that receipt before traversing

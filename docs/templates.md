@@ -15,6 +15,17 @@ OpenClaw owns local inspection, new-agent planning, consent, and addition.
 Template publication and exact-name reads are available by default. Hosting a Template
 does not enable local preview or installation in OpenClaw.
 
+Add a published Template by its publisher-qualified reference, the same form
+skills use:
+
+```bash
+openclaw templates add @publisher/slug
+```
+
+The reference is the package name when that name is already scoped. A Template
+stored under an unscoped name, such as `release-brief` published by `maker`, is
+also read as `@maker/release-brief`; responses keep the stored package name.
+
 Package lists and search include eligible community and official Templates, subject
 to the existing publication, visibility, scanning, moderation, and access rules.
 A scoped package's current publisher must remain active and match its scope;
@@ -107,6 +118,12 @@ Keep native agent settings directly under `agent` in the same `CLAW.md` frontmat
 Supported groups are `groupChat`, `sandbox`, `tools`, `memory`, `heartbeat`, and
 `humanDelay`, alongside identity and purpose. `tools.profile` remains a native tool
 policy selection; bounded tool-grant and memory-consent checks still apply.
+
+`agent.model` may name one preferred model as an exact `provider/model` reference,
+such as `anthropic/claude-sonnet-4-5`. It is a preference, not a requirement:
+OpenClaw uses it when the Gateway adding the Template already has that model
+available and permitted, and otherwise keeps the Gateway's default model. A
+Template does not install a provider or supply credentials for it.
 
 ```yaml
 schemaVersion: 1
@@ -226,6 +243,11 @@ the agent identity and declared resource counts. `templateInventory` identifies
 each dependency as ClawHub (`ref`, exact `version`) or bundled (`path`, optional
 metadata-derived `name`). The website shows bundled paths without inventing
 registry versions. The full manifest and dependency bytes remain in the artifact.
+The Template page also lists `workspace` files that land where OpenClaw
+discovers them natively: `skills/**/SKILL.md` and `.agents/skills/**/SKILL.md`
+under Skills, `.openclaw/extensions/<id>/openclaw.plugin.json` under Plugins, and
+`HEARTBEAT.md` under Automations. These entries are labeled as workspace files
+and are not part of `templateInventory` or the summary counts.
 Projected bundled display names use the same 128-character bound as agent names.
 The complete normalized dependency inventory is limited to 256 KiB for release
 storage; this does not change the full native identity retained in the artifact.

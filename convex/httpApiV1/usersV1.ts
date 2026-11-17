@@ -2,6 +2,10 @@ import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { ADMIN_ONE_OFF_TEMPLATE, buildAdminOneOffEmail } from "../lib/emails";
+import {
+  runMutationRef as runUsersV1MutationRef,
+  runQueryRef as runUsersV1QueryRef,
+} from "../lib/functionRefs";
 import { applyRateLimit } from "../lib/httpRateLimit";
 import {
   getPathSegments,
@@ -37,20 +41,15 @@ const usersV1InternalRefs = internal as unknown as {
   };
 };
 
-async function runUsersV1QueryRef<T>(
-  ctx: Pick<ActionCtx, "runQuery">,
-  ref: unknown,
-  args: unknown,
-): Promise<T> {
-  return (await ctx.runQuery(ref as never, args as never)) as T;
-}
-
-async function runUsersV1MutationRef<T>(
-  ctx: Pick<ActionCtx, "runMutation">,
-  ref: unknown,
-  args: unknown,
-): Promise<T> {
-  return (await ctx.runMutation(ref as never, args as never)) as T;
+function userOperationErrorResponse(error: unknown, fallbackMessage: string, headers: HeadersInit) {
+  const message = error instanceof Error ? error.message : fallbackMessage;
+  if (message.toLowerCase().includes("forbidden")) {
+    return text("Forbidden", 403, headers);
+  }
+  if (message.toLowerCase().includes("not found")) {
+    return text(message, 404, headers);
+  }
+  return text(message, 400, headers);
 }
 
 function getBanAppealsServiceToken() {
@@ -76,6 +75,19 @@ function requireBanAppealsServiceOrResponse(request: Request, headers: HeadersIn
   return { ok: true as const };
 }
 
+const adminJsonHandlers = new Map<string, typeof handleAdminReserve>([
+  ["reclassify-ban", handleAdminReclassifyBan],
+  ["reclaim", handleAdminReclaim],
+  ["reserve", handleAdminReserve],
+  ["email", handleAdminStaffEmail],
+  ["publisher", handleAdminEnsurePublisher],
+  ["publisher-delete", handleAdminDeletePublisher],
+  ["publisher-official", handleAdminOfficialPublisherPost],
+  ["publisher-member", handleAdminRemovePublisherMember],
+  ["publisher-reclaim", handleAdminReclaimDeletedOrgHandle],
+  ["publisher-recovery", handleAdminRecoverPersonalPublisher],
+]);
+
 export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request) {
   const rate = await applyRateLimit(ctx, request, "write");
   if (!rate.ok) return rate.response;
@@ -85,23 +97,17 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
     return text("Not found", 404, rate.headers);
   }
   const action = segments[0];
+  const adminJsonHandler = adminJsonHandlers.get(action);
   if (
-    action !== "ban" &&
-    action !== "unban" &&
-    action !== "lift-moderation-hold" &&
-    action !== "role" &&
-    action !== "reclassify-ban" &&
-    action !== "ban-appeal-unban" &&
-    action !== "reclaim" &&
-    action !== "reserve" &&
-    action !== "email" &&
-    action !== "publisher" &&
-    action !== "publisher-delete" &&
-    action !== "publisher-official" &&
-    action !== "publisher-member" &&
-    action !== "publisher-profile" &&
-    action !== "publisher-reclaim" &&
-    action !== "publisher-recovery"
+    !adminJsonHandler &&
+    ![
+      "ban",
+      "unban",
+      "lift-moderation-hold",
+      "role",
+      "ban-appeal-unban",
+      "publisher-profile",
+    ].includes(action)
   ) {
     return text("Not found", 404, rate.headers);
   }
@@ -127,69 +133,15 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
   const actorUserId = authResult.userId;
   const actorUser = authResult.user;
 
-  if (action === "reclassify-ban") {
+  if (adminJsonHandler) {
     const admin = requireAdminOrResponse(actorUser, rate.headers);
     if (!admin.ok) return admin.response;
-    return handleAdminReclassifyBan(ctx, payload, actorUserId, rate.headers);
+    return adminJsonHandler(ctx, payload, actorUserId, rate.headers);
   }
 
   if (action === "lift-moderation-hold") {
     const admin = requireAdminOrResponse(actorUser, rate.headers);
     if (!admin.ok) return admin.response;
-  }
-
-  if (action === "reclaim") {
-    const admin = requireAdminOrResponse(actorUser, rate.headers);
-    if (!admin.ok) return admin.response;
-    return handleAdminReclaim(ctx, request, payload, actorUserId, rate.headers);
-  }
-
-  if (action === "reserve") {
-    const admin = requireAdminOrResponse(actorUser, rate.headers);
-    if (!admin.ok) return admin.response;
-    return handleAdminReserve(ctx, payload, actorUserId, rate.headers);
-  }
-
-  if (action === "email") {
-    const admin = requireAdminOrResponse(actorUser, rate.headers);
-    if (!admin.ok) return admin.response;
-    return handleAdminStaffEmail(ctx, payload, actorUserId, rate.headers);
-  }
-
-  if (action === "publisher") {
-    const admin = requireAdminOrResponse(actorUser, rate.headers);
-    if (!admin.ok) return admin.response;
-    return handleAdminEnsurePublisher(ctx, payload, actorUserId, rate.headers);
-  }
-
-  if (action === "publisher-delete") {
-    const admin = requireAdminOrResponse(actorUser, rate.headers);
-    if (!admin.ok) return admin.response;
-    return handleAdminDeletePublisher(ctx, payload, actorUserId, rate.headers);
-  }
-
-  if (action === "publisher-official") {
-    const admin = requireAdminOrResponse(actorUser, rate.headers);
-    if (!admin.ok) return admin.response;
-    return handleAdminOfficialPublisherPost(ctx, payload, actorUserId, rate.headers);
-  }
-
-  if (action === "publisher-member") {
-    const admin = requireAdminOrResponse(actorUser, rate.headers);
-    if (!admin.ok) return admin.response;
-    return handleAdminRemovePublisherMember(ctx, payload, actorUserId, rate.headers);
-  }
-
-  if (action === "publisher-reclaim") {
-    const admin = requireAdminOrResponse(actorUser, rate.headers);
-    if (!admin.ok) return admin.response;
-    return handleAdminReclaimDeletedOrgHandle(ctx, payload, actorUserId, rate.headers);
-  }
-
-  if (action === "publisher-recovery") {
-    const admin = requireAdminOrResponse(actorUser, rate.headers);
-    if (!admin.ok) return admin.response;
-    return handleAdminRecoverPersonalPublisher(ctx, payload, actorUserId, rate.headers);
   }
 
   const handleRaw = typeof payload.handle === "string" ? payload.handle.trim() : "";
@@ -230,14 +182,7 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
       });
       return json(result, 200, rate.headers);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Ban failed";
-      if (message.toLowerCase().includes("forbidden")) {
-        return text("Forbidden", 403, rate.headers);
-      }
-      if (message.toLowerCase().includes("not found")) {
-        return text(message, 404, rate.headers);
-      }
-      return text(message, 400, rate.headers);
+      return userOperationErrorResponse(error, "Ban failed", rate.headers);
     }
   }
 
@@ -254,14 +199,7 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
       });
       return json(result, 200, rate.headers);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unban failed";
-      if (message.toLowerCase().includes("forbidden")) {
-        return text("Forbidden", 403, rate.headers);
-      }
-      if (message.toLowerCase().includes("not found")) {
-        return text(message, 404, rate.headers);
-      }
-      return text(message, 400, rate.headers);
+      return userOperationErrorResponse(error, "Unban failed", rate.headers);
     }
   }
 
@@ -286,14 +224,7 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
       });
       return json(result, 200, rate.headers);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Moderation hold lift failed";
-      if (message.toLowerCase().includes("forbidden")) {
-        return text("Forbidden", 403, rate.headers);
-      }
-      if (message.toLowerCase().includes("not found")) {
-        return text(message, 404, rate.headers);
-      }
-      return text(message, 400, rate.headers);
+      return userOperationErrorResponse(error, "Moderation hold lift failed", rate.headers);
     }
   }
 
@@ -309,14 +240,7 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
     });
     return json({ ok: true, role: result.role ?? role }, 200, rate.headers);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Role change failed";
-    if (message.toLowerCase().includes("forbidden")) {
-      return text("Forbidden", 403, rate.headers);
-    }
-    if (message.toLowerCase().includes("not found")) {
-      return text(message, 404, rate.headers);
-    }
-    return text(message, 400, rate.headers);
+    return userOperationErrorResponse(error, "Role change failed", rate.headers);
   }
 }
 
@@ -346,14 +270,7 @@ async function handleAdminDeletePublisher(
     );
     return json(result, 200, headers);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Publisher delete failed";
-    if (message.toLowerCase().includes("forbidden")) {
-      return text("Forbidden", 403, headers);
-    }
-    if (message.toLowerCase().includes("not found")) {
-      return text(message, 404, headers);
-    }
-    return text(message, 400, headers);
+    return userOperationErrorResponse(error, "Publisher delete failed", headers);
   }
 }
 
@@ -604,14 +521,7 @@ async function handleAdminReclassifyBan(
     );
     return json(result, 200, headers);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Ban reclassification failed";
-    if (message.toLowerCase().includes("forbidden")) {
-      return text("Forbidden", 403, headers);
-    }
-    if (message.toLowerCase().includes("not found")) {
-      return text(message, 404, headers);
-    }
-    return text(message, 400, headers);
+    return userOperationErrorResponse(error, "Ban reclassification failed", headers);
   }
 }
 
@@ -655,7 +565,6 @@ export async function usersGetRouterV1Handler(ctx: ActionCtx, request: Request) 
  */
 async function handleAdminReclaim(
   ctx: ActionCtx,
-  _request: Request,
   payload: Record<string, unknown>,
   actorUserId: Id<"users">,
   headers: HeadersInit,
@@ -929,14 +838,7 @@ async function handleAdminEnsurePublisher(
     });
     return json(result, 200, headers);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Publisher ensure failed";
-    if (message.toLowerCase().includes("forbidden")) {
-      return text("Forbidden", 403, headers);
-    }
-    if (message.toLowerCase().includes("not found")) {
-      return text(message, 404, headers);
-    }
-    return text(message, 400, headers);
+    return userOperationErrorResponse(error, "Publisher ensure failed", headers);
   }
 }
 
@@ -1050,10 +952,7 @@ async function handleBanAppealUnban(
     );
     return json(result, 200, headers);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Ban appeal unban failed";
-    if (message.toLowerCase().includes("forbidden")) return text("Forbidden", 403, headers);
-    if (message.toLowerCase().includes("not found")) return text(message, 404, headers);
-    return text(message, 400, headers);
+    return userOperationErrorResponse(error, "Ban appeal unban failed", headers);
   }
 }
 
@@ -1106,14 +1005,7 @@ async function handleAdminRemovePublisherMember(
     );
     return json(result, 200, headers);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Publisher member removal failed";
-    if (message.toLowerCase().includes("forbidden")) {
-      return text("Forbidden", 403, headers);
-    }
-    if (message.toLowerCase().includes("not found")) {
-      return text(message, 404, headers);
-    }
-    return text(message, 400, headers);
+    return userOperationErrorResponse(error, "Publisher member removal failed", headers);
   }
 }
 

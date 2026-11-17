@@ -1,5 +1,5 @@
-import type { Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import type { LeaderboardEntry } from "./leaderboardEntry";
 import { isSkillSuspicious } from "./skillSafety";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -7,12 +7,7 @@ export const TRENDING_DAYS = 7;
 export const TRENDING_LEADERBOARD_KIND = "trending";
 export const TRENDING_NON_SUSPICIOUS_LEADERBOARD_KIND = "trending_non_suspicious";
 
-export type LeaderboardEntry = {
-  skillId: Id<"skills">;
-  score: number;
-  installs: number;
-  downloads: number;
-};
+export type { LeaderboardEntry } from "./leaderboardEntry";
 
 export function toDayKey(timestamp: number) {
   return Math.floor(timestamp / DAY_MS);
@@ -22,13 +17,6 @@ export function getTrendingRange(now: number) {
   const endDay = toDayKey(now);
   const startDay = endDay - (TRENDING_DAYS - 1);
   return { startDay, endDay };
-}
-
-export async function queryDailyStats(ctx: QueryCtx | MutationCtx, day: number) {
-  return ctx.db
-    .query("skillDailyStats")
-    .withIndex("by_day", (q) => q.eq("day", day))
-    .collect();
 }
 
 export function takeTopTrendingEntries(entries: LeaderboardEntry[], limit: number) {

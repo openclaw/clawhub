@@ -64,7 +64,9 @@ import {
 } from "../../schema/index.js";
 import { buildGitHubFolderContentHash, hashSkillFiles } from "../../skills.js";
 import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
+import { pathExists } from "../fs.js";
 import { withLoaderErrorHandling } from "../loader.js";
+import { writeJsonIfRequested } from "../output.js";
 import { getRegistry } from "../registry.js";
 import { titleCase } from "../slug.js";
 import type { GlobalOpts } from "../types.js";
@@ -518,10 +520,7 @@ export async function cmdGetPackageTrustedPublisher(
   return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequestPackageTrustedPublisher(registry, trimmed, token);
     spinner.stop();
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-      return;
-    }
+    if (writeJsonIfRequested(options.json, result)) return;
     if (!result.trustedPublisher) {
       console.log("No trusted publisher configured.");
       return;
@@ -561,10 +560,7 @@ export async function cmdSetPackageTrustedPublisher(
       ApiV1PackageTrustedPublisherResponseSchema,
     );
     spinner.stop();
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-      return;
-    }
+    if (writeJsonIfRequested(options.json, result)) return;
     console.log(`Trusted publisher saved for ${trimmed}.`);
     if (result.trustedPublisher) {
       printTrustedPublisher(result.trustedPublisher);
@@ -592,10 +588,7 @@ export async function cmdDeletePackageTrustedPublisher(
       ApiV1DeleteResponseSchema,
     );
     spinner.stop();
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-      return;
-    }
+    if (writeJsonIfRequested(options.json, result)) return;
     console.log(`Trusted publisher deleted for ${trimmed}.`);
   });
 }
@@ -750,8 +743,8 @@ export async function cmdValidatePackage(
 
 async function createPluginInspectorConfigIfNeeded(sourcePath: string) {
   if (
-    (await fileExists(join(sourcePath, "plugin-inspector.config.json"))) ||
-    (await fileExists(join(sourcePath, ".plugin-inspector.json")))
+    (await pathExists(join(sourcePath, "plugin-inspector.config.json"))) ||
+    (await pathExists(join(sourcePath, ".plugin-inspector.json")))
   ) {
     return null;
   }
@@ -785,10 +778,6 @@ async function createPluginInspectorConfigIfNeeded(sourcePath: string) {
     )}\n`,
   );
   return { dir: configDir, path: configPath };
-}
-
-async function fileExists(path: string) {
-  return Boolean(await stat(path).catch(() => null));
 }
 
 function hasPackagePluginInspectorConfig(packageJson: Record<string, unknown> | null) {
@@ -1534,10 +1523,7 @@ export async function cmdDownloadPackage(
       npmIntegrity: artifactResult.artifact.kind === "npm-pack" ? identity.npmIntegrity : undefined,
       npmShasum: artifactResult.artifact.kind === "npm-pack" ? identity.npmShasum : undefined,
     };
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
-      return;
-    }
+    if (writeJsonIfRequested(options.json, output)) return;
     console.log(`Downloaded ${artifactResult.package.name}@${targetVersion} -> ${outputPath}`);
     console.log(`Artifact: ${artifactResult.artifact.kind}`);
     console.log(`SHA-256: ${identity.sha256}`);
@@ -1606,10 +1592,7 @@ export async function cmdVerifyPackage(
       },
       verified: Boolean(expectedSha256 || expectedNpmIntegrity || expectedNpmShasum),
     };
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
-      return;
-    }
+    if (writeJsonIfRequested(options.json, output)) return;
     console.log(`Path: ${targetFile}`);
     console.log(`SHA-256: ${identity.sha256}`);
     console.log(`npm integrity: ${identity.npmIntegrity}`);
@@ -1782,10 +1765,7 @@ export async function cmdReportPackage(
       ApiV1PackageReportResponseSchema,
     );
     spinner?.stop();
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-      return;
-    }
+    if (writeJsonIfRequested(options.json, result)) return;
     if (result.alreadyReported) {
       console.log(`Already reported ${trimmed}.`);
       return;
@@ -1813,10 +1793,7 @@ export async function cmdPackageModerationStatus(
     ApiV1PackageModerationStatusResponseSchema,
   );
 
-  if (options.json) {
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    return;
-  }
+  if (writeJsonIfRequested(options.json, result)) return;
 
   console.log(`${result.package.name} moderation`);
   console.log(`  package scan: ${result.package.scanStatus ?? "unknown"}`);
@@ -2141,10 +2118,7 @@ export async function cmdPackagePublication(
   const token = await getOptionalAuthToken(registry);
   const result = await loadPackagePublication(registry, trimmed, version, token);
 
-  if (options.json) {
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    return;
-  }
+  if (writeJsonIfRequested(options.json, result)) return;
 
   console.log(`${result.name}@${result.version}`);
   printPackagePublication(result);
@@ -2260,10 +2234,7 @@ export async function cmdPackageReadiness(
     ApiV1PackageReadinessResponseSchema,
   );
 
-  if (options.json) {
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    return;
-  }
+  if (writeJsonIfRequested(options.json, result)) return;
 
   console.log(`${result.package.name} readiness: ${result.ready ? "ready" : "blocked"}`);
   for (const check of result.checks) {
@@ -2292,10 +2263,7 @@ export async function cmdPackageMigrationStatus(
     ApiV1PackageReadinessResponseSchema,
   );
 
-  if (options.json) {
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    return;
-  }
+  if (writeJsonIfRequested(options.json, result)) return;
 
   const version = result.package.latestVersion ?? "no release";
   console.log(`${result.package.name} migration: ${result.ready ? "ready" : "blocked"}`);
@@ -3366,7 +3334,10 @@ async function resolvePackagePublishToken(params: {
     if (params.spinner) {
       params.spinner.text = "Trusted publishing unavailable, falling back to ClawHub token";
     }
-    return { kind: "user" as const, token: await requireAuthToken(params.registry) };
+    // Do not let a missing fallback token hide the trusted-publishing failure.
+    const token = await getOptionalAuthToken(params.registry);
+    if (!token) throw error;
+    return { kind: "user" as const, token };
   }
 }
 

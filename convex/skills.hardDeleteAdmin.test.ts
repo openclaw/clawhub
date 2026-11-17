@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 
 import { describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { hardDeleteForAdminInternal } from "./skills";
 
 type HardDeleteForAdminArgs = {
@@ -23,16 +24,9 @@ type HardDeleteForAdminResult = {
   confirmationToken: string;
 };
 
-type WrappedHandler<TArgs, TResult> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
-
-const hardDeleteForAdminHandler = (
-  hardDeleteForAdminInternal as unknown as WrappedHandler<
-    HardDeleteForAdminArgs,
-    HardDeleteForAdminResult
-  >
-)._handler;
+const hardDeleteForAdminHandler = getTestHandler<HardDeleteForAdminArgs, HardDeleteForAdminResult>(
+  hardDeleteForAdminInternal,
+);
 
 function makeCtx() {
   const skill = {

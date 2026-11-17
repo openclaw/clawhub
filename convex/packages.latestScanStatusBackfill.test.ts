@@ -2,6 +2,7 @@
 
 import { getFunctionName } from "convex/server";
 import { describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { backfillLatestPackageScanStatus } from "./packages";
 
 const auth = vi.hoisted(() => ({ requireUserFromAction: vi.fn() }));
@@ -10,8 +11,7 @@ vi.mock("./lib/access", async (original) => ({
   requireUserFromAction: auth.requireUserFromAction,
 }));
 
-type Handler = { _handler: (ctx: unknown, args: Record<string, unknown>) => Promise<unknown> };
-const backfillLatest = (backfillLatestPackageScanStatus as unknown as Handler)._handler;
+const backfillLatest = getTestHandler<Record<string, unknown>>(backfillLatestPackageScanStatus);
 
 describe("packages.backfillLatestPackageScanStatus", () => {
   it("requires admin authorization before rewriting catalog scanStatus", async () => {

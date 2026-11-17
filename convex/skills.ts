@@ -1,16 +1,14 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
+import type { ApiV1SkillPublicationResponse, SkillCategorySlug } from "clawhub-schema";
 import {
-  decodeUtf8Text,
   getCatalogTopicSlugs,
-  INTERNAL_UNCATEGORIZED_CATEGORY,
   isSkillCategorySlug,
   normalizeCatalogTopic,
   normalizeCatalogTopics,
   resolveSkillCategories,
   resolveStoredSkillCategories,
-  type ApiV1SkillPublicationResponse,
-  type SkillCategorySlug,
-} from "clawhub-schema";
+} from "clawhub-schema/catalogMetadata";
+import { decodeUtf8Text } from "clawhub-schema/textFiles";
 import { getPage, type IndexKey, paginator } from "convex-helpers/server/pagination";
 import { paginationOptsValidator, type PaginationResult } from "convex/server";
 import { ConvexError, v } from "convex/values";
@@ -44,6 +42,10 @@ import {
 } from "./lib/artifactModeration";
 import { getSkillBadgeMap, getSkillBadgeMaps, isSkillHighlighted } from "./lib/badges";
 import { scheduleNextBatchIfNeeded } from "./lib/batching";
+import {
+  type CatalogTextMatch as SkillCatalogSearchMatch,
+  matchCatalogText,
+} from "./lib/catalogTextMatch";
 import { generateChangelogPreview as buildChangelogPreview } from "./lib/changelog";
 import {
   ACTIVITY_TREND_DAYS,
@@ -128,7 +130,7 @@ import {
   rankedSearchKey,
   type SearchTrustSignals,
 } from "./lib/searchRanking";
-import { matchesAllTokens, matchesExploratoryTokenPrefixes, tokenize } from "./lib/searchText";
+import { tokenize } from "./lib/searchText";
 import {
   aigAnalysisValidator,
   skillSpectorAnalysisValidator,
@@ -150,7 +152,6 @@ import {
   type PublicSkillVersionParsed,
 } from "./lib/skillPageRead";
 import { isHostedSkillPresentationIconPath } from "./lib/skillPresentation";
-import { skillPresentationValidator } from "./lib/skillPresentationValidator";
 import {
   readSkillPublicationProgress,
   readSkillVersionPublicationProgress,
@@ -164,7 +165,8 @@ import {
   qualityAssessmentValidator,
   type StoredQualityAssessment,
 } from "./lib/skillQualityContract";
-import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
+import { hashSkillFiles } from "./lib/skills/fileHash";
+import { getFrontmatterValue } from "./lib/skills/frontmatterValue";
 import { getPublicSkillMetadataOwner } from "./lib/skills/publicVersions";
 import {
   getSkillBySlugForPublisher,
@@ -197,7 +199,11 @@ import {
 import { normalizeSkillTags } from "./lib/skillTags";
 import { fetchText } from "./lib/storageText";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
-import schema from "./schema";
+import schema, {
+  llmAnalysisValidator,
+  skillParsedMetadataValidator,
+  skillSourceProvenanceValidator,
+} from "./schema";
 import { consumeSkillPublishUploads } from "./skillPublishUploads";
 
 const MAX_OWNER_SUMMARY_LENGTH = 500;
@@ -218,7 +224,6 @@ type FilePreviewResult = {
   size: number;
   sha256: string;
 };
-const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
 
 const MAX_DIFF_FILE_BYTES = 200 * 1024;
 const MAX_LIST_LIMIT = 50;
@@ -1107,6 +1112,15 @@ function buildReleasedUnpublishedSkillSlug(skill: Pick<Doc<"skills">, "_id">, at
   // the public slug validator, so released hidden rows cannot squat on public
   // slug space after their unpublished reservation expires.
   return `__unpublished_${idPart || "skill"}${suffix}`;
+}
+
+function availableSlugResult() {
+  return {
+    available: true,
+    reason: "available" as const,
+    message: null,
+    url: null,
+  };
 }
 
 function slugValidationAvailabilityFailure(error: unknown) {
@@ -2371,12 +2385,7 @@ export const checkSlugAvailability = query({
       } catch (error) {
         return slugValidationAvailabilityFailure(error);
       }
-      return {
-        available: true,
-        reason: "available" as const,
-        message: null,
-        url: null,
-      };
+      return availableSlugResult();
     }
 
     const unpublishedReservationExpiresAt = await getUnpublishedSlugReservationExpiresAt(
@@ -2397,12 +2406,7 @@ export const checkSlugAvailability = query({
         } catch (error) {
           return slugValidationAvailabilityFailure(error);
         }
-        return {
-          available: true,
-          reason: "available" as const,
-          message: null,
-          url: null,
-        };
+        return availableSlugResult();
       }
       return {
         available: false,
@@ -2417,22 +2421,12 @@ export const checkSlugAvailability = query({
       : requestedPublisher.kind === "user" && requestedPublisher.linkedUserId === skill.ownerUserId;
 
     if (userId && skill.ownerUserId === userId && requestedPublisherMatchesSkill) {
-      return {
-        available: true,
-        reason: "available" as const,
-        message: null,
-        url: null,
-      };
+      return availableSlugResult();
     }
     if (userId && skill.ownerPublisherId && requestedPublisherMatchesSkill) {
       const membership = await getPublisherMembership(ctx, skill.ownerPublisherId, userId);
       if (membership && isPublisherRoleAllowed(membership.role, ["publisher"])) {
-        return {
-          available: true,
-          reason: "available" as const,
-          message: null,
-          url: null,
-        };
+        return availableSlugResult();
       }
     }
 
@@ -2458,12 +2452,7 @@ export const checkSlugAvailability = query({
           callerProviderAccountId,
         )
       ) {
-        return {
-          available: true,
-          reason: "available" as const,
-          message: null,
-          url: null,
-        };
+        return availableSlugResult();
       }
     }
 
@@ -3101,11 +3090,7 @@ export const list = query({
     if (args.batch) {
       if (args.batch === "highlighted") {
         const skills = await loadHighlightedSkills(ctx, limit);
-        const withBadges = await attachBadgesToSkills(ctx, skills);
-        const visibleSkills = await filterSkillsByActiveOwner(ctx, withBadges);
-        return visibleSkills
-          .map((skill) => toPublicSkill(skill))
-          .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill));
+        return await mapDashboardSkillPage(ctx, skills, false);
       }
       const entries = await ctx.db
         .query("skills")
@@ -3113,11 +3098,7 @@ export const list = query({
         .order("desc")
         .take(takeLimit);
       const filtered = entries.filter((skill) => !skill.softDeletedAt).slice(0, limit);
-      const withBadges = await attachBadgesToSkills(ctx, filtered);
-      const visibleSkills = await filterSkillsByActiveOwner(ctx, withBadges);
-      return visibleSkills
-        .map((skill) => toPublicSkill(skill))
-        .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill));
+      return await mapDashboardSkillPage(ctx, filtered, false);
     }
     const ownerPublisherId = args.ownerPublisherId;
     if (ownerPublisherId) {
@@ -3161,18 +3142,7 @@ export const list = query({
           all.findIndex((candidate) => candidate._id === skill._id) === index,
       );
       const filtered = combined.slice(0, limit);
-      const withBadges = await attachBadgesToSkills(ctx, filtered);
-
-      if (isOwnDashboard) {
-        return await Promise.all(
-          withBadges.map(async (skill) => await toDashboardSkillListItem(ctx, skill)),
-        );
-      }
-
-      const visibleSkills = await filterSkillsByActiveOwner(ctx, withBadges);
-      return visibleSkills
-        .map((skill) => toPublicSkill(skill))
-        .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill));
+      return await mapDashboardSkillPage(ctx, filtered, isOwnDashboard);
     }
     const ownerUserId = args.ownerUserId;
     if (ownerUserId) {
@@ -3185,26 +3155,11 @@ export const list = query({
         .take(takeLimit);
       const scoped = await filterSkillsForOwnerUserDashboard(ctx, entries, ownerUserId);
       const filtered = scoped.filter((skill) => !skill.softDeletedAt).slice(0, limit);
-      const withBadges = await attachBadgesToSkills(ctx, filtered);
-
-      if (isOwnDashboard) {
-        return await Promise.all(
-          withBadges.map(async (skill) => await toDashboardSkillListItem(ctx, skill)),
-        );
-      }
-
-      const visibleSkills = await filterSkillsByActiveOwner(ctx, withBadges);
-      return visibleSkills
-        .map((skill) => toPublicSkill(skill))
-        .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill));
+      return await mapDashboardSkillPage(ctx, filtered, isOwnDashboard);
     }
     const entries = await ctx.db.query("skills").order("desc").take(takeLimit);
     const filtered = entries.filter((skill) => !skill.softDeletedAt).slice(0, limit);
-    const withBadges = await attachBadgesToSkills(ctx, filtered);
-    const visibleSkills = await filterSkillsByActiveOwner(ctx, withBadges);
-    return visibleSkills
-      .map((skill) => toPublicSkill(skill))
-      .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill));
+    return await mapDashboardSkillPage(ctx, filtered, false);
   },
 });
 
@@ -4375,22 +4330,24 @@ export const listPublicPage = query({
   },
 });
 
+const publicListSortValidator = v.optional(
+  v.union(
+    v.literal("default"),
+    v.literal("recommended"),
+    v.literal("newest"),
+    v.literal("updated"),
+    v.literal("downloads"),
+    v.literal("installs"),
+    v.literal("stars"),
+    v.literal("name"),
+  ),
+);
+
 /** @deprecated V2 is gutted — returns empty results with no DB reads. */
 export const listPublicPageV2 = query({
   args: {
     paginationOpts: paginationOptsValidator,
-    sort: v.optional(
-      v.union(
-        v.literal("default"),
-        v.literal("recommended"),
-        v.literal("newest"),
-        v.literal("updated"),
-        v.literal("downloads"),
-        v.literal("installs"),
-        v.literal("stars"),
-        v.literal("name"),
-      ),
-    ),
+    sort: publicListSortValidator,
     dir: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
     highlightedOnly: v.optional(v.boolean()),
     nonSuspiciousOnly: v.optional(v.boolean()),
@@ -4740,18 +4697,7 @@ export const listPublicPageV4 = query({
   args: {
     cursor: v.optional(v.string()),
     numItems: v.optional(v.number()),
-    sort: v.optional(
-      v.union(
-        v.literal("default"),
-        v.literal("recommended"),
-        v.literal("newest"),
-        v.literal("updated"),
-        v.literal("downloads"),
-        v.literal("installs"),
-        v.literal("stars"),
-        v.literal("name"),
-      ),
-    ),
+    sort: publicListSortValidator,
     dir: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
     highlightedOnly: v.optional(v.boolean()),
     officialOnly: v.optional(v.boolean()),
@@ -5143,12 +5089,7 @@ async function listSkillTopicFilteredPage(
       if (
         digest &&
         (!opts.excludeCurated || !isCuratedSkillDigest(digest)) &&
-        digestPassesPublicListFilters(digest, {
-          categorySlug: opts.categorySlug,
-          topic: opts.topic,
-          categoryKeywords: opts.categoryKeywords,
-          excludeCategoryKeywords: opts.excludeCategoryKeywords,
-        })
+        digestPassesPublicListFilters(digest, opts)
       ) {
         const item = await buildPublicSkillEntryFromDigest(ctx, digest);
         if (item) items.push(item);
@@ -5488,18 +5429,7 @@ export const listPublicApiPageV1 = query({
     cursor: v.optional(v.string()),
     numItems: v.optional(v.number()),
     prefix: v.optional(v.string()),
-    sort: v.optional(
-      v.union(
-        v.literal("default"),
-        v.literal("recommended"),
-        v.literal("newest"),
-        v.literal("updated"),
-        v.literal("downloads"),
-        v.literal("installs"),
-        v.literal("stars"),
-        v.literal("name"),
-      ),
-    ),
+    sort: publicListSortValidator,
     dir: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
     nonSuspiciousOnly: v.optional(v.boolean()),
   },
@@ -5850,75 +5780,20 @@ async function collectSkillPackageCatalogPage<TRow>(
   };
 }
 
-type SkillCatalogSearchMatch = {
-  rankTier: number;
-  score: number;
-};
-
 function skillCatalogSearchMatch(
   digest: Doc<"skillSearchDigest">,
   queryText: string,
 ): SkillCatalogSearchMatch | null {
-  const needle = queryText.toLowerCase();
-  const queryTokens = tokenize(queryText);
-  if (queryTokens.length === 0) return null;
-  const slug = digest.slug.toLowerCase();
-  const display = digest.displayName.toLowerCase();
-  const slugTokens = tokenize(slug);
-  const displayTokens = tokenize(display);
-  let score = 0;
-  let rankTier = Number.POSITIVE_INFINITY;
-
-  const setMatch = (tier: number, boost: number) => {
-    score += boost;
-    rankTier = Math.min(rankTier, tier);
-  };
-
-  if (slug === needle) setMatch(0, 200);
-  else if (slug.startsWith(needle)) setMatch(1, 120);
-  else if (slug.includes(needle)) setMatch(1, 80);
-
-  if (display === needle) setMatch(0, 150);
-  else if (display.startsWith(needle)) setMatch(1, 70);
-  else if (display.includes(needle)) setMatch(1, 40);
-
-  if (matchesAllTokens(queryTokens, [...slugTokens, ...displayTokens], (a, b) => a === b)) {
-    setMatch(1, 65);
-  } else if (
-    matchesAllTokens(queryTokens, [...slugTokens, ...displayTokens], (a, b) => a.startsWith(b))
-  ) {
-    setMatch(1, 35);
-  }
-
-  const taxonomyQuery = normalizeCatalogTopic(queryText);
-  const categories = (digest.categories ?? []).filter(
-    (category) => category !== INTERNAL_UNCATEGORIZED_CATEGORY,
+  return matchCatalogText(
+    {
+      name: digest.slug,
+      displayName: digest.displayName,
+      categories: digest.categories,
+      topics: digest.topics,
+      summary: digest.summary,
+    },
+    queryText,
   );
-  const topicSlugs = getCatalogTopicSlugs(digest.topics);
-  if (taxonomyQuery && (categories.includes(taxonomyQuery) || topicSlugs.includes(taxonomyQuery))) {
-    setMatch(2, 25);
-  }
-  if (
-    matchesExploratoryTokenPrefixes(
-      queryTokens,
-      [...categories, ...(digest.topics ?? [])],
-      EXPLORATORY_SKILL_CATALOG_SEARCH_MIN_TOKEN_LENGTH,
-    )
-  ) {
-    setMatch(2, 20);
-  }
-
-  if (
-    matchesExploratoryTokenPrefixes(
-      queryTokens,
-      [digest.summary],
-      EXPLORATORY_SKILL_CATALOG_SEARCH_MIN_TOKEN_LENGTH,
-    )
-  ) {
-    setMatch(3, 20);
-  }
-  if (!Number.isFinite(rankTier)) return null;
-  return { rankTier, score };
 }
 
 // Skills have no verification tiers, so curated status + adoption are the
@@ -6057,8 +5932,6 @@ export const hasMissingPackageCatalogRecommendationScoresInternal = internalQuer
     return await hasMissingRecommendedScores(ctx, false, null);
   },
 });
-
-const EXPLORATORY_SKILL_CATALOG_SEARCH_MIN_TOKEN_LENGTH = 3;
 
 function skillCatalogPrefixUpperBound(value: string) {
   return `${value}\uffff`;
@@ -6493,12 +6366,7 @@ async function listCuratedSkillPage(
       }
       if (
         (typeof opts.createdAfter !== "number" || curatedDigest.createdAt >= opts.createdAfter) &&
-        digestPassesPublicListFilters(curatedDigest, {
-          topic: opts.topic,
-          categorySlug: opts.categorySlug,
-          categoryKeywords: opts.categoryKeywords,
-          excludeCategoryKeywords: opts.excludeCategoryKeywords,
-        })
+        digestPassesPublicListFilters(curatedDigest, opts)
       ) {
         // The compact projection contains official and highlighted rows but omits badge kind,
         // so hydrate before applying officialOnly and appending a result.
@@ -6512,12 +6380,7 @@ async function listCuratedSkillPage(
           (!opts.officialOnly || isSkillCatalogOfficial(digest)) &&
           (typeof opts.createdAfter !== "number" || digest.createdAt >= opts.createdAfter) &&
           (!opts.nonSuspiciousOnly || !digest.isSuspicious) &&
-          digestPassesPublicListFilters(digest, {
-            topic: opts.topic,
-            categorySlug: opts.categorySlug,
-            categoryKeywords: opts.categoryKeywords,
-            excludeCategoryKeywords: opts.excludeCategoryKeywords,
-          })
+          digestPassesPublicListFilters(digest, opts)
         ) {
           const item = await buildPublicSkillEntryFromDigest(ctx, digest);
           if (item) items.push(item);
@@ -6619,15 +6482,7 @@ async function listCommunitySkillCategoryPage(
     for (let index = 0; index < result.page.length; index += 1) {
       const digest = result.page[index];
       const cursor = result.indexKeys[index];
-      if (
-        !isCuratedSkillDigest(digest) &&
-        digestPassesPublicListFilters(digest, {
-          topic: opts.topic,
-          categorySlug: opts.categorySlug,
-          categoryKeywords: opts.categoryKeywords,
-          excludeCategoryKeywords: opts.excludeCategoryKeywords,
-        })
-      ) {
+      if (!isCuratedSkillDigest(digest) && digestPassesPublicListFilters(digest, opts)) {
         const item = await buildPublicSkillEntryFromDigest(ctx, digest);
         if (item) items.push(item);
       }
@@ -6746,14 +6601,7 @@ async function fetchHighlightedPage(
       .unique();
     if (!digest || digest.softDeletedAt) continue;
     if (opts.nonSuspiciousOnly && digest.isSuspicious) continue;
-    if (
-      !digestPassesPublicListFilters(digest, {
-        categorySlug: opts.categorySlug,
-        topic: opts.topic,
-        categoryKeywords: opts.categoryKeywords,
-        excludeCategoryKeywords: opts.excludeCategoryKeywords,
-      })
-    ) {
+    if (!digestPassesPublicListFilters(digest, opts)) {
       continue;
     }
     digests.push(digest);
@@ -6975,10 +6823,12 @@ export const getVersionsByIdsInternal = internalQuery({
   },
 });
 
-export const getVersionByIdInternal = internalQuery({
-  args: { versionId: v.id("skillVersions") },
-  handler: async (ctx, args) => ctx.db.get(args.versionId),
-});
+// Preserve the publishing-module paths while file reads share one implementation.
+export {
+  getSkillByIdInternal,
+  getVersionByIdInternal,
+  listVersionFingerprintsInternal,
+} from "./skillFileReads";
 
 export const getVersionBySkillAndVersionInternal = internalQuery({
   args: { skillId: v.id("skills"), version: v.string() },
@@ -6990,26 +6840,6 @@ export const getVersionBySkillAndVersionInternal = internalQuery({
       )
       .unique();
   },
-});
-
-export const listVersionFingerprintsInternal = internalQuery({
-  args: { skillVersionId: v.id("skillVersions") },
-  handler: async (ctx, args) => {
-    const entries = await ctx.db
-      .query("skillVersionFingerprints")
-      .withIndex("by_version", (q) => q.eq("versionId", args.skillVersionId))
-      .collect();
-    return entries.map((entry) => ({
-      fingerprint: entry.fingerprint,
-      kind: entry.kind,
-      createdAt: entry.createdAt,
-    }));
-  },
-});
-
-export const getSkillByIdInternal = internalQuery({
-  args: { skillId: v.id("skills") },
-  handler: async (ctx, args) => ctx.db.get(args.skillId),
 });
 
 /**
@@ -7770,70 +7600,7 @@ export const updateVersionLlmAnalysisInternal = internalMutation({
     versionId: v.id("skillVersions"),
     scannerReportsStorageId: v.optional(v.id("_storage")),
     moderationMode: v.optional(v.union(v.literal("normal"), v.literal("preserve"))),
-    llmAnalysis: v.object({
-      status: v.string(),
-      verdict: v.optional(v.string()),
-      confidence: v.optional(v.string()),
-      summary: v.optional(v.string()),
-      dimensions: v.optional(
-        v.array(
-          v.object({
-            name: v.string(),
-            label: v.string(),
-            rating: v.string(),
-            detail: v.string(),
-          }),
-        ),
-      ),
-      guidance: v.optional(v.string()),
-      findings: v.optional(v.string()),
-      agenticRiskFindings: v.optional(
-        v.array(
-          v.object({
-            categoryId: v.string(),
-            categoryLabel: v.string(),
-            riskBucket: v.union(
-              v.literal("abnormal_behavior_control"),
-              v.literal("permission_boundary"),
-              v.literal("sensitive_data_protection"),
-            ),
-            status: v.union(v.literal("none"), v.literal("note"), v.literal("concern")),
-            severity: v.string(),
-            confidence: v.union(v.literal("high"), v.literal("medium"), v.literal("low")),
-            evidence: v.optional(
-              v.object({
-                path: v.string(),
-                snippet: v.string(),
-                explanation: v.string(),
-              }),
-            ),
-            userImpact: v.string(),
-            recommendation: v.string(),
-          }),
-        ),
-      ),
-      riskSummary: v.optional(
-        v.object({
-          abnormal_behavior_control: v.object({
-            status: v.union(v.literal("none"), v.literal("note"), v.literal("concern")),
-            summary: v.string(),
-            highestSeverity: v.optional(v.string()),
-          }),
-          permission_boundary: v.object({
-            status: v.union(v.literal("none"), v.literal("note"), v.literal("concern")),
-            summary: v.string(),
-            highestSeverity: v.optional(v.string()),
-          }),
-          sensitive_data_protection: v.object({
-            status: v.union(v.literal("none"), v.literal("note"), v.literal("concern")),
-            summary: v.string(),
-            highestSeverity: v.optional(v.string()),
-          }),
-        }),
-      ),
-      model: v.optional(v.string()),
-      checkedAt: v.number(),
-    }),
+    llmAnalysis: llmAnalysisValidator,
   },
   handler: async (ctx, args) => {
     const version = await ctx.db.get(args.versionId);
@@ -10329,65 +10096,50 @@ export const setDuplicate = mutation({
   },
 });
 
+async function setAdminSkillBadge(
+  ctx: MutationCtx,
+  skillId: Id<"skills">,
+  kind: "official" | "deprecated",
+  enabled: boolean,
+) {
+  const { user } = await requireUser(ctx);
+  assertAdmin(user);
+  const skill = await ctx.db.get(skillId);
+  if (!skill) throw new Error("Skill not found");
+
+  const now = Date.now();
+  if (enabled) {
+    await upsertSkillBadge(ctx, skill._id, kind, user._id, now);
+  } else {
+    await removeSkillBadge(ctx, skill._id, kind);
+  }
+
+  await ctx.db.patch(skill._id, {
+    lastReviewedAt: now,
+    updatedAt: now,
+  });
+
+  await ctx.db.insert("auditLogs", {
+    actorUserId: user._id,
+    action: `badge.${kind}.${enabled ? "set" : "unset"}`,
+    targetType: "skill",
+    targetId: skill._id,
+    metadata: { [kind]: enabled },
+    createdAt: now,
+  });
+}
+
 export const setOfficialBadge = mutation({
   args: { skillId: v.id("skills"), official: v.boolean() },
   handler: async (ctx, args) => {
-    const { user } = await requireUser(ctx);
-    assertAdmin(user);
-    const skill = await ctx.db.get(args.skillId);
-    if (!skill) throw new Error("Skill not found");
-
-    const now = Date.now();
-    if (args.official) {
-      await upsertSkillBadge(ctx, skill._id, "official", user._id, now);
-    } else {
-      await removeSkillBadge(ctx, skill._id, "official");
-    }
-
-    await ctx.db.patch(skill._id, {
-      lastReviewedAt: now,
-      updatedAt: now,
-    });
-
-    await ctx.db.insert("auditLogs", {
-      actorUserId: user._id,
-      action: args.official ? "badge.official.set" : "badge.official.unset",
-      targetType: "skill",
-      targetId: skill._id,
-      metadata: { official: args.official },
-      createdAt: now,
-    });
+    await setAdminSkillBadge(ctx, args.skillId, "official", args.official);
   },
 });
 
 export const setDeprecatedBadge = mutation({
   args: { skillId: v.id("skills"), deprecated: v.boolean() },
   handler: async (ctx, args) => {
-    const { user } = await requireUser(ctx);
-    assertAdmin(user);
-    const skill = await ctx.db.get(args.skillId);
-    if (!skill) throw new Error("Skill not found");
-
-    const now = Date.now();
-    if (args.deprecated) {
-      await upsertSkillBadge(ctx, skill._id, "deprecated", user._id, now);
-    } else {
-      await removeSkillBadge(ctx, skill._id, "deprecated");
-    }
-
-    await ctx.db.patch(skill._id, {
-      lastReviewedAt: now,
-      updatedAt: now,
-    });
-
-    await ctx.db.insert("auditLogs", {
-      actorUserId: user._id,
-      action: args.deprecated ? "badge.deprecated.set" : "badge.deprecated.unset",
-      targetType: "skill",
-      targetId: skill._id,
-      metadata: { deprecated: args.deprecated },
-      createdAt: now,
-    });
+    await setAdminSkillBadge(ctx, args.skillId, "deprecated", args.deprecated);
   },
 });
 
@@ -10605,17 +10357,7 @@ export const insertVersion = internalMutation({
     version: v.string(),
     changelog: v.string(),
     changelogSource: v.optional(v.union(v.literal("auto"), v.literal("user"))),
-    sourceProvenance: v.optional(
-      v.object({
-        kind: v.literal("github"),
-        url: v.string(),
-        repo: v.string(),
-        ref: v.string(),
-        commit: v.string(),
-        path: v.optional(v.string()),
-        importedAt: v.number(),
-      }),
-    ),
+    sourceProvenance: v.optional(skillSourceProvenanceValidator),
     tags: v.optional(v.array(v.string())),
     categories: v.optional(v.array(v.string())),
     topics: v.optional(v.array(v.string())),
@@ -10629,13 +10371,7 @@ export const insertVersion = internalMutation({
       }),
     ),
     files: storedFilesValidator,
-    parsed: v.object({
-      frontmatter: v.record(v.string(), v.any()),
-      metadata: v.optional(v.any()),
-      clawdis: v.optional(v.any()),
-      license: v.optional(v.literal(PLATFORM_SKILL_LICENSE)),
-      presentation: v.optional(skillPresentationValidator),
-    }),
+    parsed: skillParsedMetadataValidator.omit("moltbot"),
     summary: v.optional(v.string()),
     qualityAssessment: v.optional(qualityAssessmentValidator),
     // Retired static publish scan. Still accepted so stored insert args from

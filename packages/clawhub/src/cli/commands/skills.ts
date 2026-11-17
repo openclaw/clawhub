@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rename, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, rename, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import semver from "semver";
 import { apiRequest, downloadZip, fetchBinary, registryUrl } from "../../http.js";
@@ -31,7 +31,9 @@ import {
   writeSkillOrigin,
 } from "../../skills.js";
 import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
+import { pathExists } from "../fs.js";
 import { withLoaderErrorHandling } from "../loader.js";
+import { writeJsonIfRequested } from "../output.js";
 import { getRegistry } from "../registry.js";
 import {
   parseSkillsShCliReference,
@@ -419,7 +421,7 @@ export async function cmdInstall(
       ? requested
       : parseStoredSkillRefOrFail(lockKey);
   const target = skillTarget(opts.dir, localRef);
-  const targetExists = await fileExists(target);
+  const targetExists = await pathExists(target);
   const existingOrigin = requested.sourceRef && targetExists ? await readSkillOrigin(target) : null;
   if (requested.sourceRef) {
     assertSkillsShTargetOwnership({
@@ -704,7 +706,7 @@ export async function cmdUpdate(
     };
     try {
       const target = skillTarget(opts.dir, entryRef);
-      const exists = await fileExists(target);
+      const exists = await pathExists(target);
       const existingOrigin = exists ? await readSkillOrigin(target) : null;
       if (entryRef.sourceRef && entryRef.skillsSh) {
         assertSkillsShTargetOwnership({
@@ -1296,10 +1298,7 @@ export async function cmdListSkillReports(opts: GlobalOpts, options: SkillReport
     ApiV1SkillReportListResponseSchema,
   );
 
-  if (options.json) {
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    return;
-  }
+  if (writeJsonIfRequested(options.json, result)) return;
   if (result.items.length === 0) {
     console.log("No skill reports found.");
   } else {
@@ -1361,10 +1360,7 @@ export async function cmdTriageSkillReport(
     ApiV1SkillReportTriageResponseSchema,
   );
 
-  if (options.json) {
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    return;
-  }
+  if (writeJsonIfRequested(options.json, result)) return;
   const actionSuffix =
     result.actionTaken && result.actionTaken !== "none" ? `; action ${result.actionTaken}` : "";
   console.log(`OK. Skill report ${trimmed} set to ${result.status}${actionSuffix}.`);
@@ -1773,13 +1769,4 @@ function encodeGitHubRepo(repo: string) {
 
 function formatGitHubVersion(commit: string) {
   return commit.length > 12 ? commit.slice(0, 12) : commit;
-}
-
-async function fileExists(path: string) {
-  try {
-    await stat(path);
-    return true;
-  } catch {
-    return false;
-  }
 }

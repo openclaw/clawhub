@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createMockDb } from "../src/__tests__/helpers/convexDb";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -24,18 +26,10 @@ const {
   normalizePromotionInput,
 } = await import("./promotions");
 
-type WrappedHandler<TArgs, TResult = unknown> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
-
-const createHandler = (create as unknown as WrappedHandler<Record<string, unknown>>)._handler;
-const setStatusHandler = (setStatus as unknown as WrappedHandler<{ slug: string; status: string }>)
-  ._handler;
-const listActiveHandler = (listActiveInternal as unknown as WrappedHandler<{ now: number }>)
-  ._handler;
-const getBySlugHandler = (
-  getBySlugPublicInternal as unknown as WrappedHandler<{ slug: string; now: number }>
-)._handler;
+const createHandler = getTestHandler<Record<string, unknown>>(create);
+const setStatusHandler = getTestHandler<{ slug: string; status: string }>(setStatus);
+const listActiveHandler = getTestHandler<{ now: number }>(listActiveInternal);
+const getBySlugHandler = getTestHandler<{ slug: string; now: number }>(getBySlugPublicInternal);
 
 const adminUser = { _id: "users:admin", role: "admin" };
 const regularUser = { _id: "users:regular", role: "user" };
@@ -70,9 +64,7 @@ function makeMutationCtx({
   const inserts: Array<{ table: string; doc: Record<string, unknown> }> = [];
   const patches: Array<{ id: string; patch: Record<string, unknown> }> = [];
   const db = {
-    normalizeId: vi.fn(),
-    system: {},
-    get: vi.fn(),
+    ...createMockDb(),
     query: vi.fn(() => ({
       withIndex: vi.fn(() => ({
         unique: vi.fn(async () => existing),
@@ -86,8 +78,6 @@ function makeMutationCtx({
     patch: vi.fn(async (id: string, patch: Record<string, unknown>) => {
       patches.push({ id, patch });
     }),
-    replace: vi.fn(),
-    delete: vi.fn(),
   };
   const scheduler = makeScheduler();
   return { ctx: { db, scheduler } as never, db, scheduler, inserts, patches };
@@ -279,7 +269,7 @@ describe("promotions.create", () => {
 });
 
 describe("promotions.update", () => {
-  const updateHandler = (update as unknown as WrappedHandler<Record<string, unknown>>)._handler;
+  const updateHandler = getTestHandler<Record<string, unknown>>(update);
 
   function makeUpdateCtx(lookupResults: unknown[]) {
     const uniqueMock = vi.fn();
@@ -287,16 +277,12 @@ describe("promotions.update", () => {
     const replace = vi.fn();
     const insert = vi.fn(async () => "auditLogs:1");
     const db = {
-      normalizeId: vi.fn(),
-      system: {},
-      get: vi.fn(),
+      ...createMockDb(),
       query: vi.fn(() => ({
         withIndex: vi.fn(() => ({ unique: uniqueMock })),
       })),
       insert,
-      patch: vi.fn(),
       replace,
-      delete: vi.fn(),
     };
     const scheduler = makeScheduler();
     return { ctx: { db, scheduler } as never, replace, insert, scheduler };
@@ -594,11 +580,9 @@ describe("promotions.setStatus", () => {
 
 describe("promotions.listForStaff", () => {
   it("rejects moderators — drafts are admin-only", async () => {
-    const listForStaffHandler = (
-      listForStaff as unknown as WrappedHandler<{
-        paginationOpts: { cursor: string | null; numItems: number };
-      }>
-    )._handler;
+    const listForStaffHandler = getTestHandler<{
+      paginationOpts: { cursor: string | null; numItems: number };
+    }>(listForStaff);
     vi.mocked(requireUser).mockResolvedValue({
       userId: "users:moderator",
       user: { _id: "users:moderator", role: "moderator" },
@@ -612,11 +596,9 @@ describe("promotions.listForStaff", () => {
   });
 
   it("paginates the permanent promotion history for admins", async () => {
-    const listForStaffHandler = (
-      listForStaff as unknown as WrappedHandler<{
-        paginationOpts: { cursor: string | null; numItems: number };
-      }>
-    )._handler;
+    const listForStaffHandler = getTestHandler<{
+      paginationOpts: { cursor: string | null; numItems: number };
+    }>(listForStaff);
     vi.mocked(requireUser).mockResolvedValue({
       userId: adminUser._id,
       user: adminUser,

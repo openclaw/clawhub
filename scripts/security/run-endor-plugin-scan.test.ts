@@ -1,23 +1,20 @@
 /* @vitest-environment node */
-import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { createTestTempDirectories } from "../lib/testTempDirectories";
 import { runEndorPluginScan, type EndorCommandDiagnostic } from "./run-endor-plugin-scan";
 
-const tempDirs: string[] = [];
+const tempDirs = createTestTempDirectories("clawhub-endor-plugin-test-");
 const claimedRelease = {
   package: { name: "@openclaw/fixture-plugin" },
   release: { version: "1.0.0" },
 };
 
-afterEach(async () => {
-  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { force: true, recursive: true })));
-});
+afterEach(tempDirs.cleanup);
 
 async function tempDir() {
-  const workspace = await mkdtemp(join(tmpdir(), "clawhub-endor-plugin-test-"));
-  tempDirs.push(workspace);
+  const workspace = await tempDirs.create();
   const bin = join(workspace, "bin");
   await mkdir(bin);
   const docker = join(bin, "docker");
@@ -109,9 +106,11 @@ describe("runEndorPluginScan", () => {
         name: "fixture-plugin",
         dependencies: { "runtime-workspace": "workspace:*", lodash: "4.17.20" },
         devDependencies: { "dev-workspace": "workspace:^", typescript: "6.0.3" },
+        packageManager: "pnpm@10.33.2",
       })}\n`,
     );
     await writeFile(join(root, "npm-shrinkwrap.json"), '{"lockfileVersion":3}\n');
+    await writeFile(join(root, "pnpm-workspace.yaml"), "allowBuilds:\n  esbuild: true\n");
     await writeFile(
       join(workspace, "docker-run-stdout"),
       report([
@@ -162,12 +161,22 @@ describe("runEndorPluginScan", () => {
     await expect(
       readFile(join(workspace, "endor-artifact", "package-lock.json"), "utf8"),
     ).resolves.toContain('"lockfileVersion":3');
+    // Either pnpm marker makes endorctl demand the pnpm binary.
+    await expect(
+      stat(join(workspace, "endor-artifact", "pnpm-workspace.yaml")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
     // The uploaded artifact stays untouched.
     await expect(readFile(join(root, "npm-shrinkwrap.json"), "utf8")).resolves.toContain(
       '"lockfileVersion":3',
     );
     const runArgs = await dockerRunArgs(workspace);
     expect(runArgs).toContain("--rm");
+    // Without a cap, concurrent large scans exhaust the hosted runner's memory;
+    // a swap limit equal to the memory limit keeps the container off swap.
+    expect(runArgs).toEqual(expect.arrayContaining(["--memory", "--memory-swap"]));
+    const memory = runArgs[runArgs.indexOf("--memory") + 1];
+    expect(memory).toMatch(/^\d+g$/);
+    expect(runArgs[runArgs.indexOf("--memory-swap") + 1]).toBe(memory);
     expect(runArgs).toContain(
       `type=bind,source=${join(workspace, "endor-artifact")},target=/workspace,readonly`,
     );

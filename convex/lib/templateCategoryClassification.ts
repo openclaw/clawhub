@@ -1,9 +1,8 @@
+import type { TemplateCategorySlug, TemplateManifest } from "clawhub-schema";
 import {
   TEMPLATE_CATEGORY_DEFINITIONS,
   isTemplateCategorySlug,
-  type TemplateCategorySlug,
-  type TemplateManifest,
-} from "clawhub-schema";
+} from "clawhub-schema/catalogMetadata";
 import { applicationReasoning } from "./applicationModelPolicy";
 import { extractResponseText } from "./openaiResponse";
 

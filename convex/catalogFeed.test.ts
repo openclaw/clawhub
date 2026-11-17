@@ -5,6 +5,7 @@ import {
 } from "clawhub-schema";
 import { getFunctionName } from "convex/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import {
   listOfficialTemplateEntries,
   listOfficialEntries,
@@ -21,42 +22,30 @@ vi.mock("./lib/officialPublishers", () => ({
   isOfficialPublisher: vi.fn().mockResolvedValue(true),
 }));
 
-type WrappedHandler<TArgs, TResult> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
-
 type EntryPage = { entries: unknown[]; isDone: boolean; continueCursor: string };
 
-const listOfficialEntriesPageHandler = (
-  listOfficialEntries as unknown as WrappedHandler<
-    { family: "code-plugin" | "bundle-plugin"; cursor: string | null },
-    EntryPage
-  >
-)._handler;
+const listOfficialEntriesPageHandler = getTestHandler<
+  { family: "code-plugin" | "bundle-plugin"; cursor: string | null },
+  EntryPage
+>(listOfficialEntries);
 const listOfficialEntriesHandler = async (
   ctx: unknown,
   args: { family: "code-plugin" | "bundle-plugin" },
 ) => (await listOfficialEntriesPageHandler(ctx, { ...args, cursor: null })).entries;
-const listOfficialTemplateEntriesPageHandler = (
-  listOfficialTemplateEntries as unknown as WrappedHandler<{ cursor: string | null }, EntryPage>
-)._handler;
+const listOfficialTemplateEntriesPageHandler = getTestHandler<{ cursor: string | null }, EntryPage>(
+  listOfficialTemplateEntries,
+);
 const listOfficialTemplateEntriesHandler = async (ctx: unknown, _args: Record<string, never>) =>
   (await listOfficialTemplateEntriesPageHandler(ctx, { cursor: null })).entries;
-const listOfficialSkillEntriesHandler = (
-  listOfficialSkillEntries as unknown as WrappedHandler<
-    { publisherId: string; cursor: string | null },
-    unknown
-  >
-)._handler;
-const publishHandler = (
-  publish as unknown as WrappedHandler<{ expiresAt: string }, Array<{ feedId: string }>>
-)._handler;
-const storeTemplatePublicationHandler = (
-  storeTemplatePublication as unknown as WrappedHandler<
-    { generatedAt: string; expiresAt: string; entries: unknown[] },
-    { entryCount: number }
-  >
-)._handler;
+const listOfficialSkillEntriesHandler = getTestHandler<{
+  publisherId: string;
+  cursor: string | null;
+}>(listOfficialSkillEntries);
+const publishHandler = getTestHandler<{ expiresAt: string }, Array<{ feedId: string }>>(publish);
+const storeTemplatePublicationHandler = getTestHandler<
+  { generatedAt: string; expiresAt: string; entries: unknown[] },
+  { entryCount: number }
+>(storeTemplatePublication);
 
 function makePackage(overrides: Record<string, unknown> = {}) {
   return {

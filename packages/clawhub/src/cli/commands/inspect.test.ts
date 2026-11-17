@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { makeApiSkill } from "../../../test/apiFixtures.js";
 import {
   createAuthTokenModuleMocks,
   createHttpModuleMocks,
@@ -67,15 +68,11 @@ describe("cmdInspect", () => {
   it("fetches latest version files when --files is set", async () => {
     httpMocks.apiRequest
       .mockResolvedValueOnce({
-        skill: {
-          slug: "demo",
-          displayName: "Demo",
-          summary: null,
+        skill: makeApiSkill({
           tags: { latest: "1.2.3" },
-          stats: {},
           createdAt: 1,
           updatedAt: 2,
-        },
+        }),
         latestVersion: { version: "1.2.3", createdAt: 3, changelog: "init", license: "MIT-0" },
         owner: null,
       })
@@ -215,15 +212,10 @@ describe("cmdInspect", () => {
     [" @@OpenClaw / Demo ", "OpenClaw", "Demo"],
   ])("passes the published owner and slug from %s unchanged", async (ref, ownerHandle, slug) => {
     httpMocks.apiRequest.mockResolvedValueOnce({
-      skill: {
-        slug: "demo",
-        displayName: "Demo",
-        summary: null,
-        tags: {},
-        stats: {},
+      skill: makeApiSkill({
         createdAt: 1,
         updatedAt: 2,
-      },
+      }),
       latestVersion: null,
       owner: { handle: "openclaw" },
     });
@@ -251,15 +243,11 @@ describe("cmdInspect", () => {
   it("uses tag param when fetching a file", async () => {
     httpMocks.apiRequest
       .mockResolvedValueOnce({
-        skill: {
-          slug: "demo",
-          displayName: "Demo",
-          summary: null,
+        skill: makeApiSkill({
           tags: { latest: "2.0.0" },
-          stats: {},
           createdAt: 1,
           updatedAt: 2,
-        },
+        }),
         latestVersion: { version: "2.0.0", createdAt: 3, changelog: "init", license: "MIT-0" },
         owner: null,
       })
@@ -286,15 +274,11 @@ describe("cmdInspect", () => {
     const opaqueBytes = Uint8Array.from([0, 1, 2, 255]);
     httpMocks.apiRequest
       .mockResolvedValueOnce({
-        skill: {
-          slug: "demo",
-          displayName: "Demo",
-          summary: null,
+        skill: makeApiSkill({
           tags: { latest: "2.0.0" },
-          stats: {},
           createdAt: 1,
           updatedAt: 2,
-        },
+        }),
         latestVersion: { version: "2.0.0", createdAt: 3, changelog: "init", license: "MIT-0" },
         owner: null,
       })
@@ -320,15 +304,11 @@ describe("cmdInspect", () => {
   it("prints security summary when version security metadata exists", async () => {
     httpMocks.apiRequest
       .mockResolvedValueOnce({
-        skill: {
-          slug: "demo",
-          displayName: "Demo",
-          summary: null,
+        skill: makeApiSkill({
           tags: { latest: "2.0.0" },
-          stats: {},
           createdAt: 1,
           updatedAt: 2,
-        },
+        }),
         latestVersion: { version: "2.0.0", createdAt: 3, changelog: "init", license: "MIT-0" },
         owner: null,
       })
@@ -360,15 +340,11 @@ describe("cmdInspect", () => {
 
   it("prints skill moderation status without requiring a version fetch", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({
-      skill: {
-        slug: "demo",
-        displayName: "Demo",
-        summary: null,
+      skill: makeApiSkill({
         tags: { latest: "2.0.0" },
-        stats: {},
         createdAt: 1,
         updatedAt: 2,
-      },
+      }),
       latestVersion: { version: "2.0.0", createdAt: 3, changelog: "init", license: "MIT-0" },
       owner: null,
       moderation: {
@@ -399,15 +375,11 @@ describe("cmdInspect", () => {
     authTokenMocks.getOptionalAuthToken.mockResolvedValueOnce("tkn");
     httpMocks.apiRequest
       .mockResolvedValueOnce({
-        skill: {
-          slug: "demo",
-          displayName: "Demo",
-          summary: null,
+        skill: makeApiSkill({
           tags: { latest: "2.0.0" },
-          stats: {},
           createdAt: 1,
           updatedAt: 2,
-        },
+        }),
         latestVersion: { version: "2.0.0", createdAt: 3, changelog: "init", license: "MIT-0" },
         owner: null,
         moderation: null,
@@ -473,15 +445,10 @@ describe("cmdInspect", () => {
 
   it("includes moderation metadata in inspect JSON output", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({
-      skill: {
-        slug: "demo",
-        displayName: "Demo",
-        summary: null,
-        tags: {},
-        stats: {},
+      skill: makeApiSkill({
         createdAt: 1,
         updatedAt: 2,
-      },
+      }),
       latestVersion: null,
       owner: null,
       moderation: {

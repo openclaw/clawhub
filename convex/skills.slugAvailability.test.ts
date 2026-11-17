@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
+import { chainEq } from "../src/__tests__/helpers/convexQuery";
 import { formatReservedSlugCooldownMessage } from "./lib/reservedSlugs";
 
 vi.mock("@convex-dev/auth/server", () => ({
@@ -8,10 +10,6 @@ vi.mock("@convex-dev/auth/server", () => ({
 
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { checkSlugAvailability } from "./skills";
-
-type WrappedHandler<TArgs> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<unknown>;
-};
 
 type SkillDoc = {
   _id: string;
@@ -25,6 +23,16 @@ type SkillDoc = {
   moderationReason?: string;
   moderationFlags?: string[];
   moderationVerdict?: "clean" | "suspicious" | "malicious";
+};
+
+type OwnerDoc = {
+  _id: string;
+  handle?: string | null;
+  name?: string | null;
+  displayName?: string | null;
+  email?: string | null;
+  deletedAt?: number;
+  deactivatedAt?: number;
 };
 
 type ReservationDoc = {
@@ -44,9 +52,31 @@ type AliasDoc = {
   ownerPublisherId?: string;
 };
 
-const checkSlugAvailabilityHandler = (
-  checkSlugAvailability as unknown as WrappedHandler<{ slug: string; ownerHandle: string }>
-)._handler;
+const checkSlugAvailabilityHandler = getTestHandler<{ slug: string; ownerHandle: string }>(
+  checkSlugAvailability,
+);
+
+function makeAvailabilitySkill(overrides: Partial<SkillDoc> = {}): SkillDoc {
+  return {
+    _id: "skills:1",
+    slug: "taken-skill",
+    ownerUserId: "users:owner",
+    softDeletedAt: undefined,
+    moderationStatus: "active",
+    moderationFlags: undefined,
+    ...overrides,
+  };
+}
+
+function makeAvailabilityOwner(overrides: Partial<OwnerDoc> = {}): OwnerDoc {
+  return {
+    _id: "users:owner",
+    handle: "alice",
+    deletedAt: undefined,
+    deactivatedAt: undefined,
+    ...overrides,
+  };
+}
 
 function createCtx(options: {
   skill: SkillDoc | null;
@@ -55,15 +85,7 @@ function createCtx(options: {
   aliases?: AliasDoc[];
   aliasedSkill?: SkillDoc | null;
   reservation?: ReservationDoc | null;
-  owner?: {
-    _id: string;
-    handle?: string | null;
-    name?: string | null;
-    displayName?: string | null;
-    email?: string | null;
-    deletedAt?: number;
-    deactivatedAt?: number;
-  } | null;
+  owner?: OwnerDoc | null;
   callerId?: string;
   publisherMembership?: { role: "owner" | "admin" | "publisher" } | null;
   publisher?: {
@@ -87,12 +109,7 @@ function createCtx(options: {
     callback?: (query: { eq: (field: string, value: unknown) => unknown }) => unknown,
   ) => {
     const constraints: Record<string, unknown> = {};
-    const query = {
-      eq: (field: string, value: unknown) => {
-        constraints[field] = value;
-        return query;
-      },
-    };
+    const query = chainEq(constraints);
     callback?.(query);
     return constraints;
   };
@@ -178,12 +195,7 @@ function createCtx(options: {
               unique: async () => {
                 const candidates = [
                   options.owner,
-                  {
-                    _id: callerId,
-                    handle: "caller",
-                    deletedAt: undefined,
-                    deactivatedAt: undefined,
-                  },
+                  makeAvailabilityOwner({ _id: callerId, handle: "caller" }),
                 ].filter(Boolean);
                 return candidates.find((user) => user?.handle === constraints.handle) ?? null;
               },
@@ -312,20 +324,8 @@ describe("skills.checkSlugAvailability", () => {
 
     const result = (await checkSlugAvailabilityHandler(
       createCtx({
-        skill: {
-          _id: "skills:1",
-          slug: "taken-skill",
-          ownerUserId: "users:owner",
-          softDeletedAt: 123,
-          moderationStatus: "active",
-          moderationFlags: undefined,
-        },
-        owner: {
-          _id: "users:owner",
-          handle: "alice",
-          deletedAt: undefined,
-          deactivatedAt: undefined,
-        },
+        skill: makeAvailabilitySkill({ softDeletedAt: 123 }),
+        owner: makeAvailabilityOwner(),
         ownerProviderAccountId: "owner-gh",
         callerProviderAccountId: "caller-gh",
       }) as never,
@@ -708,20 +708,8 @@ describe("skills.checkSlugAvailability", () => {
 
     const result = (await checkSlugAvailabilityHandler(
       createCtx({
-        skill: {
-          _id: "skills:1",
-          slug: "taken-skill",
-          ownerUserId: "users:owner",
-          softDeletedAt: undefined,
-          moderationStatus: "active",
-          moderationFlags: undefined,
-        },
-        owner: {
-          _id: "users:owner",
-          handle: "alice",
-          deletedAt: undefined,
-          deactivatedAt: undefined,
-        },
+        skill: makeAvailabilitySkill(),
+        owner: makeAvailabilityOwner(),
         ownerProviderAccountId: "owner-gh",
         callerProviderAccountId: "caller-gh",
       }) as never,
@@ -746,20 +734,8 @@ describe("skills.checkSlugAvailability", () => {
 
     const result = (await checkSlugAvailabilityHandler(
       createCtx({
-        skill: {
-          _id: "skills:1",
-          slug: "taken-skill",
-          ownerUserId: "users:owner",
-          softDeletedAt: undefined,
-          moderationStatus: "active",
-          moderationFlags: undefined,
-        },
-        owner: {
-          _id: "users:owner",
-          handle: "alice",
-          deletedAt: undefined,
-          deactivatedAt: undefined,
-        },
+        skill: makeAvailabilitySkill(),
+        owner: makeAvailabilityOwner(),
       }) as never,
       { slug: "taken-skill", ownerHandle: "alice" } as never,
     )) as {
@@ -782,14 +758,7 @@ describe("skills.checkSlugAvailability", () => {
 
     const result = (await checkSlugAvailabilityHandler(
       createCtx({
-        skill: {
-          _id: "skills:1",
-          slug: "taken-skill",
-          ownerUserId: "users:caller",
-          softDeletedAt: undefined,
-          moderationStatus: "active",
-          moderationFlags: undefined,
-        },
+        skill: makeAvailabilitySkill({ ownerUserId: "users:caller" }),
       }) as never,
       { slug: "taken-skill", ownerHandle: "caller" } as never,
     )) as {
@@ -812,20 +781,8 @@ describe("skills.checkSlugAvailability", () => {
 
     const result = (await checkSlugAvailabilityHandler(
       createCtx({
-        skill: {
-          _id: "skills:1",
-          slug: "legacy-skill",
-          ownerUserId: "users:caller",
-          softDeletedAt: undefined,
-          moderationStatus: "active",
-          moderationFlags: undefined,
-        },
-        owner: {
-          _id: "users:caller",
-          handle: "legacy-user",
-          deletedAt: undefined,
-          deactivatedAt: undefined,
-        },
+        skill: makeAvailabilitySkill({ slug: "legacy-skill", ownerUserId: "users:caller" }),
+        owner: makeAvailabilityOwner({ _id: "users:caller", handle: "legacy-user" }),
         publisher: null,
       }) as never,
       { slug: "legacy-skill", ownerHandle: "legacy-user" } as never,
@@ -966,12 +923,7 @@ describe("skills.checkSlugAvailability", () => {
           moderationStatus: "active",
           moderationFlags: undefined,
         },
-        owner: {
-          _id: "users:original",
-          handle: "original",
-          deletedAt: undefined,
-          deactivatedAt: undefined,
-        },
+        owner: makeAvailabilityOwner({ _id: "users:original", handle: "original" }),
         publisherMembership: { role: "publisher" },
         publisher: {
           _id: "publishers:other-org",
@@ -1003,12 +955,7 @@ describe("skills.checkSlugAvailability", () => {
     const result = (await checkSlugAvailabilityHandler(
       createCtx({
         skill: null,
-        owner: {
-          _id: "users:owner",
-          handle: "owner",
-          deletedAt: undefined,
-          deactivatedAt: undefined,
-        },
+        owner: makeAvailabilityOwner({ handle: "owner" }),
         publisher: {
           _id: "publishers:owner",
           handle: "owner",
@@ -1050,12 +997,7 @@ describe("skills.checkSlugAvailability", () => {
     const result = (await checkSlugAvailabilityHandler(
       createCtx({
         skill: null,
-        owner: {
-          _id: "users:owner",
-          handle: "owner",
-          deletedAt: undefined,
-          deactivatedAt: undefined,
-        },
+        owner: makeAvailabilityOwner({ handle: "owner" }),
         publisher: {
           _id: "publishers:owner",
           handle: "owner",
@@ -1152,20 +1094,8 @@ describe("skills.checkSlugAvailability", () => {
 
     const result = (await checkSlugAvailabilityHandler(
       createCtx({
-        skill: {
-          _id: "skills:1",
-          slug: "taken-skill",
-          ownerUserId: "users:owner",
-          softDeletedAt: undefined,
-          moderationStatus: "active",
-          moderationFlags: undefined,
-        },
-        owner: {
-          _id: "users:owner",
-          handle: "alice",
-          deletedAt: 123,
-          deactivatedAt: undefined,
-        },
+        skill: makeAvailabilitySkill(),
+        owner: makeAvailabilityOwner({ deletedAt: 123 }),
         ownerProviderAccountId: "shared-gh",
         callerProviderAccountId: "shared-gh",
       }) as never,
@@ -1190,20 +1120,8 @@ describe("skills.checkSlugAvailability", () => {
 
     const result = (await checkSlugAvailabilityHandler(
       createCtx({
-        skill: {
-          _id: "skills:1",
-          slug: "taken-skill",
-          ownerUserId: "users:owner",
-          softDeletedAt: undefined,
-          moderationStatus: "active",
-          moderationFlags: undefined,
-        },
-        owner: {
-          _id: "users:owner",
-          handle: "alice",
-          deletedAt: undefined,
-          deactivatedAt: 123,
-        },
+        skill: makeAvailabilitySkill(),
+        owner: makeAvailabilityOwner({ deactivatedAt: 123 }),
         ownerProviderAccountId: "shared-gh",
         callerProviderAccountId: "shared-gh",
       }) as never,
@@ -1228,20 +1146,8 @@ describe("skills.checkSlugAvailability", () => {
 
     const result = (await checkSlugAvailabilityHandler(
       createCtx({
-        skill: {
-          _id: "skills:1",
-          slug: "taken-skill",
-          ownerUserId: "users:owner",
-          softDeletedAt: undefined,
-          moderationStatus: "active",
-          moderationFlags: undefined,
-        },
-        owner: {
-          _id: "users:owner",
-          handle: "alice",
-          deletedAt: 123,
-          deactivatedAt: undefined,
-        },
+        skill: makeAvailabilitySkill(),
+        owner: makeAvailabilityOwner({ deletedAt: 123 }),
         ownerProviderAccountId: "owner-gh",
         callerProviderAccountId: "caller-gh",
       }) as never,
@@ -1266,20 +1172,8 @@ describe("skills.checkSlugAvailability", () => {
 
     const result = (await checkSlugAvailabilityHandler(
       createCtx({
-        skill: {
-          _id: "skills:1",
-          slug: "taken-skill",
-          ownerUserId: "users:owner",
-          softDeletedAt: undefined,
-          moderationStatus: "active",
-          moderationFlags: undefined,
-        },
-        owner: {
-          _id: "users:owner",
-          handle: "alice",
-          deletedAt: 123,
-          deactivatedAt: undefined,
-        },
+        skill: makeAvailabilitySkill(),
+        owner: makeAvailabilityOwner({ deletedAt: 123 }),
       }) as never,
       { slug: "taken-skill", ownerHandle: "alice" } as never,
     )) as {
@@ -1302,20 +1196,8 @@ describe("skills.checkSlugAvailability", () => {
 
     const result = (await checkSlugAvailabilityHandler(
       createCtx({
-        skill: {
-          _id: "skills:1",
-          slug: "taken-skill",
-          ownerUserId: "users:owner",
-          softDeletedAt: undefined,
-          moderationStatus: "active",
-          moderationFlags: undefined,
-        },
-        owner: {
-          _id: "users:owner",
-          handle: "alice",
-          deletedAt: undefined,
-          deactivatedAt: undefined,
-        },
+        skill: makeAvailabilitySkill(),
+        owner: makeAvailabilityOwner(),
         ownerProviderAccountId: "shared-gh",
         callerProviderAccountId: "shared-gh",
       }) as never,
@@ -1347,20 +1229,8 @@ describe("skills.checkSlugAvailability", () => {
           skillId: "skills:target",
           ownerUserId: "users:owner",
         },
-        aliasedSkill: {
-          _id: "skills:target",
-          slug: "demo",
-          ownerUserId: "users:owner",
-          softDeletedAt: undefined,
-          moderationStatus: "active",
-          moderationFlags: undefined,
-        },
-        owner: {
-          _id: "users:owner",
-          handle: "alice",
-          deletedAt: undefined,
-          deactivatedAt: undefined,
-        },
+        aliasedSkill: makeAvailabilitySkill({ _id: "skills:target", slug: "demo" }),
+        owner: makeAvailabilityOwner(),
       }) as never,
       { slug: "demo-old", ownerHandle: "alice" } as never,
     )) as {

@@ -8,6 +8,7 @@ import { afterEach, expect, it, vi } from "vitest";
 vi.mock("./lib/verifiedClientIp", () => ({
   getVerifiedClientIp: async () => "203.0.113.1",
 }));
+import { createActiveSkillSeedDefaults } from "../src/__tests__/helpers/activeSkillSeed";
 import { api, internal } from "./_generated/api";
 import schema from "./schema";
 
@@ -29,16 +30,12 @@ it("returns complete vendor JSON through scan completion and verify, replacing s
       updatedAt: 1,
     });
     const skillId = await ctx.db.insert("skills", {
+      ...createActiveSkillSeedDefaults(),
       slug: "report-fixture",
       displayName: "Report fixture",
       ownerUserId: userId,
       ownerPublisherId: publisherId,
-      tags: {},
-      badges: {},
-      moderationStatus: "active",
       stats: { comments: 0, downloads: 0, stars: 0, versions: 1 },
-      createdAt: 1,
-      updatedAt: 1,
     });
     const createdVersionId = await ctx.db.insert("skillVersions", {
       skillId,

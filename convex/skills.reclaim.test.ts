@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -7,13 +8,7 @@ vi.mock("@convex-dev/auth/server", () => ({
 
 import { reclaimSlugInternal } from "./skills";
 
-type WrappedHandler<TArgs> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<unknown>;
-};
-
-const reclaimSlugInternalHandler = (
-  reclaimSlugInternal as unknown as WrappedHandler<Record<string, unknown>>
-)._handler;
+const reclaimSlugInternalHandler = getTestHandler<Record<string, unknown>>(reclaimSlugInternal);
 
 describe("skills reclaim ownership transfer", () => {
   it("transfers ownership in-place when transferRootSlugOnly is true", async () => {

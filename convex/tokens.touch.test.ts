@@ -1,30 +1,21 @@
 /* @vitest-environment node */
 
 import { describe, expect, it, vi } from "vitest";
+import { createMockDb } from "../src/__tests__/helpers/convexDb";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { touchInternal as touchPackagePublishTokenInternal } from "./packagePublishTokens";
 import { touchInternal as touchApiTokenInternal } from "./tokens";
 
-type WrappedHandler<TArgs> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<void>;
-};
-
-const touchApiTokenHandler = (
-  touchApiTokenInternal as unknown as WrappedHandler<{ tokenId: string }>
-)._handler;
-const touchPackagePublishTokenHandler = (
-  touchPackagePublishTokenInternal as unknown as WrappedHandler<{ tokenId: string }>
-)._handler;
+const touchApiTokenHandler = getTestHandler<{ tokenId: string }, void>(touchApiTokenInternal);
+const touchPackagePublishTokenHandler = getTestHandler<{ tokenId: string }, void>(
+  touchPackagePublishTokenInternal,
+);
 
 function makeCtx(token: Record<string, unknown> | null) {
   return {
     db: {
+      ...createMockDb(),
       get: vi.fn(async () => token),
-      insert: vi.fn(),
-      normalizeId: vi.fn(),
-      patch: vi.fn(),
-      query: vi.fn(),
-      replace: vi.fn(),
-      delete: vi.fn(),
       system: {
         get: vi.fn(),
         query: vi.fn(),

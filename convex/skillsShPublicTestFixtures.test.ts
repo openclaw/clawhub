@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { chainEq } from "../src/__tests__/helpers/convexQuery";
 import {
   activateControlledExternalSkill,
@@ -7,27 +8,17 @@ import {
   readControlledExternalSkill,
 } from "./skillsShPublicTestFixtures";
 
-type WrappedHandler<TArgs> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<unknown>;
-};
-
 const confirm = "manage-claw-583-external-catalog-test-fixture" as const;
-const readFixture = (
-  readControlledExternalSkill as unknown as WrappedHandler<{ confirm: typeof confirm }>
-)._handler;
-const activateFixture = (
-  activateControlledExternalSkill as unknown as WrappedHandler<{ confirm: typeof confirm }>
-)._handler;
-const deactivateFixture = (
-  deactivateControlledExternalSkill as unknown as WrappedHandler<{
-    confirm: typeof confirm;
-    digestId?: string;
-    sourceSnapshotId?: string;
-  }>
-)._handler;
-const prepareFixture = (
-  prepareControlledExternalSkill as unknown as WrappedHandler<{ confirm: typeof confirm }>
-)._handler;
+const readFixture = getTestHandler<{ confirm: typeof confirm }>(readControlledExternalSkill);
+const activateFixture = getTestHandler<{ confirm: typeof confirm }>(
+  activateControlledExternalSkill,
+);
+const deactivateFixture = getTestHandler<{
+  confirm: typeof confirm;
+  digestId?: string;
+  sourceSnapshotId?: string;
+}>(deactivateControlledExternalSkill);
+const prepareFixture = getTestHandler<{ confirm: typeof confirm }>(prepareControlledExternalSkill);
 
 beforeEach(() => {
   vi.stubEnv("CLAWHUB_ENV", "test");

@@ -62,17 +62,7 @@ export type PublicPackageDocLike = {
   latestVersion?: string | null;
   compatibility?: Doc<"packages">["compatibility"];
   verification?: Doc<"packages">["verification"];
-  artifact?: {
-    kind: "legacy-zip" | "npm-pack";
-    sha256?: string;
-    size?: number;
-    format?: string;
-    npmIntegrity?: string;
-    npmShasum?: string;
-    npmTarballName?: string;
-    npmUnpackedSize?: number;
-    npmFileCount?: number;
-  };
+  artifact?: NonNullable<NonNullable<Doc<"packages">["latestVersionSummary"]>["artifact"]>;
   templateManifestSummary?: Doc<"packageReleases">["clawManifestSummary"];
   templateInventory?: Doc<"packageReleases">["templateInventory"];
   stats?: { downloads: number; installs: number; stars: number; versions: number };

@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createMockDb } from "../src/__tests__/helpers/convexDb";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import {
   beginSecurityScanDispatchInternal,
   dispatchSecurityScanWorkflow,
@@ -7,34 +9,60 @@ import {
   requestSecurityScanDispatchInternal,
 } from "./securityScanDispatch";
 
-type WrappedHandler<TArgs, TResult = unknown> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
+const requestSecurityScanDispatchInternalHandler = getTestHandler<
+  Record<string, never>,
+  { scheduled: boolean; scheduledAt?: number }
+>(requestSecurityScanDispatchInternal);
 
-const requestSecurityScanDispatchInternalHandler = (
-  requestSecurityScanDispatchInternal as unknown as WrappedHandler<
-    Record<string, never>,
-    { scheduled: boolean; scheduledAt?: number }
-  >
-)._handler;
+const beginSecurityScanDispatchInternalHandler = getTestHandler<
+  { scheduleToken: string },
+  { shouldDispatch: boolean; leaseToken?: string }
+>(beginSecurityScanDispatchInternal);
 
-const beginSecurityScanDispatchInternalHandler = (
-  beginSecurityScanDispatchInternal as unknown as WrappedHandler<
-    { scheduleToken: string },
-    { shouldDispatch: boolean; leaseToken?: string }
-  >
-)._handler;
+const finishSecurityScanDispatchInternalHandler = getTestHandler<
+  {
+    leaseToken: string;
+    outcome: "succeeded" | "failed" | "unknown";
+    error?: string;
+  },
+  { ok: boolean; stale?: boolean }
+>(finishSecurityScanDispatchInternal);
 
-const finishSecurityScanDispatchInternalHandler = (
-  finishSecurityScanDispatchInternal as unknown as WrappedHandler<
-    {
-      leaseToken: string;
-      outcome: "succeeded" | "failed" | "unknown";
-      error?: string;
-    },
-    { ok: boolean; stale?: boolean }
-  >
-)._handler;
+function makeDispatchQuery<TJob, TState>(getJob: () => TJob, getState: () => TState) {
+  return vi.fn((table: string) => {
+    if (table === "securityScanJobs") {
+      return {
+        withIndex: vi.fn(() => ({
+          order: vi.fn(() => ({
+            first: vi.fn(async () => getJob()),
+          })),
+        })),
+      };
+    }
+    return {
+      withIndex: vi.fn(() => ({
+        unique: vi.fn(async () => getState()),
+      })),
+    };
+  });
+}
+
+function makeDispatchDb({
+  query,
+  insert = vi.fn(),
+  patch = vi.fn(),
+}: {
+  query: ReturnType<typeof vi.fn>;
+  insert?: ReturnType<typeof vi.fn>;
+  patch?: ReturnType<typeof vi.fn>;
+}) {
+  return {
+    ...createMockDb(),
+    insert,
+    patch,
+    query,
+  };
+}
 
 describe("securityScanDispatch", () => {
   afterEach(() => {
@@ -65,39 +93,18 @@ describe("securityScanDispatch", () => {
 
     const insert = vi.fn(async () => "securityScanDispatchState:1");
     const runAt = vi.fn(async () => "_scheduled_functions:1");
-    const query = vi.fn((table: string) => {
-      if (table === "securityScanJobs") {
-        return {
-          withIndex: vi.fn(() => ({
-            order: vi.fn(() => ({
-              first: vi.fn(async () => ({
-                _id: "securityScanJobs:1",
-                status: "queued",
-                nextRunAt: 900_000,
-              })),
-            })),
-          })),
-        };
-      }
-      return {
-        withIndex: vi.fn(() => ({
-          unique: vi.fn(async () => null),
-        })),
-      };
-    });
+    const query = makeDispatchQuery(
+      () => ({
+        _id: "securityScanJobs:1",
+        status: "queued",
+        nextRunAt: 900_000,
+      }),
+      () => null,
+    );
 
     const result = await requestSecurityScanDispatchInternalHandler(
       {
-        db: {
-          get: vi.fn(),
-          insert,
-          patch: vi.fn(),
-          query,
-          replace: vi.fn(),
-          delete: vi.fn(),
-          normalizeId: vi.fn(),
-          system: {},
-        },
+        db: makeDispatchDb({ query, insert }),
         scheduler: { runAt },
       },
       {},
@@ -131,46 +138,25 @@ describe("securityScanDispatch", () => {
       vi.stubEnv("GITHUB_APP_PRIVATE_KEY", "configured");
 
       const runAt = vi.fn();
-      const query = vi.fn((table: string) => {
-        if (table === "securityScanJobs") {
-          return {
-            withIndex: vi.fn(() => ({
-              order: vi.fn(() => ({
-                first: vi.fn(async () => ({
-                  _id: "securityScanJobs:1",
-                  status: "queued",
-                  nextRunAt: 900_000,
-                })),
-              })),
-            })),
-          };
-        }
-        return {
-          withIndex: vi.fn(() => ({
-            unique: vi.fn(async () => ({
-              _id: "securityScanDispatchState:1",
-              key: "codex-worker",
-              scheduledToken: "existing-token",
-              scheduledAt,
-              leaseExpiresAt,
-              updatedAt: 999_000,
-            })),
-          })),
-        };
-      });
+      const query = makeDispatchQuery(
+        () => ({
+          _id: "securityScanJobs:1",
+          status: "queued",
+          nextRunAt: 900_000,
+        }),
+        () => ({
+          _id: "securityScanDispatchState:1",
+          key: "codex-worker",
+          scheduledToken: "existing-token",
+          scheduledAt,
+          leaseExpiresAt,
+          updatedAt: 999_000,
+        }),
+      );
 
       const result = await requestSecurityScanDispatchInternalHandler(
         {
-          db: {
-            get: vi.fn(),
-            insert: vi.fn(),
-            patch: vi.fn(),
-            query,
-            replace: vi.fn(),
-            delete: vi.fn(),
-            normalizeId: vi.fn(),
-            system: {},
-          },
+          db: makeDispatchDb({ query }),
           scheduler: { runAt },
         },
         {},
@@ -192,45 +178,24 @@ describe("securityScanDispatch", () => {
 
     const patch = vi.fn();
     const runAt = vi.fn(async () => "_scheduled_functions:next");
-    const query = vi.fn((table: string) => {
-      if (table === "securityScanJobs") {
-        return {
-          withIndex: vi.fn(() => ({
-            order: vi.fn(() => ({
-              first: vi.fn(async () => ({
-                _id: "securityScanJobs:2",
-                status: "queued",
-                nextRunAt: 900_000,
-              })),
-            })),
-          })),
-        };
-      }
-      return {
-        withIndex: vi.fn(() => ({
-          unique: vi.fn(async () => ({
-            _id: "securityScanDispatchState:1",
-            key: "codex-worker",
-            leaseToken: "active-lease",
-            leaseExpiresAt: 1_300_000,
-            updatedAt: 999_000,
-          })),
-        })),
-      };
-    });
+    const query = makeDispatchQuery(
+      () => ({
+        _id: "securityScanJobs:2",
+        status: "queued",
+        nextRunAt: 900_000,
+      }),
+      () => ({
+        _id: "securityScanDispatchState:1",
+        key: "codex-worker",
+        leaseToken: "active-lease",
+        leaseExpiresAt: 1_300_000,
+        updatedAt: 999_000,
+      }),
+    );
 
     const result = await requestSecurityScanDispatchInternalHandler(
       {
-        db: {
-          get: vi.fn(),
-          insert: vi.fn(),
-          patch,
-          query,
-          replace: vi.fn(),
-          delete: vi.fn(),
-          normalizeId: vi.fn(),
-          system: {},
-        },
+        db: makeDispatchDb({ query, patch }),
         scheduler: { runAt },
       },
       {},
@@ -256,45 +221,24 @@ describe("securityScanDispatch", () => {
 
     const patch = vi.fn();
     const runAt = vi.fn(async () => "_scheduled_functions:next");
-    const query = vi.fn((table: string) => {
-      if (table === "securityScanJobs") {
-        return {
-          withIndex: vi.fn(() => ({
-            order: vi.fn(() => ({
-              first: vi.fn(async () => ({
-                _id: "securityScanJobs:2",
-                status: "queued",
-                nextRunAt: 900_000,
-              })),
-            })),
-          })),
-        };
-      }
-      return {
-        withIndex: vi.fn(() => ({
-          unique: vi.fn(async () => ({
-            _id: "securityScanDispatchState:1",
-            key: "codex-worker",
-            scheduledToken: "future-dispatch",
-            scheduledAt: 1_300_000,
-            updatedAt: 999_000,
-          })),
-        })),
-      };
-    });
+    const query = makeDispatchQuery(
+      () => ({
+        _id: "securityScanJobs:2",
+        status: "queued",
+        nextRunAt: 900_000,
+      }),
+      () => ({
+        _id: "securityScanDispatchState:1",
+        key: "codex-worker",
+        scheduledToken: "future-dispatch",
+        scheduledAt: 1_300_000,
+        updatedAt: 999_000,
+      }),
+    );
 
     const result = await requestSecurityScanDispatchInternalHandler(
       {
-        db: {
-          get: vi.fn(),
-          insert: vi.fn(),
-          patch,
-          query,
-          replace: vi.fn(),
-          delete: vi.fn(),
-          normalizeId: vi.fn(),
-          system: {},
-        },
+        db: makeDispatchDb({ query, patch }),
         scheduler: { runAt },
       },
       {},
@@ -320,45 +264,24 @@ describe("securityScanDispatch", () => {
 
     const patch = vi.fn();
     const runAt = vi.fn(async () => "_scheduled_functions:replacement");
-    const query = vi.fn((table: string) => {
-      if (table === "securityScanJobs") {
-        return {
-          withIndex: vi.fn(() => ({
-            order: vi.fn(() => ({
-              first: vi.fn(async () => ({
-                _id: "securityScanJobs:stuck",
-                status: "queued",
-                nextRunAt: 800_000,
-              })),
-            })),
-          })),
-        };
-      }
-      return {
-        withIndex: vi.fn(() => ({
-          unique: vi.fn(async () => ({
-            _id: "securityScanDispatchState:1",
-            key: "codex-worker",
-            scheduledToken: "lost-token",
-            scheduledAt: 900_000,
-            updatedAt: 900_000,
-          })),
-        })),
-      };
-    });
+    const query = makeDispatchQuery(
+      () => ({
+        _id: "securityScanJobs:stuck",
+        status: "queued",
+        nextRunAt: 800_000,
+      }),
+      () => ({
+        _id: "securityScanDispatchState:1",
+        key: "codex-worker",
+        scheduledToken: "lost-token",
+        scheduledAt: 900_000,
+        updatedAt: 900_000,
+      }),
+    );
 
     const result = await requestSecurityScanDispatchInternalHandler(
       {
-        db: {
-          get: vi.fn(),
-          insert: vi.fn(),
-          patch,
-          query,
-          replace: vi.fn(),
-          delete: vi.fn(),
-          normalizeId: vi.fn(),
-          system: {},
-        },
+        db: makeDispatchDb({ query, patch }),
         scheduler: { runAt },
       },
       {},
@@ -379,45 +302,24 @@ describe("securityScanDispatch", () => {
     vi.stubEnv("GITHUB_APP_PRIVATE_KEY", "configured");
 
     const patch = vi.fn();
-    const query = vi.fn((table: string) => {
-      if (table === "securityScanJobs") {
-        return {
-          withIndex: vi.fn(() => ({
-            order: vi.fn(() => ({
-              first: vi.fn(async () => ({
-                _id: "securityScanJobs:claimable",
-                status: "queued",
-                nextRunAt: 900_000,
-              })),
-            })),
-          })),
-        };
-      }
-      return {
-        withIndex: vi.fn(() => ({
-          unique: vi.fn(async () => ({
-            _id: "securityScanDispatchState:1",
-            key: "codex-worker",
-            scheduledToken: "current-token",
-            scheduledAt: 1_000_000,
-            updatedAt: 999_000,
-          })),
-        })),
-      };
-    });
+    const query = makeDispatchQuery(
+      () => ({
+        _id: "securityScanJobs:claimable",
+        status: "queued",
+        nextRunAt: 900_000,
+      }),
+      () => ({
+        _id: "securityScanDispatchState:1",
+        key: "codex-worker",
+        scheduledToken: "current-token",
+        scheduledAt: 1_000_000,
+        updatedAt: 999_000,
+      }),
+    );
 
     const result = await beginSecurityScanDispatchInternalHandler(
       {
-        db: {
-          get: vi.fn(),
-          insert: vi.fn(),
-          patch,
-          query,
-          replace: vi.fn(),
-          delete: vi.fn(),
-          normalizeId: vi.fn(),
-          system: {},
-        },
+        db: makeDispatchDb({ query, patch }),
         scheduler: { runAt: vi.fn() },
       },
       { scheduleToken: "current-token" },
@@ -520,39 +422,18 @@ describe("securityScanDispatch", () => {
       }
     });
     const runAt = vi.fn(async () => "_scheduled_functions:retry");
-    const query = vi.fn((table: string) => {
-      if (table === "securityScanJobs") {
-        return {
-          withIndex: vi.fn(() => ({
-            order: vi.fn(() => ({
-              first: vi.fn(async () => ({
-                _id: "securityScanJobs:retry",
-                status: "queued",
-                nextRunAt: 900_000,
-              })),
-            })),
-          })),
-        };
-      }
-      return {
-        withIndex: vi.fn(() => ({
-          unique: vi.fn(async () => state),
-        })),
-      };
-    });
+    const query = makeDispatchQuery(
+      () => ({
+        _id: "securityScanJobs:retry",
+        status: "queued",
+        nextRunAt: 900_000,
+      }),
+      () => state,
+    );
 
     const result = await finishSecurityScanDispatchInternalHandler(
       {
-        db: {
-          get: vi.fn(),
-          insert: vi.fn(),
-          patch,
-          query,
-          replace: vi.fn(),
-          delete: vi.fn(),
-          normalizeId: vi.fn(),
-          system: {},
-        },
+        db: makeDispatchDb({ query, patch }),
         scheduler: { runAt },
       },
       {

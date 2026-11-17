@@ -2,6 +2,7 @@
 /* @vitest-environment edge-runtime */
 import { convexTest } from "convex-test";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
 import { api, internal } from "./_generated/api";
 import schema from "./schema";
 
@@ -326,20 +327,15 @@ describe("publish attempt runtime recovery", () => {
             scanStatus: "pending" as const,
           };
           const packageId = await ctx.db.insert("packages", {
+            ...createPackageSeedDefaults(),
             name: "transaction-plugin",
             normalizedName: "transaction-plugin",
             displayName: "Transaction Plugin",
             ownerUserId: userId,
-            family: "code-plugin",
-            channel: "community",
-            isOfficial: false,
-            tags: {},
             compatibility: {},
             verification,
             scanStatus: "pending",
             stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
-            createdAt: 1,
-            updatedAt: 1,
           });
           const releaseId = await ctx.db.insert("packageReleases", {
             packageId,
@@ -748,20 +744,15 @@ describe("publish attempt runtime recovery", () => {
     const ids = await t.run(async (ctx) => {
       const userId = await ctx.db.insert("users", {});
       const packageId = await ctx.db.insert("packages", {
+        ...createPackageSeedDefaults(),
         name: "@demo/orphan-runtime",
         normalizedName: "@demo/orphan-runtime",
         displayName: "Orphan Runtime",
         ownerUserId: userId,
-        family: "code-plugin",
-        channel: "community",
-        isOfficial: false,
-        tags: {},
         compatibility: {},
         verification: { tier: "structural", scope: "artifact-only", scanStatus: "pending" },
         scanStatus: "pending",
         stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
-        createdAt: 1,
-        updatedAt: 1,
       });
       const releaseId = await ctx.db.insert("packageReleases", {
         packageId,

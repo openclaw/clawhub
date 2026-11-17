@@ -25,12 +25,29 @@ Its `agent` object carries identity and purpose plus supported native `groupChat
 `tools.profile` selects a bounded tool policy. The existing bounded tool, memory
 consent, path and environment restrictions remain enforced.
 
+`agent.model` is an optional preference naming one exact `provider/model`
+reference of at most 200 characters, without aliases or auth-profile suffixes.
+ClawHub validates only its shape. It does not make the provider a dependency,
+carry credentials, or promise availability: OpenClaw applies the preference at
+Add only when the Gateway reports that model as available and permitted, and
+otherwise leaves the agent on the Gateway's default model.
+
 Top-level `skills` and `plugins` contain exact `{ref, version}` ClawHub references
 or strict `{path}` package-local directories. A single source-aware inventory
 (`kind`, `source`, and either `ref`/`version` or `path`/optional metadata `name`) drives
 validation output, bounded summary counts, release detail APIs and website lists.
 Template version and artifact SHA-256 remain on the existing release envelope;
 declared dependencies do not imply installed or connected state.
+
+The Template detail page additionally projects `workspace` destinations that
+OpenClaw loads natively into the matching tab: `skills/**/SKILL.md` and
+`.agents/skills/**/SKILL.md` as skills, `.openclaw/extensions/<id>/openclaw.plugin.json`
+as plugins, and `HEARTBEAT.md` as heartbeat work that Add converts into interval
+automations. This projection is display-only and derived in the browser from the
+pinned `CLAW.md`: it names entries from their destination path, labels them as
+workspace files, and never changes the stored inventory, summary counts or
+validation. Other workspace files, including guides that merely describe
+optional automations, stay only under Workspace files.
 
 Retired `packages`, `profiles`, `extensions`, `cronJobs`, `profiles/` files and
 `metadata.openclaw.config` fail with migration guidance. There is no profile
@@ -92,9 +109,17 @@ unchanged, and catalog metadata becomes visible only after publication.
   local Labs visibility, inspection, consent, and new-agent addition.
 - Template publication still requires validation, moderation, ownership, and
   scanner checks.
+- The install reference for a Template is `@publisher/slug`, matching skills.
+  Templates published from OpenClaw's creator flow are stored under an unscoped
+  slug, so package reads resolve `@publisher/slug` to the unscoped Template
+  owned by that publisher when no exact scoped package exists. The exact name
+  always wins, the owner is the current active publisher, and the rule applies
+  only to Templates. Responses keep the stored package name because OpenClaw
+  verifies the archive's `package.json` name against it.
 - Detail pages present release security-audit status and details in the Security
   audit sidebar, not repeated as inline subtext beneath the install command. This is
-  presentational only: CLI and prompt copy remain unavailable unless the package
+  presentational only: the identity-only native Install CTA and command copy
+  remain unavailable unless the package
   scan status is clean and a current release exists. Missing, pending, not-run,
   suspicious, and malicious scan states do not become ready to add.
 
