@@ -20,8 +20,9 @@ A claimed job runs Endor when:
 - the job is a package release whose family is `code-plugin`.
 
 That covers official and community code plugins. Skills and bundle plugins never
-run Endor. There is no backfill: existing releases gain a result the next time
-they are scanned for any reason (new publication, owner rescan, admin rescan).
+run Endor. The `package-scan-backfill` cron enqueues Endor report-only jobs for
+releases whose Endor result is missing or `failed` (see
+`specs/plugin-single-scan-routing.md`); any other scan also refreshes it.
 
 ## Result contract
 
@@ -34,7 +35,8 @@ they are scanned for any reason (new publication, owner rescan, admin rescan).
   package with a root `pnpm-lock.yaml`: `endorctl` needs pnpm for it, and the
   scanner image only runs npm and Yarn through credential-stripping shims.
 - A scanner failure or timeout is saved as `failed` with a generic reason. It
-  does not fail or retry the job; owners or admins can request a rescan.
+  does not fail or immediately retry the job; the backfill cron re-enqueues it
+  later, and owners or admins can request a rescan.
 - A later scan replaces the stored result; this is not a report archive. The
   previous result stays visible while replacement work is queued or running.
 
@@ -64,6 +66,14 @@ Endor runs with `docker run --rm` from a digest-pinned image built by the manual
 - installs firewall rules blocking private, link-local and special-use IPv4/IPv6
   destinations, then drops all capabilities and runs as the unprivileged `node`
   user (it uses public DNS resolvers because the firewall blocks private ones);
+- is capped at 3 GiB of memory with no swap, so a shard's default 4 concurrent
+  scans leave headroom on the 16 GB hosted runner. The `/tmp` tmpfs, which
+  holds the npm tree, npm cache and call graph, counts against the cap. An
+  oversized scan is killed inside its own container and only its report fails.
+  Because the backfill cron re-enqueues failed reports, a package that never
+  fits keeps failing on later passes until the cap changes. Without
+  the cap, from 2026-11-07 concurrent scans of large packages exhausted the
+  runner: the kernel killed the worker, or GitHub lost contact with the runner;
 - runs npm and Yarn through shims that strip Endor credentials and disable
   dependency scripts. The image pins an npm version that also suppresses Git
   dependency `prepare` scripts; the isolation proof below checks this.
