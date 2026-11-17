@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
 import { getVercelOidcToken, verifyVercelOidcToken, type VercelOidcPayload } from "@vercel/oidc";
 import { getClawHubRolloutCapabilities } from "clawhub-schema";
+import type { Infer } from "convex/values";
 import { parse, type DefaultTreeAdapterMap } from "parse5";
 import { buildGitHubApiHeaders } from "../convex/lib/githubAuth";
+import type { skillsShMirrorDetailValidator } from "../convex/lib/skillsShMirrorContract";
 
 const SKILLS_SH_API_BASE = "https://skills.sh/api/v1";
 const MAX_SOURCE_PAGE_SIZE = 500;
@@ -2248,15 +2250,7 @@ export async function fetchSkillsShMirrorBatch(
     | (ReturnType<typeof buildSkillsShMirrorObservation> & {
         upstreamScanners: SkillsShMirrorUpstreamScanners;
         sourceContentHash?: string;
-        detail?: {
-          contentKind: "skill-md" | "readme";
-          path: string;
-          content: string;
-          contentBytes: number;
-          sourceBytes: number;
-          sourceFileCount: number;
-          truncated: boolean;
-        };
+        detail?: Infer<typeof skillsShMirrorDetailValidator>;
       })
     | ReturnType<typeof safeMirrorIdentityError>
   >({ length: listRows.length });

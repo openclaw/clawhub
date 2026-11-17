@@ -1,32 +1,32 @@
+import type {
+  PackageArtifactSummary,
+  ApiV1PackageVersionPublicationResponse,
+  PackageChannel,
+  PackageFamily as PublicPackageFamily,
+  PluginCategorySlug,
+  PackageModerationQueueStatus,
+  PackageOfficialMigrationListPhase,
+  PackageOfficialMigrationPhase,
+  ServerPackagePublishRequest,
+} from "clawhub-schema";
 import {
-  ServerPackagePublishRequestSchema,
-  MANAGED_MCP_DEFINITION_PATH,
-  PACKAGE_CATEGORY_BATCH_LIMIT,
-  validateTemplatePackageContents,
-  templateBundledMetadataPaths,
-  getPackageScopeOwnerMismatch,
-  getPluginDiscoveryExclusion,
   INTERNAL_UNCATEGORIZED_CATEGORY,
   isPluginCategorySlug,
   isTemplateCategorySlug,
   normalizeCatalogTopic,
   normalizeCatalogTopics,
   normalizePluginCategories,
-  parseArk,
   resolvePluginCategories,
+} from "clawhub-schema/catalogMetadata";
+import { MANAGED_MCP_DEFINITION_PATH } from "clawhub-schema/managedMcpUrls";
+import { validateOpenClawExternalCodePluginPackageContents } from "clawhub-schema/openclawContract";
+import { PACKAGE_CATEGORY_BATCH_LIMIT } from "clawhub-schema/packageLimits";
+import { getPackageScopeOwnerMismatch } from "clawhub-schema/packageNames";
+import {
+  getPluginDiscoveryExclusion,
   resolveStoredPluginCategories,
-  selectPluginManifest,
-  validateOpenClawExternalCodePluginPackageContents,
-  type PackageArtifactSummary,
-  type ApiV1PackageVersionPublicationResponse,
-  type PackageChannel,
-  type PackageFamily as PublicPackageFamily,
-  type PluginCategorySlug,
-  type PackageModerationQueueStatus,
-  type PackageOfficialMigrationListPhase,
-  type PackageOfficialMigrationPhase,
-  type ServerPackagePublishRequest,
-} from "clawhub-schema";
+} from "clawhub-schema/pluginCategories";
+import { selectPluginManifest } from "clawhub-schema/pluginInput";
 import { getPage, type IndexKey } from "convex-helpers/server/pagination";
 import { paginationOptsValidator, type PaginationOptions } from "convex/server";
 import { ConvexError, v } from "convex/values";
@@ -41,8 +41,8 @@ import {
   internalQuery,
   mutation,
   query,
+  syncPackageSearchDigestForPackageId,
 } from "./functions";
-import { compareCatalogSearchEntries } from "./httpApiV1/packagesV1";
 import {
   assertAdmin,
   assertModerator,
@@ -60,12 +60,12 @@ import {
   readArtifactReportStatus,
   appendPackageModerationEventLog,
 } from "./lib/artifactModeration";
+import { compareCatalogSearchEntries } from "./lib/catalogPage";
 import {
   type CatalogTextMatch as PackageSearchMatch,
   matchCatalogText,
 } from "./lib/catalogTextMatch";
 import { generatePackageChangelogPreview } from "./lib/changelog";
-import { sha256Hex } from "./lib/clawpack";
 import {
   ACTIVITY_TREND_DAYS,
   buildDailyMetricTrends,
@@ -83,6 +83,7 @@ import { runActionRef, runMutationRef, runQueryRef } from "./lib/functionRefs";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
 import { readGlobalPublicPluginsCount } from "./lib/globalStats";
+import { sha256Hex } from "./lib/hash";
 import {
   decodeIndexCursor as decodePackageIndexCursor,
   decodeIndexKeyValue as decodePackageIndexKeyValue,
@@ -177,7 +178,7 @@ import {
   type SdkUsageReport,
 } from "./lib/packageSdkUsageContract";
 import { readStagedSdkUsageReport } from "./lib/packageSdkUsageStorage";
-import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
+import { extractPackageDigestFields } from "./lib/packageSearchDigest";
 import {
   getPackageTrustReasons,
   isPackageBlockedFromPublic,
@@ -207,6 +208,10 @@ import {
 } from "./lib/pluginScanRouting";
 import { toPublicPublisher } from "./lib/public";
 import { assertOperationalPackageRetryFinalization } from "./lib/publishAttemptOperationalRecovery";
+import {
+  ACTIVE_PUBLISH_ATTEMPT_STATUSES,
+  failedPublishAttemptPatch,
+} from "./lib/publishAttemptState";
 import {
   assertCanManageOwnedResource,
   canAccessPublisherOwnerScope,
@@ -244,7 +249,8 @@ import {
   aigAnalysisValidator,
   skillSpectorAnalysisValidator,
 } from "./lib/securityAnalysisValidators";
-import { buildPackageInventoryDigest, hashSkillFiles } from "./lib/skills";
+import { hashSkillFiles } from "./lib/skills/fileHash";
+import { buildPackageInventoryDigest } from "./lib/skills/skillMarkdown";
 import { buildDeterministicPackageZip } from "./lib/skillZip";
 import { classifyTemplateCategories } from "./lib/templateCategoryClassification";
 import {
@@ -254,7 +260,6 @@ import {
   type StoredPackageFamily,
 } from "./lib/templateStorage";
 import { PACKAGE_TRENDING_LEADERBOARD_KIND } from "./packageLeaderboards";
-import { ACTIVE_PUBLISH_ATTEMPT_STATUSES, failedPublishAttemptPatch } from "./publishAttempts";
 import schema, { llmAnalysisValidator } from "./schema";
 type PackageFamily = StoredPackageFamily;
 
@@ -1697,45 +1702,31 @@ function buildPackagePluginCategoryDigestQuery(
   const isOfficial = args.isOfficial;
   const digests = ctx.db.query("packagePluginCategorySearchDigest");
   if (args.sort === "installs" || args.sort === "recommended") {
+    const scoreSort = args.sort === "installs" ? "installs" : "recommended_score";
     if (family && typeof isOfficial === "boolean") {
-      return digests.withIndex(
-        args.sort === "installs"
-          ? "by_active_family_official_category_installs"
-          : "by_active_family_official_category_recommended_score",
-        (q) =>
-          q
-            .eq("softDeletedAt", undefined)
-            .eq("family", family)
-            .eq("isOfficial", isOfficial)
-            .eq("pluginCategory", args.category),
+      return digests.withIndex(`by_active_family_official_category_${scoreSort}`, (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("family", family)
+          .eq("isOfficial", isOfficial)
+          .eq("pluginCategory", args.category),
       );
     }
     if (family) {
-      return digests.withIndex(
-        args.sort === "installs"
-          ? "by_active_family_category_installs"
-          : "by_active_family_category_recommended_score",
-        (q) =>
-          q.eq("softDeletedAt", undefined).eq("family", family).eq("pluginCategory", args.category),
+      return digests.withIndex(`by_active_family_category_${scoreSort}`, (q) =>
+        q.eq("softDeletedAt", undefined).eq("family", family).eq("pluginCategory", args.category),
       );
     }
     if (typeof isOfficial === "boolean") {
-      return digests.withIndex(
-        args.sort === "installs"
-          ? "by_active_official_category_installs"
-          : "by_active_official_category_recommended_score",
-        (q) =>
-          q
-            .eq("softDeletedAt", undefined)
-            .eq("isOfficial", isOfficial)
-            .eq("pluginCategory", args.category),
+      return digests.withIndex(`by_active_official_category_${scoreSort}`, (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("isOfficial", isOfficial)
+          .eq("pluginCategory", args.category),
       );
     }
-    return digests.withIndex(
-      args.sort === "installs"
-        ? "by_active_category_installs"
-        : "by_active_category_recommended_score",
-      (q) => q.eq("softDeletedAt", undefined).eq("pluginCategory", args.category),
+    return digests.withIndex(`by_active_category_${scoreSort}`, (q) =>
+      q.eq("softDeletedAt", undefined).eq("pluginCategory", args.category),
     );
   }
   const sort = args.sort === "downloads" ? "downloads" : "updated";
@@ -1813,26 +1804,18 @@ function buildPackageTopicDigestQuery(
   const channel = args.channel;
   const isOfficial = args.isOfficial;
   const digests = ctx.db.query("packageTopicSearchDigest");
-  if (args.sort === "installs") {
+  if (args.sort === "installs" || args.sort === "recommended") {
+    const scoreSort = args.sort === "installs" ? "installs" : "recommended_score";
     if (typeof isOfficial === "boolean") {
-      return digests.withIndex("by_active_official_topic_installs", (q) =>
+      return digests.withIndex(`by_active_official_topic_${scoreSort}`, (q) =>
         q.eq("softDeletedAt", undefined).eq("isOfficial", isOfficial).eq("topic", args.topic),
       );
     }
-    return digests.withIndex("by_active_topic_installs", (q) =>
+    return digests.withIndex(`by_active_topic_${scoreSort}`, (q) =>
       q.eq("softDeletedAt", undefined).eq("topic", args.topic),
     );
   }
-  if (args.sort === "recommended") {
-    if (typeof isOfficial === "boolean") {
-      return digests.withIndex("by_active_official_topic_recommended_score", (q) =>
-        q.eq("softDeletedAt", undefined).eq("isOfficial", isOfficial).eq("topic", args.topic),
-      );
-    }
-    return digests.withIndex("by_active_topic_recommended_score", (q) =>
-      q.eq("softDeletedAt", undefined).eq("topic", args.topic),
-    );
-  }
+
   const sort = args.sort === "downloads" ? "downloads" : "updated";
   if (sort === "downloads" && family && channel && typeof isOfficial === "boolean") {
     return digests.withIndex("by_active_family_channel_official_topic_downloads", (q) =>
@@ -5351,17 +5334,8 @@ async function softDeletePackageDoc(
         packagePatch.softDeletedAt = now;
         packagePatch.softDeletedReason = params.reason;
       }
-      const nextPackage: Doc<"packages"> = { ...pkg, ...packagePatch };
+
       await ctx.db.patch(pkg._id, packagePatch);
-      const deleteOwner = await getOwnerPublisher(ctx, {
-        ownerPublisherId: pkg.ownerPublisherId,
-        ownerUserId: pkg.ownerUserId,
-      });
-      await upsertPackageSearchDigest(ctx, {
-        ...extractPackageDigestFields(nextPackage),
-        ownerHandle: deleteOwner?.handle ?? "",
-        ownerKind: deleteOwner?.kind,
-      });
     }
     return {
       ok: true as const,
@@ -5385,17 +5359,9 @@ async function softDeletePackageDoc(
     softDeletedByRole: params.actorRole ?? "user",
     updatedAt: now,
   };
-  const nextPackage: Doc<"packages"> = { ...pkg, ...packagePatch };
+
   await ctx.db.patch(pkg._id, packagePatch);
-  const deleteOwner = await getOwnerPublisher(ctx, {
-    ownerPublisherId: pkg.ownerPublisherId,
-    ownerUserId: pkg.ownerUserId,
-  });
-  await upsertPackageSearchDigest(ctx, {
-    ...extractPackageDigestFields(nextPackage),
-    ownerHandle: deleteOwner?.handle ?? "",
-    ownerKind: deleteOwner?.kind,
-  });
+
   for (const releaseId of deletedReleaseIds) {
     await ctx.db.patch(releaseId, { softDeletedAt: now });
   }
@@ -6026,17 +5992,8 @@ export const applyBanToOwnedPackagesBatchInternal = internalMutation({
             softDeletedByRole: args.deletedByRole,
             updatedAt: args.bannedAt,
           };
-          const nextPackage: Doc<"packages"> = { ...pkg, ...packagePatch };
+
           await ctx.db.patch(pkg._id, packagePatch);
-          const ownerPublisher = await getOwnerPublisher(ctx, {
-            ownerPublisherId: pkg.ownerPublisherId,
-            ownerUserId: pkg.ownerUserId,
-          });
-          await upsertPackageSearchDigest(ctx, {
-            ...extractPackageDigestFields(nextPackage),
-            ownerHandle: ownerPublisher?.handle ?? "",
-            ownerKind: ownerPublisher?.kind,
-          });
         }
         continue;
       }
@@ -6464,20 +6421,8 @@ export async function deleteOwnedPackageReleaseForActor(
       tags: nextTags,
       updatedAt: now,
     };
-    const nextPackage: Doc<"packages"> = {
-      ...pkg,
-      ...packagePatch,
-    };
+
     await ctx.db.patch(pkg._id, packagePatch);
-    const owner = await getOwnerPublisher(ctx, {
-      ownerPublisherId: pkg.ownerPublisherId,
-      ownerUserId: pkg.ownerUserId,
-    });
-    await upsertPackageSearchDigest(ctx, {
-      ...extractPackageDigestFields(nextPackage),
-      ownerHandle: owner?.handle ?? "",
-      ownerKind: owner?.kind,
-    });
   }
 
   await ctx.db.insert("auditLogs", {
@@ -8111,6 +8056,14 @@ async function publishPackageImpl(
   rawPayload: unknown,
   options: PackagePublishOptions = {},
 ) {
+  // Only publication validates with the schema library. Loading it here keeps every other
+  // function in this module, including public package reads, from evaluating it.
+  const {
+    ServerPackagePublishRequestSchema,
+    parseArk,
+    templateBundledMetadataPaths,
+    validateTemplatePackageContents,
+  } = await import("clawhub-schema");
   const payload = parseArk<ServerPackagePublishRequest>(
     ServerPackagePublishRequestSchema,
     rawPayload,
@@ -9562,10 +9515,6 @@ async function patchPackageOwnerWithAudit(
   }
 
   await ctx.db.patch(args.pkg._id, nextPackageFields);
-  await upsertPackageSearchDigest(ctx, {
-    ...extractPackageDigestFields(args.pkg),
-    ...nextPackageFields,
-  });
 
   await ctx.db.insert("auditLogs", {
     actorUserId: args.actorUserId,
@@ -9809,10 +9758,7 @@ export const repairPackageIdentityInternal = internalMutation({
     }
 
     await ctx.db.patch(pkg._id, patch);
-    await upsertPackageSearchDigest(ctx, {
-      ...extractPackageDigestFields(pkg),
-      ...patch,
-    });
+
     await ctx.db.insert("auditLogs", {
       actorUserId: args.actorUserId,
       action: "package.identity.repair",
@@ -9887,15 +9833,7 @@ export const setPackageCatalogMetadata = mutation({
       inferredTopicInputHash: nextPackage.inferredTopicInputHash,
       updatedAt: now,
     });
-    const owner = await getOwnerPublisher(ctx, {
-      ownerPublisherId: nextPackage.ownerPublisherId,
-      ownerUserId: nextPackage.ownerUserId,
-    });
-    await upsertPackageSearchDigest(ctx, {
-      ...extractPackageDigestFields(nextPackage),
-      ownerHandle: owner?.handle ?? "",
-      ownerKind: owner?.kind,
-    });
+
     await ctx.db.insert("auditLogs", {
       actorUserId: user._id,
       action: "package.catalog_metadata.set",
@@ -11778,17 +11716,8 @@ async function quarantineMaliciousNonLatestPackageRelease(
       tags: nextTags,
       updatedAt: now,
     };
-    const nextPackage: Doc<"packages"> = { ...pkg, ...packagePatch };
+
     await ctx.db.patch(pkg._id, packagePatch);
-    const owner = await getOwnerPublisher(ctx, {
-      ownerPublisherId: pkg.ownerPublisherId,
-      ownerUserId: pkg.ownerUserId,
-    });
-    await upsertPackageSearchDigest(ctx, {
-      ...extractPackageDigestFields(nextPackage),
-      ownerHandle: owner?.handle ?? "",
-      ownerKind: owner?.kind,
-    });
   }
 
   if (ctx.scheduler) {
@@ -11933,26 +11862,11 @@ async function syncLatestPackageVerification(
         verification: nextVerification,
       }
     : pkg.latestVersionSummary;
-  const nextPackage: Doc<"packages"> = {
-    ...pkg,
-    verification: nextVerification,
-    scanStatus,
-    latestVersionSummary: nextLatestVersionSummary,
-  };
 
   await ctx.db.patch(pkg._id, {
     verification: nextVerification,
     scanStatus,
     latestVersionSummary: nextLatestVersionSummary,
-  });
-  const owner = await getOwnerPublisher(ctx, {
-    ownerPublisherId: pkg.ownerPublisherId,
-    ownerUserId: pkg.ownerUserId,
-  });
-  await upsertPackageSearchDigest(ctx, {
-    ...extractPackageDigestFields(nextPackage),
-    ownerHandle: owner?.handle ?? "",
-    ownerKind: owner?.kind,
   });
 }
 
@@ -12123,12 +12037,6 @@ export const backfillLatestPackageScanStatusInternal = internalMutation({
             verification: nextVerification,
           }
         : pkg.latestVersionSummary;
-      const nextPackage: Doc<"packages"> = {
-        ...pkg,
-        verification: nextVerification,
-        scanStatus,
-        latestVersionSummary: nextLatestVersionSummary,
-      };
 
       if (
         pkg.scanStatus !== scanStatus ||
@@ -12142,16 +12050,9 @@ export const backfillLatestPackageScanStatusInternal = internalMutation({
           latestVersionSummary: nextLatestVersionSummary,
         });
         patched++;
+      } else {
+        await syncPackageSearchDigestForPackageId(ctx, pkg._id);
       }
-      const owner = await getOwnerPublisher(ctx, {
-        ownerPublisherId: pkg.ownerPublisherId,
-        ownerUserId: pkg.ownerUserId,
-      });
-      await upsertPackageSearchDigest(ctx, {
-        ...extractPackageDigestFields(nextPackage),
-        ownerHandle: owner?.handle ?? "",
-        ownerKind: owner?.kind,
-      });
     }
 
     if (!isDone) {
@@ -12223,15 +12124,7 @@ export const normalizeOfficialPublisherPackagesInternal = internalMutation({
         channel: nextPackage.channel,
         isOfficial: nextPackage.isOfficial,
       });
-      const owner = await getOwnerPublisher(ctx, {
-        ownerPublisherId: nextPackage.ownerPublisherId,
-        ownerUserId: nextPackage.ownerUserId,
-      });
-      await upsertPackageSearchDigest(ctx, {
-        ...extractPackageDigestFields(nextPackage),
-        ownerHandle: owner?.handle ?? "",
-        ownerKind: owner?.kind,
-      });
+
       patched++;
     }
 

@@ -1,7 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { describe, expect, it, vi } from "vitest";
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
-import { indexedUnique } from "../src/__tests__/helpers/convexQuery";
+import { indexedUnique, orderedTake, indexedTake } from "../src/__tests__/helpers/convexQuery";
 import { list } from "./skills";
 
 vi.mock("@convex-dev/auth/server", () => ({
@@ -95,29 +95,17 @@ describe("skills.list", () => {
             return {
               withIndex: vi.fn((indexName: string) => {
                 if (indexName === "by_owner_publisher") {
-                  return {
-                    order: vi.fn(() => ({
-                      take: vi.fn().mockResolvedValue([]),
-                    })),
-                  };
+                  return orderedTake(() => []);
                 }
                 if (indexName === "by_owner") {
-                  return {
-                    order: vi.fn(() => ({
-                      take: vi.fn().mockResolvedValue([legacySkill]),
-                    })),
-                  };
+                  return orderedTake(() => [legacySkill]);
                 }
                 throw new Error(`unexpected skills index ${indexName}`);
               }),
             };
           }
           if (table === "skillBadges") {
-            return {
-              withIndex: vi.fn(() => ({
-                take: vi.fn().mockResolvedValue([]),
-              })),
-            };
+            return indexedTake(() => []);
           }
           throw new Error(`unexpected table ${table}`);
         }),
@@ -159,19 +147,11 @@ describe("skills.list", () => {
         query: vi.fn((table: string) => {
           if (table === "skills") {
             return {
-              withIndex: vi.fn(() => ({
-                order: vi.fn(() => ({
-                  take: vi.fn().mockResolvedValue([blockedSkill]),
-                })),
-              })),
+              withIndex: vi.fn(() => orderedTake(() => [blockedSkill])),
             };
           }
           if (table === "skillBadges") {
-            return {
-              withIndex: vi.fn(() => ({
-                take: vi.fn().mockResolvedValue([]),
-              })),
-            };
+            return indexedTake(() => []);
           }
           throw new Error(`unexpected table ${table}`);
         }),
@@ -219,19 +199,11 @@ describe("skills.list", () => {
         query: vi.fn((table: string) => {
           if (table === "skills") {
             return {
-              withIndex: vi.fn(() => ({
-                order: vi.fn(() => ({
-                  take: vi.fn().mockResolvedValue([blockedSkill]),
-                })),
-              })),
+              withIndex: vi.fn(() => orderedTake(() => [blockedSkill])),
             };
           }
           if (table === "skillBadges") {
-            return {
-              withIndex: vi.fn(() => ({
-                take: vi.fn().mockResolvedValue([]),
-              })),
-            };
+            return indexedTake(() => []);
           }
           throw new Error(`unexpected table ${table}`);
         }),

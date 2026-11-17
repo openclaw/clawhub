@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 
 import { describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { chainEq } from "../src/__tests__/helpers/convexQuery";
 import { internal } from "./_generated/api";
 import type { Doc, Id, TableNames } from "./_generated/dataModel";
@@ -22,43 +23,22 @@ import {
   shouldPreserveSkillModerationLock,
 } from "./migrations";
 
-type InstallBackfillWrappedHandler = {
-  _handler: (ctx: unknown, args: { dryRun?: boolean; confirm?: string }) => Promise<unknown>;
+type MigrationArgs = { dryRun?: boolean; confirm?: string };
+
+type DownloadBackfillArgs = { dryRun?: boolean; confirm?: string; previewLimit?: number };
+
+type PluginManifestSummaryBackfillArgs = {
+  dryRun?: boolean;
+  confirm?: string;
+  maxPackages?: number;
 };
 
-type DownloadBackfillWrappedHandler = {
-  _handler: (
-    ctx: unknown,
-    args: { dryRun?: boolean; confirm?: string; previewLimit?: number },
-  ) => Promise<unknown>;
-};
-
-type PluginManifestSummaryBackfillWrappedHandler = {
-  _handler: (
-    ctx: unknown,
-    args: { dryRun?: boolean; confirm?: string; maxPackages?: number },
-  ) => Promise<unknown>;
-};
-
-type PluginManifestSummaryBackfillPageWrappedHandler = {
-  _handler: (
-    ctx: unknown,
-    args: {
-      family: "code-plugin" | "bundle-plugin";
-      cursor?: string | null;
-      limit?: number;
-      dryRun?: boolean;
-      confirm?: string;
-    },
-  ) => Promise<unknown>;
-};
-
-type CatalogMetadataCanonicalizationWrappedHandler = {
-  _handler: (ctx: unknown, args: { dryRun?: boolean; confirm?: string }) => Promise<unknown>;
-};
-
-type SkillManualOverrideCleanupWrappedHandler = {
-  _handler: (ctx: unknown, args: { dryRun?: boolean; confirm?: string }) => Promise<unknown>;
+type PluginManifestSummaryBackfillPageArgs = {
+  family: "code-plugin" | "bundle-plugin";
+  cursor?: string | null;
+  limit?: number;
+  dryRun?: boolean;
+  confirm?: string;
 };
 
 function testId<TableName extends TableNames>(
@@ -314,9 +294,7 @@ describe("catalog metadata canonicalization migration", () => {
 
   it("dry-runs both tracked canonicalization migrations", async () => {
     const runMutation = vi.fn().mockResolvedValue({});
-    const handler = (
-      runCatalogMetadataCanonicalization as unknown as CatalogMetadataCanonicalizationWrappedHandler
-    )._handler;
+    const handler = getTestHandler<MigrationArgs>(runCatalogMetadataCanonicalization);
 
     const result = await handler({ runMutation }, {});
 
@@ -338,9 +316,7 @@ describe("catalog metadata canonicalization migration", () => {
   });
 
   it("requires explicit confirmation before canonicalizing catalog metadata", async () => {
-    const handler = (
-      runCatalogMetadataCanonicalization as unknown as CatalogMetadataCanonicalizationWrappedHandler
-    )._handler;
+    const handler = getTestHandler<MigrationArgs>(runCatalogMetadataCanonicalization);
 
     await expect(handler({ runMutation: vi.fn() }, { dryRun: false })).rejects.toThrow(
       'Pass confirm="canonicalize-catalog-metadata" to apply.',
@@ -351,7 +327,7 @@ describe("catalog metadata canonicalization migration", () => {
 describe("skill install backfill migration", () => {
   it("dry-runs the install backfill migration through the tracked runner", async () => {
     const runMutation = vi.fn().mockResolvedValue({});
-    const handler = (runSkillInstallBackfill as unknown as InstallBackfillWrappedHandler)._handler;
+    const handler = getTestHandler<MigrationArgs>(runSkillInstallBackfill);
 
     const result = await handler({ runMutation }, {});
 
@@ -368,7 +344,7 @@ describe("skill install backfill migration", () => {
   });
 
   it("requires an explicit confirmation before applying the install backfill", async () => {
-    const handler = (runSkillInstallBackfill as unknown as InstallBackfillWrappedHandler)._handler;
+    const handler = getTestHandler<MigrationArgs>(runSkillInstallBackfill);
 
     await expect(handler({ runMutation: vi.fn() }, { dryRun: false })).rejects.toThrow(
       'Pass confirm="apply-skill-install-backfill" to apply.',
@@ -757,9 +733,7 @@ describe("skill manual override cleanup migration", () => {
   it("previews affected verdicts without invoking the write runner", async () => {
     const runMutation = vi.fn().mockResolvedValue({});
     const runQuery = vi.fn().mockResolvedValue(previewPage);
-    const handler = (
-      runSkillManualOverrideCleanup as unknown as SkillManualOverrideCleanupWrappedHandler
-    )._handler;
+    const handler = getTestHandler<MigrationArgs>(runSkillManualOverrideCleanup);
 
     const result = await handler({ runMutation, runQuery }, {});
 
@@ -773,9 +747,7 @@ describe("skill manual override cleanup migration", () => {
   });
 
   it("requires explicit confirmation before deleting stored overrides", async () => {
-    const handler = (
-      runSkillManualOverrideCleanup as unknown as SkillManualOverrideCleanupWrappedHandler
-    )._handler;
+    const handler = getTestHandler<MigrationArgs>(runSkillManualOverrideCleanup);
 
     await expect(
       handler({ runMutation: vi.fn(), runQuery: vi.fn() }, { dryRun: false }),
@@ -865,8 +837,7 @@ describe("NVIDIA GitHub download backfill migration", () => {
       samples: [],
     };
     const runQuery = vi.fn().mockResolvedValue(preview);
-    const handler = (runNvidiaGitHubDownloadBackfill as unknown as DownloadBackfillWrappedHandler)
-      ._handler;
+    const handler = getTestHandler<DownloadBackfillArgs>(runNvidiaGitHubDownloadBackfill);
 
     const result = await handler({ runMutation, runQuery }, {});
 
@@ -888,8 +859,7 @@ describe("NVIDIA GitHub download backfill migration", () => {
   });
 
   it("requires an explicit confirmation before applying the download backfill", async () => {
-    const handler = (runNvidiaGitHubDownloadBackfill as unknown as DownloadBackfillWrappedHandler)
-      ._handler;
+    const handler = getTestHandler<DownloadBackfillArgs>(runNvidiaGitHubDownloadBackfill);
 
     await expect(
       handler({ runMutation: vi.fn(), runQuery: vi.fn() }, { dryRun: false }),
@@ -1048,9 +1018,9 @@ describe("plugin manifest summary backfill migration", () => {
       isDone: true,
       continueCursor: "",
     });
-    const handler = (
-      runPluginManifestSummaryBackfill as unknown as PluginManifestSummaryBackfillWrappedHandler
-    )._handler;
+    const handler = getTestHandler<PluginManifestSummaryBackfillArgs>(
+      runPluginManifestSummaryBackfill,
+    );
 
     const result = await handler({ runQuery, runMutation: vi.fn(), storage: {} }, {});
 
@@ -1076,9 +1046,9 @@ describe("plugin manifest summary backfill migration", () => {
   });
 
   it("requires explicit confirmation before applying plugin manifest summary backfill", async () => {
-    const handler = (
-      runPluginManifestSummaryBackfill as unknown as PluginManifestSummaryBackfillWrappedHandler
-    )._handler;
+    const handler = getTestHandler<PluginManifestSummaryBackfillArgs>(
+      runPluginManifestSummaryBackfill,
+    );
 
     await expect(
       handler({ runQuery: vi.fn(), runMutation: vi.fn(), storage: {} }, { dryRun: false }),
@@ -1118,9 +1088,9 @@ describe("plugin manifest summary backfill migration", () => {
       continueCursor: "next-page",
     });
     const runMutation = vi.fn().mockResolvedValue(true);
-    const handler = (
-      runPluginManifestSummaryBackfillPage as unknown as PluginManifestSummaryBackfillPageWrappedHandler
-    )._handler;
+    const handler = getTestHandler<PluginManifestSummaryBackfillPageArgs>(
+      runPluginManifestSummaryBackfillPage,
+    );
 
     const result = await handler(
       { runQuery, runMutation, storage: {} },
@@ -1224,9 +1194,9 @@ describe("plugin manifest summary backfill migration", () => {
       continueCursor: "",
     });
     const runMutation = vi.fn().mockResolvedValue(true);
-    const handler = (
-      runPluginManifestSummaryBackfillPage as unknown as PluginManifestSummaryBackfillPageWrappedHandler
-    )._handler;
+    const handler = getTestHandler<PluginManifestSummaryBackfillPageArgs>(
+      runPluginManifestSummaryBackfillPage,
+    );
 
     const result = await handler(
       {
@@ -1303,9 +1273,9 @@ describe("plugin manifest summary backfill migration", () => {
         continueCursor: "",
       });
     const runMutation = vi.fn();
-    const handler = (
-      runPluginManifestSummaryBackfill as unknown as PluginManifestSummaryBackfillWrappedHandler
-    )._handler;
+    const handler = getTestHandler<PluginManifestSummaryBackfillArgs>(
+      runPluginManifestSummaryBackfill,
+    );
 
     const result = await handler(
       {

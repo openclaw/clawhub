@@ -9,7 +9,7 @@ export async function fetchText(
   storageId: Id<"_storage">,
 ) {
   const blob = await ctx.storage.get(storageId);
-  if (!blob) throw new Error("File missing in storage");
+  if (!blob) throw new ConvexError("File missing in storage");
   const text = decodeUtf8Text(new Uint8Array(await blob.arrayBuffer()));
   if (text === null) throw new ConvexError("File is not valid UTF-8 text");
   return text;

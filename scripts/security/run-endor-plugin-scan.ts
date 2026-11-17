@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { chmod, cp, lstat, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { chmod, cp, lstat, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { z } from "zod";
 import type { EndorAnalysis } from "../../convex/lib/endorAnalysis";
@@ -25,6 +25,8 @@ const CHILD_RUNTIME_ENV_KEYS = [
 ] as const;
 const DEFAULT_ENDOR_TIMEOUT_MS = 20 * 60 * 1000;
 const DOCKER_REMOVE_TIMEOUT_MS = 10_000;
+// Hosted ubuntu-22.04 runners have 16 GB, and a shard runs 4 scans at once by default.
+const ENDOR_CONTAINER_MEMORY = "3g";
 // Community packages with large dependency trees produce reports over 8 MiB.
 // Only the bounded summary is kept; diagnostics are capped separately.
 const MAX_ENDOR_REPORT_BYTES = 64 * 1024 * 1024;
@@ -86,6 +88,7 @@ async function normalizePackageRoot(scanRoot: string, manifestDirectory: string)
     throw new Error(`Endor scan package.json is invalid at ${packageRoot}`, { cause: error });
   }
   const manifest = unknownRecordSchema.parse(parsedManifest);
+  let manifestChanged = false;
   const devDependenciesValue = manifest.devDependencies;
   if (devDependenciesValue !== undefined) {
     const devDependencies = unknownRecordSchema.safeParse(devDependenciesValue);
@@ -99,9 +102,21 @@ async function normalizePackageRoot(scanRoot: string, manifestDirectory: string)
     if (workspaceDependencyNames.length > 0) {
       for (const name of workspaceDependencyNames) delete devDependencies.data[name];
       manifest.devDependencies = devDependencies.data;
-      await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+      manifestChanged = true;
     }
   }
+  // endorctl requires the pnpm binary whenever packageManager names pnpm, even
+  // next to an npm lockfile. A root pnpm-lock.yaml is skipped before this runs,
+  // so these packages resolve with npm like any lockfile-less package.
+  if (typeof manifest.packageManager === "string" && /^pnpm(@|$)/.test(manifest.packageManager)) {
+    delete manifest.packageManager;
+    manifestChanged = true;
+  }
+  if (manifestChanged) {
+    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+  }
+  // pnpm-workspace.yaml makes endorctl require pnpm too; npm never reads it.
+  await rm(join(manifestDirectory, "pnpm-workspace.yaml"), { force: true, recursive: true });
 
   const shrinkwrapPath = join(manifestDirectory, "npm-shrinkwrap.json");
   const packageLockPath = join(manifestDirectory, "package-lock.json");
@@ -111,10 +126,11 @@ async function normalizePackageRoot(scanRoot: string, manifestDirectory: string)
 }
 
 async function normalizePackageTree(scanRoot: string, directory = scanRoot): Promise<void> {
-  const entries = await readdir(directory, { withFileTypes: true });
   if (await isRegularFile(join(directory, "package.json"))) {
     await normalizePackageRoot(scanRoot, directory);
   }
+  // List after normalizing, which can remove entries.
+  const entries = await readdir(directory, { withFileTypes: true });
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.name === ".git" || entry.name === "node_modules") continue;
     await normalizePackageTree(scanRoot, join(directory, entry.name));
@@ -267,6 +283,14 @@ export async function runEndorPluginScan(input: {
     "--security-opt",
     "no-new-privileges:true",
     "--read-only",
+    // A --memory-swap equal to --memory allows no swap. The /tmp tmpfs (npm
+    // tree, npm cache, call graph) counts against the cap, so an oversized scan
+    // is killed inside this container and fails only its own report, instead
+    // of exhausting the runner.
+    "--memory",
+    ENDOR_CONTAINER_MEMORY,
+    "--memory-swap",
+    ENDOR_CONTAINER_MEMORY,
     "--entrypoint",
     "/usr/local/bin/clawhub-endor-entrypoint",
     "--tmpfs",

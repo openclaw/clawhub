@@ -25,6 +25,13 @@ Its `agent` object carries identity and purpose plus supported native `groupChat
 `tools.profile` selects a bounded tool policy. The existing bounded tool, memory
 consent, path and environment restrictions remain enforced.
 
+`agent.model` is an optional preference naming one exact `provider/model`
+reference of at most 200 characters, without aliases or auth-profile suffixes.
+ClawHub validates only its shape. It does not make the provider a dependency,
+carry credentials, or promise availability: OpenClaw applies the preference at
+Add only when the Gateway reports that model as available and permitted, and
+otherwise leaves the agent on the Gateway's default model.
+
 Top-level `skills` and `plugins` contain exact `{ref, version}` ClawHub references
 or strict `{path}` package-local directories. A single source-aware inventory
 (`kind`, `source`, and either `ref`/`version` or `path`/optional metadata `name`) drives
@@ -111,7 +118,8 @@ unchanged, and catalog metadata becomes visible only after publication.
   verifies the archive's `package.json` name against it.
 - Detail pages present release security-audit status and details in the Security
   audit sidebar, not repeated as inline subtext beneath the install command. This is
-  presentational only: CLI and prompt copy remain unavailable unless the package
+  presentational only: the identity-only native Install CTA and command copy
+  remain unavailable unless the package
   scan status is clean and a current release exists. Missing, pending, not-run,
   suspicious, and malicious scan states do not become ready to add.
 

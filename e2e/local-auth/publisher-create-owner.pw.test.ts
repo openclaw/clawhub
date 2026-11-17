@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
+import { parseLastJsonObject } from "../helpers/convexOutput";
 import { expectNoFatalErrorUi, waitForHydration } from "../helpers/runtimeErrors";
 import { signInAsLocalPersona } from "./helpers";
 
@@ -21,20 +22,6 @@ function registryUrl() {
   const url = process.env.VITE_CONVEX_SITE_URL?.replace(/\/$/u, "");
   if (!url) throw new Error("VITE_CONVEX_SITE_URL is required");
   return url;
-}
-
-function extractLastJsonObject(output: string) {
-  const trimmed = output.trim();
-  for (let index = 0; index < trimmed.length; index += 1) {
-    if (trimmed[index] !== "{") continue;
-    const candidate = trimmed.slice(index);
-    try {
-      return JSON.parse(candidate) as Record<string, unknown>;
-    } catch {
-      // CLI setup may print status lines before JSON output.
-    }
-  }
-  throw new Error(`No JSON object in CLI output:\n${output}`);
 }
 
 async function selectOwnedOrg(page: Page, handle: string) {
@@ -103,7 +90,9 @@ test("CLI-created org keeps its creator as owner through management and self-ups
       },
     );
     expect(createResult.status, `${createResult.stdout}\n${createResult.stderr}`).toBe(0);
-    expect(extractLastJsonObject(createResult.stdout)).toMatchObject({
+    expect(
+      parseLastJsonObject<Record<string, unknown>>(createResult.stdout, "CLI output"),
+    ).toMatchObject({
       created: true,
       handle,
     });

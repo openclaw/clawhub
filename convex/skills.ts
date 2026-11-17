@@ -1,15 +1,14 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
+import type { ApiV1SkillPublicationResponse, SkillCategorySlug } from "clawhub-schema";
 import {
-  decodeUtf8Text,
   getCatalogTopicSlugs,
   isSkillCategorySlug,
   normalizeCatalogTopic,
   normalizeCatalogTopics,
   resolveSkillCategories,
   resolveStoredSkillCategories,
-  type ApiV1SkillPublicationResponse,
-  type SkillCategorySlug,
-} from "clawhub-schema";
+} from "clawhub-schema/catalogMetadata";
+import { decodeUtf8Text } from "clawhub-schema/textFiles";
 import { getPage, type IndexKey, paginator } from "convex-helpers/server/pagination";
 import { paginationOptsValidator, type PaginationResult } from "convex/server";
 import { ConvexError, v } from "convex/values";
@@ -166,7 +165,8 @@ import {
   qualityAssessmentValidator,
   type StoredQualityAssessment,
 } from "./lib/skillQualityContract";
-import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
+import { hashSkillFiles } from "./lib/skills/fileHash";
+import { getFrontmatterValue } from "./lib/skills/frontmatterValue";
 import { getPublicSkillMetadataOwner } from "./lib/skills/publicVersions";
 import {
   getSkillBySlugForPublisher,
@@ -1112,6 +1112,15 @@ function buildReleasedUnpublishedSkillSlug(skill: Pick<Doc<"skills">, "_id">, at
   // the public slug validator, so released hidden rows cannot squat on public
   // slug space after their unpublished reservation expires.
   return `__unpublished_${idPart || "skill"}${suffix}`;
+}
+
+function availableSlugResult() {
+  return {
+    available: true,
+    reason: "available" as const,
+    message: null,
+    url: null,
+  };
 }
 
 function slugValidationAvailabilityFailure(error: unknown) {
@@ -2376,12 +2385,7 @@ export const checkSlugAvailability = query({
       } catch (error) {
         return slugValidationAvailabilityFailure(error);
       }
-      return {
-        available: true,
-        reason: "available" as const,
-        message: null,
-        url: null,
-      };
+      return availableSlugResult();
     }
 
     const unpublishedReservationExpiresAt = await getUnpublishedSlugReservationExpiresAt(
@@ -2402,12 +2406,7 @@ export const checkSlugAvailability = query({
         } catch (error) {
           return slugValidationAvailabilityFailure(error);
         }
-        return {
-          available: true,
-          reason: "available" as const,
-          message: null,
-          url: null,
-        };
+        return availableSlugResult();
       }
       return {
         available: false,
@@ -2422,22 +2421,12 @@ export const checkSlugAvailability = query({
       : requestedPublisher.kind === "user" && requestedPublisher.linkedUserId === skill.ownerUserId;
 
     if (userId && skill.ownerUserId === userId && requestedPublisherMatchesSkill) {
-      return {
-        available: true,
-        reason: "available" as const,
-        message: null,
-        url: null,
-      };
+      return availableSlugResult();
     }
     if (userId && skill.ownerPublisherId && requestedPublisherMatchesSkill) {
       const membership = await getPublisherMembership(ctx, skill.ownerPublisherId, userId);
       if (membership && isPublisherRoleAllowed(membership.role, ["publisher"])) {
-        return {
-          available: true,
-          reason: "available" as const,
-          message: null,
-          url: null,
-        };
+        return availableSlugResult();
       }
     }
 
@@ -2463,12 +2452,7 @@ export const checkSlugAvailability = query({
           callerProviderAccountId,
         )
       ) {
-        return {
-          available: true,
-          reason: "available" as const,
-          message: null,
-          url: null,
-        };
+        return availableSlugResult();
       }
     }
 
@@ -3106,11 +3090,7 @@ export const list = query({
     if (args.batch) {
       if (args.batch === "highlighted") {
         const skills = await loadHighlightedSkills(ctx, limit);
-        const withBadges = await attachBadgesToSkills(ctx, skills);
-        const visibleSkills = await filterSkillsByActiveOwner(ctx, withBadges);
-        return visibleSkills
-          .map((skill) => toPublicSkill(skill))
-          .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill));
+        return await mapDashboardSkillPage(ctx, skills, false);
       }
       const entries = await ctx.db
         .query("skills")
@@ -3118,11 +3098,7 @@ export const list = query({
         .order("desc")
         .take(takeLimit);
       const filtered = entries.filter((skill) => !skill.softDeletedAt).slice(0, limit);
-      const withBadges = await attachBadgesToSkills(ctx, filtered);
-      const visibleSkills = await filterSkillsByActiveOwner(ctx, withBadges);
-      return visibleSkills
-        .map((skill) => toPublicSkill(skill))
-        .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill));
+      return await mapDashboardSkillPage(ctx, filtered, false);
     }
     const ownerPublisherId = args.ownerPublisherId;
     if (ownerPublisherId) {
@@ -3166,18 +3142,7 @@ export const list = query({
           all.findIndex((candidate) => candidate._id === skill._id) === index,
       );
       const filtered = combined.slice(0, limit);
-      const withBadges = await attachBadgesToSkills(ctx, filtered);
-
-      if (isOwnDashboard) {
-        return await Promise.all(
-          withBadges.map(async (skill) => await toDashboardSkillListItem(ctx, skill)),
-        );
-      }
-
-      const visibleSkills = await filterSkillsByActiveOwner(ctx, withBadges);
-      return visibleSkills
-        .map((skill) => toPublicSkill(skill))
-        .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill));
+      return await mapDashboardSkillPage(ctx, filtered, isOwnDashboard);
     }
     const ownerUserId = args.ownerUserId;
     if (ownerUserId) {
@@ -3190,26 +3155,11 @@ export const list = query({
         .take(takeLimit);
       const scoped = await filterSkillsForOwnerUserDashboard(ctx, entries, ownerUserId);
       const filtered = scoped.filter((skill) => !skill.softDeletedAt).slice(0, limit);
-      const withBadges = await attachBadgesToSkills(ctx, filtered);
-
-      if (isOwnDashboard) {
-        return await Promise.all(
-          withBadges.map(async (skill) => await toDashboardSkillListItem(ctx, skill)),
-        );
-      }
-
-      const visibleSkills = await filterSkillsByActiveOwner(ctx, withBadges);
-      return visibleSkills
-        .map((skill) => toPublicSkill(skill))
-        .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill));
+      return await mapDashboardSkillPage(ctx, filtered, isOwnDashboard);
     }
     const entries = await ctx.db.query("skills").order("desc").take(takeLimit);
     const filtered = entries.filter((skill) => !skill.softDeletedAt).slice(0, limit);
-    const withBadges = await attachBadgesToSkills(ctx, filtered);
-    const visibleSkills = await filterSkillsByActiveOwner(ctx, withBadges);
-    return visibleSkills
-      .map((skill) => toPublicSkill(skill))
-      .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill));
+    return await mapDashboardSkillPage(ctx, filtered, false);
   },
 });
 
@@ -5139,12 +5089,7 @@ async function listSkillTopicFilteredPage(
       if (
         digest &&
         (!opts.excludeCurated || !isCuratedSkillDigest(digest)) &&
-        digestPassesPublicListFilters(digest, {
-          categorySlug: opts.categorySlug,
-          topic: opts.topic,
-          categoryKeywords: opts.categoryKeywords,
-          excludeCategoryKeywords: opts.excludeCategoryKeywords,
-        })
+        digestPassesPublicListFilters(digest, opts)
       ) {
         const item = await buildPublicSkillEntryFromDigest(ctx, digest);
         if (item) items.push(item);
@@ -6421,12 +6366,7 @@ async function listCuratedSkillPage(
       }
       if (
         (typeof opts.createdAfter !== "number" || curatedDigest.createdAt >= opts.createdAfter) &&
-        digestPassesPublicListFilters(curatedDigest, {
-          topic: opts.topic,
-          categorySlug: opts.categorySlug,
-          categoryKeywords: opts.categoryKeywords,
-          excludeCategoryKeywords: opts.excludeCategoryKeywords,
-        })
+        digestPassesPublicListFilters(curatedDigest, opts)
       ) {
         // The compact projection contains official and highlighted rows but omits badge kind,
         // so hydrate before applying officialOnly and appending a result.
@@ -6440,12 +6380,7 @@ async function listCuratedSkillPage(
           (!opts.officialOnly || isSkillCatalogOfficial(digest)) &&
           (typeof opts.createdAfter !== "number" || digest.createdAt >= opts.createdAfter) &&
           (!opts.nonSuspiciousOnly || !digest.isSuspicious) &&
-          digestPassesPublicListFilters(digest, {
-            topic: opts.topic,
-            categorySlug: opts.categorySlug,
-            categoryKeywords: opts.categoryKeywords,
-            excludeCategoryKeywords: opts.excludeCategoryKeywords,
-          })
+          digestPassesPublicListFilters(digest, opts)
         ) {
           const item = await buildPublicSkillEntryFromDigest(ctx, digest);
           if (item) items.push(item);
@@ -6547,15 +6482,7 @@ async function listCommunitySkillCategoryPage(
     for (let index = 0; index < result.page.length; index += 1) {
       const digest = result.page[index];
       const cursor = result.indexKeys[index];
-      if (
-        !isCuratedSkillDigest(digest) &&
-        digestPassesPublicListFilters(digest, {
-          topic: opts.topic,
-          categorySlug: opts.categorySlug,
-          categoryKeywords: opts.categoryKeywords,
-          excludeCategoryKeywords: opts.excludeCategoryKeywords,
-        })
-      ) {
+      if (!isCuratedSkillDigest(digest) && digestPassesPublicListFilters(digest, opts)) {
         const item = await buildPublicSkillEntryFromDigest(ctx, digest);
         if (item) items.push(item);
       }
@@ -6674,14 +6601,7 @@ async function fetchHighlightedPage(
       .unique();
     if (!digest || digest.softDeletedAt) continue;
     if (opts.nonSuspiciousOnly && digest.isSuspicious) continue;
-    if (
-      !digestPassesPublicListFilters(digest, {
-        categorySlug: opts.categorySlug,
-        topic: opts.topic,
-        categoryKeywords: opts.categoryKeywords,
-        excludeCategoryKeywords: opts.excludeCategoryKeywords,
-      })
-    ) {
+    if (!digestPassesPublicListFilters(digest, opts)) {
       continue;
     }
     digests.push(digest);

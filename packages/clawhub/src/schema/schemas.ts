@@ -1,5 +1,6 @@
 import { type inferred, type } from "arktype";
 import {
+  ApiV1SkillBulkRescanStatusResponseSchema,
   ClawdisRequiresSchema,
   EnvVarDeclarationSchema,
   SkillInstallSpecSchema,
@@ -285,18 +286,7 @@ export const ApiV1SkillResponseSchema = type({
     .optional(),
 });
 
-export const ApiV1SkillScanBatchStatusResponseSchema = type({
-  ok: "true",
-  total: "number",
-  queued: "number",
-  running: "number",
-  succeeded: "number",
-  failed: "number",
-  missing: "number",
-  terminal: "number",
-  done: "boolean",
-  failedJobIds: "string[]",
-});
+export const ApiV1SkillScanBatchStatusResponseSchema = ApiV1SkillBulkRescanStatusResponseSchema;
 export type ApiV1SkillScanBatchStatusResponse =
   (typeof ApiV1SkillScanBatchStatusResponseSchema)[inferred];
 

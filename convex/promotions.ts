@@ -1,5 +1,5 @@
 import { paginationOptsValidator } from "convex/server";
-import { ConvexError, v } from "convex/values";
+import { ConvexError, type ObjectType, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
@@ -58,27 +58,7 @@ const promotionStatusArgValidator = v.union(
   v.literal("ended"),
 );
 
-type PromotionModelInput = {
-  modelRef: string;
-  alias?: string;
-  suggestedDefault?: boolean;
-};
-
-export type PromotionInput = {
-  slug: string;
-  title: string;
-  blurb: string;
-  sponsor?: string;
-  startsAt: number;
-  endsAt: number;
-  provider?: string;
-  authChoiceId?: string;
-  pluginNames?: string[];
-  models: PromotionModelInput[];
-  signupUrl?: string;
-  docsUrl?: string;
-  launchPageUrl?: string;
-};
+export type PromotionInput = ObjectType<typeof promotionInputArgs>;
 
 export function normalizePromotionSlug(raw: string) {
   return raw.trim().toLowerCase();

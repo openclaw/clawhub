@@ -1202,7 +1202,7 @@ describe("SkillDetailPage", () => {
     expect(screen.getByText(/Compose agent workflow pipelines\./i)).toBeTruthy();
   });
 
-  it("renders the install surface above the security scan with visible prompts and commands", async () => {
+  it("defaults the sidebar install surface to the full CLI command and offers Desktop second", async () => {
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
       return undefined;
@@ -1252,20 +1252,26 @@ describe("SkillDetailPage", () => {
     );
     expect(sidebarMetadata).toBeTruthy();
 
-    expect(screen.getAllByRole("heading", { name: "Install" }).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("openclaw skills install").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("@steipete/weather").length).toBeGreaterThan(0);
+    const installCard = screen.getByRole("article", { name: "Install" });
+    const install = within(installCard);
+    expect(install.getByRole("button", { name: "CLI" }).getAttribute("aria-pressed")).toBe("true");
+    expect(installCard.querySelector("pre code")?.textContent).toBe(
+      "openclaw skills install @steipete/weather",
+    );
+    expect(install.getByRole("button", { name: "Copy OpenClaw CLI command" })).toBeTruthy();
+    expect(install.queryByRole("link", { name: "Install in OpenClaw" })).toBeNull();
+    expect(install.queryByRole("button", { name: "npx skills" })).toBeNull();
+    expect(install.queryByRole("button", { name: "Prompt" })).toBeNull();
+    fireEvent.click(install.getByRole("button", { name: "Desktop" }));
+    expect(install.getByRole("button", { name: "Desktop" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    expect(install.getByRole("link", { name: "Install in OpenClaw" }).getAttribute("href")).toBe(
+      "openclaw://skills/install?name=%40steipete%2Fweather",
+    );
+    expect(install.queryByRole("button", { name: "Copy OpenClaw CLI command" })).toBeNull();
     expect(screen.queryByText("npx clawhub@latest install @steipete/weather")).toBeNull();
     expect(screen.queryByRole("tab", { name: "ClawHub" })).toBeNull();
-    expect(screen.getByRole("button", { name: "CLI" }).getAttribute("aria-pressed")).toBe("true");
-    const skillsCliButton = screen.getByRole("button", { name: "npx skills" });
-    expect(skillsCliButton).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Prompt" })).toBeTruthy();
-    fireEvent.click(skillsCliButton);
-    expect(
-      screen.getByText("npx skills add https://clawhub.ai/steipete/skills/weather"),
-    ).toBeTruthy();
-    expect(skillsCliButton.getAttribute("aria-pressed")).toBe("true");
     expect(screen.queryByText(/After install, inspect the skill metadata/i)).toBeNull();
     expect(screen.getAllByText("Security audit").length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: "View Security Audit" }).getAttribute("href")).toBe(
@@ -1297,11 +1303,12 @@ describe("SkillDetailPage", () => {
     expect(screen.queryByText(/Like a lobster shell, security has layers/i)).toBeNull();
     expect(screen.queryByRole("button", { name: "Rescan" })).toBeNull();
 
-    const installHeading = screen.getAllByRole("heading", { name: "Install" })[0];
-    const filesTab = screen.getByRole("tab", { name: "Files" });
+    expect(installCard.closest(".skill-hero-sidebar-stack")).toBeTruthy();
     expect(
-      installHeading.compareDocumentPosition(filesTab) & Node.DOCUMENT_POSITION_FOLLOWING,
+      sidebarMetadata &&
+        installCard.compareDocumentPosition(sidebarMetadata) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Files" })).toBeTruthy();
   });
 
   it("shows the version scanner verdict even with legacy clean moderation metadata", async () => {

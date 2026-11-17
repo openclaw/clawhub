@@ -5,20 +5,15 @@ import {
   normalizeCatalogTopics,
   normalizePluginCategories,
   resolvePluginCategories,
-} from "clawhub-schema";
-import { type Infer, v } from "convex/values";
+} from "clawhub-schema/catalogMetadata";
+import { type Infer, type ObjectType, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx } from "./_generated/server";
 import { internalMutation as rawInternalMutation } from "./_generated/server";
 import { internalAction, internalMutation } from "./functions";
 import { isLocalDevAuthEnabled } from "./lib/devAuth";
-import {
-  type DisplayManifest,
-  type DisplayManifestStatus,
-  displayManifestStatusValidator,
-  displayManifestValidator,
-} from "./lib/displayManifest";
+import { displayManifestStatusValidator, displayManifestValidator } from "./lib/displayManifest";
 import { ACTIVITY_TREND_DAYS } from "./lib/downloadTrend";
 import { EMBEDDING_DIMENSIONS, generateEmbedding } from "./lib/embeddings";
 import { deleteGitHubSkillScansForSkill } from "./lib/githubSkillScans";
@@ -121,30 +116,7 @@ const githubSkillScanStatusValidator = v.union(
 
 type GitHubSkillScanStatus = SourceBackedSkillScanStatus;
 
-type SeedGitHubBackedSkillSourceArgs = {
-  reset?: boolean;
-  ownerUserId?: Id<"users">;
-  repo: string;
-  defaultBranch?: string;
-  displayManifestKind?: "skills.sh";
-  displayManifestHash?: string;
-  displayManifestCommit?: string;
-  displayManifestFetchedAt?: number;
-  displayManifestStatus?: DisplayManifestStatus;
-  displayManifest?: DisplayManifest;
-  skills: Array<{
-    slug: string;
-    displayName: string;
-    summary?: string;
-    githubPath: string;
-    githubCurrentCommit: string;
-    githubCurrentContentHash: string;
-    githubCurrentStatus?: "present" | "missing" | "unknown";
-    githubCurrentCheckedAt?: number;
-    githubScanStatus: GitHubSkillScanStatus;
-    githubRemovedAt?: number;
-  }>;
-};
+type SeedGitHubBackedSkillSourceArgs = ObjectType<typeof seedGitHubBackedSkillSourceArgs>;
 
 const publicCorpusDummyOwnerValidator = v.object({
   handle: v.string(),
@@ -1155,6 +1127,43 @@ export const seedCanonicalSearchFixture = internalMutation({
   },
 });
 
+async function refreshExistingPublicCorpusPackage(
+  ctx: Pick<MutationCtx, "db">,
+  existing: Doc<"packages">,
+  row: Extract<PublicCorpusSeedRow, { kind: "plugin" }>,
+  now: number,
+) {
+  const catalogMetadata = publicCorpusPluginCatalogMetadata(row);
+  await ctx.db.patch(existing._id, {
+    categories: catalogMetadata.categories,
+    topics: catalogMetadata.topics,
+    updatedAt: now,
+  });
+  if (existing.latestReleaseId) {
+    await ensurePublicCorpusPackageValidationWarning(ctx, {
+      packageId: existing._id,
+      releaseId: existing.latestReleaseId,
+      ownerUserId: existing.ownerUserId,
+      ownerPublisherId: existing.ownerPublisherId,
+      packageName: existing.name,
+      normalizedName: existing.normalizedName,
+      version: row.version,
+      createdAt: now,
+    });
+  }
+  const updatedPackage = await ctx.db.get(existing._id);
+  if (updatedPackage) {
+    await upsertPackageSearchDigest(ctx, extractPackageDigestFields(updatedPackage));
+  }
+  await ensurePublicCorpusPackageDailyStats(ctx, {
+    packageId: existing._id,
+    key: row.name,
+    downloads: existing.stats?.downloads ?? 0,
+    installs: existing.stats?.installs ?? 0,
+    now,
+  });
+}
+
 export const backfillExistingPublicCorpusBatchRows = internalMutation({
   args: {
     rows: v.array(publicCorpusSeedRowValidator),
@@ -1201,35 +1210,7 @@ export const backfillExistingPublicCorpusBatchRows = internalMutation({
         skipped.push(`plugin:${row.name}`);
         continue;
       }
-      const catalogMetadata = publicCorpusPluginCatalogMetadata(row);
-      await ctx.db.patch(existing._id, {
-        categories: catalogMetadata.categories,
-        topics: catalogMetadata.topics,
-        updatedAt: now,
-      });
-      if (existing.latestReleaseId) {
-        await ensurePublicCorpusPackageValidationWarning(ctx, {
-          packageId: existing._id,
-          releaseId: existing.latestReleaseId,
-          ownerUserId: existing.ownerUserId,
-          ownerPublisherId: existing.ownerPublisherId,
-          packageName: existing.name,
-          normalizedName: existing.normalizedName,
-          version: row.version,
-          createdAt: now,
-        });
-      }
-      const updatedPackage = await ctx.db.get(existing._id);
-      if (updatedPackage) {
-        await upsertPackageSearchDigest(ctx, extractPackageDigestFields(updatedPackage));
-      }
-      await ensurePublicCorpusPackageDailyStats(ctx, {
-        packageId: existing._id,
-        key: row.name,
-        downloads: existing.stats?.downloads ?? 0,
-        installs: existing.stats?.installs ?? 0,
-        now,
-      });
+      await refreshExistingPublicCorpusPackage(ctx, existing, row, now);
       skipped.push(`plugin:${row.name}`);
     }
 
@@ -1472,35 +1453,7 @@ export const seedPublicCorpusBatchMutation = internalMutation({
             skipped.push(`plugin:${row.name}`);
             continue;
           }
-          const catalogMetadata = publicCorpusPluginCatalogMetadata(row);
-          await ctx.db.patch(existing._id, {
-            categories: catalogMetadata.categories,
-            topics: catalogMetadata.topics,
-            updatedAt: now,
-          });
-          if (existing.latestReleaseId) {
-            await ensurePublicCorpusPackageValidationWarning(ctx, {
-              packageId: existing._id,
-              releaseId: existing.latestReleaseId,
-              ownerUserId: existing.ownerUserId,
-              ownerPublisherId: existing.ownerPublisherId,
-              packageName: existing.name,
-              normalizedName: existing.normalizedName,
-              version: row.version,
-              createdAt: now,
-            });
-          }
-          const updatedPackage = await ctx.db.get(existing._id);
-          if (updatedPackage) {
-            await upsertPackageSearchDigest(ctx, extractPackageDigestFields(updatedPackage));
-          }
-          await ensurePublicCorpusPackageDailyStats(ctx, {
-            packageId: existing._id,
-            key: row.name,
-            downloads: existing.stats?.downloads ?? 0,
-            installs: existing.stats?.installs ?? 0,
-            now,
-          });
+          await refreshExistingPublicCorpusPackage(ctx, existing, row, now);
           skipped.push(`plugin:${row.name}`);
           continue;
         }
@@ -3426,6 +3379,13 @@ export async function seedLocalModerationFixturesHandler(
     updatedAt: now,
   });
 
+  const flaggedPluginVerification = {
+    tier: "structural",
+    scope: "artifact-only",
+    summary: "Local dev fixture intentionally flagged.",
+    sourceRepo: "openclaw/local-dev-fixture",
+    scanStatus: "malicious",
+  } satisfies NonNullable<Doc<"packages">["verification"]>;
   const packageId = await ctx.db.insert("packages", {
     name: flaggedPluginName,
     normalizedName: normalizePackageName(flaggedPluginName),
@@ -3442,13 +3402,7 @@ export async function seedLocalModerationFixturesHandler(
     latestVersionSummary: undefined,
     tags: {},
     compatibility: { pluginApiRange: ">=0.1.0" },
-    verification: {
-      tier: "structural",
-      scope: "artifact-only",
-      summary: "Local dev fixture intentionally flagged.",
-      sourceRepo: "openclaw/local-dev-fixture",
-      scanStatus: "malicious",
-    },
+    verification: { ...flaggedPluginVerification },
     scanStatus: "malicious",
     stats: { downloads: 2, installs: 0, stars: 0, versions: 0 },
     ...seededPackageRecommendationPatch({ downloads: 2, installs: 0, stars: 0 }),
@@ -3477,13 +3431,7 @@ export async function seedLocalModerationFixturesHandler(
       version: "0.1.0",
     },
     compatibility: { pluginApiRange: ">=0.1.0" },
-    verification: {
-      tier: "structural",
-      scope: "artifact-only",
-      summary: "Local dev fixture intentionally flagged.",
-      sourceRepo: "openclaw/local-dev-fixture",
-      scanStatus: "malicious",
-    },
+    verification: { ...flaggedPluginVerification },
     sha256hash: "seeded-flagged-plugin-hash",
     llmAnalysis: {
       status: "suspicious",
@@ -3506,13 +3454,7 @@ export async function seedLocalModerationFixturesHandler(
       createdAt: now,
       changelog: "Seeded flagged local release for security review testing.",
       compatibility: { pluginApiRange: ">=0.1.0" },
-      verification: {
-        tier: "structural",
-        scope: "artifact-only",
-        summary: "Local dev fixture intentionally flagged.",
-        sourceRepo: "openclaw/local-dev-fixture",
-        scanStatus: "malicious",
-      },
+      verification: { ...flaggedPluginVerification },
     },
     tags: { latest: packageReleaseId },
     stats: { downloads: 2, installs: 0, stars: 0, versions: 1 },
@@ -3526,6 +3468,13 @@ export async function seedLocalModerationFixturesHandler(
     installs: 0,
     now,
   });
+  const scannedPluginVerification = {
+    tier: "structural",
+    scope: "artifact-only",
+    summary: "Local dev fixture completed security scans with reviewable findings.",
+    sourceRepo: "openclaw/local-dev-fixture",
+    scanStatus: "suspicious",
+  } satisfies NonNullable<Doc<"packages">["verification"]>;
   const scannedPackageId = await ctx.db.insert("packages", {
     name: scannedPluginName,
     normalizedName: normalizePackageName(scannedPluginName),
@@ -3543,13 +3492,7 @@ export async function seedLocalModerationFixturesHandler(
     latestVersionSummary: undefined,
     tags: {},
     compatibility: { pluginApiRange: ">=0.1.0" },
-    verification: {
-      tier: "structural",
-      scope: "artifact-only",
-      summary: "Local dev fixture completed security scans with reviewable findings.",
-      sourceRepo: "openclaw/local-dev-fixture",
-      scanStatus: "suspicious",
-    },
+    verification: { ...scannedPluginVerification },
     scanStatus: "suspicious",
     stats: { downloads: 7, installs: 1, stars: 1, versions: 0 },
     ...seededPackageRecommendationPatch({ downloads: 7, installs: 1, stars: 1 }),
@@ -3579,13 +3522,7 @@ export async function seedLocalModerationFixturesHandler(
       version: "0.1.0",
     },
     compatibility: { pluginApiRange: ">=0.1.0" },
-    verification: {
-      tier: "structural",
-      scope: "artifact-only",
-      summary: "Local dev fixture completed security scans with reviewable findings.",
-      sourceRepo: "openclaw/local-dev-fixture",
-      scanStatus: "suspicious",
-    },
+    verification: { ...scannedPluginVerification },
     sha256hash: "seeded-scanned-plugin-hash",
     llmAnalysis: pluginClawScanRiskAnalysis(now),
     endorAnalysis: {
@@ -3614,13 +3551,7 @@ export async function seedLocalModerationFixturesHandler(
       createdAt: now,
       changelog: "Seeded public scanned release for plugin scanner page previews.",
       compatibility: { pluginApiRange: ">=0.1.0" },
-      verification: {
-        tier: "structural",
-        scope: "artifact-only",
-        summary: "Local dev fixture completed security scans with reviewable findings.",
-        sourceRepo: "openclaw/local-dev-fixture",
-        scanStatus: "suspicious",
-      },
+      verification: { ...scannedPluginVerification },
     },
     tags: { latest: scannedPackageReleaseId },
     stats: { downloads: 7, installs: 1, stars: 1, versions: 1 },
@@ -3634,6 +3565,13 @@ export async function seedLocalModerationFixturesHandler(
     installs: 1,
     now,
   });
+  const truncationPluginVerification = {
+    tier: "structural",
+    scope: "artifact-only",
+    summary: "Local dev fixture for long-name layout checks.",
+    sourceRepo: "openclaw/local-dev-fixture",
+    scanStatus: "clean",
+  } satisfies NonNullable<Doc<"packages">["verification"]>;
   const truncationPackageId = await ctx.db.insert("packages", {
     name: TRUNCATION_PLUGIN_NAME,
     normalizedName: normalizePackageName(TRUNCATION_PLUGIN_NAME),
@@ -3650,13 +3588,7 @@ export async function seedLocalModerationFixturesHandler(
     latestVersionSummary: undefined,
     tags: {},
     compatibility: { pluginApiRange: ">=0.1.0" },
-    verification: {
-      tier: "structural",
-      scope: "artifact-only",
-      summary: "Local dev fixture for long-name layout checks.",
-      sourceRepo: "openclaw/local-dev-fixture",
-      scanStatus: "clean",
-    },
+    verification: { ...truncationPluginVerification },
     scanStatus: "clean",
     stats: { downloads: 5, installs: 1, stars: 1, versions: 0 },
     ...seededPackageRecommendationPatch({ downloads: 5, installs: 1, stars: 1 }),
@@ -3686,13 +3618,7 @@ export async function seedLocalModerationFixturesHandler(
       description: "Long local owner plugin fixture for dashboard truncation checks.",
     },
     compatibility: { pluginApiRange: ">=0.1.0" },
-    verification: {
-      tier: "structural",
-      scope: "artifact-only",
-      summary: "Local dev fixture for long-name layout checks.",
-      sourceRepo: "openclaw/local-dev-fixture",
-      scanStatus: "clean",
-    },
+    verification: { ...truncationPluginVerification },
     sha256hash: "seeded-truncation-plugin-hash",
     source: { kind: "github", repo: "openclaw/local-dev-fixture", path: "." },
     createdBy: userId,
@@ -3707,13 +3633,7 @@ export async function seedLocalModerationFixturesHandler(
       createdAt: now,
       changelog: "Seeded local long-name release for dashboard truncation checks.",
       compatibility: { pluginApiRange: ">=0.1.0" },
-      verification: {
-        tier: "structural",
-        scope: "artifact-only",
-        summary: "Local dev fixture for long-name layout checks.",
-        sourceRepo: "openclaw/local-dev-fixture",
-        scanStatus: "clean",
-      },
+      verification: { ...truncationPluginVerification },
     },
     tags: { latest: truncationPackageReleaseId },
     stats: { downloads: 5, installs: 1, stars: 1, versions: 1 },
@@ -3923,35 +3843,37 @@ export async function seedGitHubBackedSkillSourceHandler(
   };
 }
 
+const seedGitHubBackedSkillSourceArgs = {
+  reset: v.optional(v.boolean()),
+  ownerUserId: v.optional(v.id("users")),
+  repo: v.string(),
+  defaultBranch: v.optional(v.string()),
+  displayManifestKind: v.optional(v.literal("skills.sh")),
+  displayManifestHash: v.optional(v.string()),
+  displayManifestCommit: v.optional(v.string()),
+  displayManifestFetchedAt: v.optional(v.number()),
+  displayManifestStatus: v.optional(displayManifestStatusValidator),
+  displayManifest: v.optional(displayManifestValidator),
+  skills: v.array(
+    v.object({
+      slug: v.string(),
+      displayName: v.string(),
+      summary: v.optional(v.string()),
+      githubPath: v.string(),
+      githubCurrentCommit: v.string(),
+      githubCurrentContentHash: v.string(),
+      githubCurrentStatus: v.optional(
+        v.union(v.literal("present"), v.literal("missing"), v.literal("unknown")),
+      ),
+      githubCurrentCheckedAt: v.optional(v.number()),
+      githubScanStatus: githubSkillScanStatusValidator,
+      githubRemovedAt: v.optional(v.number()),
+    }),
+  ),
+};
+
 export const seedGitHubBackedSkillSourceMutation = internalMutation({
-  args: {
-    reset: v.optional(v.boolean()),
-    ownerUserId: v.optional(v.id("users")),
-    repo: v.string(),
-    defaultBranch: v.optional(v.string()),
-    displayManifestKind: v.optional(v.literal("skills.sh")),
-    displayManifestHash: v.optional(v.string()),
-    displayManifestCommit: v.optional(v.string()),
-    displayManifestFetchedAt: v.optional(v.number()),
-    displayManifestStatus: v.optional(displayManifestStatusValidator),
-    displayManifest: v.optional(displayManifestValidator),
-    skills: v.array(
-      v.object({
-        slug: v.string(),
-        displayName: v.string(),
-        summary: v.optional(v.string()),
-        githubPath: v.string(),
-        githubCurrentCommit: v.string(),
-        githubCurrentContentHash: v.string(),
-        githubCurrentStatus: v.optional(
-          v.union(v.literal("present"), v.literal("missing"), v.literal("unknown")),
-        ),
-        githubCurrentCheckedAt: v.optional(v.number()),
-        githubScanStatus: githubSkillScanStatusValidator,
-        githubRemovedAt: v.optional(v.number()),
-      }),
-    ),
-  },
+  args: seedGitHubBackedSkillSourceArgs,
   handler: seedGitHubBackedSkillSourceHandler,
 });
 
@@ -4035,141 +3957,6 @@ export const deleteGitHubBackedSkillSourceSeedMutation = internalMutation({
       deletedSkills: skills.length,
       deletedContents: contents.length,
     };
-  },
-});
-
-export const seedFeaturedPluginPackagesMutation = internalMutation({
-  args: {
-    reset: v.optional(v.boolean()),
-    ownerUserId: v.optional(v.id("users")),
-    packages: v.array(
-      v.object({
-        name: v.string(),
-        displayName: v.string(),
-        summary: v.string(),
-        version: v.string(),
-        runtimeId: v.string(),
-        sourceRepo: v.string(),
-        isOfficial: v.boolean(),
-        stats: v.object({
-          downloads: v.number(),
-          installs: v.number(),
-          stars: v.number(),
-          versions: v.number(),
-        }),
-        storageId: v.id("_storage"),
-        readmeSize: v.number(),
-      }),
-    ),
-  },
-  handler: async (ctx, args) => {
-    const now = Date.now();
-    const { userId, publisherId } = await ensureSeedOwner(ctx, args.ownerUserId);
-    const seeded: string[] = [];
-    const skipped: string[] = [];
-
-    for (const spec of args.packages) {
-      const existing = await findSeedPluginFixtureByName(ctx, spec.name);
-      if (existing && !args.reset) {
-        await ensureHighlightedPackageBadge(ctx, existing._id, userId, now);
-        skipped.push(spec.name);
-        continue;
-      }
-      if (existing && args.reset) {
-        await deleteSeedPluginFixtureByName(ctx, spec.name);
-      }
-
-      const compatibility = { pluginApiRange: ">=0.1.0" };
-      const verification = {
-        tier: "source-linked" as const,
-        scope: "artifact-only" as const,
-        summary: "Local dev featured plugin fixture linked to source metadata.",
-        sourceRepo: spec.sourceRepo,
-        scanStatus: "clean" as const,
-      };
-      const normalizedName = normalizePackageName(spec.name);
-
-      const packageId = await ctx.db.insert("packages", {
-        name: spec.name,
-        normalizedName,
-        displayName: spec.displayName,
-        summary: spec.summary,
-        ownerUserId: userId,
-        ownerPublisherId: publisherId,
-        family: "code-plugin",
-        channel: "community",
-        isOfficial: spec.isOfficial,
-        runtimeId: spec.runtimeId,
-        sourceRepo: spec.sourceRepo,
-        latestReleaseId: undefined,
-        latestVersionSummary: undefined,
-        tags: {},
-        compatibility,
-        verification,
-        scanStatus: "clean",
-        stats: { ...spec.stats, versions: 0 },
-        ...seededPackageRecommendationPatch(spec.stats),
-        softDeletedAt: undefined,
-        createdAt: now,
-        updatedAt: now,
-      });
-      const releaseId = await ctx.db.insert("packageReleases", {
-        packageId,
-        version: spec.version,
-        changelog: "Seeded local featured plugin release.",
-        summary: spec.summary,
-        distTags: ["latest"],
-        files: [
-          {
-            path: "README.md",
-            size: spec.readmeSize,
-            storageId: spec.storageId,
-            sha256: `seeded-featured-plugin-${normalizedName}`,
-            contentType: "text/markdown",
-          },
-        ],
-        integritySha256: `seeded-featured-plugin-integrity-${normalizedName}`,
-        extractedPackageJson: {
-          name: spec.name,
-          version: spec.version,
-          description: spec.summary,
-        },
-        compatibility,
-        verification,
-        sha256hash: `seeded-featured-plugin-hash-${normalizedName}`,
-        llmAnalysis: {
-          status: "clean",
-          verdict: "clean",
-          confidence: "high",
-          summary: "Local featured plugin fixture is safe sample content.",
-          model: "local-dev-seed",
-          checkedAt: now,
-        },
-        source: { kind: "github", repo: spec.sourceRepo, path: "." },
-        createdBy: userId,
-        publishActor: { kind: "user", userId },
-        createdAt: now,
-        softDeletedAt: undefined,
-      });
-
-      await ctx.db.patch(packageId, {
-        latestReleaseId: releaseId,
-        latestVersionSummary: {
-          version: spec.version,
-          createdAt: now,
-          changelog: "Seeded local featured plugin release.",
-          compatibility,
-          verification,
-        },
-        tags: { latest: releaseId },
-        stats: { ...spec.stats, versions: 1 },
-        updatedAt: now,
-      });
-      await ensureHighlightedPackageBadge(ctx, packageId, userId, now);
-      seeded.push(spec.name);
-    }
-
-    return { ok: true, seeded, skipped };
   },
 });
 

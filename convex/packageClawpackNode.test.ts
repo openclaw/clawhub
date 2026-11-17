@@ -1,3 +1,4 @@
+import { ConvexError } from "convex/values";
 import { gzipSync } from "fflate";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActionCtx } from "./_generated/server";
@@ -54,6 +55,17 @@ const metadata = {
 };
 
 describe("prepareClawPackInternal", () => {
+  it("rejects a missing package tarball as a client error", async () => {
+    const missing = prepare(
+      {
+        storage: { get: vi.fn(async () => null), store: vi.fn(), delete: vi.fn() },
+      } as unknown as ActionCtx,
+      { artifactStorageId: "storage:missing", metadataJson: JSON.stringify(metadata) },
+    );
+    await expect(missing).rejects.toBeInstanceOf(ConvexError);
+    await expect(missing).rejects.toThrow("Package tarball upload no longer exists");
+  });
+
   it("returns stored-file metadata and integrity without transferring archive bytes", async () => {
     const bytes = archive();
     const store = vi.fn(async (_blob: Blob) => "storage:file");

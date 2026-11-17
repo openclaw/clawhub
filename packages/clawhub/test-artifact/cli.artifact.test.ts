@@ -310,6 +310,7 @@ describe("built CLI artifact", () => {
       "schemaShared",
       "templateAgent",
       "templateBundled",
+      "templateManifestSummary",
       "templatePackage",
       "templatePaths",
       "templates",
@@ -644,6 +645,68 @@ describe("built CLI artifact", () => {
       "--json",
     ];
   }
+
+  it.each([false, true])(
+    "preserves OIDC failure diagnostics or publishes with an available fallback token (token=%s)",
+    async (hasToken) => {
+      const { root, pluginDir, tempRoot } = await makePackingFixture();
+      const requests: Array<{ path: string; authorization?: string }> = [];
+      const server = createServer(async (request, response) => {
+        await readRequestBody(request);
+        requests.push({ path: request.url ?? "", authorization: request.headers.authorization });
+        if (request.url === "/oidc?audience=clawhub") {
+          response.writeHead(503);
+          response.end("OIDC temporarily unavailable");
+        } else if (request.url === "/api/v1/packages") {
+          writeJson(response, 200, {
+            ok: true,
+            packageId: "pkg_1",
+            releaseId: "rel_1",
+            publicationStatus: "published",
+          });
+        } else {
+          writeJson(response, 404, { error: "unexpected request" });
+        }
+      });
+      servers.push(server);
+      await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+      const registry = "http://127.0.0.1:" + (server.address() as AddressInfo).port;
+      const configPath = join(root, "config.json");
+      await writeFile(
+        configPath,
+        JSON.stringify({ registry, ...(hasToken ? { token: "fallback-token" } : {}) }),
+      );
+      const args = packingArgs(root, pluginDir).filter((arg) => arg !== "--dry-run");
+      args[args.indexOf("--registry") + 1] = registry;
+      const result = await runNodeAsync(args, {
+        CLAWHUB_CONFIG_PATH: configPath,
+        ACTIONS_ID_TOKEN_REQUEST_URL: registry + "/oidc",
+        ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic-request-token",
+        TRUSTED_TOOLING_IDENTITY_JSON: "",
+        NO_PROXY: "127.0.0.1",
+        no_proxy: "127.0.0.1",
+        TMPDIR: tempRoot,
+      });
+      expect(result.signal).toBeNull();
+      expect(requests[0]?.path, result.stderr + result.stdout).toBe("/oidc?audience=clawhub");
+      if (hasToken) {
+        expect(result.status, result.stderr).toBe(0);
+        expect(JSON.parse(result.stdout).status).toBe("published");
+        expect(requests).toHaveLength(2);
+        expect(requests[1]).toEqual({
+          path: "/api/v1/packages",
+          authorization: "Bearer fallback-token",
+        });
+      } else {
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain(
+          "GitHub OIDC token request failed (503): OIDC temporarily unavailable",
+        );
+        expect(result.stderr).not.toContain("Not logged in");
+        expect(requests).toHaveLength(1);
+      }
+    },
+  );
 
   it("cleans folder-publish temporary packs when npm is missing in the real CLI process", async () => {
     const { root, pluginDir, tempRoot, emptyPath } = await makePackingFixture();

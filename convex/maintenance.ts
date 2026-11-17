@@ -1,4 +1,4 @@
-import { ConvexError, v } from "convex/values";
+import { ConvexError, type Infer, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
@@ -14,6 +14,7 @@ import { assertFeaturedCapacity } from "./lib/featuredPolicy";
 import { resolvePackageIcon } from "./lib/packageIcons";
 import { extractPackageDigestFields } from "./lib/packageSearchDigest";
 import { retryFailedPublishAttemptChecks } from "./lib/publishAttemptOperationalRecovery";
+import { ACTIVE_PUBLISH_ATTEMPT_STATUSES } from "./lib/publishAttemptState";
 import {
   derivePersonalPublisherHandle,
   ensurePersonalPublisherForUser,
@@ -41,7 +42,6 @@ import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
 import { computeIsSuspicious } from "./lib/skillSafety";
 import { getFirstSearchToken, getMirrorFirstSearchToken } from "./lib/skillSearchDigest";
 import { generateSkillSummary } from "./lib/skillSummary";
-import { ACTIVE_PUBLISH_ATTEMPT_STATUSES } from "./publishAttempts";
 import { requestSkillEvaluationDispatch } from "./skillEvaluationDispatch";
 
 const DEFAULT_BATCH_SIZE = 50;
@@ -616,18 +616,7 @@ const activePublisherSlugScanRowValidator = v.object({
   createdAt: v.number(),
   updatedAt: v.number(),
 });
-type ActivePublisherSlugScanRow = {
-  skillId: Id<"skills">;
-  ownerPublisherId?: Id<"publishers">;
-  slug: string;
-  active: boolean;
-  latestVersionId?: Id<"skillVersions">;
-  latestVersion?: string;
-  moderationStatus: string;
-  canonicalSkillId?: Id<"skills">;
-  createdAt: number;
-  updatedAt: number;
-};
+type ActivePublisherSlugScanRow = Infer<typeof activePublisherSlugScanRowValidator>;
 type HeartflowDuplicateInspection = {
   slug: string;
   sourceSkillId: Id<"skills">;

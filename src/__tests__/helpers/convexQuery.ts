@@ -17,3 +17,19 @@ export function indexedUnique(readValue: () => unknown) {
     })),
   };
 }
+
+export function orderedTake<T>(readValues: () => T[]) {
+  return {
+    order: vi.fn(() => ({
+      take: vi.fn().mockResolvedValue(readValues()),
+    })),
+  };
+}
+
+export function indexedTake<T>(readValues: () => T[]) {
+  return {
+    withIndex: vi.fn(() => ({
+      take: vi.fn().mockResolvedValue(readValues()),
+    })),
+  };
+}

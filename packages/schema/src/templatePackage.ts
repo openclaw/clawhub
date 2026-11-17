@@ -4,7 +4,11 @@ import {
   selectTemplateBundledPluginManifest,
   type TemplatePackageFile,
 } from "./templateBundled.js";
-import { hasPortablePathSegments, portablePathKey } from "./templatePaths.js";
+import {
+  findTemplatePackagePathHierarchyCollision,
+  isSafeTemplatePackagePath,
+  portablePathKey,
+} from "./templatePaths.js";
 import {
   summarizeTemplateManifest,
   templateDependencyInventory,
@@ -35,36 +39,6 @@ const MAX_PACKAGE_BOOTSTRAP_BYTES = 2 * 1024 * 1024;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-export function isSafeTemplatePackagePath(value: string): boolean {
-  const normalized = value.replaceAll("\\", "/");
-  if (
-    !normalized ||
-    normalized !== value ||
-    normalized !== normalized.trim() ||
-    normalized.startsWith("/") ||
-    /^[A-Za-z]:\//.test(normalized)
-  ) {
-    return false;
-  }
-  return hasPortablePathSegments(normalized);
-}
-
-export function findTemplatePackagePathHierarchyCollision(
-  paths: readonly string[],
-): { ancestor: string; descendant: string } | null {
-  const pathByKey = new Map(paths.map((path) => [portablePathKey(path), path]));
-  for (const descendant of paths) {
-    const segments = portablePathKey(descendant).split("/");
-    for (let length = 1; length < segments.length; length += 1) {
-      const ancestor = pathByKey.get(segments.slice(0, length).join("/"));
-      if (ancestor !== undefined) {
-        return { ancestor, descendant };
-      }
-    }
-  }
-  return null;
 }
 
 function issue(code: string, path: string, message: string): TemplatePackageValidationIssue {
@@ -446,3 +420,8 @@ export function validateTemplatePackageContents(input: {
     },
   };
 }
+
+export {
+  findTemplatePackagePathHierarchyCollision,
+  isSafeTemplatePackagePath,
+} from "./templatePaths.js";

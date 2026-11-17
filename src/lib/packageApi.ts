@@ -1,5 +1,7 @@
 import { createIsomorphicFn } from "@tanstack/react-start";
 import type {
+  PackageAigAnalysis,
+  PackageSkillSpectorAnalysis,
   ApiV1PackageResponse,
   ApiV1PackageVersionListResponse,
   PackageCompatibility,
@@ -10,7 +12,10 @@ import type {
   TemplateManifestSummary,
 } from "clawhub-schema";
 import { ApiRoutes } from "clawhub-schema/routes";
+import type { Infer } from "convex/values";
+import type { PublicPackageDocLike } from "../../convex/lib/packageReadProjection";
 import { getPluginBrowseSnapshotKind } from "../../convex/lib/pluginBrowseSnapshot";
+import type { llmAnalysisValidator } from "../../convex/schema";
 import { hasOwnProperty } from "./hasOwnProperty";
 import { publicApiUrl } from "./publicApiUrl";
 import {
@@ -74,115 +79,12 @@ export type PackageVersionDetail = {
     templateManifestSummary?: TemplateManifestSummary | null;
     templateInventory?: TemplateDependencyInventory;
     verification?: PackageVerificationSummary | null;
-    artifact?: {
-      kind: "legacy-zip" | "npm-pack";
-      sha256?: string;
-      size?: number;
-      format?: string;
-      npmIntegrity?: string;
-      npmShasum?: string;
-      npmTarballName?: string;
-      npmUnpackedSize?: number;
-      npmFileCount?: number;
-    } | null;
+    artifact?: NonNullable<PublicPackageDocLike["artifact"]> | null;
     /** @deprecated Compatibility hash for exact /download ZIP bytes. Use artifact.sha256. */
     sha256hash?: string | null;
-    skillSpectorAnalysis?: {
-      status: string;
-      inspectionStatus?: "completed" | "partial";
-      score?: number;
-      severity?: string;
-      recommendation?: string;
-      issueCount: number;
-      issues: Array<{
-        issueId: string;
-        category?: string;
-        pattern?: string;
-        severity: string;
-        confidence?: number;
-        file?: string;
-        startLine?: number;
-        endLine?: number;
-        explanation: string;
-        remediation?: string;
-        finding?: string;
-        codeSnippet?: string;
-      }>;
-      scannerVersion?: string;
-      summary?: string;
-      error?: string;
-      checkedAt: number;
-    } | null;
-    aigAnalysis?: {
-      status: string;
-      issueCount: number;
-      findings: Array<{
-        ruleId: string;
-        level: string;
-        message: string;
-        title?: string;
-        description?: string;
-        file?: string;
-        startLine?: number;
-        endLine?: number;
-        remediation?: string;
-      }>;
-      scannerVersion?: string;
-      summary?: string;
-      error?: string;
-      checkedAt: number;
-    } | null;
-    llmAnalysis?: {
-      status: string;
-      verdict?: string;
-      confidence?: string;
-      summary?: string;
-      dimensions?: Array<{
-        name: string;
-        label: string;
-        rating: string;
-        detail: string;
-      }>;
-      guidance?: string;
-      findings?: string;
-      agenticRiskFindings?: Array<{
-        categoryId: string;
-        categoryLabel: string;
-        riskBucket:
-          | "abnormal_behavior_control"
-          | "permission_boundary"
-          | "sensitive_data_protection";
-        status: "none" | "note" | "concern";
-        severity: string;
-        confidence: "high" | "medium" | "low";
-        evidence?: {
-          path: string;
-          snippet: string;
-          explanation: string;
-        };
-        userImpact: string;
-        recommendation: string;
-      }>;
-      riskSummary?: {
-        abnormal_behavior_control: {
-          status: "none" | "note" | "concern";
-          summary: string;
-          highestSeverity?: string;
-        };
-        permission_boundary: {
-          status: "none" | "note" | "concern";
-          summary: string;
-          highestSeverity?: string;
-        };
-        sensitive_data_protection: {
-          status: "none" | "note" | "concern";
-          summary: string;
-          highestSeverity?: string;
-        };
-      };
-      model?: string;
-      checkedAt: number;
-    } | null;
+    skillSpectorAnalysis?: PackageSkillSpectorAnalysis | null;
+    aigAnalysis?: PackageAigAnalysis | null;
+    llmAnalysis?: Infer<typeof llmAnalysisValidator> | null;
   } | null;
 };
 

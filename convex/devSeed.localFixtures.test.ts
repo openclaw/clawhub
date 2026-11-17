@@ -7,7 +7,6 @@ import {
   backfillExistingPublicCorpusBatchRows,
   seedCatalogPresentationFixtures,
   seedCanonicalSearchFixture,
-  seedFeaturedPluginPackagesMutation,
   seedGitHubBackedSkillSourceMutation,
   seedLocalFixtures,
   seedLocalModerationFixturesHandler,
@@ -17,9 +16,6 @@ import {
 } from "./devSeed";
 
 const seedSkillMutationHandler = getTestHandler<Record<string, unknown>>(seedSkillMutation);
-const seedFeaturedPluginPackagesHandler = getTestHandler<Record<string, unknown>>(
-  seedFeaturedPluginPackagesMutation,
-);
 const seedCatalogPresentationFixturesHandler = getTestHandler<Record<string, unknown>>(
   seedCatalogPresentationFixtures,
 );
@@ -1264,28 +1260,6 @@ describe("devSeed local fixtures", () => {
     expect(deduplicatedReseedResult.storageIdsToDelete).toEqual([]);
     expect(fixtureStorageId(flaggedSkillSlug)).toBe("storage:skill-next");
     expect(fixtureStorageId(scannedSkillSlug)).toBe("storage:scanned-skill-next");
-    await seedFeaturedPluginPackagesHandler(
-      createMutationCtx(db) as never,
-      {
-        ownerUserId: userId,
-        packages: [
-          {
-            name: "dev-owner-local-merge-notes-plugin",
-            displayName: "Local Merge Notes",
-            summary: "Seeded local owner plugin.",
-            version: "0.1.0",
-            runtimeId: "local.merge.notes",
-            sourceRepo: "openclaw/local-merge-notes-plugin",
-            isOfficial: false,
-            capabilityTags: ["notes"],
-            stats: { downloads: 1, installs: 1, stars: 1, versions: 1 },
-            storageId: "storage:plugin-notes",
-            readmeSize: 16,
-          },
-        ],
-      } as never,
-    );
-
     expect(tables.users).toHaveLength(1);
     expect(tables.users?.[0]).toEqual(expect.objectContaining({ handle: "fuller-stack-dev" }));
     const seededSkills = tables.skills?.filter((skill) => skill._id !== staleProofSkillId);
@@ -1299,12 +1273,7 @@ describe("devSeed local fixtures", () => {
     expect(seededSkills?.every((skill) => skill.ownerUserId === userId)).toBe(true);
     expect(
       tables.packages?.map((pkg) => String(pkg.name)).sort((a, b) => a.localeCompare(b)),
-    ).toEqual([
-      flaggedPluginName,
-      "dev-owner-local-merge-notes-plugin",
-      scannedPluginName,
-      "local-truncation-runtime-plugin",
-    ]);
+    ).toEqual([flaggedPluginName, scannedPluginName, "local-truncation-runtime-plugin"]);
     expect(tables.packages?.every((pkg) => pkg.ownerUserId === userId)).toBe(true);
     expect(tables.packages).toEqual(
       expect.arrayContaining([
@@ -1508,37 +1477,40 @@ describe("devSeed local fixtures", () => {
     );
   });
 
-  it("resets featured plugin fixtures without stale package badges", async () => {
+  it("resets moderation plugin fixtures without stale package badges", async () => {
     const { db, tables, operations } = createDb();
     const args = {
-      packages: [
-        {
-          name: "@local/catalog-plugin",
-          displayName: "Catalog Plugin",
-          summary: "Seeded catalog plugin.",
-          version: "1.0.0",
-          runtimeId: "catalog-plugin",
-          sourceRepo: "openclaw/catalog-plugin",
-          isOfficial: false,
-          capabilityTags: ["catalog"],
-          stats: { downloads: 1, installs: 1, stars: 1, versions: 1 },
-          storageId: "storage:plugin",
-          readmeSize: 16,
-        },
-      ],
+      flaggedSkillStorageId: "storage:flagged-skill",
+      flaggedSkillMd: "# Flagged skill",
+      scannedSkillStorageId: "storage:scanned-skill",
+      scannedSkillMd: "# Scanned skill",
+      flaggedPluginStorageId: "storage:flagged-plugin",
+      flaggedPluginReadme: "# Flagged plugin",
+      scannedPluginStorageId: "storage:scanned-plugin",
+      scannedPluginReadme: "# Scanned plugin",
     };
 
-    await seedFeaturedPluginPackagesHandler(createMutationCtx(db) as never, args as never);
-    const oldPackageId = tables.packages?.[0]?._id;
-    const oldReleaseId = tables.packageReleases?.[0]?._id;
-    await seedFeaturedPluginPackagesHandler(
+    await seedLocalModerationFixturesHandler(createMutationCtx(db) as never, args as never);
+    const oldPackage = tables.packages?.find((pkg) => pkg.name === "local-scanned-runtime-plugin");
+    const oldPackageId = oldPackage?._id;
+    const oldReleaseId = oldPackage?.latestReleaseId;
+    expect(oldPackageId).toBeDefined();
+    expect(oldReleaseId).toBeDefined();
+    await db.insert("packageBadges", {
+      packageId: oldPackageId,
+      kind: "highlighted",
+      byUserId: oldPackage?.ownerUserId,
+      at: 1,
+    });
+
+    await seedLocalModerationFixturesHandler(
       createMutationCtx(db) as never,
       { ...args, reset: true } as never,
     );
 
-    expect(tables.packages).toHaveLength(1);
-    expect(tables.packageReleases).toHaveLength(1);
-    expect(tables.packageBadges).toHaveLength(1);
+    expect(tables.packages).toHaveLength(3);
+    expect(tables.packageReleases).toHaveLength(3);
+    expect(tables.packageBadges).toHaveLength(0);
     const oldPackageDeleteIndex = operations.findIndex(
       (op) => op.table === "packages" && op.id === oldPackageId,
     );

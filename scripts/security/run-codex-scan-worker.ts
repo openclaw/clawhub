@@ -1,3 +1,12 @@
+import type {
+  PackageSkillSpectorIssue as SkillSpectorIssue,
+  PackageSkillSpectorAnalysis as SkillSpectorAnalysis,
+  PackageAigFinding as AigFinding,
+  PackageAigAnalysis as AigAnalysis,
+} from "clawhub-schema";
+
+export type { SkillSpectorAnalysis, AigFinding, AigAnalysis };
+
 import { mkdirSync, readFileSync } from "node:fs";
 import { appendFile, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -125,57 +134,6 @@ export type StoredLlmAnalysis = {
   findings?: string;
   // Legacy configured identity; Decisions uses its validated provider-returned model.
   model?: string;
-  checkedAt: number;
-};
-
-type SkillSpectorIssue = {
-  issueId: string;
-  category?: string;
-  pattern?: string;
-  severity: string;
-  confidence?: number;
-  file?: string;
-  startLine?: number;
-  endLine?: number;
-  explanation: string;
-  remediation?: string;
-  finding?: string;
-  codeSnippet?: string;
-};
-
-export type SkillSpectorAnalysis = {
-  status: string;
-  inspectionStatus?: "completed" | "partial";
-  score?: number;
-  severity?: string;
-  recommendation?: string;
-  issueCount: number;
-  issues: SkillSpectorIssue[];
-  scannerVersion?: string;
-  summary?: string;
-  error?: string;
-  checkedAt: number;
-};
-
-export type AigFinding = {
-  ruleId: string;
-  level: string;
-  message: string;
-  title?: string;
-  description?: string;
-  file?: string;
-  startLine?: number;
-  endLine?: number;
-  remediation?: string;
-};
-
-export type AigAnalysis = {
-  status: string;
-  issueCount: number;
-  findings: AigFinding[];
-  scannerVersion?: string;
-  summary?: string;
-  error?: string;
   checkedAt: number;
 };
 
@@ -2860,8 +2818,27 @@ export async function processJob(
         "preserving scan workspace because container removal was not confirmed",
       );
     } else {
-      await rm(workspace, { recursive: true, force: true });
+      await removeScanWorkspace(workspace, job.job._id);
     }
+  }
+}
+
+// Cleanup must never replace processJob's result or error. Docker sandboxes
+// leave root-owned files in the bind mount, so this can fail; hosted runners
+// are discarded after the run, so the leftover is logged and accepted.
+async function removeScanWorkspace(workspace: string, jobId: string) {
+  try {
+    await rm(workspace, { recursive: true, force: true });
+  } catch (error) {
+    const code = error instanceof Error && "code" in error ? error.code : undefined;
+    logger.warn(
+      {
+        event: "security_scan_workspace_cleanup_failed",
+        jobId,
+        code: typeof code === "string" ? code : "unknown",
+      },
+      "security scan workspace cleanup failed; leaving it in place",
+    );
   }
 }
 
@@ -2921,7 +2898,6 @@ export async function runContinuouslyRefilledWorkerPool<TJob>(options: {
         ({ claimedCount, jobs } = await options.claimJobs(remainingJobs));
       } catch (error) {
         totalClaimFailures += 1;
-        totalFailed += 1;
         consecutiveClaimFailures += 1;
         const retry =
           !workerMustStop &&
@@ -2931,6 +2907,10 @@ export async function runContinuouslyRefilledWorkerPool<TJob>(options: {
         const retryDelayMs = retry
           ? 1000 * 2 ** (consecutiveClaimFailures - 1) + Math.floor(Math.random() * 500)
           : null;
+        // Only a claim failure that ends claiming fails the worker. A transient
+        // error recovered by retry stays visible in totalClaimFailures, but must
+        // not set a non-zero exit code on a shard whose scans all completed.
+        if (!retry) totalFailed += 1;
         queueDrained = !retry;
         const message = error instanceof Error ? error.message : String(error);
         logger.error(

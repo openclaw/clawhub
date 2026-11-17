@@ -125,15 +125,7 @@ export type SyncOneResult = {
   };
 };
 
-type GitHubSkillSourceSyncIssue = {
-  slug: string;
-  path: string;
-  displayName: string;
-  kind: "invalid_slug" | "slug_conflict";
-  severity: "error" | "warning";
-  message: string;
-  existingOwnerHandle?: string;
-};
+type GitHubSkillSourceSyncIssue = NonNullable<Doc<"githubSkillSources">["lastSyncIssues"]>[number];
 
 type SyncManyResult = {
   ok: true;

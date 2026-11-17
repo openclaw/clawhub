@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { internalMutation, mutation } from "./functions";
 import { requireUser } from "./lib/access";
 
@@ -136,7 +136,7 @@ export const consumePackagePublishUploadTicketInternal = internalMutation({
     }
 
     const metadata = await ctx.db.system.get("_storage", args.storageId);
-    if (!metadata) throw new Error("Package tarball upload no longer exists");
+    if (!metadata) throw new ConvexError("Package tarball upload no longer exists");
     if (metadata._creationTime < ticket.createdAt) {
       throw new Error("Package tarball upload must be created after its upload ticket");
     }

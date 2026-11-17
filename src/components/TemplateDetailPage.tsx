@@ -22,6 +22,7 @@ import {
   buildTemplateSecurityAuditHref,
   isTemplateReadyToAdd,
 } from "../lib/templateRoutes";
+import { useMediaQuery } from "../lib/useMediaQuery";
 import { DetailSecuritySummary, DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { SidebarMetadata } from "./SidebarMetadata";
@@ -47,6 +48,7 @@ export function TemplateDetailPage({
   llmAnalysis?: LlmAnalysis | null;
 }) {
   const pkg = detail.package!;
+  const isMobileDetailLayout = useMediaQuery("(max-width: 900px)");
   const { markdown, manifest } = useMemo(() => parseTemplateDocument(contents), [contents]);
   const [activeTab, setActiveTab] = useState<TemplateTab>("CLAW.md");
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -83,6 +85,30 @@ export function TemplateDetailPage({
     : null;
   const installRef = buildTemplateInstallRef(pkg.name, detail.owner?.handle ?? fallbackOwner);
 
+  const installSurface = (
+    <section className="template-detail-install" aria-label="Install Template">
+      <InstallCommandCard
+        cliCommand={"openclaw templates add " + installRef}
+        prompt={formatOpenClawPrompt(installRef, "template")}
+        cliCopyAriaLabel="Copy template install command"
+        copyEnabled={ready}
+        desktopInstall={ready ? { family: "templates", name: installRef } : undefined}
+      />
+      {manifestWarning ? (
+        <p className="template-detail-install-warning" role="status">
+          {manifestWarning} Ask the publisher to migrate or repair CLAW.md and publish a new
+          version. <a href="/docs/templates">Template migration guide</a>.
+          {archivePath ? (
+            <>
+              {" "}
+              <a href={archivePath}>Download release archive</a>.
+            </>
+          ) : null}
+        </p>
+      ) : null}
+    </section>
+  );
+
   return (
     <main className="template-detail-page">
       <div className="template-detail-container">
@@ -108,26 +134,7 @@ export function TemplateDetailPage({
         </header>
         <div className="template-detail-layout">
           <div className="template-detail-main">
-            <section className="template-detail-install" aria-label="Install Template">
-              <InstallCommandCard
-                cliCommand={"openclaw templates add " + installRef}
-                prompt={formatOpenClawPrompt(installRef, "template")}
-                cliCopyAriaLabel="Copy template install command"
-                copyEnabled={ready}
-              />
-              {manifestWarning ? (
-                <p className="template-detail-install-warning" role="status">
-                  {manifestWarning} Ask the publisher to migrate or repair CLAW.md and publish a new
-                  version. <a href="/docs/templates">Template migration guide</a>.
-                  {archivePath ? (
-                    <>
-                      {" "}
-                      <a href={archivePath}>Download release archive</a>.
-                    </>
-                  ) : null}
-                </p>
-              ) : null}
-            </section>
+            {isMobileDetailLayout ? installSurface : null}
             <section className="template-detail-contents" aria-label="Template contents">
               <div className="template-detail-tabs" role="tablist" aria-label="Template contents">
                 {tabs.map((tab, index) => (
@@ -221,6 +228,7 @@ export function TemplateDetailPage({
             </section>
           </div>
           <aside className="template-detail-metadata" aria-label="Template metadata">
+            {!isMobileDetailLayout ? installSurface : null}
             <SidebarMetadata
               ariaLabel="Template metadata"
               density="compact"

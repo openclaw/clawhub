@@ -64,7 +64,9 @@ function makeActionCtx(args: {
       throw new Error("Unexpected endpoint");
     }),
     storage: {
-      get: vi.fn().mockResolvedValue(args.storedBlob ?? new Blob(["# skill"])),
+      get: vi
+        .fn()
+        .mockResolvedValue(args.storedBlob === undefined ? new Blob(["# skill"]) : args.storedBlob),
     },
   } as never;
 }
@@ -325,6 +327,32 @@ describe("version file access actions", () => {
         path: "SKILL.md",
       } as never),
     ).rejects.toThrow("File is not valid UTF-8 text");
+  });
+
+  it("rejects a missing skill file as a client error", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const ctx = makeActionCtx({
+      actor: { _id: "users:owner", role: "user" },
+      version: makeSkillVersion(),
+      storedBlob: null,
+      skill: {
+        _id: "skills:1",
+        ownerUserId: "users:owner",
+        softDeletedAt: undefined,
+        moderationStatus: "active",
+        moderationFlags: [],
+      },
+    });
+
+    await expect(
+      getSkillReadmeHandler._handler(ctx, { versionId: "skillVersions:1" } as never),
+    ).rejects.toBeInstanceOf(ConvexError);
+    await expect(
+      getSkillFileTextHandler._handler(ctx, {
+        versionId: "skillVersions:1",
+        path: "SKILL.md",
+      } as never),
+    ).rejects.toThrow("File missing in storage");
   });
 
   it("returns opaque files as download-only previews with exact metadata", async () => {

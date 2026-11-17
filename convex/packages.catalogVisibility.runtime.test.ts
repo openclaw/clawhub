@@ -12,7 +12,7 @@ vi.mock("./lib/verifiedClientIp", () => ({
 import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
 import { api, internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
-import { compareCatalogSearchEntries } from "./httpApiV1/packagesV1";
+import { compareCatalogSearchEntries } from "./lib/catalogPage";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
 import { hashToken } from "./lib/tokens";
 import { PACKAGE_TRENDING_LEADERBOARD_KIND } from "./packageLeaderboards";

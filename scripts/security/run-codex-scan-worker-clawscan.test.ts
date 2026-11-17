@@ -233,6 +233,28 @@ async function writeFakeClawScanCommand(path: string, body: string) {
   await chmod(path, 0o755);
 }
 
+function writeFakeClawScanArtifact(path: string, artifactJson: string) {
+  return writeFakeClawScanCommand(
+    path,
+    `out=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output)
+      out="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+mkdir -p "$(dirname "$out")"
+cat > "$out" <<'JSON'
+${artifactJson}
+JSON`,
+  );
+}
+
 type ClawScanVerdict = "benign" | "suspicious" | "malicious";
 
 function completeJudgeDimensions() {
@@ -2282,25 +2304,7 @@ exit 19`,
     const artifactJson = clawScanArtifactJson({
       scannerStatuses: { skillspector: "skipped" },
     });
-    await writeFakeClawScanCommand(
-      fakeClawScan,
-      `out=""
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --output)
-      out="$2"
-      shift 2
-      ;;
-    *)
-      shift
-      ;;
-  esac
-done
-mkdir -p "$(dirname "$out")"
-cat > "$out" <<'JSON'
-${artifactJson}
-JSON`,
-    );
+    await writeFakeClawScanArtifact(fakeClawScan, artifactJson);
 
     const previousCommand = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
     process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
@@ -2394,25 +2398,7 @@ echo "not json" > "$out"`,
     const artifactJson = clawScanArtifactJson({
       aigRaw: { version: "2.1.0", runs: [] },
     });
-    await writeFakeClawScanCommand(
-      fakeClawScan,
-      `out=""
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --output)
-      out="$2"
-      shift 2
-      ;;
-    *)
-      shift
-      ;;
-  esac
-done
-mkdir -p "$(dirname "$out")"
-cat > "$out" <<'JSON'
-${artifactJson}
-JSON`,
-    );
+    await writeFakeClawScanArtifact(fakeClawScan, artifactJson);
 
     const previousCommand = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
     process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
@@ -2450,25 +2436,7 @@ JSON`,
     const fakeClawScan = join(workspace, "fake-clawscan");
     const { artifact_inspection: _inspection, ...judgeResult } = completeJudgeResult("benign");
     const artifactJson = clawScanArtifactJson({ judgeResult });
-    await writeFakeClawScanCommand(
-      fakeClawScan,
-      `out=""
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --output)
-      out="$2"
-      shift 2
-      ;;
-    *)
-      shift
-      ;;
-  esac
-done
-mkdir -p "$(dirname "$out")"
-cat > "$out" <<'JSON'
-${artifactJson}
-JSON`,
-    );
+    await writeFakeClawScanArtifact(fakeClawScan, artifactJson);
 
     const previousCommand = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
     process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
@@ -2525,25 +2493,7 @@ JSON`,
         },
       },
     });
-    await writeFakeClawScanCommand(
-      fakeClawScan,
-      `out=""
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --output)
-      out="$2"
-      shift 2
-      ;;
-    *)
-      shift
-      ;;
-  esac
-done
-mkdir -p "$(dirname "$out")"
-cat > "$out" <<'JSON'
-${artifactJson}
-JSON`,
-    );
+    await writeFakeClawScanArtifact(fakeClawScan, artifactJson);
 
     const previousCommand = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
     process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
@@ -2601,25 +2551,7 @@ JSON`,
     async ({ artifactJson, expectedError, name }) => {
       const workspace = await tempDirs.create();
       const fakeClawScan = join(workspace, "fake-clawscan");
-      await writeFakeClawScanCommand(
-        fakeClawScan,
-        `out=""
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --output)
-      out="$2"
-      shift 2
-      ;;
-    *)
-      shift
-      ;;
-  esac
-done
-mkdir -p "$(dirname "$out")"
-cat > "$out" <<'JSON'
-${artifactJson}
-JSON`,
-      );
+      await writeFakeClawScanArtifact(fakeClawScan, artifactJson);
 
       const previousCommand = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
       process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
@@ -2660,25 +2592,7 @@ JSON`,
     const artifactJson = clawScanArtifactJson({
       scannerStatuses: { skillspector: "failed" },
     });
-    await writeFakeClawScanCommand(
-      fakeClawScan,
-      `out=""
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --output)
-      out="$2"
-      shift 2
-      ;;
-    *)
-      shift
-      ;;
-  esac
-done
-mkdir -p "$(dirname "$out")"
-cat > "$out" <<'JSON'
-${artifactJson}
-JSON`,
-    );
+    await writeFakeClawScanArtifact(fakeClawScan, artifactJson);
 
     const previousCommand = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
     process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
