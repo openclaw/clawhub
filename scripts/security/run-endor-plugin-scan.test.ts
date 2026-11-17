@@ -171,8 +171,11 @@ describe("runEndorPluginScan", () => {
     );
     const runArgs = await dockerRunArgs(workspace);
     expect(runArgs).toContain("--rm");
-    // Without a cap, concurrent large scans exhaust the hosted runner's memory.
-    expect(runArgs.join(" ")).toContain("--memory 3g --memory-swap 3g");
+    // Without a cap, concurrent large scans exhaust the hosted runner's memory;
+    // a swap limit equal to the memory limit keeps the container off swap.
+    const memory = runArgs[runArgs.indexOf("--memory") + 1];
+    expect(memory).toMatch(/^\d+g$/);
+    expect(runArgs[runArgs.indexOf("--memory-swap") + 1]).toBe(memory);
     expect(runArgs).toContain(
       `type=bind,source=${join(workspace, "endor-artifact")},target=/workspace,readonly`,
     );

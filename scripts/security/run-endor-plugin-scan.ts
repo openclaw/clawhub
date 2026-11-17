@@ -25,7 +25,7 @@ const CHILD_RUNTIME_ENV_KEYS = [
 ] as const;
 const DEFAULT_ENDOR_TIMEOUT_MS = 20 * 60 * 1000;
 const DOCKER_REMOVE_TIMEOUT_MS = 10_000;
-// Hosted ubuntu-22.04 runners have 16 GB, and a shard runs up to 4 scans at once.
+// Hosted ubuntu-22.04 runners have 16 GB, and a shard runs 4 scans at once by default.
 const ENDOR_CONTAINER_MEMORY = "3g";
 // Community packages with large dependency trees produce reports over 8 MiB.
 // Only the bounded summary is kept; diagnostics are capped separately.
