@@ -283,10 +283,10 @@ export async function runEndorPluginScan(input: {
     "--security-opt",
     "no-new-privileges:true",
     "--read-only",
-    // The npm tree, npm cache and call graph all live in the /tmp tmpfs, which
-    // counts against this cap. Uncapped, concurrent scans of large packages
-    // exhausted the hosted runner and the kernel killed the worker or the VM.
-    // With the cap, only this scan is killed and its report fails.
+    // A --memory-swap equal to --memory allows no swap. The /tmp tmpfs (npm
+    // tree, npm cache, call graph) counts against the cap, so an oversized scan
+    // is killed inside this container and fails only its own report, instead
+    // of exhausting the runner.
     "--memory",
     ENDOR_CONTAINER_MEMORY,
     "--memory-swap",
