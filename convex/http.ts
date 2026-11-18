@@ -92,6 +92,9 @@ const publishPackageV1Http = lazyHttpAction(
 const publishAttemptsGetRouterV1Http = lazyHttpAction(
   async () => (await import("./httpApiV1")).publishAttemptsGetRouterV1Http,
 );
+const recoverPackageSubmissionV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).recoverPackageSubmissionV1Http,
+);
 const recoverPackagePublishAttemptV1Http = lazyHttpAction(
   async () => (await import("./httpApiV1")).recoverPackagePublishAttemptV1Http,
 );
@@ -280,6 +283,7 @@ for (const [path, method, handler] of [
   [{ path: ApiRoutes.publishTokenMint }, "POST", mintPublishTokenV1Http],
   [{ pathPrefix: "/api/v1/publish/attempts/" }, "GET", publishAttemptsGetRouterV1Http],
   [{ pathPrefix: "/api/v1/publish/attempts/" }, "POST", recoverPackagePublishAttemptV1Http],
+  [{ path: "/api/v1/publish/submissions/recover" }, "POST", recoverPackageSubmissionV1Http],
   [{ path: "/api/v1/package-inspector/claim" }, "POST", packageInspectorClaimHttp],
   [{ path: ApiRoutes.sdkUsage }, "GET", packageSdkUsageHttp],
   [{ path: ApiRoutes.sdkUsageCoverage }, "GET", packageSdkUsageCoverageHttp],

@@ -140,6 +140,14 @@ async function assertRecoveryArtifactEligibility(
     throw new ConvexError(
       "Recovered package publication authorization does not match the original artifact",
     );
+  assertRecoveryModeration(release, attempt);
+  return token;
+}
+
+export function assertRecoveryModeration(
+  release: Doc<"packageReleases">,
+  attempt: Doc<"publishAttempts">,
+) {
   if (
     release.softDeletedAt ||
     release.ownerDeletedAt ||
@@ -151,10 +159,9 @@ async function assertRecoveryArtifactEligibility(
   ) {
     throw new ConvexError("Recovered package publication authorization is blocked by moderation");
   }
-  return token;
 }
 
-async function assertRecoveryStorage(ctx: DbCtx, release: Doc<"packageReleases">) {
+export async function assertRecoveryStorage(ctx: DbCtx, release: Doc<"packageReleases">) {
   // Storage IDs bind immutable bytes; the original IDs and digests matched above.
   for (const file of release.files) {
     const stored = await ctx.db.system.get(file.storageId);

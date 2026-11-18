@@ -187,6 +187,14 @@ import {
 } from "./lib/packageSecurity";
 import { insertPackageInstallStatEvent } from "./lib/packageStatEvents";
 import {
+  assertSubmissionRecoveryInsert,
+  assertSubmissionRecoveryFinalization,
+  submissionRecovery,
+  submissionRecoveryKey,
+  submissionRecoveryValidator,
+  type SubmissionRecovery,
+} from "./lib/packageSubmissionRecovery";
+import {
   collectPluginApiRetirements,
   pluginApiRetirement,
   type PluginApiRetirement,
@@ -550,6 +558,7 @@ type PackagePublishAuthContext =
     };
 type PackageTrustedPublisherDoc = Doc<"packageTrustedPublishers">;
 type PackagePublishOptions = {
+  submissionRecovery?: SubmissionRecovery;
   requireSecurityChecks?: boolean;
   onFilesAdopted?: () => void;
 };
@@ -7942,7 +7951,7 @@ async function reverifyStagedOpenClawAuthorizationBeforeFinalize(
   },
   claimId: string,
 ) {
-  if (manualPackageRecovery(claim.packageFollowup)) {
+  if (manualPackageRecovery(claim.packageFollowup) || submissionRecovery(claim.packageFollowup)) {
     return { manualRecoveryAttemptId: claim.attemptId, manualRecoveryClaimId: claimId };
   }
   const followup = claim.packageFollowup as {
@@ -8215,6 +8224,18 @@ async function publishPackageImpl(
     publishActor = { kind: "user", userId: actorUserId };
   }
 
+  if (options.submissionRecovery) {
+    if (
+      auth.kind !== "user" ||
+      !existingPackage ||
+      existingPackage._id === undefined ||
+      options.submissionRecovery.actorUserId !== actorUserId
+    )
+      throw new ConvexError("Invalid submission recovery actor");
+    ownerUserId = options.submissionRecovery.ownerUserId;
+    ownerPublisherId = options.submissionRecovery.ownerPublisherId;
+  }
+
   if (family === "claw" && ownerPublisherId) {
     const ownerPublisher = await runQueryRef<Doc<"publishers"> | null>(
       ctx,
@@ -8257,18 +8278,20 @@ async function publishPackageImpl(
   const publishedArtifactSha256 = family === "claw" ? payload.artifact?.sha256 : undefined;
   const attemptArtifactFingerprint = publishedArtifactSha256 ?? integritySha256;
   // Settle retries before the scans, Plugin Inspector, and classification run again.
-  const settled = await settleExistingStagedPackagePublication(ctx, {
-    auth,
-    existingPackage,
-    family,
-    name,
-    version,
-    actorUserId,
-    ownerUserId,
-    ownerPublisherId,
-    artifactFingerprint: attemptArtifactFingerprint,
-    publishedArtifactSha256,
-  });
+  const settled = options.submissionRecovery
+    ? null
+    : await settleExistingStagedPackagePublication(ctx, {
+        auth,
+        existingPackage,
+        family,
+        name,
+        version,
+        actorUserId,
+        ownerUserId,
+        ownerPublisherId,
+        artifactFingerprint: attemptArtifactFingerprint,
+        publishedArtifactSha256,
+      });
   if (settled) return settled;
   const legacyZipBytes = buildDeterministicPackageZip(legacyZipEntries);
   const legacyZipSha256 = await sha256Hex(legacyZipBytes);
@@ -8595,6 +8618,7 @@ async function publishPackageImpl(
     source: effectiveSource,
     trustedPublishTokenId: auth.kind === "github-actions" ? auth.publishToken._id : undefined,
     trustedPublishInventoryDigest: auth.kind === "github-actions" ? inventoryDigest : undefined,
+    ...(options.submissionRecovery ? { submissionRecovery: options.submissionRecovery } : {}),
   };
   // This action owns only ZIPs it generates; caller uploads and adopted release archives survive.
   const storeLegacyZipIfNeeded = async () => {
@@ -8649,83 +8673,87 @@ async function publishPackageImpl(
       releaseId: Id<"packageReleases">;
       publicationStatus?: "pending" | "published";
       createdNewParent?: boolean;
+      recoveryAttemptId?: Id<"publishAttempts">;
     }>(ctx, internalRefs.packages.insertReleaseInternal, {
       ...packageInsertArgs,
       publicationStatus: "pending",
     }),
   );
 
-  const staged = await runMutationRef<{
-    attemptId: Id<"publishAttempts">;
-    status: string;
-    result?: { ok: true; packageId: Id<"packages">; releaseId: Id<"packageReleases"> };
-  }>(ctx, internalRefs.publishAttempts.createPackagePublishAttemptInternal, {
-    userId: actorUserId,
-    ownerUserId,
-    ownerPublisherId,
-    packageId: pendingResult.packageId,
-    packageReleaseId: pendingResult.releaseId,
-    createdNewParent: pendingResult.createdNewParent,
-    name,
-    displayName,
-    version,
-    idempotencyKey: buildPackagePublishAttemptIdempotencyKey({
-      actorUserId,
-      ownerPublisherId,
-      ownerUserId,
-      name,
-      version,
-      artifactFingerprint: attemptArtifactFingerprint,
-    }),
-    artifactFingerprint: attemptArtifactFingerprint,
-    files,
-    clawpackStorageId: packageInsertArgs.clawpackStorageId,
-    scanContext: buildPackagePublishAttemptScanContext(packageInsertArgs),
-    packageFollowup: stripUndefinedForStoredPublish({
-      ownerUserId,
-      ownerPublisherId,
-      packageName: name,
-      version,
-      trustedPublishTokenId: auth.kind === "github-actions" ? auth.publishToken._id : undefined,
-      trustedPublishInventoryDigest: auth.kind === "github-actions" ? inventoryDigest : undefined,
-      trustedPublishAuthorizationVersion:
-        auth.kind === "github-actions" ? auth.publishToken.authorizationVersion : undefined,
-      manualOverrideAudit:
-        auth.kind === "user" && existingTrustedPublisher && manualOverrideReason
-          ? {
-              actorUserId,
-              version,
-              reason: manualOverrideReason,
-              trustedPublisher: {
-                provider: existingTrustedPublisher.provider,
-                repository: existingTrustedPublisher.repository,
-                workflowFilename: existingTrustedPublisher.workflowFilename,
-                environment: existingTrustedPublisher.environment,
-              },
-            }
-          : undefined,
-      githubActionsAudit:
-        auth.kind === "github-actions"
-          ? {
-              actorUserId,
-              version,
-              repository: auth.publishToken.repository,
-              workflowFilename: auth.publishToken.workflowFilename,
-              environment: auth.publishToken.environment,
-              runId: auth.publishToken.runId,
-              runAttempt: auth.publishToken.runAttempt,
-              sha: auth.publishToken.sha,
-            }
-          : undefined,
-    }),
-  }).catch(async (error) => {
-    await runMutationRef(ctx, internalRefs.packages.discardPendingPackagePublicationInternal, {
-      packageId: pendingResult.packageId,
-      releaseId: pendingResult.releaseId,
-      createdNewParent: pendingResult.createdNewParent,
-    });
-    throw error;
-  });
+  const staged = pendingResult.recoveryAttemptId
+    ? { attemptId: pendingResult.recoveryAttemptId, status: "pending_checks", result: undefined }
+    : await runMutationRef<{
+        attemptId: Id<"publishAttempts">;
+        status: string;
+        result?: { ok: true; packageId: Id<"packages">; releaseId: Id<"packageReleases"> };
+      }>(ctx, internalRefs.publishAttempts.createPackagePublishAttemptInternal, {
+        userId: actorUserId,
+        ownerUserId,
+        ownerPublisherId,
+        packageId: pendingResult.packageId,
+        packageReleaseId: pendingResult.releaseId,
+        createdNewParent: pendingResult.createdNewParent,
+        name,
+        displayName,
+        version,
+        idempotencyKey: buildPackagePublishAttemptIdempotencyKey({
+          actorUserId,
+          ownerPublisherId,
+          ownerUserId,
+          name,
+          version,
+          artifactFingerprint: attemptArtifactFingerprint,
+        }),
+        artifactFingerprint: attemptArtifactFingerprint,
+        files,
+        clawpackStorageId: packageInsertArgs.clawpackStorageId,
+        scanContext: buildPackagePublishAttemptScanContext(packageInsertArgs),
+        packageFollowup: stripUndefinedForStoredPublish({
+          ownerUserId,
+          ownerPublisherId,
+          packageName: name,
+          version,
+          trustedPublishTokenId: auth.kind === "github-actions" ? auth.publishToken._id : undefined,
+          trustedPublishInventoryDigest:
+            auth.kind === "github-actions" ? inventoryDigest : undefined,
+          trustedPublishAuthorizationVersion:
+            auth.kind === "github-actions" ? auth.publishToken.authorizationVersion : undefined,
+          manualOverrideAudit:
+            auth.kind === "user" && existingTrustedPublisher && manualOverrideReason
+              ? {
+                  actorUserId,
+                  version,
+                  reason: manualOverrideReason,
+                  trustedPublisher: {
+                    provider: existingTrustedPublisher.provider,
+                    repository: existingTrustedPublisher.repository,
+                    workflowFilename: existingTrustedPublisher.workflowFilename,
+                    environment: existingTrustedPublisher.environment,
+                  },
+                }
+              : undefined,
+          githubActionsAudit:
+            auth.kind === "github-actions"
+              ? {
+                  actorUserId,
+                  version,
+                  repository: auth.publishToken.repository,
+                  workflowFilename: auth.publishToken.workflowFilename,
+                  environment: auth.publishToken.environment,
+                  runId: auth.publishToken.runId,
+                  runAttempt: auth.publishToken.runAttempt,
+                  sha: auth.publishToken.sha,
+                }
+              : undefined,
+        }),
+      }).catch(async (error) => {
+        await runMutationRef(ctx, internalRefs.packages.discardPendingPackagePublicationInternal, {
+          packageId: pendingResult.packageId,
+          releaseId: pendingResult.releaseId,
+          createdNewParent: pendingResult.createdNewParent,
+        });
+        throw error;
+      });
   if (auth.kind === "github-actions" && auth.publishToken.authorizationVersion !== 2) {
     await runMutationRef(ctx, internalRefs.packagePublishTokens.revokeInternal, {
       tokenId: auth.publishToken._id,
@@ -8931,11 +8959,13 @@ export const publishPackageForUserInternal = internalAction({
     payload: v.any(),
     requestStorageIds: v.optional(v.array(v.id("_storage"))),
     requireSecurityChecks: v.optional(v.boolean()),
+    submissionRecovery: v.optional(submissionRecoveryValidator),
   },
   handler: async (ctx, args) => {
     return await withRequestPackageStorage(ctx, args.requestStorageIds, (onFilesAdopted) =>
       publishPackageImpl(ctx, { kind: "user", actorUserId: args.actorUserId }, args.payload, {
         requireSecurityChecks: args.requireSecurityChecks,
+        submissionRecovery: args.submissionRecovery,
         onFilesAdopted,
       }),
     );
@@ -10979,16 +11009,25 @@ export const publishPendingReleaseInternal = internalMutation({
     await assertOperationalPackageRetryFinalization(ctx, pkg, release, args);
 
     const metadata = pendingPackagePublicationMetadata(release);
+    const recoveredSubmission = submissionRecovery(metadata);
     const manualRecovery =
-      manualPackageRecovery(metadata) || args.manualRecoveryAttemptId
-        ? await assertManualRecoveryFinalization(
+      recoveredSubmission && !manualPackageRecovery(metadata)
+        ? await assertSubmissionRecoveryFinalization(
             ctx,
             pkg,
             release,
             args.manualRecoveryAttemptId,
             args.manualRecoveryClaimId,
           )
-        : undefined;
+        : manualPackageRecovery(metadata) || args.manualRecoveryAttemptId
+          ? await assertManualRecoveryFinalization(
+              ctx,
+              pkg,
+              release,
+              args.manualRecoveryAttemptId,
+              args.manualRecoveryClaimId,
+            )
+          : undefined;
     // Queueing does not preserve managed-publisher authority: membership, admin
     // status, and publisher availability can change while security checks run.
     if (release.files.some((file) => file.path === MANAGED_MCP_DEFINITION_PATH)) {
@@ -11247,11 +11286,26 @@ export const insertReleaseInternal = internalMutation({
     clawManifestSummary: v.optional(v.any()),
     templateInventory: packageTemplateInventoryValidator,
     source: v.optional(v.any()),
+    submissionRecovery: v.optional(submissionRecoveryValidator),
     trustedPublishTokenId: v.optional(v.id("packagePublishTokens")),
     trustedPublishInventoryDigest: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
+    if (args.submissionRecovery) {
+      const pkg = await assertSubmissionRecoveryInsert(ctx, args.submissionRecovery, args, now);
+      if (
+        args.publicationStatus !== "pending" ||
+        args.trustedPublishTokenId ||
+        args.actorUserId !== args.submissionRecovery.actorUserId ||
+        args.ownerUserId !== pkg.ownerUserId ||
+        args.ownerPublisherId !== pkg.ownerPublisherId ||
+        args.name !== pkg.name ||
+        args.family !== pkg.family
+      )
+        throw new ConvexError("Submission recovery cannot change the original package or owner");
+    }
+
     const publicationStatus = args.publicationStatus ?? "published";
     const pendingPublication = publicationStatus === "pending";
     const prePublicationScanStatus = args.llmAnalysis
@@ -11350,7 +11404,7 @@ export const insertReleaseInternal = internalMutation({
         );
       }
     }
-    if (args.ownerUserId !== args.actorUserId) {
+    if (args.ownerUserId !== args.actorUserId && !args.submissionRecovery) {
       assertAdmin(actor);
     }
     const officialPublisher = await getOwnerPublisher(ctx, {
@@ -11553,6 +11607,7 @@ export const insertReleaseInternal = internalMutation({
                 ? args.trustedPublishInventoryDigest
                 : undefined,
             trustedPublishAuthorizationVersion,
+            ...(args.submissionRecovery ? { submissionRecovery: args.submissionRecovery } : {}),
           }
         : undefined,
       changelog: args.changelog,
@@ -11595,12 +11650,59 @@ export const insertReleaseInternal = internalMutation({
     const pkg = existing ?? (await ctx.db.get(pkgId));
     if (!pkg) throw new ConvexError("Package insert failed");
     if (pendingPublication) {
+      let recoveryAttemptId: Id<"publishAttempts"> | undefined;
+      if (args.submissionRecovery) {
+        const staged: { attemptId: Id<"publishAttempts"> } = await runMutationRef(
+          ctx,
+          internalRefs.publishAttempts.createPackagePublishAttemptInternal,
+          {
+            userId: args.actorUserId,
+            ownerUserId: args.ownerUserId,
+            ownerPublisherId: args.ownerPublisherId,
+            packageId: pkgId,
+            packageReleaseId: releaseId,
+            createdNewParent: false,
+            name: args.name,
+            displayName: args.displayName,
+            version: args.version,
+            idempotencyKey: submissionRecoveryKey(args.submissionRecovery.originalTokenId),
+            artifactFingerprint: args.integritySha256,
+            files: args.files,
+            clawpackStorageId: args.clawpackStorageId,
+            scanContext: buildPackagePublishAttemptScanContext(args),
+            packageFollowup: stripUndefinedForStoredPublish({
+              ownerUserId: args.ownerUserId,
+              ownerPublisherId: args.ownerPublisherId,
+              packageName: args.name,
+              version: args.version,
+              submissionRecovery: args.submissionRecovery,
+            }),
+          },
+        );
+        recoveryAttemptId = staged.attemptId;
+        await ctx.db.insert("auditLogs", {
+          actorUserId: args.actorUserId,
+          action: "package.publish.recover_submission",
+          targetType: "package",
+          targetId: pkgId,
+          metadata: {
+            attemptId: recoveryAttemptId,
+            releaseId,
+            originalTokenId: args.submissionRecovery.originalTokenId,
+            reason: args.submissionRecovery.request.manualOverrideReason,
+            inventoryDigest: args.submissionRecovery.request.inventoryDigest,
+            artifactSha256: args.submissionRecovery.request.artifactSha256,
+          },
+          createdAt: now,
+        });
+      }
       return {
         ok: true as const,
         packageId: pkgId,
         releaseId,
         publicationStatus,
         createdNewParent,
+        ...(recoveryAttemptId ? { recoveryAttemptId } : {}),
       };
     }
 

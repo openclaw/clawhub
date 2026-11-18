@@ -9,6 +9,7 @@ import { contentRightsV1Handler } from "./httpApiV1/contentRightsV1";
 import { verifyDocsSessionV1Handler } from "./httpApiV1/docsSessionV1";
 import { featuredV1Handler } from "./httpApiV1/featuredV1";
 import { recoverPackagePublishAttemptV1Handler } from "./httpApiV1/packagePublishRecoveryV1";
+import { recoverPackageSubmissionV1Handler } from "./httpApiV1/packageSubmissionRecoveryV1";
 import {
   exportPluginsV1Handler,
   listBundlePluginsV1Handler,
@@ -182,3 +183,5 @@ export const __handlers = {
 };
 
 export const recoverPackagePublishAttemptV1Http = httpAction(recoverPackagePublishAttemptV1Handler);
+
+export const recoverPackageSubmissionV1Http = httpAction(recoverPackageSubmissionV1Handler);
