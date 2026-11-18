@@ -320,6 +320,7 @@ clawhub scan --slug gifgrep --update --output report.zip
 - Plugin downloads use the package name and require `--kind plugin`.
 - `--version` is required so authors inspect the exact submitted version that ClawHub blocked.
 - `--output <file.zip>` chooses the destination path.
+- When the publication checks of a skill version stopped before a verdict, the archive holds `manifest.json`, `publication.json`, and a `README.md` that says the scan failed with no safety verdict. It gives the check states, whether a retry is waiting, and what to do next. It does not include worker errors.
 
 ```bash
 clawhub scan download gifgrep --version 1.2.3

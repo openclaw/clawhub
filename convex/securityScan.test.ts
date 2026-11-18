@@ -2214,6 +2214,139 @@ describe("securityScan", () => {
     ).rejects.toThrow("Forbidden");
   });
 
+  function failedPublicationDocs(clawscanSummary: string, attemptStatus = "failed") {
+    return {
+      "skills:held": {
+        _id: "skills:held",
+        slug: "held-skill",
+        displayName: "Held Skill",
+        ownerUserId: "users:owner",
+      },
+      "skillVersions:held": {
+        _id: "skillVersions:held",
+        skillId: "skills:held",
+        version: "1.0.0",
+        publicationStatus: "pending",
+        publishAttemptId: "publishAttempts:held",
+        fingerprint: "fingerprint-held",
+        files: [{ path: "SKILL.md" }],
+        createdAt: 1_700_000_000_000,
+      },
+      "publishAttempts:held": {
+        _id: "publishAttempts:held",
+        kind: "skill",
+        status: attemptStatus,
+        skillId: "skills:held",
+        skillVersionId: "skillVersions:held",
+        version: "1.0.0",
+        artifactFingerprint: "fingerprint-held",
+        checkClaimLastError: "runner /home/runner/work/_temp/clawscan-bin/clawscan exited 1",
+        checks: {
+          trufflehog: { status: "clean" },
+          clawscan: { status: "failed", summary: clawscanSummary },
+        },
+        updatedAt: 1_700_000_200_000,
+      },
+    };
+  }
+
+  it("reports failed publication checks to the owner when no scanner verdict was stored", async () => {
+    const ctx = makeStoredScanReportCtx({
+      actor: { _id: "users:owner", role: "user" },
+      docs: failedPublicationDocs(
+        "ClawScan failed before returning a verdict: judge not started: scanner skillspector failed",
+      ),
+    });
+
+    const report = await getStoredScanReportForUserInternalHandler(ctx, {
+      actorUserId: "users:owner",
+      kind: "skill",
+      name: "held-skill",
+      version: "1.0.0",
+    });
+
+    expect(report).toMatchObject({
+      ok: true,
+      status: "failed",
+      writtenBack: false,
+      artifact: { slug: "held-skill", version: "1.0.0", fileCount: 1 },
+      report: { aig: null, clawscan: null, endor: null, skillspector: null },
+      publication: {
+        stage: "checks_failed",
+        retrying: false,
+        checks: { trufflehog: "clean", clawscan: "failed" },
+        guidance: "scanner_incomplete",
+      },
+      updatedAt: 1_700_000_200_000,
+    });
+    expect(JSON.stringify(report)).not.toContain("skillspector failed");
+    expect(JSON.stringify(report)).not.toContain("/home/runner");
+    expect(JSON.stringify(report)).not.toContain("publishAttempts:held");
+  });
+
+  it("tells the owner to remove Python bytecode when that stopped the scan", async () => {
+    const ctx = makeStoredScanReportCtx({
+      actor: { _id: "users:owner", role: "user" },
+      docs: failedPublicationDocs(
+        "A.I.G 0.2.1 cannot safely inspect packaged Python bytecode; remove .pyc, .pyo, and .pyd files before publishing (CVE-2026-84809).",
+        "pending_checks",
+      ),
+    });
+
+    const report = await getStoredScanReportForUserInternalHandler(ctx, {
+      actorUserId: "users:owner",
+      kind: "skill",
+      name: "held-skill",
+      version: "1.0.0",
+    });
+
+    expect(report).toMatchObject({
+      status: "failed",
+      publication: { stage: "checks_failed", retrying: true, guidance: "remove_python_bytecode" },
+    });
+  });
+
+  it("denies failed publication reports to non-owners", async () => {
+    const ctx = makeStoredScanReportCtx({
+      actor: { _id: "users:intruder", role: "user" },
+      docs: failedPublicationDocs("ClawScan failed before returning a verdict"),
+    });
+
+    await expect(
+      getStoredScanReportForUserInternalHandler(ctx, {
+        actorUserId: "users:intruder",
+        kind: "skill",
+        name: "held-skill",
+        version: "1.0.0",
+      }),
+    ).rejects.toThrow("Forbidden");
+  });
+
+  it("still reports missing scan results when no publication check failed", async () => {
+    const docs = failedPublicationDocs("unused");
+    const ctx = makeStoredScanReportCtx({
+      actor: { _id: "users:owner", role: "user" },
+      docs: {
+        ...docs,
+        "publishAttempts:held": {
+          ...docs["publishAttempts:held"],
+          status: "pending_checks",
+          checkClaimLastError: undefined,
+          checks: { trufflehog: { status: "pending" }, clawscan: { status: "pending" } },
+        },
+      },
+    });
+
+    await expect(
+      getStoredScanReportForUserInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        kind: "skill",
+        name: "held-skill",
+        version: "1.0.0",
+      }),
+    ).rejects.toThrow("Scan results not found");
+  });
+
   it("returns stored scan reports for hidden plugin releases to platform moderators", async () => {
     const ctx = makeStoredScanReportCtx({
       actor: { _id: "users:moderator", role: "moderator" },

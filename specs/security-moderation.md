@@ -633,6 +633,19 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   `verification.scanStatus` that only mirrors a stored static result, so old
   static-derived statuses cannot start acting as trust verdicts. The fields stay
   optional in the schema until a migration clears historical rows.
+- A stored scan-report download for a skill version whose publication checks
+  stopped before a verdict returns a failed report instead of "Scan results not
+  found". The report is not a verdict: it has status `failed`, no scanner
+  analysis, and wording that the failure is not a finding against the submitted
+  files. It runs after the existing owner, publisher-member, or staff
+  authorization and is bound to the exact retained attempt by skill, version,
+  and artifact fingerprint. It carries only the publication stage, the two
+  check states, whether a retry is waiting, and a guidance code chosen by the
+  server (`scanner_incomplete` or `remove_python_bytecode`). Check summaries
+  and claim errors can contain runner paths and scanner output, so they,
+  attempt ids, and storage ids never leave the query. Returning this report
+  does not retry checks, change publication state, or grant recovery; plugin
+  versions do not have it yet.
 - Skill Card generation waits only for a settled ClawScan verdict; it no longer
   waits for a static scan.
 - Public artifact pages present SkillSpector findings, A.I.G findings for skills,
