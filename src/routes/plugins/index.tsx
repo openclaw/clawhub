@@ -11,7 +11,7 @@ import {
   BrowseSearchInput,
   BrowseTopicChips,
 } from "../../components/BrowseControls";
-import { PluginListItem } from "../../components/PluginListItem";
+import { PluginResultItems } from "../../components/PluginListItem";
 import { BrowseResultsSkeleton } from "../../components/skeletons/BrowseResultsSkeleton";
 import { Button } from "../../components/ui/button";
 import { analyticsSearchFilter } from "../../lib/analyticsEvents";
@@ -661,9 +661,7 @@ function PluginsIndex() {
                 <span className="browse-list-head-label browse-list-head-stat">Downloads</span>
               </div>
               <div className="results-list">
-                {visibleItems.map((item) => (
-                  <PluginListItem key={item.name} item={item} variant="list" />
-                ))}
+                <PluginResultItems items={visibleItems} />
               </div>
             </div>
           )}

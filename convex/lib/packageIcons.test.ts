@@ -2,7 +2,11 @@
 import { getFunctionName } from "convex/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { sha256Hex } from "./clawpack";
-import { bundledPluginIconSourceUrl, resolvePackageIcon } from "./packageIcons";
+import {
+  bundledPluginIconSourceUrl,
+  resolvePackageIcon,
+  withThemeBackgrounds,
+} from "./packageIcons";
 
 const png = new Uint8Array(
   Buffer.from(
@@ -18,7 +22,7 @@ const source = {
 function context(bytes = png) {
   return {
     storage: {
-      get: vi.fn(async () => new Blob([new Uint8Array(bytes)])),
+      get: vi.fn(async (_id: string) => new Blob([new Uint8Array(bytes)])),
       store: vi.fn(async (_blob: Blob) => "storage:hosted"),
       delete: vi.fn(),
     },
@@ -130,5 +134,72 @@ describe("package icons", () => {
     await expect(
       resolvePackageIcon(ctx as never, { files: [], trustedSource: source }),
     ).rejects.toThrow("503");
+  });
+});
+
+describe("theme backgrounds", () => {
+  const theme = { id: "chart-room", name: "Chart Room" };
+  const manifest = {
+    themes: [{ ...theme, backgrounds: { light: "./assets/light.png", dark: "assets/dark.webp" } }],
+  };
+
+  it("hosts a valid PNG for its mode and drops a non-image without dropping the theme", async () => {
+    const ctx = context();
+    ctx.storage.get.mockImplementation(
+      async (id: string) =>
+        new Blob([id === "storage:dark" ? new TextEncoder().encode("not an image") : png]),
+    );
+    const notImage = new TextEncoder().encode("not an image");
+    const themes = await withThemeBackgrounds(ctx as never, {
+      pluginManifest: manifest,
+      files: [
+        await file(png, "assets/light.png"),
+        { ...(await file(notImage, "assets/dark.webp")), storageId: "storage:dark" as never },
+      ],
+      themes: [theme],
+    });
+    expect(themes).toEqual([
+      { ...theme, backgrounds: { light: `/api/v1/skill-icons/${await sha256Hex(png)}` } },
+    ]);
+    expect(ctx.storage.store).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops oversized, mismatched, undecodable, and undeclared images; dry runs store nothing", async () => {
+    const light = await file(png, "assets/light.png");
+    for (const files of [
+      [{ ...light, size: 512 * 1024 + 1 }],
+      [{ ...light, sha256: "0".repeat(64) }],
+      [{ ...light, path: "assets/other.png" }],
+    ]) {
+      const ctx = context();
+      expect(
+        await withThemeBackgrounds(ctx as never, {
+          pluginManifest: manifest,
+          files,
+          themes: [theme],
+        }),
+      ).toEqual([theme]);
+    }
+    const undecodable = context();
+    undecodable.runAction.mockResolvedValue(false);
+    expect(
+      await withThemeBackgrounds(undecodable as never, {
+        pluginManifest: manifest,
+        files: [light],
+        themes: [theme],
+      }),
+    ).toEqual([theme]);
+    const dryRun = context();
+    expect(
+      (
+        await withThemeBackgrounds(dryRun as never, {
+          pluginManifest: manifest,
+          files: [light],
+          themes: [theme],
+          dryRun: true,
+        })
+      )?.[0]?.backgrounds?.light,
+    ).toBe(`/api/v1/skill-icons/${await sha256Hex(png)}`);
+    expect(dryRun.storage.store).not.toHaveBeenCalled();
   });
 });

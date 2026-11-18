@@ -11,6 +11,7 @@ import type {
 } from "clawhub-schema";
 import { ApiRoutes } from "clawhub-schema/routes";
 import { getPluginBrowseSnapshotKind } from "../../convex/lib/pluginBrowseSnapshot";
+import type { ThemeChip, ThemePreview } from "../../convex/lib/pluginThemes";
 import { hasOwnProperty } from "./hasOwnProperty";
 import { publicApiUrl } from "./publicApiUrl";
 import {
@@ -30,6 +31,8 @@ export type PackageListItem = {
   summary?: string | null;
   icon?: string | null;
   iconAssetUrl?: string;
+  themePreview?: ThemePreview;
+  themeChips?: ThemeChip[];
   ownerHandle?: string | null;
   ownerImage?: string | null;
   ownerOfficial?: boolean;

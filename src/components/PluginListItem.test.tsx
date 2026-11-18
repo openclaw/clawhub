@@ -4,7 +4,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { PackageListItem } from "../lib/packageApi";
-import { PluginListItem } from "./PluginListItem";
+import { PluginListItem, PluginResultItems } from "./PluginListItem";
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children, to, ...props }: { children?: ReactNode; to?: string }) => (
@@ -15,6 +15,57 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 describe("PluginListItem", () => {
+  it("shows theme-only packs as grid cards with a preview and one chip per theme", () => {
+    const palette = {
+      background: "#061009",
+      foreground: "#e1f1e5",
+      card: "#0a1710",
+      primary: "#e6c178",
+      primaryForeground: "#171207",
+      secondary: "#16281d",
+      secondaryForeground: "#e6c178",
+      mutedForeground: "#afc9b8",
+      accent: "#243e2c",
+      accentForeground: "#f0d79d",
+      border: "#35523e",
+    };
+    const chip = {
+      background: "#061009",
+      foreground: "#e1f1e5",
+      accent: "#243e2c",
+      primary: "#e6c178",
+    };
+    const pack = (name: string) =>
+      makePlugin({
+        name,
+        displayName: name,
+        ownerHandle: "jjjhenriksen",
+        themePreview: { id: "night", name: "Night", dark: palette },
+        themeChips: [
+          { id: "night", name: "Night", dark: chip },
+          { id: "day", name: "Day", light: chip },
+        ],
+      });
+    const { container } = render(
+      <PluginResultItems
+        items={[pack("Nautical"), pack("Travel"), makePlugin(), pack("Artemis")]}
+      />,
+    );
+    // Consecutive packs share one grid; the ordinary plugin keeps its list row in order.
+    const grids = container.querySelectorAll(".theme-pack-grid");
+    expect(Array.from(grids, (grid) => grid.children.length)).toEqual([2, 1]);
+    expect(container.querySelectorAll(".skill-list-item")).toHaveLength(1);
+    expect(screen.getAllByText("by @jjjhenriksen")).toHaveLength(3);
+    expect(screen.getAllByRole("figure", { name: "Night theme preview, dark mode" })).toHaveLength(
+      3,
+    );
+    const chips = screen.getAllByRole("list", { name: "Themes in this pack" })[0]!.children;
+    expect(Array.from(chips, (item) => item.getAttribute("title"))).toEqual(["Night", "Day"]);
+    expect((chips[0] as HTMLElement).style.getPropertyValue("--theme-chip-dark-primary")).toBe(
+      "#e6c178",
+    );
+  });
+
   it.each(["list", "card"] as const)("uses verified raster artwork in %s rows", (variant) => {
     vi.stubEnv("VITE_CONVEX_URL", "https://catalog.convex.cloud");
     const iconAssetUrl =

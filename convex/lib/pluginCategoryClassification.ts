@@ -1,6 +1,7 @@
 import {
   getDeclaredPluginCategoriesFromManifest,
   isCurrentPluginCategoryAssignment,
+  isThemeOnlyPluginManifest,
   PLUGIN_CATEGORY_DEFINITIONS,
   type PluginCategorySlug,
 } from "clawhub-schema";
@@ -12,7 +13,7 @@ import { extractResponseText } from "./openaiResponse";
 import { derivePluginManifestSummary, toConvexSafeJsonValue } from "./packageRegistry";
 import type { PluginCategoryClassification } from "./pluginCategoryClassificationContract";
 
-export const PLUGIN_CATEGORY_CLASSIFIER_VERSION = "plugin-single-category-v8";
+export const PLUGIN_CATEGORY_CLASSIFIER_VERSION = "plugin-single-category-v9";
 const DOCUMENTATION_CHARACTER_LIMIT = 16_000;
 export type PluginCategoryEvidence = {
   name: string;
@@ -39,6 +40,9 @@ function staticMetadata(value: unknown) {
       "skills",
       "bundledSkills",
       "mcpServers",
+      "themes",
+      "commandAliases",
+      "secretProviderIntegrations",
     ]
       .filter((key) => Object.hasOwn(record, key))
       .map((key) => [key, record[key]]),
@@ -124,6 +128,18 @@ export async function classifyPluginCategories(
     new TextEncoder().encode(JSON.stringify({ evidence, declared })),
   );
   const metadata = { classifierVersion: PLUGIN_CATEGORY_CLASSIFIER_VERSION, inputHash };
+  // Theme-only purpose is explicit in the artifact, even for older releases that declared
+  // Other/Media before Themes existed. Mixed plugins retain normal primary-purpose rules.
+  if (isThemeOnlyPluginManifest(input.pluginManifest, input.bundleManifest)) {
+    return {
+      categories: ["themes"],
+      classification: {
+        ...metadata,
+        source: "manifest",
+        evidence: "Declared themes with no other plugin capabilities.",
+      },
+    };
+  }
   // Legacy capability lists are evidence, not a canonical primary purpose. Refresh
   // them through the same classifier so setup plugins cannot leak into discovery.
   if (declared && isCurrentPluginCategoryAssignment(declared)) {

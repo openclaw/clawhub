@@ -13591,6 +13591,7 @@ describe("httpApiV1 handlers", () => {
       "context",
       "voice",
       "web",
+      "themes",
       "computer-use",
       "media",
       "security",

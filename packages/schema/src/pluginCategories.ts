@@ -70,8 +70,36 @@ export function getDeclaredPluginCategoriesFromManifest(
   return categories;
 }
 
+/** A theme declaration establishes purpose without a model, but never hides other capabilities. */
+export function isThemeOnlyPluginManifest(manifest: unknown, companionManifest?: unknown): boolean {
+  const manifests = [manifest, companionManifest].filter(isRecord);
+  return (
+    manifests.some((entry) => hasValues(entry.themes)) &&
+    !manifests.some(
+      (entry) =>
+        [
+          "channels",
+          "providers",
+          "cliBackends",
+          "skills",
+          "bundledSkills",
+          "mcpServers",
+          "commandAliases",
+          "kind",
+        ].some(
+          (key) =>
+            hasValues(entry[key]) ||
+            (key === "kind" && typeof entry.kind === "string" && entry.kind.trim().length > 0),
+        ) ||
+        hasProperties(entry.contracts) ||
+        hasProperties(entry.secretProviderIntegrations),
+    )
+  );
+}
+
 export function inferPluginCategoriesFromManifest(manifest: unknown): PluginCategorySlug[] {
   if (!isRecord(manifest)) return [];
+  if (isThemeOnlyPluginManifest(manifest)) return ["themes"];
 
   const categories: PluginCategorySlug[] = [];
   const add = (category: PluginCategorySlug) => {

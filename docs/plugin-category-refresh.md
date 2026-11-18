@@ -75,8 +75,10 @@ dispatch. Report cursors and preview cursors belong to different tables; do not
 interchange them. Inspect proposed categories, source, evidence, previous
 categories, version, and status. Fallback rows cannot be accepted; retry failed
 classifications under a new run ID. A current single-category author declaration
-remains authoritative. Legacy capability arrays and retired categories are
-reassessed from the plugin's main purpose.
+remains authoritative, except that a theme-only manifest is deterministically Themes
+(`themes`), even when its older declaration was `other` or `media`. Mixed-capability
+plugins retain their main-purpose rules; retained staff reviews still win. Legacy
+capability arrays and retired categories are reassessed from the plugin's main purpose.
 
 Publication and refresh share bounded manifest, README/MDX, and bundled-skill
 evidence. Declared skills take priority over secondary documentation; a long
@@ -107,8 +109,20 @@ gh workflow run plugin-category-refresh.yml --repo openclaw/clawhub --ref main \
 Accept marks reviewed rows accepted and rehearses the first ten through a
 transaction that rolls back. Category state stays unchanged. A failed rehearsal
 leaves accepted rows available for inspection. Fresh generated previews must use
-classifier `plugin-single-category-v8`; bundled previews must match the pinned
+classifier `plugin-single-category-v9`; bundled previews must match the pinned
 OpenClaw source commit and manifest hashes in the checked-out inventory.
+
+## Existing theme packs
+
+After deploying the new taxonomy, use a fresh run ID and the named selection above for
+existing theme packs. Preview proposes Themes from the declared artifact without a model;
+review the proposals, then accept and apply through this same workflow. Verify
+`/api/v1/plugins/categories`, `/api/v1/plugins?category=themes` and
+`/api/v1/plugins/search?q=<pack>&category=themes`. Apply updates both the latest release
+summary and the package categories; the trigger wrapper updates the category/search
+digests in the same transaction. The manifest-summary backfill adds preview data but
+intentionally preserves categories, so running it alone does not populate this filter.
+No production refresh or deploy runs automatically with this code change.
 
 ## Apply, monitor, and undo
 

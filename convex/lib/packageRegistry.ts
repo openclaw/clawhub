@@ -14,6 +14,7 @@ import type {
 import { ConvexError } from "convex/values";
 import semver from "semver";
 import type { ActionCtx } from "../_generated/server";
+import { extractThemePreviews } from "./pluginThemes";
 import {
   formatReservedUnscopedPackageNameMessage,
   isReservedUnscopedPackageName,
@@ -377,6 +378,7 @@ export function derivePluginManifestSummary(params: {
       .filter(([, names]) => names.length > 0),
   );
   const recommendedPrompts = extractRecommendedPrompts(params.pluginManifest.recommendedPrompts);
+  const themes = extractThemePreviews(params.pluginManifest, params.files);
   const providers = declaredCapabilityNames(params.pluginManifest.providers);
   const channels = declaredCapabilityNames(params.pluginManifest.channels);
   const skillManifest = params.skillManifest ?? params.pluginManifest;
@@ -411,6 +413,7 @@ export function derivePluginManifestSummary(params: {
     ...(compatibility ? { compatibility } : {}),
     ...(manifestIdentity ? { manifestIdentity } : {}),
     ...(recommendedPrompts ? { recommendedPrompts } : {}),
+    ...(themes ? { themes } : {}),
     ...(Object.keys(contracts).length ? { contracts } : {}),
     ...(providers.length ? { providers } : {}),
     ...(channels.length ? { channels } : {}),

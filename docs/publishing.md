@@ -200,6 +200,19 @@ for example `["List what's assigned to me and update me on their status."]`.
 ClawHub and OpenClaw show them on your plugin's page. An invalid list is ignored;
 your release still publishes.
 
+### Theme Plugins
+
+OpenClaw theme plugins list their themes in `openclaw.plugin.json` as
+`themes: [{ id, name, description, source }]`, where `source` is a theme JSON file
+in the package with a full `light` and/or `dark` palette. ClawHub previews them in a small
+OpenClaw Control UI on the plugin page, with a Light/Dark switch for the modes each theme
+ships and a card for each theme in the pack. Plugins that ship only themes appear as
+preview cards in ClawHub search, with one color chip per theme. Theme `backgrounds` (`{ "light": "<path>", "dark": "<path>" }`, PNG, JPEG
+or WebP up to 512 KiB) appear dimmed behind the preview in that mode; an invalid image
+is skipped without affecting the theme. The preview checks each theme's structure, palettes, fonts, name and
+description, but not OpenClaw's branding fields (mascot, critters, artwork), so a theme
+OpenClaw rejects for those can still appear here. Invalid themes never block a release.
+
 ### Plugin Icons
 
 ClawHub uses the bundled `assets/icon.png` for plugin catalog artwork. Manifest
@@ -235,12 +248,23 @@ bundle plugins can declare one category in their root `openclaw.plugin.json`:
 ```
 
 Merge the `categories` field into your existing manifest. Use a current plugin
-category slug, such as `context`, `memory`, or `developer-tools`; explicit
-declarations take priority over automatic classification. Each new release must
+category slug, such as `context`, `memory`, `themes`, or `developer-tools`; explicit
+declarations take priority over model classification. Each new release must
 declare exactly one category or omit the field.
 
-When `categories` is omitted, ClawHub generates one category from bounded package
-metadata and documentation using its configured model (default: GPT-5.6 Luna).
+Theme-only plugins with a non-empty `themes` declaration are always classified as
+**Themes** (`themes`) without a model, including older packs that declared `other`
+or `media`. A plugin that also ships tools, providers, channels, skills, MCP servers,
+or other capabilities keeps the normal main-purpose classification rules.
+`GET /api/v1/plugins/categories` lists Themes; use `category=themes` on
+`/api/v1/plugins` or `/api/v1/plugins/search` to filter by it.
+
+Existing releases need the existing plugin category refresh (preview, review/accept,
+apply); its package/release updates maintain the search/filter digests too. The
+manifest-summary backfill adds preview data, not categories. Neither runs on deploy.
+
+When `categories` is omitted for other plugins, ClawHub generates one category from
+bounded package metadata and documentation using its configured model (default: GPT-5.6 Luna).
 It falls back to `other` when classification is unavailable. A previous release's
 category is not an author declaration and is not preserved merely by omission.
 

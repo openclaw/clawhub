@@ -27,6 +27,44 @@ export const PackageCompatibilitySchema = type({
 
 export type PackageCompatibility = (typeof PackageCompatibilitySchema)[inferred];
 
+const ThemePreviewPaletteSchema = type({
+  background: "string",
+  foreground: "string",
+  card: "string",
+  primary: "string",
+  primaryForeground: "string",
+  secondary: "string",
+  secondaryForeground: "string",
+  mutedForeground: "string",
+  accent: "string",
+  accentForeground: "string",
+  border: "string",
+  fontSans: "string?",
+  fontMono: "string?",
+});
+
+export const ThemePreviewSchema = type({
+  id: "string",
+  name: "string",
+  light: ThemePreviewPaletteSchema.optional(),
+  dark: ThemePreviewPaletteSchema.optional(),
+  backgrounds: type({ light: "string?", dark: "string?" }).optional(),
+});
+
+const ThemeChipColorsSchema = type({
+  background: "string",
+  foreground: "string",
+  accent: "string",
+  primary: "string",
+});
+
+export const ThemeChipSchema = type({
+  id: "string",
+  name: "string",
+  light: ThemeChipColorsSchema.optional(),
+  dark: ThemeChipColorsSchema.optional(),
+});
+
 export const PluginManifestSummarySchema = type({
   schemaVersion: "number",
   contracts: type({ "[string]": "string[]" }).optional(),
@@ -35,6 +73,7 @@ export const PluginManifestSummarySchema = type({
   categories: "string[]?",
   icon: "string?",
   recommendedPrompts: "string[]?",
+  themes: ThemePreviewSchema.array().optional(),
   compatibility: PackageCompatibilitySchema.optional(),
   manifestIdentity: type({
     name: "string?",
