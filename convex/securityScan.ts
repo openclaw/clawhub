@@ -32,6 +32,10 @@ import { securityScanLeaseMs } from "./lib/securityWorkerBudgets";
 import { sourceSkillVersionFiles } from "./lib/skillCards";
 import { skillPresentationValidator } from "./lib/skillPresentationValidator";
 import {
+  readSkillVersionPublicationProgress,
+  readSkillVersionPublishAttempt,
+} from "./lib/skillPublicationProgress";
+import {
   getSkillBySlugForPublisher,
   resolveLegacySkillBySlugOrAlias,
   resolvePublisherByOwnerHandle,
@@ -1929,6 +1933,49 @@ export const getStoredScanReportForUserInternal = internalQuery({
   },
 });
 
+// A scan that stopped before its verdict stores no analysis, which left owners
+// with "Scan results not found". Report the publication state instead. Worker
+// summaries can contain runner paths and scanner output, so only a guidance
+// code chosen here leaves this function.
+async function failedSkillPublicationReport(
+  ctx: QueryCtx,
+  kind: StoredScanArtifactKind,
+  skill: Doc<"skills">,
+  version: Doc<"skillVersions">,
+) {
+  const publication = await readSkillVersionPublicationProgress(ctx, skill, version);
+  if (publication?.stage !== "checks_failed" || !publication.checks) return null;
+  const attempt = await readSkillVersionPublishAttempt(ctx, skill, version);
+  const bytecode = attempt?.checks.clawscan.summary?.includes(
+    "cannot safely inspect packaged Python bytecode",
+  );
+  return {
+    ok: true as const,
+    scanId: `skill:${skill.slug}:${version.version}`,
+    status: "failed" as const,
+    sourceKind: "published" as const,
+    update: false,
+    writtenBack: false,
+    artifact: {
+      kind,
+      slug: skill.slug,
+      displayName: skill.displayName,
+      version: version.version,
+      ...(version.sha256hash ? { sha256hash: version.sha256hash } : {}),
+      fileCount: version.files.length,
+    },
+    report: storedScanReportFromArtifact(version),
+    publication: {
+      stage: publication.stage,
+      retrying: publication.retrying,
+      checks: publication.checks,
+      guidance: bytecode ? ("remove_python_bytecode" as const) : ("scanner_incomplete" as const),
+    },
+    createdAt: version.createdAt,
+    updatedAt: publication.updatedAt,
+  };
+}
+
 async function getStoredSkillScanReportForUser(
   ctx: QueryCtx,
   args: {
@@ -1955,7 +2002,11 @@ async function getStoredSkillScanReportForUser(
     .withIndex("by_skill_version", (q) => q.eq("skillId", skill._id).eq("version", args.version))
     .unique();
   if (!version) throw new ConvexError("Skill version not found");
-  if (!hasStoredScanReport(version)) throw new ConvexError("Scan results not found");
+  if (!hasStoredScanReport(version)) {
+    const failed = await failedSkillPublicationReport(ctx, args.kind, skill, version);
+    if (failed) return failed;
+    throw new ConvexError("Scan results not found");
+  }
 
   const completedAt = completedAtFromStoredScanReport(version);
   return {
