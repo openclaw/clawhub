@@ -142,8 +142,8 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
     const latestVersion = skillResult.latestVersion?.version ?? tags.latest ?? null;
     const taggedVersion = options.tag ? (tags[options.tag] ?? null) : null;
     if (options.tag && !taggedVersion) {
-      spinner.fail(`Unknown tag "${options.tag}"`);
-      return;
+      spinner.stop();
+      fail(`Unknown tag "${options.tag}"`);
     }
     const requestedVersion = options.version ?? taggedVersion ?? null;
 
