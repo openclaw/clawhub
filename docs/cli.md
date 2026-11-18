@@ -175,8 +175,12 @@ A completed replacement stays installed if deleting its old backup fails. The le
 
 ### `list`
 
-- Reads `<workdir>/.clawhub/lock.json` (legacy `.clawdhub`).
-- Shows `pinned` next to skills frozen with `clawhub pin`, including the optional reason.
+- Lists skills tracked in `<workdir>/.clawhub/lock.json` (legacy `.clawdhub`).
+- Shows `pinned` next to tracked skills frozen with `clawhub pin`, including the optional reason.
+- Also lists skill folders in the active install directory, including folders
+  copied by hand, under **Manually installed (not tracked by clawhub)**.
+  Listing them does not add them to the lockfile. `clawhub update --all` skips
+  them, and `clawhub pin` and `clawhub uninstall` require a tracked entry.
 
 ### `pin <skill>`
 
