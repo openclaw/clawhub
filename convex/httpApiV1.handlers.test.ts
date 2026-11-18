@@ -15613,6 +15613,79 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("returns a large package ZIP without an extra response buffer slice", async () => {
+    vi.stubEnv("TRUST_FORWARDED_IPS", "true");
+    // Inert, incompressible data exercises the response-copy peak after ZIP hashing.
+    const payload = new Uint8Array(20 * 1024 * 1024);
+    let seed = 1;
+    for (let i = 0; i < payload.length; i++) {
+      seed ^= seed << 13;
+      seed ^= seed >>> 17;
+      seed ^= seed << 5;
+      payload[i] = seed & 255;
+    }
+    const runQuery = makePackageDownloadQuery({
+      makeFiles: () => [
+        {
+          path: "assets/inert.bin",
+          size: payload.length,
+          sha256: "a".repeat(64),
+          storageId: "storage:payload",
+          contentType: "application/octet-stream",
+        },
+      ],
+    });
+    const originalSlice = Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, "slice")
+      ?.value as ArrayBuffer["slice"];
+    let responsePhase = false;
+    const runMutation = vi.fn(async (mutation: unknown) => {
+      if (getFunctionName(mutation as never) === "downloadMetrics:recordDownloadMetricInternal") {
+        responsePhase = true;
+      }
+      return okRate();
+    });
+    const responseCopies: number[] = [];
+    const slice = vi.spyOn(ArrayBuffer.prototype, "slice").mockImplementation(function (
+      this: ArrayBuffer,
+      start = 0,
+      end?: number,
+    ) {
+      const result = originalSlice.call(this, start, end);
+      if (responsePhase && result.byteLength >= payload.length) {
+        responseCopies.push(result.byteLength);
+      }
+      return result;
+    });
+    let response: Response;
+    try {
+      response = await __handlers.packagesGetRouterV1Handler(
+        makeCtx({
+          runQuery,
+          runMutation,
+          storage: { get: vi.fn(async () => new Blob([payload])) },
+        }),
+        new Request("https://example.com/api/v1/packages/demo-plugin/download", {
+          headers: { "cf-connecting-ip": "203.0.113.20" },
+        }),
+      );
+    } finally {
+      slice.mockRestore();
+    }
+    expect(response.status).toBe(200);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    const hash = await sha256Hex(bytes);
+    // Pin the pre-optimization deterministic ZIP, not just self-consistent headers.
+    expect(hash).toBe("00133aceb9fa3c9d2a778250d7c45c199d9fd6a412ddfb9d741021da987473be");
+    expect(response.headers.get("etag")).toBe(`"sha256:${hash}"`);
+    expect(response.headers.get("digest")).toBe(
+      `sha-256=${Buffer.from(hash, "hex").toString("base64")}`,
+    );
+    expect(response.headers.get("x-clawhub-artifact-sha256")).toBe(hash);
+    expect(response.headers.get("x-clawhub-artifact-type")).toBe("legacy-plugin-zip");
+    expect(unzipSync(bytes)["package/assets/inert.bin"]).toEqual(payload);
+    expect(responseCopies).toEqual([]);
+  });
+
   it("package download metrics prefer API token user identity over IP", async () => {
     vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:viewer" as never);
 

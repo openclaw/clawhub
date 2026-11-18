@@ -4379,7 +4379,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     if (release.artifactKind === "legacy-zip" && release.clawpackStorageId && !storedZip) {
       return text("Missing stored package artifact", 500, rate.headers);
     }
-    let zip: Uint8Array;
+    let zip: Uint8Array<ArrayBuffer>;
     if (storedZip) {
       zip = new Uint8Array(await storedZip.arrayBuffer());
     } else {
@@ -4412,11 +4412,9 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     } catch {
       // Best-effort metric path; never fail package downloads.
     }
-    const zipBody = zip.buffer.slice(
-      zip.byteOffset,
-      zip.byteOffset + zip.byteLength,
-    ) as ArrayBuffer;
-    return new Response(new Blob([zipBody], { type: "application/zip" }), {
+    // The archive already owns its bytes; slicing and wrapping it in a Blob
+    // creates two more archive-sized buffers in the 64 MB HTTP-action runtime.
+    return new Response(zip, {
       status: 200,
       headers: mergeHeaders(
         rate.headers,
