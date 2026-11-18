@@ -51,6 +51,7 @@ import {
   normalizeSkillSearchText,
 } from "./lib/skillSearchDigest";
 import { isSearchableSkillSlugShape, normalizeSkillSlug } from "./lib/skillSlugValidator";
+import { isPublicSkillsShMirrorDigest } from "./lib/skillsShMirrorPublic";
 import { getSkillsShPublicCatalogEnabledHandler } from "./rolloutCapabilities";
 
 type OwnerInfo = { ownerHandle: string | null; owner: PublicPublisher | null };
@@ -1328,16 +1329,6 @@ export const getOwnerQualifiedSkillMatch = internalQuery({
   },
 });
 
-function isPublicExternalSearchDigest(digest: Doc<"skillsShMirrorDigests">) {
-  return (
-    digest.active &&
-    digest.publicVisible &&
-    digest.installable &&
-    digest.sourceFreshnessStatus === "observed-only" &&
-    digest.tombstonedAt === undefined
-  );
-}
-
 const MAX_EXTERNAL_SEARCH_CANDIDATES_PER_INDEX =
   CANONICAL_SKILL_SEARCH_BOUNDS.externalCandidateLimitPerIndex;
 
@@ -1464,7 +1455,7 @@ export const getExternalSkillSearchCandidates = internalQuery({
       .filter((digest) => {
         if (seen.has(digest.externalId)) return false;
         seen.add(digest.externalId);
-        if (!isPublicExternalSearchDigest(digest)) return false;
+        if (!isPublicSkillsShMirrorDigest(digest)) return false;
         if (
           categorySlug &&
           !(digest.inferredCategories ?? []).some((category) => category === categorySlug)
