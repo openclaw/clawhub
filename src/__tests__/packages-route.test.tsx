@@ -1,6 +1,7 @@
 /* @vitest-environment jsdom */
 
 import { act, fireEvent, render, screen } from "@testing-library/react";
+import { PLUGIN_CATEGORY_DEFINITIONS } from "clawhub-schema/pluginCategories";
 import type { ComponentType, ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -670,10 +671,18 @@ describe("plugins route", () => {
     render(<Component />);
 
     const categorySidebar = screen.getByLabelText("Plugin categories");
-    expect(categorySidebar.querySelectorAll("button")).toHaveLength(24);
+    expect(categorySidebar.querySelectorAll("button")).toHaveLength(
+      PLUGIN_CATEGORY_DEFINITIONS.length + 1,
+    );
+    expect(categorySidebar.textContent).toContain("Themes");
     expect(categorySidebar.textContent).toContain("Channels");
     expect(categorySidebar.textContent).toContain("Agent runtimes");
-    expect(screen.getByRole("combobox", { name: "Category" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("combobox", { name: "Category" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Themes" }));
+    const navigation = navigateMock.mock.calls.at(-1)?.[0] as {
+      search: (prev: Record<string, unknown>) => Record<string, unknown>;
+    };
+    expect(navigation.search({})).toMatchObject({ category: "themes" });
   });
 
   it("uses recommendation ranking as the plugin browse default", async () => {

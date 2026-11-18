@@ -248,12 +248,23 @@ bundle plugins can declare one category in their root `openclaw.plugin.json`:
 ```
 
 Merge the `categories` field into your existing manifest. Use a current plugin
-category slug, such as `context`, `memory`, or `developer-tools`; explicit
-declarations take priority over automatic classification. Each new release must
+category slug, such as `context`, `memory`, `themes`, or `developer-tools`; explicit
+declarations take priority over model classification. Each new release must
 declare exactly one category or omit the field.
 
-When `categories` is omitted, ClawHub generates one category from bounded package
-metadata and documentation using its configured model (default: GPT-5.6 Luna).
+Theme-only plugins with a non-empty `themes` declaration are always classified as
+**Themes** (`themes`) without a model, including older packs that declared `other`
+or `media`. A plugin that also ships tools, providers, channels, skills, MCP servers,
+or other capabilities keeps the normal main-purpose classification rules.
+`GET /api/v1/plugins/categories` lists Themes; use `category=themes` on
+`/api/v1/plugins` or `/api/v1/plugins/search` to filter by it.
+
+Existing releases need the existing plugin category refresh (preview, review/accept,
+apply); its package/release updates maintain the search/filter digests too. The
+manifest-summary backfill adds preview data, not categories. Neither runs on deploy.
+
+When `categories` is omitted for other plugins, ClawHub generates one category from
+bounded package metadata and documentation using its configured model (default: GPT-5.6 Luna).
 It falls back to `other` when classification is unavailable. A previous release's
 category is not an author declaration and is not preserved merely by omission.
 

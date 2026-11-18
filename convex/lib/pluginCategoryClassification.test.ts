@@ -36,6 +36,56 @@ function modelResponse(categories: string[]) {
 }
 
 describe("single-purpose plugin classification", () => {
+  it.each([undefined, ["other"], ["media"], ["themes"]])(
+    "classifies declared theme-only packs without a model, including older categories %j",
+    async (categories) => {
+      const request = modelResponse(["media"]);
+      vi.stubEnv("OPENAI_API_KEY", "");
+      const result = await classifyPluginCategories({
+        name: "night",
+        pluginManifest: {
+          themes: [{ id: "night", source: "themes/night.json" }],
+          ...(categories ? { categories } : {}),
+        },
+      });
+      expect(result).toMatchObject({
+        categories: ["themes"],
+        classification: {
+          source: "manifest",
+          classifierVersion: "plugin-single-category-v9",
+        },
+      });
+      expect(request).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps mixed plugins' declared purpose and supplies themes to model evidence", async () => {
+    const request = modelResponse(["developer-tools"]);
+    const manifest = { themes: [{ id: "night" }], contracts: { tools: ["debug"] } };
+    expect(
+      await classifyPluginCategories({
+        name: "debugger",
+        pluginManifest: {
+          ...manifest,
+          categories: ["developer-tools"],
+        },
+      }),
+    ).toMatchObject({ categories: ["developer-tools"], classification: { source: "manifest" } });
+    expect(request).not.toHaveBeenCalled();
+    expect(
+      await classifyPluginCategories({ name: "debugger", pluginManifest: manifest }),
+    ).toMatchObject({ categories: ["developer-tools"], classification: { source: "generated" } });
+    const body = JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string);
+    expect(body.text.format.schema.properties.categories.items.enum).toContain("themes");
+    expect(JSON.parse(JSON.parse(body.input).manifest).themes).toEqual([{ id: "night" }]);
+    const themed = await classifyPluginCategories({
+      name: "night",
+      pluginManifest: { themes: [{}] },
+      bundleManifest: { providers: ["acme"], categories: ["models"] },
+    });
+    expect(themed.classification.source).toBe("generated");
+  });
+
   it.each([{ categories: ["productivity", "scheduling"] }, { categories: ["runtime"] }])(
     "requires one active category for new author declarations without consulting a model: $categories",
     async ({ categories }) => {
@@ -107,7 +157,7 @@ describe("single-purpose plugin classification", () => {
     expect(body.instructions).toContain("agent-runtimes: Agent execution engines");
     expect(result).toMatchObject({
       categories: ["agent-runtimes"],
-      classification: { source: "generated", classifierVersion: "plugin-single-category-v8" },
+      classification: { source: "generated", classifierVersion: "plugin-single-category-v9" },
     });
   });
 

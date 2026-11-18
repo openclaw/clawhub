@@ -4,6 +4,8 @@ import {
   getDeclaredPluginCategoriesFromManifest,
   inferPluginCategoriesFromManifest,
   isPluginCategorySlug,
+  isThemeOnlyPluginManifest,
+  isCurrentPluginCategoryAssignment,
   PLUGIN_CATEGORY_SLUGS,
   resolveStoredPluginCategories,
 } from "./pluginCategories";
@@ -121,7 +123,7 @@ describe("plugin categories", () => {
     );
   });
 
-  it("matches the OpenClaw package category contract", () => {
+  it("publishes the canonical plugin category contract", () => {
     expect(PLUGIN_CATEGORY_SLUGS).toEqual([
       "channels",
       "models",
@@ -130,6 +132,7 @@ describe("plugin categories", () => {
       "context",
       "voice",
       "web",
+      "themes",
       "computer-use",
       "media",
       "security",
@@ -199,6 +202,46 @@ describe("plugin categories", () => {
         inferredFromReleaseId: "release:old",
       }),
     ).toEqual(["other"]);
+  });
+
+  it("accepts Themes as a current, filterable category, not a free-form topic", () => {
+    expect(isPluginCategorySlug("themes")).toBe(true);
+    expect(isPluginCategorySlug("theme")).toBe(false);
+    expect(isCurrentPluginCategoryAssignment(["themes"])).toBe(true);
+    expect(getDeclaredPluginCategoriesFromManifest({ categories: ["themes"] })).toEqual(["themes"]);
+    expect(
+      resolveStoredPluginCategories({ family: "code-plugin", categories: ["themes"] }),
+    ).toEqual(["themes"]);
+    expect(
+      inferPluginCategoriesFromManifest({ themes: [{ id: "night", source: "night.json" }] }),
+    ).toEqual(["themes"]);
+  });
+
+  it.each([
+    { providers: ["acme"] },
+    { channels: ["chat"] },
+    { contracts: { tools: ["search"] } },
+    { skills: ["skills"] },
+    { bundledSkills: ["skills"] },
+    { mcpServers: ["server"] },
+    { cliBackends: ["agent"] },
+    { kind: "memory" },
+    { commandAliases: ["go"] },
+    { secretProviderIntegrations: { vault: {} } },
+  ])("does not treat mixed-capability manifests as theme-only: %j", (capabilities) => {
+    const manifest = { themes: [{ id: "night" }], ...capabilities };
+    expect(isThemeOnlyPluginManifest(manifest)).toBe(false);
+    expect(isThemeOnlyPluginManifest({ themes: [{ id: "night" }] }, capabilities)).toBe(false);
+    expect(inferPluginCategoriesFromManifest(manifest)).not.toContain("themes");
+  });
+
+  it("does not infer Themes from a name, empty declaration, or config alone", () => {
+    for (const manifest of [null, { name: "themes" }, { themes: [] }]) {
+      expect(isThemeOnlyPluginManifest(manifest)).toBe(false);
+    }
+    expect(
+      isThemeOnlyPluginManifest({ themes: [{}], configSchema: {}, contracts: {}, skills: [] }),
+    ).toBe(true);
   });
 
   it("validates public category slugs", () => {

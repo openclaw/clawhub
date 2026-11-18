@@ -157,6 +157,13 @@ export const PLUGIN_CATEGORY_DEFINITIONS = [
       "General web search, fetching, crawling, and extracting web content. Interactive browser control belongs in Computer use. A tool whose main purpose is a specific research or business workflow belongs in that workflow's category.",
   },
   {
+    slug: "themes",
+    label: "Themes",
+    icon: "paintbrush",
+    description:
+      "OpenClaw appearance themes and theme packs: palettes, fonts, and background artwork. Plugins that also provide tools or other capabilities follow their main installation purpose rather than their optional theme.",
+  },
+  {
     slug: "computer-use",
     label: "Computer use",
     icon: "monitor",

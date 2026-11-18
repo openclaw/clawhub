@@ -189,6 +189,66 @@ async function catalogItems(t: Awaited<ReturnType<typeof mainShapeFixture>>) {
 }
 
 describe("existing-data compatibility for theme previews", () => {
+  it("refreshes existing theme categories through the reviewed path and exposes the real Themes filter", async () => {
+    const t = await mainShapeFixture();
+    vi.stubEnv("OPENAI_API_KEY", "");
+    try {
+      const categoriesResponse = await t.fetch("/api/v1/plugins/categories");
+      expect(categoriesResponse.status).toBe(200);
+      expect((await categoriesResponse.json()).categories).toContainEqual(
+        expect.objectContaining({ slug: "themes", label: "Themes", icon: "paintbrush" }),
+      );
+      const listThemes = async () => {
+        const response = await t.fetch("/api/v1/plugins?category=themes&sort=updated");
+        expect(response.status).toBe(200);
+        return (await response.json()).items;
+      };
+      expect(await listThemes()).toEqual([]);
+      const args = { runId: "themes-category", packageNames: ["canopy-theme"] };
+      expect(await t.action(internal.pluginCategoryRefresh.preview, args)).toMatchObject({
+        previewed: 1,
+        failed: 0,
+      });
+      // Preview is read-only with respect to release/package categories.
+      expect(await listThemes()).toEqual([]);
+      const rows = await t.query(internal.pluginCategoryRefresh.list, {
+        runId: args.runId,
+        paginationOpts: { cursor: null, numItems: 10 },
+      });
+      const row = rows.page[0]!;
+      expect(row).toMatchObject({ categories: ["themes"], classification: { source: "manifest" } });
+      expect(
+        await t.mutation(internal.pluginCategoryRefresh.accept, {
+          ids: [row._id],
+          confirm: "apply-plugin-category-refresh",
+        }),
+      ).toEqual({ accepted: 1 });
+      expect(
+        await t.mutation(internal.pluginCategoryRefresh.applyAccepted, { id: row._id }),
+      ).toEqual({ applied: true });
+      // Trigger-maintained digests support filtering, not merely a UI label.
+      const items = await listThemes();
+      expect(items.map((item: { name: string }) => item.name)).toEqual(["canopy-theme"]);
+      expect(items[0].categories).toEqual(["themes"]);
+      const search = await t.fetch("/api/v1/plugins/search?q=canopy&category=themes");
+      expect(search.status).toBe(200);
+      expect(
+        (await search.json()).results.map(
+          (entry: { package: { name: string } }) => entry.package.name,
+        ),
+      ).toEqual(["canopy-theme"]);
+      const detail = await t.fetch("/api/v1/packages/canopy-theme/detail?version=1.0.0");
+      expect((await detail.json()).version.pluginManifestSummary.categories).toEqual(["themes"]);
+      const ordinary = await t.fetch("/api/v1/packages/ordinary-plugin/detail?version=1.0.0");
+      expect((await ordinary.json()).version.pluginManifestSummary.categories).toEqual(["other"]);
+      expect(await t.action(internal.pluginCategoryRefresh.preview, args)).toMatchObject({
+        previewed: 0,
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("reads current-main rows unchanged, then backfills only the theme plugin", async () => {
     const t = await mainShapeFixture();
     const before = await snapshot(t);

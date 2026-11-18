@@ -180,8 +180,25 @@ OpenClaw, sha256 match, PNG/JPEG/WebP structure from the extension, and a raster
 image is dropped on its own; the theme stays (OpenClaw drops the whole theme instead).
 All new fields are optional, so rows written before this
 change stay valid. The plugin manifest summary backfill reads theme
-files like `SKILL.md` and refreshes both copies for existing releases. There is no
-Themes category, table, or endpoint.
+files like `SKILL.md` and refreshes both copies for existing releases.
+
+Themes is a canonical plugin category (slug `themes`, paintbrush icon), listed by
+`GET /api/v1/plugins/categories` and usable as `category=themes` on public plugin
+list/search routes. A non-empty manifest theme declaration with no other capabilities
+establishes the Themes purpose without a model, including old Other/Media declarations.
+This depends on declared themes, not successful palette extraction: an invalid preview
+must not turn a theme package into a different category. Mixed-capability plugins keep
+explicit single-category declarations or the normal main-purpose classifier. The shared
+classifier checks both the root and companion bundle manifest before calling a pack
+theme-only. No new table or endpoint is needed.
+
+Existing category state changes only via the existing reviewed plugin category refresh
+(`pluginCategoryRefresh.preview`, review/accept, apply/rollback in
+`docs/plugin-category-refresh.md`); a fresh run using classifier v9 updates the latest
+release summary, package category and trigger-maintained search/filter digests. Retained
+staff-reviewed assignments remain authoritative. The summary backfill intentionally
+preserves category ownership and does not perform this category refresh. Neither a
+production refresh nor a deployment is part of this PR.
 
 ### ClawHub today
 
