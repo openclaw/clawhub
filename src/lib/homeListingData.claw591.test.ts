@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { makeCanonicalTrendingPage } from "../__tests__/helpers/trending";
 
 const convexQueryMock = vi.fn();
 const fetchPluginCatalogMock = vi.fn();
@@ -58,7 +59,7 @@ describe("homeListingData", () => {
     });
     convexQueryMock.mockResolvedValue({ page: [], hasMore: false, nextCursor: null });
     fetchPluginCatalogMock.mockResolvedValue({ items: [], nextCursor: null });
-    fetchCanonicalTrendingPageMock.mockResolvedValue(canonicalPage([], null));
+    fetchCanonicalTrendingPageMock.mockResolvedValue(makeCanonicalTrendingPage([], null));
   });
 
   it("loads Featured plugins as the initial homepage catalog", async () => {
@@ -77,7 +78,7 @@ describe("homeListingData", () => {
 
   it("loads a URL-requested Skills Trending view as the initial homepage catalog", async () => {
     const item = makeTrending("first", "First", 12);
-    fetchCanonicalTrendingPageMock.mockResolvedValue(canonicalPage([item], null));
+    fetchCanonicalTrendingPageMock.mockResolvedValue(makeCanonicalTrendingPage([item], null));
 
     await expect(fetchInitialHomeListing({ kind: "skills", tab: "trending" })).resolves.toEqual({
       kind: "skills",
@@ -95,8 +96,8 @@ describe("homeListingData", () => {
     const first = makeTrending("first", "First", 12);
     const second = makeTrending("second", "Second", 8);
     fetchCanonicalTrendingPageMock
-      .mockResolvedValueOnce(canonicalPage([first], "opaque cursor 2"))
-      .mockResolvedValueOnce(canonicalPage([second], null));
+      .mockResolvedValueOnce(makeCanonicalTrendingPage([first], "opaque cursor 2"))
+      .mockResolvedValueOnce(makeCanonicalTrendingPage([second], null));
 
     const result = await fetchHomeSkillListing("trending", [], 2);
 
@@ -119,7 +120,7 @@ describe("homeListingData", () => {
     const matches = Array.from({ length: 25 }, (_, index) =>
       makeTrending(`calendar-${index}`, `Calendar ${index}`, 25 - index),
     );
-    fetchCanonicalTrendingPageMock.mockResolvedValue(canonicalPage(matches, null));
+    fetchCanonicalTrendingPageMock.mockResolvedValue(makeCanonicalTrendingPage(matches, null));
 
     const firstPage = await searchHomeTrendingSkillListing("calendar", 20);
     expect(firstPage.page).toHaveLength(20);
@@ -133,7 +134,7 @@ describe("homeListingData", () => {
   it("rejects a later canonical page failure instead of replacing loaded results", async () => {
     const first = makeTrending("first", "First", 12);
     fetchCanonicalTrendingPageMock
-      .mockResolvedValueOnce(canonicalPage([first], "opaque cursor 2"))
+      .mockResolvedValueOnce(makeCanonicalTrendingPage([first], "opaque cursor 2"))
       .mockRejectedValueOnce(new Error("second page unavailable"));
 
     await expect(fetchHomeSkillListing("trending", [], 2)).rejects.toThrow(
@@ -373,20 +374,6 @@ describe("homeListingData", () => {
     expect(convexQueryMock).toHaveBeenCalledTimes(1);
   });
 });
-
-function canonicalPage(items: ReturnType<typeof makeTrending>[], nextCursor: string | null) {
-  return {
-    kind: "skills" as const,
-    snapshotId: "snapshot-1",
-    snapshotCursor: "snapshot-cursor",
-    generatedAt: "2026-07-26T00:00:00.000Z",
-    windowHours: 24 as const,
-    rankingVersion: "skills-trending-v1",
-    totalItems: items.length,
-    items,
-    nextCursor,
-  };
-}
 
 function makeTrending(slug: string, displayName: string, installs: number) {
   return {
