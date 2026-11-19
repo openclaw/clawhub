@@ -46,6 +46,16 @@ import { computeIsSuspicious } from "./lib/skillSafety";
 import { getFirstSearchToken, getMirrorFirstSearchToken } from "./lib/skillSearchDigest";
 import { generateSkillSummary } from "./lib/skillSummary";
 import {
+  applyArtwork,
+  artworkApproval,
+  checkArtworkFile,
+  lastArtworkReceipt,
+  listArtworkPackages,
+  readArtworkPage,
+  repairArtwork,
+  rollbackArtwork,
+} from "./lib/templateArtworkBackfill";
+import {
   planTemplateCategoryBackfill,
   TEMPLATE_CATEGORY_BACKFILL,
   TEMPLATE_CATEGORY_BACKFILL_VERSION,
@@ -284,6 +294,46 @@ export const retryFailedSkillEvaluationInternal = internalMutation({
     await requestSkillEvaluationDispatch(ctx);
     return { eligible: true, requeued: true, attempts: run.attempts };
   },
+});
+
+export const checkTemplateArtworkFileInternal = internalQuery({
+  args: { storageId: v.id("_storage"), size: v.number(), sha256: v.string() },
+  handler: checkArtworkFile,
+});
+const artworkCursor = v.optional(v.union(v.string(), v.null()));
+export const listTemplateArtworkPackagesInternal = internalQuery({
+  args: { cursor: artworkCursor },
+  handler: listArtworkPackages,
+});
+export const readTemplateArtworkPageInternal = internalQuery({
+  args: { packageId: v.id("packages"), cursor: artworkCursor },
+  handler: readArtworkPage,
+});
+export const applyTemplateArtworkInternal = internalMutation({
+  args: { packageId: v.id("packages"), approval: artworkApproval },
+  handler: applyArtwork,
+});
+export const repairTemplateArtworkInternal = internalAction({
+  args: {
+    packageId: v.id("packages"),
+    cursor: artworkCursor,
+    dryRun: v.optional(v.boolean()),
+    confirm: v.optional(v.string()),
+    approval: v.optional(artworkApproval),
+  },
+  handler: repairArtwork,
+});
+export const rollbackTemplateArtworkInternal = internalMutation({
+  args: {
+    receiptId: v.id("auditLogs"),
+    dryRun: v.optional(v.boolean()),
+    confirm: v.optional(v.string()),
+  },
+  handler: rollbackArtwork,
+});
+export const getTemplateArtworkReceiptInternal = internalQuery({
+  args: { releaseId: v.id("packageReleases") },
+  handler: lastArtworkReceipt,
 });
 
 type PluginIconCandidate = {

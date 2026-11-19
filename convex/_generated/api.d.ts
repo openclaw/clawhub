@@ -272,6 +272,7 @@ import type * as lib_skillsShMirrorPublic from "../lib/skillsShMirrorPublic.js";
 import type * as lib_skillsShPublicVisibility from "../lib/skillsShPublicVisibility.js";
 import type * as lib_storageDigests from "../lib/storageDigests.js";
 import type * as lib_storageText from "../lib/storageText.js";
+import type * as lib_templateArtworkBackfill from "../lib/templateArtworkBackfill.js";
 import type * as lib_templateAvatarArtwork from "../lib/templateAvatarArtwork.js";
 import type * as lib_templateAvatarArtworkNode from "../lib/templateAvatarArtworkNode.js";
 import type * as lib_templateAvatarArtworkSvg from "../lib/templateAvatarArtworkSvg.js";
@@ -642,6 +643,7 @@ declare const fullApi: ApiFromModules<{
   "lib/skillsShPublicVisibility": typeof lib_skillsShPublicVisibility;
   "lib/storageDigests": typeof lib_storageDigests;
   "lib/storageText": typeof lib_storageText;
+  "lib/templateArtworkBackfill": typeof lib_templateArtworkBackfill;
   "lib/templateAvatarArtwork": typeof lib_templateAvatarArtwork;
   "lib/templateAvatarArtworkNode": typeof lib_templateAvatarArtworkNode;
   "lib/templateAvatarArtworkSvg": typeof lib_templateAvatarArtworkSvg;
