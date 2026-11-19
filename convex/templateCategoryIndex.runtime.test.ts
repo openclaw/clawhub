@@ -72,6 +72,62 @@ async function fixture() {
   return { t, publish, listNames, searchNames };
 }
 
+describe("ranked public Template pages", () => {
+  it("retains the popularity order of a real publication snapshot while excluding withdrawn releases", async () => {
+    const { t, publish } = await fixture();
+    const a = await publish("1.0.0", ["travel"], "trip-a");
+    const b = await publish("1.0.0", ["travel"], "trip-b");
+    const c = await publish("1.0.0", ["travel"], "trip-c");
+    const d = await publish("1.0.0", ["travel"], "trip-d");
+    const installs = (id: typeof a.packageId, n: number) =>
+      t.run(async (ctx) => {
+        const pkg = (await ctx.db.get(id))!;
+        await ctx.db.patch(id, { stats: { ...pkg.stats, installs: n } });
+      });
+    await installs(d.packageId, 9);
+    await installs(c.packageId, 8);
+    const get = async (cursor?: string, q = "trip", category = "travel", limit = 1) => {
+      const params = new URLSearchParams({ q, category, limit: String(limit) });
+      if (cursor !== undefined) params.set("cursor", cursor);
+      return t.fetch("/api/v1/templates/catalog-page?" + params);
+    };
+    const first = await get();
+    expect(first.status).toBe(200);
+    const page = await first.json();
+    expect(page.items.map((i: { name: string }) => i.name)).toEqual(["@template-maker/trip-d"]);
+    expect(typeof page.nextCursor).toBe("string");
+    expect(page.nextCursor.length).toBeLessThanOrEqual(4096);
+    for (const mismatch of [
+      await get(page.nextCursor, "other"),
+      await get(page.nextCursor, "trip", "household"),
+      await get(page.nextCursor, "trip", "travel", 2),
+      await get("broken"),
+    ])
+      expect(mismatch.status).toBe(400);
+    // A new higher-ranked publication and a popularity change must not restart ranking.
+    await publish("1.0.0", ["travel"], "trip-new");
+    await installs(a.packageId, 99);
+    const second = await (await get(page.nextCursor)).json();
+    expect(second.items.map((i: { name: string }) => i.name)).toEqual(["@template-maker/trip-c"]);
+    // A stale digest, including a reserved private release, is never authority to display it.
+    await t.run(async (ctx) => {
+      await ctx.db.patch(a.releaseId, { publicationStatus: "pending" });
+    });
+    const last = await (await get(second.nextCursor)).json();
+    expect(last.items.map((i: { name: string }) => i.name)).toEqual(["@template-maker/trip-b"]);
+    expect(last.nextCursor).toBeNull();
+    await t.run(async (ctx) => {
+      await ctx.db.patch(b.releaseId, { ownerDeletedAt: 1 });
+    });
+    const visible = await (await get(undefined, "trip", "travel", 20)).json();
+    expect(visible.items.map((i: { name: string }) => i.name)).toEqual([
+      "@template-maker/trip-d",
+      "@template-maker/trip-c",
+      "@template-maker/trip-new",
+    ]);
+  });
+});
+
 describe("Template publication category indexing", () => {
   it("preserves the assigned category through real publication triggers and public HTTP discovery", async () => {
     const { t, publish } = await fixture();
