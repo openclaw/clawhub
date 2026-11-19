@@ -1,7 +1,8 @@
 /**
  * Local rehearsal state for the 2026-11-18 Template category backfill: the mapped community
- * listings as they were stored before it, plus first-party listings that keep removed and
- * multiple categories. Never usable against cloud deployments. Remove with the backfill.
+ * listings as they were stored before it, first-party listings that keep removed and multiple
+ * categories, and two community listings outside the mapping. Never usable against cloud
+ * deployments. Remove with the backfill.
  */
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
@@ -18,6 +19,12 @@ const FIRST_PARTY = [
   { name: "@openclaw/policy-reviewer", categories: ["governance", "operations"] },
   { name: "@openclaw/trip-planner", categories: ["travel"] },
 ];
+// Community listings the mapping does not name, as if published after it was reviewed. The
+// backfill never writes these; the first is in an old shape and belongs in its report.
+const UNMAPPED = [
+  { name: "@late-publisher/weekend-planner", categories: ["personal", "productivity"] },
+  { name: "@late-publisher/standup-notes", categories: ["productivity"] },
+];
 const LISTINGS = [
   ...TEMPLATE_CATEGORY_BACKFILL.map(({ name, owner, expectedCurrent }) => ({
     name,
@@ -25,6 +32,7 @@ const LISTINGS = [
     categories: [...expectedCurrent],
   })),
   ...FIRST_PARTY.map((listing) => ({ ...listing, owner: "openclaw" })),
+  ...UNMAPPED.map((listing) => ({ ...listing, owner: "late-publisher" })),
 ];
 const slugOf = (name: string) => name.split("/").at(-1) ?? name;
 const titleOf = (name: string) =>
