@@ -125,11 +125,12 @@ describe("publisher Template detail route loader", () => {
     expect(mocks.fetchPackageVersion).not.toHaveBeenCalled();
   });
 
-  it.each(["digest", "version", "owner", "hold", "path", "partial"])(
+  it.each(["digest", "version", "owner", "hold", "path", "partial", "channel"])(
     "does not use or refetch an invalid %s projection",
     async (problem) => {
       const detail = packageDetail();
       const value = publicInventory();
+      if (problem === "channel") Object.assign(detail.package!, { channel: "unsupported" });
       if (problem === "digest") value.security.release.artifactSha256 = "b".repeat(64);
       if (problem === "version") value.version = "0.0.1";
       if (problem === "owner") value.packageName = "@unrelated/release-brief";
@@ -233,6 +234,10 @@ describe("publisher Template detail route loader", () => {
     expect(container.querySelector('[aria-hidden="true"] .template-detail-hero')).not.toBeNull();
     expect(container.querySelector('[aria-hidden="true"] .template-detail-layout')).not.toBeNull();
     expect(container.querySelector("button, a, [tabindex]")).toBeNull();
+    expect(
+      container.querySelector('[aria-hidden="true"] .template-release-inventory'),
+    ).not.toBeNull();
+    expect(screen.queryByRole("region", { name: "Included in this release" })).toBeNull();
   });
 
   it("loads only a public Template owned by the requested publisher", async () => {

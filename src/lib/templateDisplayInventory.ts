@@ -77,7 +77,7 @@ export function requireCurrentTemplateInventory(
     !pkg ||
     !pkg.latestVersion ||
     pkg.family !== "template" ||
-    pkg.channel === "private" ||
+    (pkg.channel !== "community" && pkg.channel !== "official") ||
     pkg.scanStatus === "malicious" ||
     !detail.owner?.handle ||
     normalizePublisherHandle(detail.owner.handle) !== normalizePublisherHandle(params.owner) ||

@@ -44,6 +44,12 @@ export function TemplateDetailSkeleton() {
           <div className="template-detail-layout">
             <div className="template-detail-main">
               <InstallPlaceholder mobile />
+              <div className="template-release-inventory space-y-2">
+                <Skeleton className="h-5 w-40 max-w-full" />
+                <Skeleton className="h-3 w-3/5" />
+                <Skeleton className="h-3 w-1/3" />
+                <Skeleton className="h-3 w-2/5" />
+              </div>
               <div className="template-detail-tabs h-[43px] items-center">
                 {["w-16", "w-10", "w-20", "w-12", "w-24"].map((width) => (
                   <Skeleton key={width} className={"h-4 shrink-0 " + width} />
