@@ -973,7 +973,10 @@ describe("fetchTemplateCatalog", () => {
       items: [],
       nextCursor: null,
     });
-    const calls = fetchMock.mock.calls.map(([, opts]) => JSON.parse(String(opts?.body)));
+    const calls = fetchMock.mock.calls.map(([, opts]) => {
+      if (typeof opts?.body !== "string") throw new Error("Expected a JSON request body");
+      return JSON.parse(opts.body);
+    });
     expect(calls.map((c) => c.path)).toEqual([
       "templateCatalogPage:get",
       "packages:listPublicPage",

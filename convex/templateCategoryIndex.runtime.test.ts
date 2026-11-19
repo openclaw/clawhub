@@ -73,6 +73,20 @@ async function fixture() {
 }
 
 describe("ranked public Template pages", () => {
+  it("finds a published legacy Template from the release pointer without a cached version summary", async () => {
+    const { t, publish } = await fixture();
+    const { packageId, releaseId } = await publish("1.0.0", ["travel"], "trip-legacy");
+    await t.run(async (ctx) => {
+      await ctx.db.patch(packageId, { latestVersionSummary: undefined });
+      await ctx.db.patch(releaseId, { publicationStatus: undefined });
+    });
+    const result = await t.fetch("/api/v1/templates/catalog-page?q=trip-legacy");
+    expect(result.status).toBe(200);
+    expect(await result.json()).toMatchObject({
+      items: [{ name: "@template-maker/trip-legacy", latestVersion: "1.0.0" }],
+      nextCursor: null,
+    });
+  });
   it("retains the popularity order of a real publication snapshot while excluding withdrawn releases", async () => {
     const { t, publish } = await fixture();
     const a = await publish("1.0.0", ["travel"], "trip-a");

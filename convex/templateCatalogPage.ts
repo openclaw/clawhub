@@ -4,7 +4,6 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { query, type QueryCtx } from "./_generated/server";
 import { matchCatalogText } from "./lib/catalogTextMatch";
 import {
-  digestMatchesFilters,
   isTemplateCatalogPublisherAvailable,
   toPublicPackageListItemFromPackage,
 } from "./lib/packageCatalogRead";
@@ -32,7 +31,13 @@ async function eligible(
 ) {
   if (!pkg || pkg.family !== "claw" || !pkg.latestReleaseId || !pkg.ownerPublisherId) return null;
   const digest = extractPackageDigestFields(pkg);
-  if (!digestMatchesFilters(digest, { category: filters.category || undefined })) return null;
+  if (
+    pkg.softDeletedAt !== undefined ||
+    pkg.channel === "private" ||
+    isPackageBlockedFromPublic(pkg.scanStatus) ||
+    (filters.category && !digest.categories?.includes(filters.category))
+  )
+    return null;
   if (!(await isTemplateCatalogPublisherAvailable(ctx, pkg, publishers))) return null;
   const owner = await publishers.get(pkg.ownerPublisherId);
   const match = filters.q
@@ -59,7 +64,6 @@ async function eligible(
   ]);
   if (
     !isPublishedPackageRelease(release, pkg._id) ||
-    release.version !== digest.latestVersion ||
     isPackageBlockedFromPublic(resolvePackageReleaseScanStatus(release))
   )
     return null;
@@ -70,7 +74,14 @@ async function eligible(
     downloads: pkg.stats.downloads,
     installs: pkg.stats.installs,
   });
-  return { pkg, key, featuredAt: badge?.at, categories: digest.categories, topics: digest.topics };
+  return {
+    pkg,
+    key,
+    latestVersion: release.version,
+    featuredAt: badge?.at,
+    categories: digest.categories,
+    topics: digest.topics,
+  };
 }
 type Candidate = NonNullable<Awaited<ReturnType<typeof eligible>>>;
 function compareRelevance(a: Candidate, b: Candidate) {
@@ -165,6 +176,7 @@ export const get = query({
         ...(await Promise.all(
           selected.slice(i, i + BATCH).map(async (c) => ({
             ...(await toPublicPackageListItemFromPackage(ctx, c.pkg)),
+            latestVersion: c.latestVersion,
             categories: c.categories,
             topics: c.topics,
             ...(c.featuredAt === undefined ? {} : { featuredAt: c.featuredAt }),
