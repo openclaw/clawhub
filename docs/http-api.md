@@ -1182,6 +1182,8 @@ Response fields:
   audit text from scanner fields.
 - `verdict` is the display verdict used by the package security-audit page, derived from ClawScan including visible agentic-risk findings. It can differ from the download-policy `trust.scanStatus`. Older registries may omit it; clients should treat that as unavailable display metadata.
 - `securityAuditUrl` links to the exact release's package security-audit page.
+  A Template release links to `/<publisher>/templates/<name>/security-audit`;
+  plugin releases link to their plugin security-audit page.
 - `package.name`, `package.displayName`, and `package.family` identify the
   resolved registry package.
 - `release.releaseId`, `release.version`, and `release.createdAt` identify the

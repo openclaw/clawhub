@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Templates: the package security API now links a Template release to its Template security-audit page (`/<publisher>/templates/<name>/security-audit`). It used to return the plugin audit address, so OpenClaw opened a Template's audit under `/plugins/`. Plugin links are unchanged.
+
 ## 0.27.0 - 2026-11-17
 
 - Scan reports: `clawhub scan download <skill> --version <version>` now returns a report when a skill version's publication checks failed before a verdict. It used to answer "Scan results not found". The archive says the scan failed with no safety verdict, lists the check states and whether a retry is waiting, and says to remove Python bytecode when that stopped the scan. Worker errors are not included. Plugin versions are unchanged.
