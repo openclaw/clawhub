@@ -250,7 +250,7 @@ function DashboardReviewSheetContent({
   const pluginFindings = useQuery(
     api.packages.listPackageInspectorWarningsForManager,
     hasPluginValidation && group.primary.packageName
-      ? { name: group.primary.packageName, limit: 100 }
+      ? { name: group.primary.packageName, version: group.primary.version, limit: 100 }
       : "skip",
   ) as PluginInspectorFinding[] | undefined;
 

@@ -59,18 +59,18 @@ export function skillVisibilityStatus(skill: DashboardSkill): StatusChip {
 }
 
 export function packageSecurityStatus(pkg: DashboardPackage): StatusChip {
-  const releaseStatuses = new Set([pkg.latestRelease?.llmStatus]);
+  const scanStatus = pkg.scanStatus ?? pkg.latestRelease?.llmStatus;
 
-  if (pkg.scanStatus === "malicious" || releaseStatuses.has("malicious")) {
+  if (scanStatus === "malicious") {
     return { label: "Blocked", tone: "destructive" };
   }
-  if (pkg.scanStatus === "pending" || pkg.pendingReview) {
+  if (scanStatus === "pending" || pkg.pendingReview) {
     return { label: "Scan pending", tone: "pending" };
   }
-  if (pkg.scanStatus === "suspicious" || releaseStatuses.has("suspicious")) {
+  if (scanStatus === "suspicious") {
     return { label: "Needs review", tone: "warning" };
   }
-  if (pkg.scanStatus === "clean") {
+  if (scanStatus === "clean") {
     return { label: "Scan passed", tone: "success" };
   }
   return { label: "Not scanned", tone: "muted" };
