@@ -2819,7 +2819,7 @@ code {
 .browse-page
   .browse-results-grid
   .skill-card-header
-  .marketplace-icon:not(.marketplace-icon-plugin)
+  .marketplace-icon:not(.marketplace-icon-plugin, .marketplace-icon-template)
   .marketplace-icon-image {
   filter: grayscale(1) brightness(1.18);
 }
