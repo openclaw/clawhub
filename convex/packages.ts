@@ -1191,14 +1191,42 @@ async function removePackageBadge(
   return true;
 }
 
+async function getDashboardRelease(ctx: DbReaderCtx, pkg: Doc<"packages">) {
+  let releaseId = pkg.latestReleaseId ?? pkg.tags.latest;
+  if (!releaseId) {
+    // A prerelease-only package can have aliases, but no default release. Don't
+    // guess between distinct tag targets or fan out across them for every row.
+    const targets = new Set(Object.values(pkg.tags));
+    if (targets.size !== 1) return null;
+    [releaseId] = targets;
+  }
+  return selectPublishedPackageRelease(ctx, pkg, { releaseId });
+}
+
+function dashboardScanStatus(pkg: Doc<"packages">, release: Doc<"packageReleases"> | null) {
+  if (!release) return pkg.scanStatus;
+  const status = resolvePackageReleaseScanStatus(release);
+  if (status === "malicious" || pkg.scanStatus === "malicious") return "malicious";
+  if (status === "suspicious" || pkg.scanStatus === "suspicious") return "suspicious";
+  // The package scan summary is maintained for latest, not for other dist-tags.
+  if (
+    release._id === pkg.latestReleaseId &&
+    (status === "not-run" || pkg.scanStatus === "pending")
+  ) {
+    return pkg.scanStatus ?? status;
+  }
+  return status === "not-run" && pkg.scanStatus === "pending" ? "pending" : status;
+}
+
 async function toDashboardPackageListItem(
   ctx: DbReaderCtx,
   pkg: Doc<"packages">,
   _viewerUserId: Id<"users">,
 ): Promise<DashboardPackageListItem | null> {
   if (pkg.softDeletedAt) return null;
-  const latestRelease = pkg.latestReleaseId ? await ctx.db.get(pkg.latestReleaseId) : null;
-  const inspectorAttention = await getInspectorAttentionForRelease(ctx, pkg.latestReleaseId);
+  const release = await getDashboardRelease(ctx, pkg);
+  const scanStatus = dashboardScanStatus(pkg, release);
+  const inspectorAttention = await getInspectorAttentionForRelease(ctx, release?._id);
   return {
     _id: pkg._id,
     name: pkg.name,
@@ -1211,24 +1239,23 @@ async function toDashboardPackageListItem(
     summary: pkg.summary ?? null,
     ownerUserId: pkg.ownerUserId,
     ownerPublisherId: pkg.ownerPublisherId,
-    latestVersion: pkg.latestVersionSummary?.version ?? null,
+    latestVersion: release?.version ?? null,
     inspectorWarningCount: inspectorAttention.count,
     apiRetirements: inspectorAttention.apiRetirements,
     topInspectorFinding: inspectorAttention.topFinding,
     stats: pkg.stats,
     verification: pkg.verification,
-    scanStatus: pkg.scanStatus,
+    scanStatus,
     createdAt: pkg.createdAt,
     updatedAt: pkg.updatedAt,
-    pendingReview: pkg.scanStatus === "pending" ? true : undefined,
-    latestRelease:
-      latestRelease && !latestRelease.softDeletedAt
-        ? {
-            version: latestRelease.version,
-            createdAt: latestRelease.createdAt,
-            llmStatus: latestRelease.llmAnalysis?.status ?? null,
-          }
-        : null,
+    pendingReview: scanStatus === "pending" ? true : undefined,
+    latestRelease: release
+      ? {
+          version: release.version,
+          createdAt: release.createdAt,
+          llmStatus: release.llmAnalysis?.status ?? null,
+        }
+      : null,
   };
 }
 
@@ -2447,6 +2474,7 @@ export const getPackageInspectorValidationSummaryPublic = query({
 export const listPackageInspectorWarningsForManager = query({
   args: {
     name: v.string(),
+    version: v.optional(v.string()),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
@@ -2460,9 +2488,15 @@ export const listPackageInspectorWarningsForManager = query({
       const canManage = await viewerCanManagePackageOwner(ctx, pkg, viewerUserId);
       if (!canManage) return [];
     }
-    if (!pkg.latestReleaseId) return [];
+    let releaseId = pkg.latestReleaseId;
+    if (args.version !== undefined) {
+      const release = await getDashboardRelease(ctx, pkg);
+      if (!release || release.version !== args.version) return [];
+      releaseId = release._id;
+    }
+    if (!releaseId) return [];
     const limit = Math.max(1, Math.min(args.limit ?? 50, 100));
-    const warnings = await takeAuthorRemediationWarningsByRelease(ctx, pkg.latestReleaseId, limit);
+    const warnings = await takeAuthorRemediationWarningsByRelease(ctx, releaseId, limit);
     return warnings.map(toPublicPackageInspectorFinding);
   },
 });

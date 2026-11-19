@@ -16,11 +16,11 @@ describe("artifactStatus", () => {
     expect(status.key).toBe("visible");
   });
 
-  it("does not block packages from raw static telemetry after resolved scan status is clean", () => {
+  it("uses the resolved package verdict after moderation approves a flagged release", () => {
     const status = packageArtifactStatus({
       scanStatus: "clean",
       latestRelease: {
-        llmStatus: "clean",
+        llmStatus: "malicious",
       },
     });
 
