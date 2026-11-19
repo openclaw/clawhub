@@ -9,13 +9,14 @@ vi.mock("./apiTokenAuth", () => ({
   requireApiTokenUser: vi.fn(),
 }));
 vi.mock("./access", () => ({ getOptionalActiveAuthUserIdFromAction: vi.fn(async () => null) }));
-import { listPackagesV1Handler } from "../httpApiV1/packagesV1";
-import { readTemplateCategoryListHttp } from "./templateCategoryListHttpRead";
+import { listPackagesV1Handler, packagesGetRouterV1Handler } from "../httpApiV1/packagesV1";
+import { readTemplateCatalogHttp } from "./templateCategoryListHttpRead";
 
 const item = { name: "@maker/brief", family: "template", categories: ["travel"] };
 function fixture(page: { isDone?: boolean; continueCursor?: string } = {}) {
   const runQuery = vi.fn(async (ref: unknown, _args: Record<string, unknown>) => {
     const name = getFunctionName(ref as FunctionReference<"query">);
+    if (name.endsWith("searchForViewerInternal")) return [{ score: 4, rankTier: 3, package: item }];
     if (name.endsWith("listPageForViewerInternal"))
       return {
         page: [item],
@@ -38,10 +39,53 @@ beforeEach(() => {
   token.mockReset().mockResolvedValue(null);
 });
 
-describe("Template category HTTP reads", () => {
+describe("Template catalog HTTP reads", () => {
+  it.each([
+    "q=%20brief%20&limit=20",
+    "q=brief&category=travel",
+    "q=brief&limit=500",
+    "q=brief&limit=bad",
+  ])(
+    "avoids the compatibility router for a ranked search with the same public contract: %s",
+    async (filters) => {
+      const searchRequest = new Request(
+        "https://example.invalid/api/v1/packages/search?family=template&" + filters,
+      );
+      const narrow = fixture();
+      const router = fixture();
+      const response = await readTemplateCatalogHttp(narrow.ctx, searchRequest);
+      const expected = await packagesGetRouterV1Handler(router.ctx, searchRequest);
+      expect(response?.status).toBe(200);
+      expect(narrow.runQuery).toHaveBeenCalledTimes(1);
+      expect(getFunctionName(narrow.runQuery.mock.calls[0]![0] as FunctionReference<"query">)).toBe(
+        "packages:searchForViewerInternal",
+      );
+      expect(defined(narrow.runQuery.mock.calls[0]![1])).toEqual(
+        defined(router.runQuery.mock.calls[0]![1]),
+      );
+      expect(await response?.json()).toEqual(await expected.json());
+      expect(Object.fromEntries(response!.headers)).toEqual(Object.fromEntries(expected.headers));
+    },
+  );
+
+  it.each(["q=", "q=a&cursor=next", "q=a&q=b", "q=a&isOfficial=false", "q=a&category=marketing"])(
+    "leaves unsupported or invalid searches to the existing router: %s",
+    async (filters) => {
+      const f = fixture();
+      expect(
+        await readTemplateCatalogHttp(
+          f.ctx,
+          new Request("https://example.invalid/api/v1/packages/search?family=template&" + filters),
+        ),
+      ).toBeNull();
+      expect(rate).not.toHaveBeenCalled();
+      expect(f.runQuery).not.toHaveBeenCalled();
+    },
+  );
+
   it("returns the category page and preserves response policy", async () => {
     const f = fixture();
-    const response = await readTemplateCategoryListHttp(
+    const response = await readTemplateCatalogHttp(
       f.ctx,
       req("family=template&category=travel&limit=100"),
     );
@@ -59,7 +103,7 @@ describe("Template category HTTP reads", () => {
 
   it("continues a category with the cursor the previous page returned", async () => {
     const f = fixture({ isDone: false, continueCursor: "next-page" });
-    const response = await readTemplateCategoryListHttp(
+    const response = await readTemplateCatalogHttp(
       f.ctx,
       req("family=template&category=other&cursor=this-page"),
     );
@@ -72,6 +116,9 @@ describe("Template category HTTP reads", () => {
 
   it.each([
     "family=template&category=travel",
+    "family=template",
+    "family=template&limit=20",
+    "family=template&limit=20&cursor=page-two",
     "family=template&category=travel&limit=100",
     "family=template&category=travel&limit=0",
     "family=template&category=travel&limit=999",
@@ -90,7 +137,7 @@ describe("Template category HTTP reads", () => {
   ])("reads the catalog router's own query for %s", async (search) => {
     const narrow = fixture();
     const router = fixture();
-    const narrowResponse = await readTemplateCategoryListHttp(narrow.ctx, req(search));
+    const narrowResponse = await readTemplateCatalogHttp(narrow.ctx, req(search));
     const routerResponse = await listPackagesV1Handler(router.ctx, req(search));
     expect(narrow.runQuery).toHaveBeenCalledTimes(1);
     expect(router.runQuery).toHaveBeenCalledTimes(1);
@@ -112,7 +159,7 @@ describe("Template category HTTP reads", () => {
     const search = "family=template&category=travel&limit=100";
     const narrow = fixture();
     const router = fixture();
-    await readTemplateCategoryListHttp(narrow.ctx, req(search, bearer));
+    await readTemplateCatalogHttp(narrow.ctx, req(search, bearer));
     await listPackagesV1Handler(router.ctx, req(search, bearer));
     expect(narrow.runQuery.mock.calls[0]?.[1]).toMatchObject({ viewerUserId: "actor" });
     expect(defined(narrow.runQuery.mock.calls[0]![1])).toEqual(
@@ -123,7 +170,6 @@ describe("Template category HTTP reads", () => {
   });
 
   it.each([
-    "family=template",
     "family=template&category=",
     "family=template&category=marketing",
     "category=travel",
@@ -139,7 +185,7 @@ describe("Template category HTTP reads", () => {
     "family=template&family=skill&category=travel",
   ])("leaves %s to the catalog router", async (search) => {
     const f = fixture();
-    expect(await readTemplateCategoryListHttp(f.ctx, req(search))).toBeNull();
+    expect(await readTemplateCatalogHttp(f.ctx, req(search))).toBeNull();
     expect(rate).not.toHaveBeenCalled();
     expect(token).not.toHaveBeenCalled();
     expect(f.runQuery).not.toHaveBeenCalled();
@@ -148,7 +194,7 @@ describe("Template category HTTP reads", () => {
   it("leaves a slug that was never a Template category to the router's validation error", async () => {
     const f = fixture();
     const search = "family=template&category=marketing";
-    expect(await readTemplateCategoryListHttp(f.ctx, req(search))).toBeNull();
+    expect(await readTemplateCatalogHttp(f.ctx, req(search))).toBeNull();
     const response = await listPackagesV1Handler(f.ctx, req(search));
     expect(response.status).toBe(400);
     expect(await response.text()).toBe("Invalid Template category");
@@ -159,16 +205,16 @@ describe("Template category HTTP reads", () => {
     const f = fixture();
     const search = "family=template&category=travel";
     expect(
-      await readTemplateCategoryListHttp(f.ctx, req(search, { headers: { cookie: "s=1" } })),
+      await readTemplateCatalogHttp(f.ctx, req(search, { headers: { cookie: "s=1" } })),
     ).toBeNull();
     expect(token).not.toHaveBeenCalled();
     const bearer = { headers: { authorization: "Bearer not-a-current-token" } };
     token.mockResolvedValueOnce(null).mockRejectedValueOnce(new Error("auth failed"));
-    expect(await readTemplateCategoryListHttp(f.ctx, req(search, bearer))).toBeNull();
-    expect(await readTemplateCategoryListHttp(f.ctx, req(search, bearer))).toBeNull();
+    expect(await readTemplateCatalogHttp(f.ctx, req(search, bearer))).toBeNull();
+    expect(await readTemplateCatalogHttp(f.ctx, req(search, bearer))).toBeNull();
     expect(f.getUserIdentity).not.toHaveBeenCalled();
     f.getUserIdentity.mockResolvedValue({ subject: "actor" });
-    expect(await readTemplateCategoryListHttp(f.ctx, req(search))).toBeNull();
+    expect(await readTemplateCatalogHttp(f.ctx, req(search))).toBeNull();
     expect(rate).not.toHaveBeenCalled();
     expect(f.runQuery).not.toHaveBeenCalled();
   });
@@ -178,7 +224,7 @@ describe("Template category HTTP reads", () => {
     const denied = new Response("Rate limit exceeded", { status: 429 });
     rate.mockResolvedValue({ ok: false, response: denied });
     const request = req("family=template&category=travel");
-    expect(await readTemplateCategoryListHttp(f.ctx, request)).toBe(denied);
+    expect(await readTemplateCatalogHttp(f.ctx, request)).toBe(denied);
     expect(rate).toHaveBeenCalledExactlyOnceWith(f.ctx, request, "read");
     expect(f.runQuery).not.toHaveBeenCalled();
   });

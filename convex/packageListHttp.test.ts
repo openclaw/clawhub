@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActionCtx } from "./_generated/server";
 import { getRegisteredHttpHandler } from "./lib/httpRouteRateLimit";
 const { narrow, router } = vi.hoisted(() => ({ narrow: vi.fn(), router: vi.fn() }));
-vi.mock("./lib/templateCategoryListHttpRead", () => ({ readTemplateCategoryListHttp: narrow }));
+vi.mock("./lib/templateCategoryListHttpRead", () => ({ readTemplateCatalogHttp: narrow }));
 vi.mock("./httpApiV1/packagesV1", () => ({ listPackagesV1Handler: router }));
 import { get } from "./packageListHttp";
 const handler = getRegisteredHttpHandler(get);
