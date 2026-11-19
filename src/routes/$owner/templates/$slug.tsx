@@ -34,14 +34,20 @@ export async function loadPublisherTemplate(params: {
 }): Promise<TemplateDetailData> {
   const { templateRelease, ...detail } = await loadTemplatePackage(params, "template-detail");
   // Treat an authoritative null preview as unavailable, not a trigger to read other files.
-  if (templateRelease && templateRelease.version === detail.package.latestVersion) {
+  if (
+    templateRelease &&
+    templateRelease.version === detail.package.latestVersion &&
+    detail.package.channel !== "private" &&
+    detail.package.scanStatus !== "malicious"
+  ) {
     return {
       detail,
       contents: templateRelease.contents,
       llmAnalysis: templateRelease.llmAnalysis ?? null,
     };
   }
-  // A registry from before the view was introduced returns the ordinary metadata response.
+  // Private/held releases retain their original viewer-authorized file and audit reads,
+  // as do older registries which return only ordinary package metadata.
   let contents: string | null = null;
   let llmAnalysis: TemplateDetailData["llmAnalysis"] = null;
   if (detail.package.latestVersion) {

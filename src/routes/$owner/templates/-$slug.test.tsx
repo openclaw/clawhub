@@ -98,6 +98,34 @@ describe("publisher Template detail route loader", () => {
     expect(mocks.fetchPackageFile).not.toHaveBeenCalled();
   });
 
+  it.each(["private", "malicious"] as const)(
+    "preserves the viewer-authorized file and audit path for %s releases",
+    async (state) => {
+      const detail = packageDetail();
+      if (state === "private") detail.package!.channel = "private";
+      else detail.package!.scanStatus = "malicious";
+      const audit = { status: state === "private" ? "benign" : "malicious", checkedAt: 1 };
+      // The public snapshot deliberately does not embed private or held release data.
+      mocks.fetchPackageDetail.mockResolvedValue({
+        ...detail,
+        templateRelease: { version: "0.1.0", contents: null, llmAnalysis: null },
+      });
+      mocks.fetchPackageVersion.mockResolvedValue({
+        version: { version: "0.1.0", llmAnalysis: audit },
+      });
+      const authorizedPreview = state === "private" ? "# Private owner preview" : null;
+      mocks.fetchPackageFile.mockResolvedValue(authorizedPreview);
+      const loaded = await loadPublisherTemplate({ owner: "maker", slug: "release-brief" });
+      expect(loaded.contents).toBe(authorizedPreview);
+      expect(loaded.llmAnalysis).toEqual(audit);
+      expect(mocks.fetchPackageFile).toHaveBeenCalledWith(
+        "@maker/release-brief",
+        "CLAW.md",
+        "0.1.0",
+      );
+    },
+  );
+
   it("exposes a single live announcement and noninteractive detail placeholders while pending", () => {
     const Pending = Route.options.pendingComponent;
     if (!Pending) throw new Error("Missing pending route");
