@@ -24,6 +24,14 @@ describe("CatalogMetadataEditor", () => {
     expect(parseCatalogTopicsInput(formatCatalogTopicsInput(topics))).toEqual(topics);
   });
 
+  it("shows the Templates Research glyph in the skill category picker", () => {
+    render(<CatalogMetadataEditor kind="skill" onSave={vi.fn()} />);
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Categories" }), { button: 0 });
+
+    const research = screen.getByRole("menuitemcheckbox", { name: "Research" });
+    expect(research.querySelector("svg.lucide-search")).not.toBeNull();
+  });
+
   it("shows live category and topic counts in the save summary", () => {
     const onSave = vi.fn(async () => {});
     render(
