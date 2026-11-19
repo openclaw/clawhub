@@ -103,6 +103,24 @@ Where catalog rows show an icon, they use the shared Blobster glyph to identify 
 not the publisher’s profile picture. This is separate from the artwork exported for feed
 consumers.
 
+## Publisher notifications
+
+For a publisher with an email address, schedule the receipt in the same transaction
+that makes the version publicly readable. A clean scan alone is too early: the
+version can still be private. Waiting for the finalizer to finish is too late:
+its follow-up work can fail after the version becomes public. Use the release
+identity for the receipt, including when a retry first publishes the version.
+Replaying a callback, resuming the finalizer, or rescanning an already-public
+version must not schedule a second receipt. Link to the canonical public Template
+page; claim a successful audit only when the recorded checks and report support it.
+
+Before publication, a secret or malicious verdict notifies immediately. Reuse
+the existing secret-block notice rather than sending two messages. An operational
+scanner failure is not a rejection: notify only on the third consecutive failure
+of the attempt, not the first two or a later failed recovery retry. These notices
+identify the Template and version without exposing findings or linking to a
+private submission. A missing email address does not affect publication.
+
 ## Catalog artwork
 
 A Template may package `assets/icon.png` for its catalog artwork, independently of

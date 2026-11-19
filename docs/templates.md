@@ -244,6 +244,19 @@ retains the exact artifact plus a non-sensitive summary and normalized dependenc
 inventory for later search and detail surfaces; downloads return those same bytes and digest, and ClawHub does
 not duplicate the full manifest into Convex storage.
 
+### Publication emails
+
+If your ClawHub account has an email address, ClawHub notifies you when a
+Template version becomes public. The receipt identifies the package and version
+and links to the Template on ClawHub.
+
+A security block is different from a scanner error. If a secret or a malicious
+verdict blocks an upload, the email explains why that version was not published.
+If a scanner cannot finish, the first two failures are silent; after the third
+consecutive failure, the notice explains that the check failed, not that the
+Template was rejected. Rescanning a version that is already public does not send
+another publication receipt. Security notices about quarantine are separate.
+
 ## Discover published Templates
 
 ClawHub exposes Templates through the existing package API:
