@@ -18,6 +18,7 @@ import { ACTIVE_PUBLISH_ATTEMPT_STATUSES } from "./lib/publishAttemptState";
 import {
   derivePersonalPublisherHandle,
   ensurePersonalPublisherForUser,
+  getOwnerPublisher,
   getPersonalPublisherForUser,
   getPublisherByHandle,
   getUserByHandleOrPersonalPublisher,
@@ -42,6 +43,12 @@ import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
 import { computeIsSuspicious } from "./lib/skillSafety";
 import { getFirstSearchToken, getMirrorFirstSearchToken } from "./lib/skillSearchDigest";
 import { generateSkillSummary } from "./lib/skillSummary";
+import {
+  planTemplateCategoryBackfill,
+  TEMPLATE_CATEGORY_BACKFILL,
+  TEMPLATE_CATEGORY_BACKFILL_VERSION,
+  type TemplateCategoryBackfillEntry,
+} from "./lib/templateCategoryBackfill";
 import { requestSkillEvaluationDispatch } from "./skillEvaluationDispatch";
 
 const DEFAULT_BATCH_SIZE = 50;
@@ -1786,6 +1793,129 @@ export const resyncPluginCatalogMetadataDigests: ReturnType<typeof action> = act
     const { user } = await requireUserFromAction(ctx);
     assertRole(user, ["admin"]);
     return ctx.runAction(internal.maintenance.resyncPluginCatalogMetadataDigestsInternal, args);
+  },
+});
+
+const TEMPLATE_CATEGORY_BACKFILL_CONFIRM = "backfill-template-categories";
+
+type TemplateCategoryBackfillResult = {
+  name: string;
+  status: "would-change" | "changed" | "would-resync" | "resynced" | "unchanged" | "skipped";
+  /** Why a listing was skipped. Skipped listings are never written. */
+  reason?: "not-found" | "not-a-template" | "first-party" | "owner-changed" | "categories-drifted";
+  stored?: string[] | null;
+  next: string[];
+};
+
+// Template category reads use the package digest, and topic facet rows carry a copy.
+async function templateCategoryProjectionsMatch(
+  ctx: Pick<MutationCtx, "db">,
+  pkg: Doc<"packages">,
+) {
+  const expected = JSON.stringify(extractPackageDigestFields(pkg).categories);
+  const digest = await ctx.db
+    .query("packageSearchDigest")
+    .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
+    .unique();
+  if (!digest || JSON.stringify(digest.categories) !== expected) return false;
+  const topicDigests = await ctx.db
+    .query("packageTopicSearchDigest")
+    .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
+    .collect();
+  return topicDigests.every((row) => JSON.stringify(row.categories) === expected);
+}
+
+async function backfillTemplateCategory(
+  ctx: Pick<MutationCtx, "db">,
+  entry: TemplateCategoryBackfillEntry,
+  dryRun: boolean,
+  now: number,
+): Promise<TemplateCategoryBackfillResult> {
+  const next = [...entry.next];
+  const skipped = (
+    reason: NonNullable<TemplateCategoryBackfillResult["reason"]>,
+    stored?: string[] | null,
+  ) => ({ name: entry.name, status: "skipped" as const, reason, stored, next });
+  const pkg = await ctx.db
+    .query("packages")
+    .withIndex("by_name", (q) => q.eq("normalizedName", entry.name))
+    .unique();
+  if (!pkg) return skipped("not-found");
+  const stored = pkg.categories ?? null;
+  if (pkg.family !== "claw") return skipped("not-a-template", stored);
+  const owner = await getOwnerPublisher(ctx, {
+    ownerPublisherId: pkg.ownerPublisherId,
+    ownerUserId: pkg.ownerUserId,
+  });
+  // First-party listings keep their stored categories, whatever name they hold.
+  if (owner?.handle === "openclaw") return skipped("first-party", stored);
+  if (owner?.handle !== entry.owner) return skipped("owner-changed", stored);
+
+  const plan = planTemplateCategoryBackfill(pkg.categories, entry);
+  if (plan === "drifted") return skipped("categories-drifted", stored);
+  if (plan === "applied") {
+    if (await templateCategoryProjectionsMatch(ctx, pkg)) {
+      return { name: entry.name, status: "unchanged", stored, next };
+    }
+    if (!dryRun) await syncPackageSearchDigestForPackageId(ctx, pkg._id);
+    return { name: entry.name, status: dryRun ? "would-resync" : "resynced", stored, next };
+  }
+  if (!dryRun) {
+    // The package trigger rewrites the search digest and topic facet rows in this transaction.
+    // updatedAt stays put: the listing did not change, and it orders "recently updated" lists.
+    await ctx.db.patch(pkg._id, { categories: next });
+    // Not "package.catalog_metadata.set": that action records a publisher's own choice.
+    await ctx.db.insert("auditLogs", {
+      action: "package.template_categories.backfill",
+      targetType: "package",
+      targetId: pkg._id,
+      metadata: {
+        repairVersion: TEMPLATE_CATEGORY_BACKFILL_VERSION,
+        name: pkg.name,
+        previous: { categories: pkg.categories },
+        next: { categories: next },
+      },
+      createdAt: now,
+    });
+  }
+  return { name: entry.name, status: dryRun ? "would-change" : "changed", stored, next };
+}
+
+// Operator-only, run once after the 2026-11-18 Template taxonomy deploys. Touches only the
+// listings named in TEMPLATE_CATEGORY_BACKFILL, in one transaction, and is safe to repeat.
+export const backfillTemplateCategoriesInternal = internalMutation({
+  args: {
+    dryRun: v.optional(v.boolean()),
+    confirm: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const dryRun = args.dryRun !== false;
+    if (!dryRun && args.confirm !== TEMPLATE_CATEGORY_BACKFILL_CONFIRM) {
+      throw new ConvexError(`Pass confirm="${TEMPLATE_CATEGORY_BACKFILL_CONFIRM}" to apply.`);
+    }
+    const now = Date.now();
+    const results: TemplateCategoryBackfillResult[] = [];
+    for (const entry of TEMPLATE_CATEGORY_BACKFILL) {
+      results.push(await backfillTemplateCategory(ctx, entry, dryRun, now));
+    }
+    const totals: Record<TemplateCategoryBackfillResult["status"], number> = {
+      "would-change": 0,
+      changed: 0,
+      "would-resync": 0,
+      resynced: 0,
+      unchanged: 0,
+      skipped: 0,
+    };
+    for (const result of results) totals[result.status] += 1;
+    return {
+      ok: true as const,
+      dryRun,
+      confirmRequired: dryRun ? TEMPLATE_CATEGORY_BACKFILL_CONFIRM : undefined,
+      version: TEMPLATE_CATEGORY_BACKFILL_VERSION,
+      listings: results.length,
+      totals,
+      results,
+    };
   },
 });
 
