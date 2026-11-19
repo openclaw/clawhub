@@ -32,13 +32,9 @@ export function PendingPackageListing(props: Props) {
     select: (state) => isPublisherListingPath(state.location.pathname),
   });
   if (!isListing) return "notFound" in props ? props.notFound : null;
-  const fallback =
-    "notFound" in props ? (
-      <>
-        {props.loading}
-        <noscript>{props.notFound}</noscript>
-      </>
-    ) : null;
+  // The server can only confirm the public 404. Without JS that is the final state;
+  // with JS, show loading only once the client can actually resolve viewer access.
+  const fallback = "notFound" in props ? <noscript>{props.notFound}</noscript> : null;
   return (
     <ClientOnly fallback={fallback}>
       <ViewerPendingListing key={JSON.stringify(props.target)} {...props} />

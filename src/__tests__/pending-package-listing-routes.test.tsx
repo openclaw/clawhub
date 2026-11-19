@@ -12,6 +12,8 @@ import { GenericNotFoundPage } from "../components/GenericNotFoundPage";
 import { PackageApiError } from "../lib/packageApi";
 import { Route as pluginRoute } from "../routes/$owner/plugins/$slug";
 import { Route as templateRoute } from "../routes/$owner/templates/$slug";
+import { Route as legacyPackageRoute } from "../routes/packages/$name";
+import { Route as legacyPluginRoute } from "../routes/plugins/$name";
 
 const mocks = vi.hoisted(() => ({
   auth: { isLoading: false, isAuthenticated: true },
@@ -81,7 +83,23 @@ function makeRouter(kind: Kind, isServer = false, suffix = "") {
   } as never);
   return createRouter({
     isServer,
-    routeTree: root.addChildren([route]),
+    routeTree: root.addChildren(
+      kind === "plugin"
+        ? [
+            route,
+            legacyPackageRoute.update({
+              id: "/packages/$name",
+              path: "/packages/$name",
+              getParentRoute: () => root,
+            } as never),
+            legacyPluginRoute.update({
+              id: "/plugins/$name",
+              path: "/plugins/$name",
+              getParentRoute: () => root,
+            } as never),
+          ]
+        : [route],
+    ),
     history: createMemoryHistory({ initialEntries: ["/maker/" + kind + "s/brief" + suffix] }),
     defaultPendingMinMs: 0,
   });
@@ -115,6 +133,53 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+function requestListing(kind: Kind, path: string) {
+  return createRequestHandler({
+    request: new Request(new URL(path, "http://localhost")),
+    createRouter: () => makeRouter(kind, true),
+  })(defaultRenderHandler);
+}
+
+it("follows legacy package and plugin redirects to a public skill without a private plugin preview", async () => {
+  mocks.detail.mockImplementation(async (name: string) =>
+    name === "brief"
+      ? {
+          package: {
+            name: "brief",
+            displayName: "Published skill",
+            summary: "Organize the daily brief.",
+            family: "skill",
+            latestVersion: "0.9.0",
+            tags: {},
+            createdAt: 1,
+            updatedAt: 2,
+          },
+          owner: pending.owner,
+        }
+      : { package: null, owner: null },
+  );
+  mocks.pending.mockReturnValue({ ...pending, name: "brief" });
+  const packages = await requestListing("plugin", "/packages/brief");
+  expect(packages.status).toBeGreaterThanOrEqual(300);
+  expect(packages.status).toBeLessThan(400);
+  const legacy = packages.headers.get("location")!;
+  expect(legacy).toBe("/plugins/brief");
+  const plugins = await requestListing("plugin", legacy);
+  expect(plugins.status).toBeGreaterThanOrEqual(300);
+  expect(plugins.status).toBeLessThan(400);
+  const canonical = plugins.headers.get("location")!;
+  expect(canonical).toBe("/maker/plugins/brief");
+  const response = await requestListing("plugin", canonical);
+  expect(response.status).toBe(200);
+  const page = new DOMParser().parseFromString(await response.text(), "text/html");
+  expect(page.querySelector("pre code")?.textContent).toBe("openclaw skills install @maker/brief");
+  render(<RouterProvider router={await listingRouter("plugin")} />);
+  expect(await screen.findByRole("heading", { name: "Published skill" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Copy skill install command" })).toBeTruthy();
+  expect(screen.queryByText(/is under review/)).toBeNull();
+  expect(mocks.pending).not.toHaveBeenCalled();
+});
+
 describe.each(["plugin", "template"] as const)("canonical pending %s listing", (kind) => {
   const missing = kind === "plugin" ? "Plugin not found" : "We couldn't find that page.";
 
@@ -137,15 +202,18 @@ describe.each(["plugin", "template"] as const)("canonical pending %s listing", (
     expect(mocks.pending).not.toHaveBeenCalled();
   });
 
-  it("sends an anonymous HTTP 404 without serializing a private preview", async () => {
-    const handler = createRequestHandler({
-      request: new Request("http://localhost/maker/" + kind + "s/brief"),
-      createRouter: () => makeRouter(kind, true),
-    });
-    const response = await handler(defaultRenderHandler);
+  it("sends a no-JS HTTP 404 without a permanent loader or private preview", async () => {
+    const response = await requestListing(kind, "/maker/" + kind + "s/brief");
     expect(response.status).toBe(404);
     const html = await response.text();
-    expect(html).toMatch(kind === "plugin" ? /Plugin not found/ : /find that page/);
+    // DOMParser parses noscript children as markup (scripting disabled), not inert text.
+    const document = new DOMParser().parseFromString("<body>" + html + "</body>", "text/html");
+    const noScript = document.querySelector("noscript");
+    expect(noScript?.querySelector("h1, h2, h3")?.textContent).toBe(missing);
+    expect(document.querySelector('[aria-busy="true"], [role="status"]')).toBeNull();
+    // A scripting-enabled browser must not paint that missing state before auth resolves.
+    noScript?.remove();
+    expect(document.querySelector("h1, h2, h3")).toBeNull();
     expect(html).not.toMatch(/Private brief|private summary|1\.2\.0|is under review/);
     expect(mocks.pending).not.toHaveBeenCalled();
   });

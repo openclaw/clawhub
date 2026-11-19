@@ -57,13 +57,10 @@ export const Route = createFileRoute("/$owner/plugins/$slug")({
     const data = await loadPublisherPluginDetail(params);
     // Keep the existing nested audit/scanner routes independent of the listing preview.
     const isListing = isPublisherListingPath(location.pathname);
-    const family = data.detail.package?.family;
-    if (
-      isListing &&
-      data.rateLimited?.scope !== "detail" &&
-      family !== "code-plugin" &&
-      family !== "bundle-plugin"
-    ) {
+    const pkg = data.detail.package;
+    // Legacy /packages URLs also resolve public skill-family packages here. Templates
+    // have their own canonical page; a missing public plugin may still be in review.
+    if (isListing && data.rateLimited?.scope !== "detail" && (!pkg || pkg.family === "template")) {
       throw notFound({ data: "listing" });
     }
     const ownerHandle = data.detail.owner?.handle ?? params.owner;
@@ -101,17 +98,20 @@ function PublisherPluginNotFound({ data }: { data?: unknown }) {
 function PublisherPluginDetailRoute() {
   const params = Route.useParams();
   const loaderData = Route.useLoaderData() as PluginDetailLoaderData;
-  const packageName = loaderData.detail.package?.name ?? packageNameFromParams(params);
+  const pkg = loaderData.detail.package;
+  const packageName = pkg?.name ?? packageNameFromParams(params);
 
   return (
     <PluginDetailPage
       name={packageName}
       loaderData={loaderData}
       pendingNotice={
-        <PendingPackageListing
-          target={{ ...params, routeKind: "plugin" }}
-          publishedName={packageName}
-        />
+        pkg?.family === "code-plugin" || pkg?.family === "bundle-plugin" ? (
+          <PendingPackageListing
+            target={{ ...params, routeKind: "plugin" }}
+            publishedName={packageName}
+          />
+        ) : null
       }
     />
   );
