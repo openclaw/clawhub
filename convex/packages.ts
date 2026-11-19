@@ -12,7 +12,7 @@ import type {
 import {
   INTERNAL_UNCATEGORIZED_CATEGORY,
   isPluginCategorySlug,
-  isTemplateCategorySlug,
+  isTemplateCategoryFilterSlug,
   normalizeCatalogTopic,
   normalizeCatalogTopics,
   normalizePluginCategories,
@@ -3968,7 +3968,7 @@ async function listPackagePageImpl(
   }
   const category =
     args.family === "claw"
-      ? args.category && (isTemplateCategorySlug(args.category) || args.category === "other")
+      ? args.category && isTemplateCategoryFilterSlug(args.category)
         ? args.category
         : undefined
       : isPluginCategorySlug(args.category)
@@ -4599,7 +4599,7 @@ async function searchPackagesImpl(
   if (!queryText) return [];
   const category =
     args.family === "claw"
-      ? args.category && (isTemplateCategorySlug(args.category) || args.category === "other")
+      ? args.category && isTemplateCategoryFilterSlug(args.category)
         ? args.category
         : undefined
       : isPluginCategorySlug(args.category)

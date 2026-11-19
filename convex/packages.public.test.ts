@@ -5663,6 +5663,52 @@ describe("packages public queries", () => {
     expect(tableNames).toEqual(["packageSearchDigest"]);
   });
 
+  it.each([
+    { category: "finance", expected: ["@openclaw/budget-coach"] },
+    { category: "personal", expected: ["@openclaw/travel-planner"] },
+    { category: "governance", expected: [] },
+    { category: "marketing", expected: [] },
+  ])(
+    "filters Templates by the removed or unknown category $category without widening the page",
+    async ({ category, expected }) => {
+      const officialTemplate = {
+        family: "template",
+        channel: "official",
+        isOfficial: true,
+        ownerPublisherId: openClawPublisher._id,
+        ownerHandle: "openclaw",
+        ownerKind: "org",
+      };
+      const { ctx } = makeDigestCtx({
+        pages: [
+          {
+            page: [
+              makeDigest("@openclaw/travel-planner", {
+                ...officialTemplate,
+                categories: ["travel", "personal"],
+              }),
+              makeDigest("@openclaw/budget-coach", {
+                ...officialTemplate,
+                categories: ["finance"],
+              }),
+            ],
+            isDone: true,
+            continueCursor: "",
+          },
+        ],
+        publisherDocs: activeOpenClawPublisherDocs,
+      });
+
+      const result = await listPublicPageHandler(ctx, {
+        family: "template",
+        category,
+        paginationOpts: { cursor: null, numItems: 10 },
+      });
+
+      expect(result.page.map((entry) => entry.name)).toEqual(expected);
+    },
+  );
+
   it("searches Templates within their stored category tags", async () => {
     const officialTemplate = {
       family: "template",

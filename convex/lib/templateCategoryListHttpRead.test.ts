@@ -79,6 +79,14 @@ describe("Template category HTTP reads", () => {
     "family=template&category=%20travel%20&limit=8",
     "family=template&category=other&limit=8&cursor=page-two",
     "family=template&category=travel&cursor=",
+    "family=template&category=household&limit=8",
+    "family=template&category=entertainment&limit=8",
+    // Removed from the taxonomy, but still stored by unrewritten listings and still
+    // requested by released OpenClaw clients.
+    "family=template&category=personal&limit=8",
+    "family=template&category=governance&limit=8",
+    "family=template&category=finance&limit=8",
+    "family=template&category=people&limit=8",
   ])("reads the catalog router's own query for %s", async (search) => {
     const narrow = fixture();
     const router = fixture();
@@ -134,6 +142,16 @@ describe("Template category HTTP reads", () => {
     expect(await readTemplateCategoryListHttp(f.ctx, req(search))).toBeNull();
     expect(rate).not.toHaveBeenCalled();
     expect(token).not.toHaveBeenCalled();
+    expect(f.runQuery).not.toHaveBeenCalled();
+  });
+
+  it("leaves a slug that was never a Template category to the router's validation error", async () => {
+    const f = fixture();
+    const search = "family=template&category=marketing";
+    expect(await readTemplateCategoryListHttp(f.ctx, req(search))).toBeNull();
+    const response = await listPackagesV1Handler(f.ctx, req(search));
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe("Invalid Template category");
     expect(f.runQuery).not.toHaveBeenCalled();
   });
 

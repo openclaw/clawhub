@@ -1,4 +1,4 @@
-import { isTemplateCategorySlug } from "clawhub-schema/catalogMetadata";
+import { isTemplateCategoryFilterSlug } from "clawhub-schema/catalogMetadata";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
@@ -25,7 +25,7 @@ export async function readTemplateCategoryListHttp(
   if (params.get("family") !== "template") return null;
   const category = params.get("category")?.trim();
   // The router answers a missing or unknown category, including its 400.
-  if (!category || (category !== "other" && !isTemplateCategorySlug(category))) return null;
+  if (!category || !isTemplateCategoryFilterSlug(category)) return null;
   // Never reinterpret cookie-backed reads as anonymous.
   if (request.headers.has("cookie")) return null;
   let viewerUserId: Id<"users"> | undefined;
