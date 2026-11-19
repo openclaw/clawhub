@@ -46,10 +46,14 @@ async function fixture(
     slug: "brief",
     routeKind: family === "claw" ? ("template" as const) : ("plugin" as const),
   };
-  const stage = async (version: string, tags = ["latest"]) => {
+  const stage = async (
+    version: string,
+    tags = ["latest"],
+    stagedPublisherId = ownerPublisherId,
+  ) => {
     const { packageId, releaseId } = await t.mutation(internal.packages.insertReleaseInternal, {
       ownerUserId: maker,
-      ownerPublisherId,
+      ownerPublisherId: stagedPublisherId,
       actorUserId: maker,
       name,
       family,
@@ -69,7 +73,7 @@ async function fixture(
       {
         userId: maker,
         ownerUserId: maker,
-        ownerPublisherId,
+        ownerPublisherId: stagedPublisherId,
         name,
         displayName: "Brief " + version,
         version,
@@ -227,6 +231,55 @@ it.each(["code-plugin", "bundle-plugin", "claw"] as const)(
     }
   },
 );
+
+it("accepts only the current personal publisher on a staged update to a legacy user-owned package", async () => {
+  const { t, maker, viewer, args, stage } = await fixture("claw", false);
+  const first = await stage("1.0.0");
+  await t.mutation(internal.packages.publishPendingReleaseInternal, { releaseId: first.releaseId });
+  const ids = await t.run(async (ctx) => {
+    const mod = await ctx.db.insert("users", { role: "moderator" });
+    const outsider = await ctx.db.insert("users", { handle: "outsider" });
+    const fields = { displayName: "Maker", createdAt: 1, updatedAt: 1 };
+    const personal = await ctx.db.insert("publishers", {
+      ...fields,
+      handle: "maker",
+      kind: "user",
+      linkedUserId: maker,
+    });
+    await ctx.db.patch(maker, { personalPublisherId: personal });
+    const foreign = await ctx.db.insert("publishers", {
+      ...fields,
+      handle: "other",
+      kind: "user",
+      linkedUserId: outsider,
+    });
+    const org = await ctx.db.insert("publishers", { ...fields, handle: "org", kind: "org" });
+    return { mod, outsider, personal, foreign, org };
+  });
+  const next = await stage("2.0.0", ["latest"], ids.personal);
+  expect((await t.run((ctx) => ctx.db.get(next.packageId)))?.ownerPublisherId).toBeUndefined();
+  const viewers = [viewer, t.withIdentity({ subject: ids.mod })];
+  for (const authorized of viewers) {
+    expect(await authorized.query(listing, args)).toMatchObject({
+      version: "2.0.0",
+      owner: { handle: "maker" },
+    });
+  }
+  expect(await t.withIdentity({ subject: ids.outsider }).query(listing, args)).toBeNull();
+  await t.run((ctx) => ctx.db.patch(next.attemptId, { ownerUserId: ids.outsider }));
+  for (const authorized of viewers) expect(await authorized.query(listing, args)).toBeNull();
+  await t.run((ctx) => ctx.db.patch(next.attemptId, { ownerUserId: maker }));
+  for (const ownerPublisherId of [ids.foreign, ids.org]) {
+    await t.run((ctx) => ctx.db.patch(next.attemptId, { ownerPublisherId }));
+    for (const authorized of viewers) expect(await authorized.query(listing, args)).toBeNull();
+  }
+  // A deactivated row can still supply a legacy display fallback, but not publish authority.
+  await t.run(async (ctx) => {
+    await ctx.db.patch(next.attemptId, { ownerPublisherId: ids.personal });
+    await ctx.db.patch(ids.personal, { deactivatedAt: 1 });
+  });
+  for (const authorized of viewers) expect(await authorized.query(listing, args)).toBeNull();
+});
 
 it("uses the active linked personal publisher rather than stale legacy attribution", async () => {
   const { t, maker, viewer, args, stage } = await fixture("code-plugin", false);

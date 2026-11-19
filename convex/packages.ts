@@ -672,6 +672,13 @@ type PackageModerationStatus = {
   } | null;
 };
 
+function isLinkedPersonalPublisher(
+  ownerUserId: Id<"users">,
+  publisher: Doc<"publishers"> | null | undefined,
+) {
+  return publisher?.kind === "user" && publisher.linkedUserId === ownerUserId;
+}
+
 function getPackageOwnerKey(
   pkg: Pick<PackageDoc, "ownerUserId" | "ownerPublisherId">,
   options?: {
@@ -682,8 +689,7 @@ function getPackageOwnerKey(
   if (pkg.ownerPublisherId) return `publisher:${pkg.ownerPublisherId}`;
   if (
     options?.nextOwnerPublisherId &&
-    options.ownerPublisher?.kind === "user" &&
-    options.ownerPublisher.linkedUserId === pkg.ownerUserId
+    isLinkedPersonalPublisher(pkg.ownerUserId, options.ownerPublisher)
   ) {
     return `publisher:${options.nextOwnerPublisherId}`;
   }
@@ -2332,7 +2338,11 @@ async function getPendingListingPublisher(
   return publisher;
 }
 
-async function getPendingListingSummary(ctx: DbReaderCtx, pkg: Doc<"packages">) {
+async function getPendingListingSummary(
+  ctx: DbReaderCtx,
+  pkg: Doc<"packages">,
+  listingPublisherId: Id<"publishers">,
+) {
   // Check the most recent submission, not the most recent *pending* row: a later
   // publication, block or withdrawal must not resurrect a historical upload.
   const release = await ctx.db
@@ -2357,7 +2367,6 @@ async function getPendingListingSummary(ctx: DbReaderCtx, pkg: Doc<"packages">) 
     attempt.packageReleaseId !== release._id ||
     attempt.version !== release.version ||
     attempt.slug !== pkg.name ||
-    attempt.ownerPublisherId !== pkg.ownerPublisherId ||
     (!pkg.ownerPublisherId && attempt.ownerUserId !== pkg.ownerUserId) ||
     !ACTIVE_PUBLISH_ATTEMPT_STATUSES.includes(attempt.status) ||
     Object.values(attempt.checks).some(
@@ -2365,6 +2374,18 @@ async function getPendingListingSummary(ctx: DbReaderCtx, pkg: Doc<"packages">) 
     )
   )
     return null;
+  if (attempt.ownerPublisherId !== pkg.ownerPublisherId) {
+    // Staging a personal update can bind the publisher before the legacy parent does.
+    // A synthesized display publisher is not proof of a live personal link.
+    if (pkg.ownerPublisherId || attempt.ownerPublisherId !== listingPublisherId) return null;
+    const ownerPublisher = await ctx.db.get(listingPublisherId);
+    if (
+      !isLinkedPersonalPublisher(pkg.ownerUserId, ownerPublisher) ||
+      ownerPublisher?.deletedAt !== undefined ||
+      ownerPublisher?.deactivatedAt !== undefined
+    )
+      return null;
+  }
   const metadata = pendingPackagePublicationMetadata(release);
   if (
     metadata.family !== pkg.family ||
@@ -2440,7 +2461,7 @@ export const getPendingListingForViewer = query({
     const publisher = await getPendingListingPublisher(ctx, pkg, handle, viewer);
     if (!publisher) return null;
 
-    const summary = await getPendingListingSummary(ctx, pkg);
+    const summary = await getPendingListingSummary(ctx, pkg, publisher._id);
     if (!summary) return null;
     return {
       ...summary,
