@@ -83,7 +83,7 @@ export function PluginListItem({
         />
         <div className="skill-card-header">
           <MarketplaceIcon
-            kind="plugin"
+            kind={itemKind}
             label={displayName}
             imageUrl={item.icon}
             rasterAssetUrl={item.iconAssetUrl}
@@ -143,7 +143,7 @@ export function PluginListItem({
         aria-label={`${kindCopy.label}: ${displayName}`}
       />
       <MarketplaceIcon
-        kind="plugin"
+        kind={itemKind}
         label={displayName}
         imageUrl={item.icon}
         rasterAssetUrl={item.iconAssetUrl}
