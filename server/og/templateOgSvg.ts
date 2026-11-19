@@ -56,8 +56,6 @@ export function buildTemplateOgSvg(card: TemplateCard) {
     <linearGradient id="base" x2="1" y2="0.28" gradientUnits="objectBoundingBox"><stop stop-color="#170d10"/><stop offset=".58" stop-color="#090a0b"/><stop offset="1" stop-color="#09120f"/></linearGradient>
     <radialGradient id="warm" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1032 139) scale(645 308)"><stop stop-color="#462023" stop-opacity=".5"/><stop offset="1" stop-color="#462023" stop-opacity="0"/></radialGradient>
     <radialGradient id="cool" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(120 643) scale(640 382)"><stop stop-color="#0d4235" stop-opacity=".29"/><stop offset="1" stop-color="#0d4235" stop-opacity="0"/></radialGradient>
-    <linearGradient id="tile" x2=".6" y2="1"><stop stop-color="#3b292a" stop-opacity=".6"/><stop offset=".85" stop-color="#181b1b" stop-opacity=".75"/></linearGradient>
-    <clipPath id="portrait"><rect x="810" y="144" width="314" height="314" rx="70"/></clipPath>
   </defs>
   <rect width="1200" height="630" fill="url(#base)"/><rect width="1200" height="630" fill="url(#cool)"/><rect width="1200" height="630" fill="url(#warm)"/>
   <image x="70" y="58" width="50" height="50" href="${card.mark}"/>
@@ -65,7 +63,6 @@ export function buildTemplateOgSvg(card: TemplateCard) {
   <text fill="#f7f1ea" font-family="${TITLE_FONT},sans-serif" font-size="${size}" font-weight="800" letter-spacing="${-size * 0.053}">${lines(titleLines, 70, titleY, step)}</text>
   ${byline}
   <text fill="#c9c2bd" font-family="${COPY_FONT},sans-serif" font-size="35" font-weight="500" letter-spacing="-.65">${lines(description, 74, ownerY + (owner ? 94 : 36), 42)}</text>
-  <rect x="809" y="143" width="316" height="316" rx="71" fill="url(#tile)" stroke="#ffffff" stroke-opacity=".075" stroke-width="2"/>
-  <g clip-path="url(#portrait)">${portrait}</g>
+  ${portrait}
 </svg>`;
 }

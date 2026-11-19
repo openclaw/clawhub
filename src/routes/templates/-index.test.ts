@@ -13,7 +13,7 @@ it("shares the same bundled directory card without catalog data, including for f
     const result = await head({ match: { search } } as Parameters<typeof head>[0]);
     const title = "OpenClaw Templates";
     const description = "Browse ready-to-use agents you can add to OpenClaw.";
-    const image = site + "/og/templates-v1.png";
+    const image = site + "/og/templates-v2.png";
     expect(result?.meta).toEqual(
       expect.arrayContaining([
         { property: "og:title", content: title },
@@ -30,6 +30,6 @@ it("shares the same bundled directory card without catalog data, including for f
     );
     expect(result?.links).toContainEqual({ rel: "canonical", href: site + "/templates" });
   }
-  const bytes = await readFile("public/og/templates-v1.png");
+  const bytes = await readFile("public/og/templates-v2.png");
   expect(await sharp(bytes).metadata()).toMatchObject({ format: "png", width: 1200, height: 630 });
 });

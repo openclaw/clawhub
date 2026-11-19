@@ -214,7 +214,7 @@ describe("publisher Template route invariants", () => {
     const head = Route.options.head!;
     const result = await head({ loaderData: { detail } } as Parameters<typeof head>[0]);
     const image =
-      "https://clawhub.ai/og/template.png?v=1&name=%40maker%2Frelease-brief&owner=maker&version=0.1.0";
+      "https://clawhub.ai/og/template.png?v=2&name=%40maker%2Frelease-brief&owner=maker&version=0.1.0";
     expect(result?.meta).toEqual(
       expect.arrayContaining([
         { title: "Release Brief — ClawHub Templates" },

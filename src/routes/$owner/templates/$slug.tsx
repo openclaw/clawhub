@@ -77,7 +77,7 @@ export const Route = createFileRoute("/$owner/templates/$slug")({
     const site = getClawHubSiteUrl();
     const copy = getTemplateShareCopy(pkg);
     const title = copy.title + " — ClawHub Templates";
-    const params = new URLSearchParams({ v: "1", name: pkg.name, owner });
+    const params = new URLSearchParams({ v: "2", name: pkg.name, owner });
     if (pkg.latestVersion) params.set("version", pkg.latestVersion);
     const head = buildSocialMetaHead({
       title,

@@ -166,6 +166,20 @@ it("refuses invalid identifiers before fetching and leaves service failures retr
   expect(response.headers.get("cache-control")).toBe("no-store");
 });
 
+it.each([
+  { owner: "maker", artwork: "data:image/png;base64,AA==" },
+  { owner: "maker", artwork: null },
+  { owner: null, artwork: "data:image/png;base64,AA==" },
+])("draws the artwork directly on the full-bleed background", (source) => {
+  const svg = buildTemplateOgSvg({ ...source, title: "Brief", description: "Summary", mark: "" });
+  const rectangles = svg.match(/<rect\b[^>]*>/g) ?? [];
+  expect(rectangles.length).toBeGreaterThan(0);
+  for (const rect of rectangles) {
+    expect(rect).toMatch(/width="1200" height="630"/);
+  }
+  expect(svg).not.toMatch(/clipPath|clip-path/);
+});
+
 it("bounds long copy, escapes user text, and keeps the exact handle below the title", () => {
   const handle = "maker-" + "a".repeat(34);
   const svg = buildTemplateOgSvg({

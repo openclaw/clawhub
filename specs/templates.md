@@ -124,7 +124,9 @@ Public Template detail pages share a 1200×630 PNG with the agent name, publishe
 handle, short description and hosted catalog artwork. When the artwork is absent
 or unreadable the card uses the Template glyph, never the publisher's profile
 image. The image route independently checks the anonymous package projection,
-family and owner; query parameters cannot override the card's content.
+family and owner; query parameters cannot override the card's content. Both the
+directory and detail cards place their artwork directly on the dark background,
+without a tile or clipping mask.
 
 ## Launch contract
 
