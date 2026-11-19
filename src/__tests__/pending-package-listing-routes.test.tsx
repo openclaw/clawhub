@@ -180,6 +180,40 @@ it("follows legacy package and plugin redirects to a public skill without a priv
   expect(mocks.pending).not.toHaveBeenCalled();
 });
 
+it("redirects a legacy public Template link to its published Template page", async () => {
+  mocks.detail.mockImplementation(async (name: string) =>
+    name === "brief"
+      ? {
+          package: {
+            name: "brief",
+            displayName: "Published Template",
+            summary: "Public daily brief",
+            family: "template",
+            latestVersion: "0.9.0",
+            tags: {},
+            createdAt: 1,
+            updatedAt: 2,
+          },
+          owner: pending.owner,
+        }
+      : { package: null, owner: null },
+  );
+  for (const [from, to] of [
+    ["/packages/brief", "/plugins/brief"],
+    ["/plugins/brief", "/maker/plugins/brief"],
+    ["/maker/plugins/brief", "/maker/templates/brief"],
+  ] as const) {
+    const response = await requestListing("plugin", from);
+    expect(response.status).toBeGreaterThanOrEqual(300);
+    expect(response.status).toBeLessThan(400);
+    expect(response.headers.get("location")).toBe(to);
+  }
+  const published = await requestListing("template", "/maker/templates/brief");
+  expect(published.status).toBe(200);
+  expect(await published.text()).toContain("Published Template");
+  expect(mocks.pending).not.toHaveBeenCalled();
+});
+
 describe.each(["plugin", "template"] as const)("canonical pending %s listing", (kind) => {
   const missing = kind === "plugin" ? "Plugin not found" : "We couldn't find that page.";
 

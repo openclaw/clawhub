@@ -8,7 +8,7 @@ import {
   buildPluginDetailHref,
   packageNameFromPublisherPluginRoute,
 } from "../../../lib/pluginRoutes";
-import { normalizePublisherHandle } from "../../../lib/templateRoutes";
+import { buildTemplateDetailHref, normalizePublisherHandle } from "../../../lib/templateRoutes";
 import {
   loadPluginDetail,
   PluginDetailPage,
@@ -60,8 +60,13 @@ export const Route = createFileRoute("/$owner/plugins/$slug")({
     const pkg = data.detail.package;
     // Legacy /packages URLs also resolve public skill-family packages here. Templates
     // have their own canonical page; a missing public plugin may still be in review.
-    if (isListing && data.rateLimited?.scope !== "detail" && (!pkg || pkg.family === "template")) {
-      throw notFound({ data: "listing" });
+    if (isListing && data.rateLimited?.scope !== "detail") {
+      if (!pkg) throw notFound({ data: "listing" });
+      if (pkg.family === "template") {
+        const href = buildTemplateDetailHref(pkg.name, data.detail.owner?.handle);
+        if (!href) throw notFound();
+        throw redirect({ href, replace: true });
+      }
     }
     const ownerHandle = data.detail.owner?.handle ?? params.owner;
     const packageName = data.detail.package?.name ?? packageNameFromParams(params);
