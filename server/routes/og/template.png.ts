@@ -4,7 +4,10 @@ import { defineEventHandler, getQuery } from "h3";
 import { serverFetch } from "nitro/app";
 import sharp from "sharp";
 import { tryNormalizePackageName } from "../../../convex/lib/packageReadName";
-import { isHostedSkillPresentationIconPath } from "../../../convex/lib/skillPresentation";
+import {
+  isHostedSkillPresentationIconPath,
+  MAX_SKILL_PRESENTATION_ICON_PIXELS,
+} from "../../../convex/lib/skillPresentation";
 import { normalizePublisherHandle } from "../../../src/lib/templateRoutes";
 import { getTemplateShareCopy } from "../../../src/lib/templateShare";
 import { readLimitedImageBody } from "../../og/fetchImageDataUrl";
@@ -19,13 +22,21 @@ import { withOgFetchTimeout } from "../../og/ogFetchTimeout";
 import { cleanString } from "../../og/ogRequest";
 import { pngResponse } from "../../og/pngResponse";
 import { buildTemplateOgSvg } from "../../og/templateOgSvg";
+import { trustedVercelClientIp } from "../../vercelIngress";
 
-async function loadArtwork(icon: string | null | undefined) {
+async function loadArtwork(
+  icon: string | null | undefined,
+  ingressHeaders: HeadersInit | undefined,
+) {
   if (!icon || !isHostedSkillPresentationIconPath(icon)) return null;
   try {
     // Only the registry's content-addressed assets, never a publisher-supplied URL.
     const bytes = await withOgFetchTimeout(async (signal) => {
-      const response = await serverFetch(icon.trim(), { signal, credentials: "omit" });
+      const response = await serverFetch(icon.trim(), {
+        signal,
+        credentials: "omit",
+        headers: ingressHeaders,
+      });
       if (
         !response.ok ||
         response.headers.get("content-type")?.split(";")[0]?.trim() !== "image/png"
@@ -34,7 +45,7 @@ async function loadArtwork(icon: string | null | undefined) {
       return readLimitedImageBody(response);
     });
     if (!bytes) return null;
-    const png = await sharp(bytes, { limitInputPixels: 4_000_000 })
+    const png = await sharp(bytes, { limitInputPixels: MAX_SKILL_PRESENTATION_ICON_PIXELS })
       .resize(282, 282, { fit: "inside", kernel: "nearest" })
       .png()
       .toBuffer();
@@ -54,6 +65,10 @@ export default defineEventHandler(async (event) => {
   const owner = normalizePublisherHandle(cleanString(query.owner));
   if (!name || !owner) return unavailable(400);
 
+  // Internal dispatch skips Vercel ingress. Relay only its trusted IP; the proxy supplies edge identity.
+  const clientIp = trustedVercelClientIp(event.req.headers, process.env.VERCEL_ENV);
+  const ingressHeaders = clientIp ? { "x-vercel-forwarded-for": clientIp } : undefined;
+
   // Read through the same public registry as the page, without the requester's credentials.
   // A cached share URL is not authority to render a removed or newly private package.
   let detail: ApiV1PackageResponse | null;
@@ -62,7 +77,7 @@ export default defineEventHandler(async (event) => {
       const response = await serverFetch("/api/v1/packages/" + encodeURIComponent(name), {
         signal,
         credentials: "omit",
-        headers: { Accept: "application/json" },
+        headers: { Accept: "application/json", ...ingressHeaders },
       });
       if ([401, 403, 404].includes(response.status)) return null;
       if (!response.ok) throw new Error("Registry unavailable");
@@ -83,7 +98,7 @@ export default defineEventHandler(async (event) => {
   )
     return unavailable(404);
   const [artwork, mark, fontBuffers] = await Promise.all([
-    loadArtwork(pkg.icon),
+    loadArtwork(pkg.icon, ingressHeaders),
     getMarkDataUrl(),
     ensureResvgWasm().then(getFontBuffers),
   ]);
