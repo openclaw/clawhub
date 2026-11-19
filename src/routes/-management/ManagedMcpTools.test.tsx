@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import type { ManagedMcpDefinition } from "clawhub-schema";
 import { getFunctionName } from "convex/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { deferred } from "../../__tests__/helpers/deferred";
 import { ManagedMcpTools } from "./ManagedMcpTools";
 
 const { getDefinition, publish, unpublish } = vi.hoisted(() => ({
@@ -48,8 +49,8 @@ function submitForm() {
 
 describe("ManagedMcpTools", () => {
   it("waits for backend eligibility before offering managed actions", async () => {
-    let resolve!: (value: ManagedMcpDefinition) => void;
-    getDefinition.mockReturnValue(new Promise((done) => (resolve = done)));
+    const { promise, resolve } = deferred<ManagedMcpDefinition>();
+    getDefinition.mockReturnValue(promise);
     render(<ManagedMcpTools packageName="@openclaw/deepwiki" />);
     expect(screen.queryByRole("button", { name: "Edit MCP integration" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Unpublish MCP integration" })).toBeNull();
@@ -77,8 +78,8 @@ describe("ManagedMcpTools", () => {
   );
 
   it("ignores eligibility responses for a previous selection", async () => {
-    let resolve!: (value: ManagedMcpDefinition) => void;
-    getDefinition.mockReturnValueOnce(new Promise((done) => (resolve = done)));
+    const { promise, resolve } = deferred<ManagedMcpDefinition>();
+    getDefinition.mockReturnValueOnce(promise);
     const page = render(<ManagedMcpTools packageName="@openclaw/deepwiki" />);
     page.rerender(<ManagedMcpTools packageName="@openclaw/ordinary-plugin" />);
     await act(async () => resolve(definition));

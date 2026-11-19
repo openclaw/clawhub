@@ -12,10 +12,11 @@ import type {
 import {
   INTERNAL_UNCATEGORIZED_CATEGORY,
   isPluginCategorySlug,
-  isTemplateCategorySlug,
+  isTemplateCategoryFilterSlug,
   normalizeCatalogTopic,
   normalizeCatalogTopics,
   normalizePluginCategories,
+  resolveDeclaredTemplateCategory,
   resolvePluginCategories,
 } from "clawhub-schema/catalogMetadata";
 import { MANAGED_MCP_DEFINITION_PATH } from "clawhub-schema/managedMcpUrls";
@@ -3981,7 +3982,7 @@ async function listPackagePageImpl(
   }
   const category =
     args.family === "claw"
-      ? args.category && (isTemplateCategorySlug(args.category) || args.category === "other")
+      ? args.category && isTemplateCategoryFilterSlug(args.category)
         ? args.category
         : undefined
       : isPluginCategorySlug(args.category)
@@ -4612,7 +4613,7 @@ async function searchPackagesImpl(
   if (!queryText) return [];
   const category =
     args.family === "claw"
-      ? args.category && (isTemplateCategorySlug(args.category) || args.category === "other")
+      ? args.category && isTemplateCategoryFilterSlug(args.category)
         ? args.category
         : undefined
       : isPluginCategorySlug(args.category)
@@ -10703,6 +10704,16 @@ function stringArrayPendingField(metadata: Record<string, unknown>, field: strin
     : undefined;
 }
 
+// Staged Template categories were computed when the release was staged, possibly under an
+// earlier taxonomy. Promotion applies the part of the current rule a mutation can: keep only
+// the first category when it is current. Otherwise the staged list is left as it is, because
+// a mutation cannot classify, and an untouched list still matches what a category backfill
+// expects where a substituted "other" would not.
+function promotedTemplateCategories(staged: string[] | undefined) {
+  const first = resolveDeclaredTemplateCategory(staged);
+  return first ? [first] : staged;
+}
+
 type PackageReleaseTagCleanupAssignment = {
   releaseId: Id<"packageReleases">;
   tags: string[];
@@ -11155,7 +11166,9 @@ export const publishPendingReleaseInternal = internalMutation({
       summary: shouldPromoteLatest ? release.summary : pkg.summary,
       icon: shouldPromoteLatest ? release.icon : pkg.icon,
       categories: shouldPromoteLatest
-        ? stringArrayPendingField(metadata, "categories")
+        ? packageFamily === "claw"
+          ? promotedTemplateCategories(stringArrayPendingField(metadata, "categories"))
+          : stringArrayPendingField(metadata, "categories")
         : pkg.categories,
       topics: shouldPromoteLatest ? stringArrayPendingField(metadata, "topics") : pkg.topics,
       ...(shouldPromoteLatest

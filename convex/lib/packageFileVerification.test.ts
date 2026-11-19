@@ -1,5 +1,6 @@
 /* @vitest-environment node */
 import { describe, expect, it, vi } from "vitest";
+import { deferred } from "../../src/__tests__/helpers/deferred";
 import type { ActionCtx } from "../_generated/server";
 import { sha256Hex } from "./clawpack";
 import { verifyPublishFileStorageMetadata } from "./packageFileVerification";
@@ -16,14 +17,6 @@ function files(count: number) {
 
 function context(get: (id: string) => Promise<Blob | null>) {
   return { storage: { get } } as Pick<ActionCtx, "storage">;
-}
-
-function deferred() {
-  let resolve!: () => void;
-  const promise = new Promise<void>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
 }
 
 describe("package file verification", () => {
