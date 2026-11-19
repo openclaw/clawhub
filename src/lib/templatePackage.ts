@@ -2,13 +2,18 @@ import { notFound } from "@tanstack/react-router";
 import { fetchPackageDetail } from "./packageApi";
 import { normalizePublisherHandle, packageNameFromPublisherTemplateRoute } from "./templateRoutes";
 
-export async function loadTemplatePackage(params: { owner: string; slug: string }) {
+export async function loadTemplatePackage(
+  params: { owner: string; slug: string },
+  view?: "template-detail",
+) {
   const requestedName = packageNameFromPublisherTemplateRoute(params.owner, params.slug);
   if (!requestedName) throw notFound();
   const requestedOwner = normalizePublisherHandle(params.owner);
-  let detail = await fetchPackageDetail(requestedName);
+  const fetchDetail = (name: string) =>
+    view ? fetchPackageDetail(name, view) : fetchPackageDetail(name);
+  let detail = await fetchDetail(requestedName);
   if (!detail.package) {
-    const unscoped = await fetchPackageDetail(params.slug);
+    const unscoped = await fetchDetail(params.slug);
     if (unscoped.package && normalizePublisherHandle(unscoped.owner?.handle) === requestedOwner)
       detail = unscoped;
   }

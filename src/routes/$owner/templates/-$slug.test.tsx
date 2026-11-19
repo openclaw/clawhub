@@ -62,6 +62,55 @@ describe("publisher Template detail route loader", () => {
     mocks.fetchPackageFile.mockResolvedValue("# Release Brief");
   });
 
+  it("uses a single authorized package snapshot without fetching unrelated file bodies", async () => {
+    const llmAnalysis = { status: "suspicious", checkedAt: 1, summary: "Review permissions." };
+    mocks.fetchPackageDetail.mockResolvedValue({
+      ...packageDetail(),
+      templateRelease: { version: "0.1.0", contents: "# From this release", llmAnalysis },
+    });
+    const loaded = await loadPublisherTemplate({ owner: "maker", slug: "release-brief" });
+    expect(loaded.contents).toBe("# From this release");
+    expect(loaded.llmAnalysis).toEqual(llmAnalysis);
+    expect(mocks.fetchPackageDetail).toHaveBeenCalledWith(
+      "@maker/release-brief",
+      "template-detail",
+    );
+    expect(mocks.fetchPackageFile).not.toHaveBeenCalled();
+    expect(mocks.fetchPackageVersion).not.toHaveBeenCalled();
+  });
+
+  it("never substitutes stale or blocked snapshot content for the pinned release", async () => {
+    mocks.fetchPackageDetail.mockResolvedValue({
+      ...packageDetail(),
+      templateRelease: { version: "0.0.9", contents: "wrong version", llmAnalysis: null },
+    });
+    expect((await loadPublisherTemplate({ owner: "maker", slug: "release-brief" })).contents).toBe(
+      "# Release Brief",
+    );
+    mocks.fetchPackageFile.mockClear();
+    mocks.fetchPackageDetail.mockResolvedValue({
+      ...packageDetail(),
+      templateRelease: { version: "0.1.0", contents: null, llmAnalysis: null },
+    });
+    expect(
+      (await loadPublisherTemplate({ owner: "maker", slug: "release-brief" })).contents,
+    ).toBeNull();
+    expect(mocks.fetchPackageFile).not.toHaveBeenCalled();
+  });
+
+  it("exposes a single live announcement and noninteractive detail placeholders while pending", () => {
+    const Pending = Route.options.pendingComponent;
+    if (!Pending) throw new Error("Missing pending route");
+    const { container } = render(<Pending />);
+    expect(screen.getByRole("status").textContent).toBe("Loading Template details…");
+    expect(screen.getByRole("status").classList.contains("sr-only")).toBe(true);
+    expect(screen.getByRole("status").closest('[aria-busy="true"]')).toBeNull();
+    expect(screen.getByRole("main").getAttribute("aria-busy")).toBe("true");
+    expect(container.querySelector('[aria-hidden="true"] .template-detail-hero')).not.toBeNull();
+    expect(container.querySelector('[aria-hidden="true"] .template-detail-layout')).not.toBeNull();
+    expect(container.querySelector("button, a, [tabindex]")).toBeNull();
+  });
+
   it("loads only a public Template owned by the requested publisher", async () => {
     mocks.fetchPackageDetail.mockResolvedValue(packageDetail());
 
@@ -98,7 +147,10 @@ describe("publisher Template detail route loader", () => {
     const loaded = await loadPublisherTemplate({ owner: "@Maker", slug: "release-brief" });
 
     expect(loaded.detail.package?.family).toBe("template");
-    expect(mocks.fetchPackageDetail).toHaveBeenCalledWith("@maker/release-brief");
+    expect(mocks.fetchPackageDetail).toHaveBeenCalledWith(
+      "@maker/release-brief",
+      "template-detail",
+    );
   });
 
   it("does not expose a plugin at a Template URL", async () => {
@@ -155,8 +207,8 @@ describe("publisher Template route invariants", () => {
     const loaded = await loadPublisherTemplate({ owner: "maker", slug: "release-brief" });
     expect(loaded.detail.package?.name).toBe("release-brief");
     expect(mocks.fetchPackageDetail.mock.calls).toEqual([
-      ["@maker/release-brief"],
-      ["release-brief"],
+      ["@maker/release-brief", "template-detail"],
+      ["release-brief", "template-detail"],
     ]);
     expect(mocks.fetchPackageFile).toHaveBeenCalledWith("release-brief", "CLAW.md", "0.1.0");
   });

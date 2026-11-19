@@ -1,5 +1,6 @@
 import { createFileRoute, notFound, redirect, useRouter } from "@tanstack/react-router";
 import { Container } from "../../../components/layout/Container";
+import { TemplateDetailSkeleton } from "../../../components/skeletons/TemplateDetailSkeleton";
 import { TemplateDetailPage } from "../../../components/TemplateDetailPage";
 import {
   fetchPackageFile,
@@ -31,7 +32,16 @@ export async function loadPublisherTemplate(params: {
   owner: string;
   slug: string;
 }): Promise<TemplateDetailData> {
-  const detail = await loadTemplatePackage(params);
+  const { templateRelease, ...detail } = await loadTemplatePackage(params, "template-detail");
+  // Treat an authoritative null preview as unavailable, not a trigger to read other files.
+  if (templateRelease && templateRelease.version === detail.package.latestVersion) {
+    return {
+      detail,
+      contents: templateRelease.contents,
+      llmAnalysis: templateRelease.llmAnalysis ?? null,
+    };
+  }
+  // A registry from before the view was introduced returns the ordinary metadata response.
   let contents: string | null = null;
   let llmAnalysis: TemplateDetailData["llmAnalysis"] = null;
   if (detail.package.latestVersion) {
@@ -94,22 +104,12 @@ export const Route = createFileRoute("/$owner/templates/$slug")({
       ],
     };
   },
-  pendingComponent: TemplateDetailPending,
+  pendingMs: 100,
+  pendingMinMs: 0,
+  pendingComponent: TemplateDetailSkeleton,
   errorComponent: TemplateDetailError,
   component: PublisherTemplatePage,
 });
-
-function TemplateDetailPending() {
-  return (
-    <main className="section detail-page-section" aria-busy="true">
-      <Container size="narrow">
-        <div role="status" className="py-12 text-center text-ink-soft">
-          Loading Template details…
-        </div>
-      </Container>
-    </main>
-  );
-}
 
 function TemplateDetailError() {
   const router = useRouter();

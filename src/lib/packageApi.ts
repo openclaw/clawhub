@@ -59,7 +59,14 @@ export type PackageListItem<
   };
 };
 
-export type PackageDetailResponse = ApiV1PackageResponse;
+export type PackageDetailResponse = ApiV1PackageResponse & {
+  /** Opt-in exact-release projection. Older registries return ordinary metadata. */
+  templateRelease?: {
+    version: string;
+    contents: string | null;
+    llmAnalysis: NonNullable<PackageVersionDetail["version"]>["llmAnalysis"] | null;
+  };
+};
 
 export type PackageVersionDetail = {
   package: {
@@ -533,8 +540,12 @@ export async function fetchPluginCatalog(params: {
   };
 }
 
-export async function fetchPackageDetail(name: string): Promise<PackageDetailResponse> {
+export async function fetchPackageDetail(
+  name: string,
+  view?: "template-detail",
+): Promise<PackageDetailResponse> {
   const url = await packageApiUrl(`${ApiRoutes.packages}/${encodeURIComponent(name)}`);
+  if (view) url.searchParams.set("view", view);
   const response = await packageFetch(url, "application/json");
   if (response.status === 404) {
     return { package: null, owner: null };

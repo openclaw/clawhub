@@ -352,7 +352,25 @@
   }
 }
 
+.template-skeleton-install-mobile {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .template-detail-skeleton .animate-pulse {
+    animation: none;
+  }
+}
+
 @media (max-width: 900px) {
+  .template-skeleton-install-mobile {
+    display: block;
+  }
+
+  .template-skeleton-install-desktop {
+    display: none;
+  }
+
   .template-detail-page {
     padding: 36px 20px 48px;
   }
