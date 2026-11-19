@@ -5,12 +5,12 @@ import sharp from "sharp";
 import { internalAction } from "../_generated/server";
 import {
   MAX_SKILL_PRESENTATION_ICON_BYTES,
+  MAX_SKILL_PRESENTATION_ICON_PIXELS,
   validateSkillPresentationIcon,
 } from "./skillPresentation";
 import { staticTemplateAvatarSvg } from "./templateAvatarArtworkSvg";
 
 type AvatarFormat = "png" | "jpeg" | "webp" | "gif" | "svg";
-const MAX_INPUT_PIXELS = 2048 * 2048;
 const OUTPUT_SIDE = 256;
 
 function isAnimatedPng(bytes: Buffer) {
@@ -30,7 +30,9 @@ export async function renderTemplateAvatarPng(
   try {
     let input = Buffer.from(bytes);
     if (format === "svg") {
-      input = Buffer.from(staticTemplateAvatarSvg(input, MAX_INPUT_PIXELS, OUTPUT_SIDE));
+      input = Buffer.from(
+        staticTemplateAvatarSvg(input, MAX_SKILL_PRESENTATION_ICON_PIXELS, OUTPUT_SIDE),
+      );
     } else if (format === "gif") {
       if (!["GIF87a", "GIF89a"].includes(input.toString("latin1", 0, 6))) return null;
     } else {
@@ -40,7 +42,7 @@ export async function renderTemplateAvatarPng(
     }
     const image = sharp(input, {
       failOn: "warning",
-      limitInputPixels: MAX_INPUT_PIXELS,
+      limitInputPixels: MAX_SKILL_PRESENTATION_ICON_PIXELS,
       limitInputChannels: 4,
     });
     const meta = await image.metadata();
@@ -49,7 +51,7 @@ export async function renderTemplateAvatarPng(
       (meta.pages ?? 1) !== 1 ||
       !meta.width ||
       !meta.height ||
-      meta.width * meta.height > MAX_INPUT_PIXELS
+      meta.width * meta.height > MAX_SKILL_PRESENTATION_ICON_PIXELS
     )
       return null;
     const png = await image
