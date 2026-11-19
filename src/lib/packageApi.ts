@@ -63,6 +63,8 @@ export type PackageListItem<
 };
 
 export type PackageDetailResponse = ApiV1PackageResponse & {
+  /** Optional wire field. A present but invalid display projection must fail closed. */
+  templateInventory?: unknown;
   /** Opt-in exact-release projection. Older registries return ordinary metadata. */
   templateRelease?: {
     version: string;
@@ -603,7 +605,7 @@ export async function fetchPluginCatalog(params: {
 
 export async function fetchPackageDetail(
   name: string,
-  view?: "template-detail",
+  view?: "template-detail" | "template-inventory",
 ): Promise<PackageDetailResponse> {
   const url = await packageApiUrl(`${ApiRoutes.packages}/${encodeURIComponent(name)}`);
   if (view) url.searchParams.set("view", view);

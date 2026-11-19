@@ -17,9 +17,11 @@ import {
 import {
   parseTemplateDocument,
   templateWorkspaceContents,
+  workspaceContentsFromDestinations,
   type TemplateWorkspaceContents,
   type TemplateWorkspaceEntry,
 } from "../lib/templateDetail";
+import type { TemplateDisplayInventory } from "../lib/templateDisplayInventory";
 import {
   buildTemplateInstallRef,
   buildTemplateSecurityAuditHref,
@@ -32,6 +34,7 @@ import { SidebarMetadata } from "./SidebarMetadata";
 import { formatOpenClawPrompt } from "./skillDetailUtils";
 import { InstallCommandCard } from "./SkillInstallSurface";
 import type { LlmAnalysis } from "./SkillSecurityScanResults";
+import { TemplateReleaseInventory } from "./TemplateReleaseInventory";
 import { UserBadge } from "./UserBadge";
 import "./template-detail.css";
 
@@ -41,27 +44,65 @@ type Package = NonNullable<PackageDetailResponse["package"]>;
 
 export function TemplateDetailPage({
   detail,
-  contents,
+  contents: suppliedContents,
+  inventory: display,
   fallbackOwner,
   llmAnalysis,
 }: {
   detail: PackageDetailResponse;
   contents: string | null;
+  inventory?: TemplateDisplayInventory;
   fallbackOwner: string;
   llmAnalysis?: LlmAnalysis | null;
 }) {
   const pkg = detail.package!;
+  const [documentResult, setDocumentResult] = useState<{
+    contents: string | null;
+    failed?: boolean;
+  }>();
+  const [documentAttempt, setDocumentAttempt] = useState(0);
+  const manifestPath = display?.manifestPath,
+    version = display?.version;
+  useEffect(() => {
+    if (!version || !manifestPath) return undefined;
+    let active = true;
+    void fetchPackageFile(pkg.name, manifestPath, version).then(
+      (raw) => {
+        if (active) setDocumentResult({ contents: raw });
+      },
+      () => {
+        if (active) setDocumentResult({ contents: null, failed: true });
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [pkg.name, manifestPath, version, documentAttempt]);
+  const documentLoading = Boolean(display) && !documentResult;
+  const contents = display ? (documentResult?.contents ?? null) : suppliedContents;
   const isMobileDetailLayout = useMediaQuery("(max-width: 900px)");
   const { markdown, manifest } = useMemo(() => parseTemplateDocument(contents), [contents]);
   const [activeTab, setActiveTab] = useState<TemplateTab>("CLAW.md");
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const id = useId();
-  const summary = pkg.templateManifestSummary;
-  const inventory =
-    pkg.templateInventory ?? (manifest ? templateDependencyInventory(manifest) : null);
+  const summary = display?.templateManifestSummary ?? pkg.templateManifestSummary;
+  const inventory: TemplateDependencyInventory | null = display
+    ? [
+        ...display.contents.skills.map((row) => ({ ...row, kind: "skill" as const })),
+        ...display.contents.integrations.filter((row) => row.kind === "plugin"),
+      ]
+    : (pkg.templateInventory ?? (manifest ? templateDependencyInventory(manifest) : null));
   const workspaceContents = useMemo(
-    () => (manifest ? templateWorkspaceContents(manifest) : null),
-    [manifest],
+    () =>
+      display
+        ? workspaceContentsFromDestinations(
+            display.contents.instructions.map((row) => row.name),
+            manifest?.agent.heartbeat?.every,
+          )
+        : manifest
+          ? templateWorkspaceContents(manifest)
+          : null,
+    [display, manifest],
   );
   // Before the registry assigns a category, show only what CLAW.md can assign: its first
   // declared slug, and only when that is in the current taxonomy.
@@ -74,9 +115,13 @@ export function TemplateDetailPage({
   // Historical summaries retain profile counts even when CLAW.md alone still parses.
   const retiredProfile = (summary?.profiles?.count ?? 0) > 0;
   const supportedManifest = Boolean(manifest) && !retiredProfile;
-  const ready = supportedManifest && isTemplateReadyToAdd(scanStatus) && Boolean(pkg.latestVersion);
+  const ready =
+    supportedManifest &&
+    isTemplateReadyToAdd(scanStatus) &&
+    (!display || isTemplateReadyToAdd(display.security.trust.scanStatus)) &&
+    Boolean(pkg.latestVersion);
   const manifestWarning =
-    !supportedManifest && pkg.latestVersion
+    !documentLoading && !documentResult?.failed && !supportedManifest && pkg.latestVersion
       ? retiredProfile
         ? "This release includes retired Template profiles and cannot be added."
         : contents === null
@@ -140,6 +185,9 @@ export function TemplateDetailPage({
         <div className="template-detail-layout">
           <div className="template-detail-main">
             {isMobileDetailLayout ? installSurface : null}
+            {display && workspaceContents ? (
+              <TemplateReleaseInventory inventory={display} workspace={workspaceContents} />
+            ) : null}
             <section className="template-detail-contents" aria-label="Template contents">
               <div className="template-detail-tabs" role="tablist" aria-label="Template contents">
                 {tabs.map((tab, index) => (
@@ -185,7 +233,22 @@ export function TemplateDetailPage({
                   {activeTab === tab ? (
                     tab === "CLAW.md" ? (
                       <>
-                        {markdown ? (
+                        {documentLoading ? (
+                          <p role="status">Loading Template instructions…</p>
+                        ) : documentResult?.failed ? (
+                          <p role="alert">
+                            Could not load Template instructions.{" "}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDocumentResult(undefined);
+                                setDocumentAttempt((n) => n + 1);
+                              }}
+                            >
+                              Try again
+                            </button>
+                          </p>
+                        ) : markdown ? (
                           <MarkdownPreview className="template-detail-markdown">
                             {markdown}
                           </MarkdownPreview>
@@ -203,7 +266,7 @@ export function TemplateDetailPage({
                           </details>
                         ) : null}
                       </>
-                    ) : !supportedManifest || !manifest ? (
+                    ) : !display && (!supportedManifest || !manifest) ? (
                       <ContentMessage>
                         The manifest is unavailable in the current Template format. See the original
                         CLAW.md and migration guidance before asking the publisher for a new
@@ -222,10 +285,17 @@ export function TemplateDetailPage({
                     ) : tab === "Automations" ? (
                       <TemplateAutomations
                         manifest={manifest}
+                        schedules={display?.contents.automations}
                         heartbeat={workspaceContents?.heartbeat ?? null}
                       />
                     ) : (
-                      <TemplateWorkspace manifest={manifest} pkg={pkg} markdown={markdown} />
+                      <TemplateWorkspace
+                        manifest={manifest}
+                        projected={display?.contents.instructions}
+                        pkg={pkg}
+                        markdown={markdown}
+                        documentLoading={documentLoading}
+                      />
                     )
                   ) : null}
                 </div>
@@ -249,8 +319,9 @@ export function TemplateDetailPage({
                         pkg.latestVersion,
                       )!}
                       llmAnalysis={llmAnalysis}
-                      githubScanStatus="Unavailable"
+                      githubScanStatus={display?.security.verdict ?? "Unavailable"}
                       description={
+                        display?.security.overview ||
                         llmAnalysis?.summary ||
                         "No completed security audit is available for this release."
                       }
@@ -394,16 +465,27 @@ function TemplatePackages({
 
 function TemplateAutomations({
   manifest,
+  schedules,
   heartbeat,
 }: {
-  manifest: TemplateManifest;
+  manifest: TemplateManifest | null;
+  schedules?: TemplateDisplayInventory["contents"]["automations"];
   heartbeat: TemplateWorkspaceContents["heartbeat"];
 }) {
-  if (!manifest.automations?.length && !heartbeat)
+  if (!(schedules?.length || manifest?.automations?.length) && !heartbeat)
     return <ContentMessage>No automations are included in this Template.</ContentMessage>;
   return (
     <ul className="template-detail-entry-list" aria-label="Included automations">
-      {(manifest.automations ?? []).map((job) => (
+      {!manifest &&
+        schedules?.map((job, i) => (
+          <li key={job.name + ":" + i}>
+            <strong>{job.name}</strong>
+            <span className="template-detail-entry-meta">
+              {job.enabled ? "Enabled" : "Paused"} · <code>{job.schedule}</code> · {job.timezone}
+            </span>
+          </li>
+        ))}
+      {(manifest?.automations ?? []).map((job) => (
         <li key={job.id}>
           <strong>{job.name || job.id}</strong>
           <span className="template-detail-entry-meta">
@@ -437,21 +519,35 @@ function TemplateAutomations({
 
 function TemplateWorkspace({
   manifest,
+  projected,
   pkg,
   markdown,
+  documentLoading,
 }: {
-  manifest: TemplateManifest;
+  manifest: TemplateManifest | null;
+  projected?: TemplateDisplayInventory["contents"]["instructions"];
+  documentLoading?: boolean;
   pkg: Package;
   markdown: string | null;
 }) {
-  const files: Array<{ path: string; source: string; contents?: string }> = [
-    ...Object.entries(manifest.workspace?.bootstrapFiles ?? {}).map(([path, entry]) => ({
-      path,
-      source: entry.source,
-    })),
-    ...(manifest.workspace?.files ?? []),
-  ];
-  if (markdown?.trim() && !files.some((file) => file.path.toUpperCase() === "SOUL.MD")) {
+  const files: Array<{ path: string; source: string; contents?: string }> = projected
+    ? projected.map((row) => ({
+        path: row.name,
+        source: row.source,
+        ...(row.source === "CLAW.md#body" && markdown ? { contents: markdown } : {}),
+      }))
+    : [
+        ...Object.entries(manifest?.workspace?.bootstrapFiles ?? {}).map(([path, entry]) => ({
+          path,
+          source: entry.source,
+        })),
+        ...(manifest?.workspace?.files ?? []),
+      ];
+  if (
+    !projected &&
+    markdown?.trim() &&
+    !files.some((file) => file.path.toUpperCase() === "SOUL.MD")
+  ) {
     files.unshift({ path: "SOUL.md", source: "CLAW.md body", contents: markdown });
   }
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
@@ -501,6 +597,12 @@ function TemplateWorkspace({
                       {selectedFile.contents}
                     </MarkdownPreview>
                   </section>
+                ) : selectedFile?.source === "CLAW.md#body" ? (
+                  <p id={previewId} role="status">
+                    {documentLoading
+                      ? "Loading Template instructions…"
+                      : "The release document body is unavailable."}
+                  </p>
                 ) : selectedFile && pkg.latestVersion ? (
                   <WorkspaceFilePreview
                     key={selectedFile.source}

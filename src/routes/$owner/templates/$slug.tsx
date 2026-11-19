@@ -10,6 +10,10 @@ import {
 } from "../../../lib/packageApi";
 import { getClawHubSiteUrl } from "../../../lib/site";
 import { getTemplateManifestPath } from "../../../lib/templateDetail";
+import {
+  requireCurrentTemplateInventory,
+  type TemplateDisplayInventory,
+} from "../../../lib/templateDisplayInventory";
 import { loadTemplatePackage } from "../../../lib/templatePackage";
 import {
   buildTemplateDetailHref,
@@ -18,6 +22,7 @@ import {
 
 type TemplateDetailData = {
   detail: PackageDetailResponse;
+  inventory?: TemplateDisplayInventory;
   contents: string | null;
   llmAnalysis: NonNullable<PackageVersionDetail["version"]>["llmAnalysis"] | null;
 };
@@ -32,7 +37,12 @@ export async function loadPublisherTemplate(params: {
   owner: string;
   slug: string;
 }): Promise<TemplateDetailData> {
-  const { templateRelease, ...detail } = await loadTemplatePackage(params, "template-detail");
+  const response = await loadTemplatePackage(params, "template-inventory");
+  const { templateInventory, templateRelease, ...detail } = response;
+  if ("templateInventory" in response) {
+    const inventory = requireCurrentTemplateInventory(templateInventory, detail, params);
+    return { detail, inventory, contents: null, llmAnalysis: null };
+  }
   // Treat an authoritative null preview as unavailable, not a trigger to read other files.
   if (
     templateRelease &&
@@ -142,11 +152,14 @@ function TemplateDetailError() {
 
 function PublisherTemplatePage() {
   const params = Route.useParams();
-  const { detail, contents, llmAnalysis } = Route.useLoaderData() as TemplateDetailData;
+  const { detail, contents, llmAnalysis, inventory } = Route.useLoaderData() as TemplateDetailData;
   return (
     <TemplateDetailPage
-      key={detail.package!.name + ":" + detail.package!.latestVersion}
+      key={[detail.package!.name, detail.package!.latestVersion, inventory?.artifact.sha256].join(
+        ":",
+      )}
       detail={detail}
+      inventory={inventory}
       contents={contents}
       llmAnalysis={llmAnalysis}
       fallbackOwner={params.owner}

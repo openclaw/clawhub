@@ -55,11 +55,107 @@ function packageDetail(family: "template" | "code-plugin" = "template"): Package
   } as PackageDetailResponse;
 }
 
+function publicInventory() {
+  const sha256 = "a".repeat(64),
+    npmIntegrity = "sha512-" + "A".repeat(86) + "==";
+  return {
+    schemaVersion: 1 as const,
+    packageName: "@maker/release-brief",
+    version: "0.1.0",
+    artifact: { kind: "npm-pack" as const, sha256, npmIntegrity },
+    templateManifestSummary: packageDetail().package!.templateManifestSummary!,
+    manifestPath: "template/CLAW.md",
+    icon: null,
+    contents: {
+      instructions: [
+        { name: "skills/review-notes/SKILL.md", source: "workspace/skills/review-notes/SKILL.md" },
+      ],
+      skills: [
+        { name: "release-triage", source: "bundled" as const, path: "skills/release-triage" },
+      ],
+      integrations: [
+        {
+          kind: "plugin" as const,
+          name: "release-watcher",
+          source: "bundled" as const,
+          path: "plugins/release-watcher",
+        },
+      ],
+      automations: [
+        { name: "Weekly report", enabled: false, schedule: "0 17 * * 5", timezone: "UTC" },
+      ],
+    },
+    security: {
+      package: { name: "@maker/release-brief", family: "template" as const },
+      release: {
+        version: "0.1.0",
+        artifactKind: "npm-pack" as const,
+        artifactSha256: sha256,
+        npmIntegrity,
+      },
+      verdict: "benign",
+      overview: "Published audit",
+      securityAuditUrl: "https://example.invalid/audit",
+      trust: {
+        blockedFromDownload: false,
+        pending: false,
+        stale: false,
+        reasons: [],
+        scanStatus: "clean" as const,
+      },
+    },
+  };
+}
+
 describe("publisher Template detail route loader", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.fetchPackageVersion.mockResolvedValue(null);
     mocks.fetchPackageFile.mockResolvedValue("# Release Brief");
+  });
+
+  it("returns exact, digest-bound inventory without reading preview bytes", async () => {
+    const detail = packageDetail();
+    const templateInventory = publicInventory();
+    mocks.fetchPackageDetail.mockResolvedValue({ ...detail, templateInventory });
+    const loaded = await loadPublisherTemplate({ owner: "maker", slug: "release-brief" });
+    expect(loaded.inventory?.contents.skills[0]?.name).toBe("release-triage");
+    expect(loaded.contents).toBeNull();
+    expect(mocks.fetchPackageFile).not.toHaveBeenCalled();
+    expect(mocks.fetchPackageVersion).not.toHaveBeenCalled();
+  });
+
+  it.each(["digest", "version", "owner", "hold", "path", "partial"])(
+    "does not use or refetch an invalid %s projection",
+    async (problem) => {
+      const detail = packageDetail();
+      const value = publicInventory();
+      if (problem === "digest") value.security.release.artifactSha256 = "b".repeat(64);
+      if (problem === "version") value.version = "0.0.1";
+      if (problem === "owner") value.packageName = "@unrelated/release-brief";
+      if (problem === "hold") value.security.trust.blockedFromDownload = true;
+      if (problem === "path") value.manifestPath = "../not-mine/CLAW.md";
+      if (problem === "partial") Object.assign(value.contents, { instructions: undefined });
+      mocks.fetchPackageDetail.mockResolvedValue({ ...detail, templateInventory: value });
+      await expect(
+        loadPublisherTemplate({ owner: "maker", slug: "release-brief" }),
+      ).rejects.toThrow(/inventory/i);
+      expect(mocks.fetchPackageFile).not.toHaveBeenCalled();
+      expect(mocks.fetchPackageVersion).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects a present but invalid inventory without falling back to file or audit reads", async () => {
+    mocks.fetchPackageDetail.mockResolvedValue({ ...packageDetail(), templateInventory: null });
+    await expect(loadPublisherTemplate({ owner: "maker", slug: "release-brief" })).rejects.toThrow(
+      /inventory/i,
+    );
+    expect(mocks.fetchPackageDetail).toHaveBeenCalledWith(
+      "@maker/release-brief",
+      "template-inventory",
+    );
+    expect(mocks.fetchPackageFile).not.toHaveBeenCalled();
+    expect(mocks.fetchPackageVersion).not.toHaveBeenCalled();
   });
 
   it("uses a single authorized package snapshot without fetching unrelated file bodies", async () => {
@@ -73,7 +169,7 @@ describe("publisher Template detail route loader", () => {
     expect(loaded.llmAnalysis).toEqual(llmAnalysis);
     expect(mocks.fetchPackageDetail).toHaveBeenCalledWith(
       "@maker/release-brief",
-      "template-detail",
+      "template-inventory",
     );
     expect(mocks.fetchPackageFile).not.toHaveBeenCalled();
     expect(mocks.fetchPackageVersion).not.toHaveBeenCalled();
@@ -177,7 +273,7 @@ describe("publisher Template detail route loader", () => {
     expect(loaded.detail.package?.family).toBe("template");
     expect(mocks.fetchPackageDetail).toHaveBeenCalledWith(
       "@maker/release-brief",
-      "template-detail",
+      "template-inventory",
     );
   });
 
@@ -235,8 +331,8 @@ describe("publisher Template route invariants", () => {
     const loaded = await loadPublisherTemplate({ owner: "maker", slug: "release-brief" });
     expect(loaded.detail.package?.name).toBe("release-brief");
     expect(mocks.fetchPackageDetail.mock.calls).toEqual([
-      ["@maker/release-brief", "template-detail"],
-      ["release-brief", "template-detail"],
+      ["@maker/release-brief", "template-inventory"],
+      ["release-brief", "template-inventory"],
     ]);
     expect(mocks.fetchPackageFile).toHaveBeenCalledWith("release-brief", "CLAW.md", "0.1.0");
   });
@@ -392,6 +488,51 @@ describe("Template detail composition and interactions", () => {
     vi.resetAllMocks();
     mocks.fetchPackageVersion.mockResolvedValue(null);
     mocks.fetchPackageFile.mockResolvedValue("# Workspace instructions\n\nActual file contents.");
+  });
+
+  it("paints named release metadata and navigates workspace mappings while the opened CLAW.md is pending", async () => {
+    const detail = packageDetail();
+    detail.package!.scanStatus = "clean";
+    let finish!: (value: string) => void;
+    const pending = new Promise<string>((resolve) => {
+      finish = resolve;
+    });
+    mocks.fetchPackageFile.mockImplementation((_name, path) =>
+      path === "template/CLAW.md" ? pending : Promise.resolve("# Actual workspace preview"),
+    );
+    mocks.fetchPackageDetail.mockResolvedValue({ ...detail, templateInventory: publicInventory() });
+    const loaded = await loadPublisherTemplate({ owner: "maker", slug: "release-brief" });
+    render(<TemplateDetailPage {...loaded} fallbackOwner="maker" />);
+    const included = screen.getByRole("region", { name: "Included in this release" });
+    for (const name of ["release-triage", "review-notes", "release-watcher", "Weekly report"])
+      expect(included.textContent).toContain(name);
+    expect(included.textContent).toContain("0 17 * * 5");
+    expect(included.textContent).toContain("UTC");
+    expect(mocks.fetchPackageFile.mock.calls).toEqual([
+      ["@maker/release-brief", "template/CLAW.md", "0.1.0"],
+    ]);
+    expect(
+      screen
+        .queryByRole("button", { name: "Copy template install command" })
+        ?.hasAttribute("disabled") ?? true,
+    ).toBe(true);
+    fireEvent.click(screen.getByRole("tab", { name: "Workspace files" }));
+    const row = screen.getByRole("button", { name: "skills/review-notes/SKILL.md" });
+    expect(mocks.fetchPackageFile).toHaveBeenCalledTimes(1);
+    fireEvent.click(row);
+    expect(await screen.findByRole("heading", { name: "Actual workspace preview" })).toBeTruthy();
+    expect(mocks.fetchPackageFile).toHaveBeenLastCalledWith(
+      "@maker/release-brief",
+      "workspace/skills/review-notes/SKILL.md",
+      "0.1.0",
+    );
+    await act(async () => finish(templateContents));
+    fireEvent.click(screen.getByRole("tab", { name: "CLAW.md" }));
+    expect(
+      screen
+        .getByRole("button", { name: "Copy template install command" })
+        .hasAttribute("disabled"),
+    ).toBe(false);
   });
 
   it("uses one mobile command fallback without duplicating the rail card", () => {

@@ -4,7 +4,7 @@ import { normalizePublisherHandle, packageNameFromPublisherTemplateRoute } from 
 
 export async function loadTemplatePackage(
   params: { owner: string; slug: string },
-  view?: "template-detail",
+  view?: "template-detail" | "template-inventory",
 ) {
   const requestedName = packageNameFromPublisherTemplateRoute(params.owner, params.slug);
   if (!requestedName) throw notFound();
