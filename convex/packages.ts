@@ -2974,13 +2974,26 @@ export const getVersionSecurityByNameForViewerInternal = internalQuery({
     const publicDownloadBlocked =
       isPackageBlockedFromPublic(publicPackage.scanStatus) &&
       !(await viewerCanAccessPackageOwner(ctx, pkg, args.viewerUserId));
+    const family = toPublicPackageFamily(resolvePackageReleaseFamily(pkg.family, release));
+    // Only an unscoped Template needs its owner to address the publisher-scoped
+    // audit page; every other read keeps this install-path query owner-free.
+    const ownerHandle =
+      family === "template" && !publicPackage.name.startsWith("@")
+        ? ((
+            await getOwnerPublisher(ctx, {
+              ownerPublisherId: pkg.ownerPublisherId,
+              ownerUserId: pkg.ownerUserId,
+            })
+          )?.handle ?? null)
+        : null;
     return {
       package: {
         ...publicPackage,
-        family: toPublicPackageFamily(resolvePackageReleaseFamily(pkg.family, release)),
+        family,
         publicDownloadBlocked,
       },
       version: toPublicPackageRelease(release, pkg.family),
+      ownerHandle,
     };
   },
 });
