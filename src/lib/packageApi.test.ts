@@ -933,14 +933,88 @@ describe("fetchTemplateCatalog", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("retries the same ranked read when its search index is still starting", async () => {
+  it("does not retry or silently fall back on an ordinary Convex function error in HTTP 200", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json({
+        status: "error",
+        errorMessage: "[Request ID: test] Server Error",
+        logLines: [],
+      }),
+    );
+    await expect(
+      fetchTemplateCatalog({ q: "claw", signal: new AbortController().signal }),
+    ).rejects.toThrow("Server Error");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("continues a positively identified legacy category page without switching its sort order", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        Response.json({
+          status: "error",
+          errorMessage: "Could not find public function for 'templateCatalogPage:get'.",
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          status: "success",
+          value: { page: [], isDone: false, continueCursor: "old-next" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({ status: "success", value: { page: [], isDone: true, continueCursor: "" } }),
+      );
+    const params = { category: "travel", signal: new AbortController().signal };
+    const first = await fetchTemplateCatalog(params);
+    expect(await fetchTemplateCatalog({ ...params, cursor: first.nextCursor! })).toEqual({
+      items: [],
+      nextCursor: null,
+    });
+    const calls = fetchMock.mock.calls.map(([, opts]) => JSON.parse(String(opts?.body)));
+    expect(calls.map((c) => c.path)).toEqual([
+      "templateCatalogPage:get",
+      "packages:listPublicPage",
+      "packages:listPublicPage",
+    ]);
+    expect(calls[2].args[0].paginationOpts.cursor).toBe("old-next");
+  });
+  it("supports the older search only on first page of a positively missing function", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    const missing = () =>
+      Response.json({
+        status: "error",
+        errorMessage:
+          "Could not find public function for 'templateCatalogPage:get'. Did you forget to run npx convex dev or npx convex deploy?",
+      });
+    const item = { name: "@maker/trip", family: "template" };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(missing())
+      .mockResolvedValueOnce(
+        Response.json({ status: "success", value: [{ score: 1, package: item }] }),
+      );
+    expect(await fetchTemplateCatalog({ q: "trip", signal: new AbortController().signal })).toEqual(
+      { items: [item], nextCursor: null },
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    fetchMock.mockResolvedValueOnce(missing());
+    await expect(
+      fetchTemplateCatalog({ q: "trip", cursor: "frozen", signal: new AbortController().signal }),
+    ).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("retries the same ranked read after a short transport-level unavailability", async () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
     const item = { name: "@maker/brief", family: "template" };
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(new Response("Search indexes bootstrapping", { status: 503 }))
       .mockResolvedValueOnce(
-        Response.json({ status: "success", value: [{ score: 1, package: item }] }),
+        Response.json({ status: "success", value: { items: [item], nextCursor: null } }),
       );
     expect(
       await fetchTemplateCatalog({ q: "brief", signal: new AbortController().signal }),
@@ -1007,13 +1081,13 @@ describe("fetchTemplateCatalog", () => {
 
   it.each([
     { q: undefined, path: "packages:listPublicPage" },
-    { q: "  release  ", path: "packages:searchPublic" },
+    { q: "  release  ", path: "templateCatalogPage:get" },
   ])("reads one page of summaries using only the anonymous $path query", async ({ q, path }) => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
     vi.stubEnv("VITE_CONVEX_SITE_URL", "");
     const item = { name: "@maker/release", family: "template" };
     const value = q
-      ? [{ score: 1, package: item }]
+      ? { items: [item], nextCursor: "next" }
       : { page: [item], isDone: false, continueCursor: "next" };
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
@@ -1022,7 +1096,7 @@ describe("fetchTemplateCatalog", () => {
 
     const result = await fetchTemplateCatalog({
       q,
-      category: "engineering",
+      category: q ? "engineering" : undefined,
       cursor: "pkgpage:next",
       signal,
     });
@@ -1034,17 +1108,13 @@ describe("fetchTemplateCatalog", () => {
     const { args, path: actualPath } = JSON.parse(init.body);
     expect(actualPath).toBe(path);
     expect(args).toEqual([
-      {
-        family: "template",
-        category: "engineering",
-        ...(q
-          ? { query: "release", limit: 20 }
-          : { paginationOpts: { cursor: "pkgpage:next", numItems: 20 } }),
-      },
+      q
+        ? { category: "engineering", q: "release", limit: 20, cursor: "pkgpage:next" }
+        : { family: "template", paginationOpts: { cursor: "pkgpage:next", numItems: 20 } },
     ]);
     expect(init).toMatchObject({ signal, credentials: "omit" });
     expect(new Headers(init?.headers).has("Authorization")).toBe(false);
-    expect(result).toEqual({ items: [item], nextCursor: q ? null : "next" });
+    expect(result).toEqual({ items: [item], nextCursor: "next" });
   });
 });
 

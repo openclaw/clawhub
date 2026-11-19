@@ -141,7 +141,7 @@ function TemplatesIndex() {
             <TemplateResults
               key={JSON.stringify([search.q, search.category])}
               initialPage={initialPage}
-              category={search.category}
+              search={search}
             />
           )}
         </div>
@@ -152,10 +152,10 @@ function TemplatesIndex() {
 
 function TemplateResults({
   initialPage,
-  category,
+  search: { q, category },
 }: {
   initialPage: CatalogPage;
-  category: CatalogSearch["category"];
+  search: CatalogSearch;
 }) {
   const [more, setMore] = useState<{ initialPage: CatalogPage; page: CatalogPage }>();
   const [loadError, setLoadError] = useState<string>();
@@ -181,7 +181,7 @@ function TemplateResults({
     setLoading(true);
     setLoadError(undefined);
     try {
-      const result = await loadCatalogPage({ category }, controller.signal, cursor);
+      const result = await loadCatalogPage({ q, category }, controller.signal, cursor);
       if (controller.signal.aborted) return;
       if ("error" in result) {
         setLoadError(result.error);
@@ -199,7 +199,7 @@ function TemplateResults({
         setLoading(false);
       }
     }
-  }, [category, cursor, initialPage, page]);
+  }, [q, category, cursor, initialPage, page]);
 
   useEffect(() => {
     const target = sentinel.current;

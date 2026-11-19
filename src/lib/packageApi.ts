@@ -446,6 +446,32 @@ export async function fetchTemplateCatalog(params: {
   });
   const filters = { family: "template" as const, category: params.category };
   const query = params.q?.trim();
+  const legacyPrefix = "legacy-template-category:" + params.category + ":";
+  const legacyCategoryPage = !query && params.category && params.cursor?.startsWith(legacyPrefix);
+  if ((query || params.category) && !legacyCategoryPage) {
+    try {
+      const page = await readRankedTemplates(
+        () =>
+          client.query(api.templateCatalogPage.get, {
+            q: query || undefined,
+            category: params.category,
+            cursor: params.cursor,
+            limit: TEMPLATE_PAGE_SIZE,
+          }),
+        params.signal,
+      );
+      return { items: page.items.map(requireTemplateSummary), nextCursor: page.nextCursor };
+    } catch (error) {
+      // Only a positively absent capability can use the older registry. Never
+      // reinterpret an invalid ranked cursor as a new first page.
+      if (
+        params.cursor ||
+        !(error instanceof Error) ||
+        !error.message.includes("Could not find public function for 'templateCatalogPage:get'")
+      )
+        throw error;
+    }
+  }
   if (query) {
     const results = await readRankedTemplates(
       () =>
@@ -463,11 +489,16 @@ export async function fetchTemplateCatalog(params: {
   }
   const page = await client.query(api.packages.listPublicPage, {
     ...filters,
-    paginationOpts: { cursor: params.cursor ?? null, numItems: TEMPLATE_PAGE_SIZE },
+    paginationOpts: {
+      cursor: legacyCategoryPage
+        ? params.cursor!.slice(legacyPrefix.length)
+        : (params.cursor ?? null),
+      numItems: TEMPLATE_PAGE_SIZE,
+    },
   });
   return {
     items: page.page.map(requireTemplateSummary),
-    nextCursor: page.isDone ? null : page.continueCursor,
+    nextCursor: page.isDone ? null : (params.category ? legacyPrefix : "") + page.continueCursor,
   };
 }
 
