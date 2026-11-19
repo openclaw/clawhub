@@ -33,7 +33,10 @@ export async function sha256Base64(bytes: Uint8Array) {
   return toBase64(await digestBytes("SHA-256", bytes));
 }
 
-export async function parseClawPack(bytes: Uint8Array): Promise<ParsedClawPack> {
+export async function parseClawPack(
+  bytes: Uint8Array,
+  options?: { maxTarBytes: number },
+): Promise<ParsedClawPack> {
   const [sha256, sha1, sha512] = await Promise.all([
     digestBytes("SHA-256", bytes),
     digestBytes("SHA-1", bytes),
@@ -41,7 +44,7 @@ export async function parseClawPack(bytes: Uint8Array): Promise<ParsedClawPack> 
   ]);
 
   const { packageName, packageVersion, entries, packageJson, pluginManifest } =
-    parseClawPackContents(bytes);
+    parseClawPackContents(bytes, options);
 
   return {
     artifactSha256: toHex(sha256),

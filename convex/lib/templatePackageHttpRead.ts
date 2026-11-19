@@ -73,6 +73,10 @@ export async function readTemplatePackageHttp(
   if (!rate.ok) return rate.response;
   const name = tryNormalizePackageName(route.packageName);
   if (!name) return text("Package not found", 404, rate.headers);
+  if (metadata && new URL(request.url).searchParams.get("view") === "template-inventory") {
+    const { templateInventoryViewResponse } = await import("./templateInventoryView");
+    return templateInventoryViewResponse(ctx, request, name, rate.headers);
+  }
   const snapshot = await readPackageDetailForRequest(
     ctx,
     request,

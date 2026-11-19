@@ -186,6 +186,7 @@ import {
   isPackageBlockedFromPublic,
   normalizePackageScanStatus,
   resolvePackageReleaseScanStatus,
+  getPackageDownloadSecurityBlock,
 } from "./lib/packageSecurity";
 import { insertPackageInstallStatEvent } from "./lib/packageStatEvents";
 import {
@@ -2591,6 +2592,75 @@ export const getByNameForStaff = query({
             at: highlighted.at,
           }
         : null,
+    };
+  },
+});
+
+/** Display-only public read. Never inherit manager access from the request. Resolve
+ * the effective latest scan, exact release, moderation and tags in one snapshot. */
+export const getPublicTemplateInventoryInternal = internalQuery({
+  args: { name: v.string(), version: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const snapshot = await readPackageSnapshotForViewer(ctx, { name: args.name });
+    if (
+      !snapshot ||
+      snapshot.pkg.family !== "claw" ||
+      snapshot.pkg.channel === "private" ||
+      !snapshot.owner?.handle ||
+      isPackageBlockedFromPublic(snapshot.publicPackage.scanStatus)
+    )
+      return null;
+    const { pkg, latestRelease, publicPackage, owner } = snapshot;
+    const release =
+      args.version === undefined || args.version === latestRelease?.version
+        ? latestRelease
+        : await selectPublishedPackageRelease(ctx, pkg, { version: args.version });
+    if (
+      !isPublishedPackageRelease(release, pkg._id) ||
+      (args.version !== undefined && release.version !== args.version)
+    )
+      return null;
+    if (getPackageDownloadSecurityBlock(release)) return { blocked: true as const };
+    const {
+      _id,
+      version,
+      createdAt,
+      icon,
+      artifactKind,
+      clawpackStorageId,
+      clawpackSize,
+      clawpackSha256,
+      npmIntegrity,
+      npmShasum,
+      npmTarballName,
+      sha256hash,
+      llmAnalysis,
+      verification,
+      staticScan,
+      manualModeration,
+    } = release;
+    return {
+      package: publicPackage,
+      owner,
+      tags: await readPublishedPackageTags(ctx, pkg, latestRelease),
+      release: {
+        _id,
+        version,
+        createdAt,
+        icon,
+        artifactKind,
+        clawpackStorageId,
+        clawpackSize,
+        clawpackSha256,
+        npmIntegrity,
+        npmShasum,
+        npmTarballName,
+        sha256hash,
+        llmAnalysis,
+        verification,
+        staticScan,
+        manualModeration,
+      },
     };
   },
 });

@@ -76,6 +76,10 @@
       "types": "./dist/templateManifestSummary.d.ts",
       "default": "./dist/templateManifestSummary.js"
     },
+    "./templatePackage": {
+      "types": "./dist/templatePackage.d.ts",
+      "default": "./dist/templatePackage.js"
+    },
     "./templatePaths": {
       "types": "./dist/templatePaths.d.ts",
       "default": "./dist/templatePaths.js"
