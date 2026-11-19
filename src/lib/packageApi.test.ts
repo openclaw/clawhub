@@ -920,34 +920,66 @@ describe("fetchTemplateCatalog", () => {
     vi.unstubAllEnvs();
   });
 
+  it("honors a rate limit without retrying through the package router", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response("Slow down", { status: 429, headers: { "Retry-After": "12" } }),
+      );
+    await expect(
+      fetchTemplateCatalog({ signal: new AbortController().signal }),
+    ).rejects.toMatchObject({ status: 429, retryAfterSeconds: 12 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not send a cancelled search", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    await expect(
+      fetchTemplateCatalog({ q: "brief", signal: AbortSignal.abort() }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it.each([
-    { q: undefined, path: "/api/v1/packages", cursor: "pkgpage:next" },
-    { q: "  release  ", path: "/api/v1/packages/search", cursor: null },
-  ])("uses anonymous Template-only reads at $path", async ({ q, path, cursor }) => {
+    { q: undefined, path: "packages:listPublicPage" },
+    { q: "  release  ", path: "packages:searchPublic" },
+  ])("reads one page of summaries using only the anonymous $path query", async ({ q, path }) => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
     vi.stubEnv("VITE_CONVEX_SITE_URL", "");
     const item = { name: "@maker/release", family: "template" };
-    const body = q ? { results: [{ package: item }] } : { items: [item], nextCursor: "next" };
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json(body));
+    const value = q
+      ? [{ score: 1, package: item }]
+      : { page: [item], isDone: false, continueCursor: "next" };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(Response.json({ status: "success", value }));
     const signal = new AbortController().signal;
 
     const result = await fetchTemplateCatalog({
       q,
       category: "engineering",
       cursor: "pkgpage:next",
-      limit: 25,
       signal,
     });
 
-    const requestUrl = fetchMock.mock.calls[0]?.[0];
-    if (typeof requestUrl !== "string") throw new Error("Expected a string request URL");
-    const url = new URL(requestUrl);
-    expect(url.pathname).toBe(path);
-    expect(url.searchParams.get("family")).toBe("template");
-    expect(url.searchParams.get("category")).toBe("engineering");
-    expect(url.searchParams.get("q")).toBe(q?.trim() ?? null);
-    expect(url.searchParams.get("cursor")).toBe(cursor);
-    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ signal, credentials: "omit" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe("https://registry.example/api/query");
+    if (typeof init?.body !== "string") throw new Error("Expected a JSON request body");
+    const { args, path: actualPath } = JSON.parse(init.body);
+    expect(actualPath).toBe(path);
+    expect(args).toEqual([
+      {
+        family: "template",
+        category: "engineering",
+        ...(q
+          ? { query: "release", limit: 20 }
+          : { paginationOpts: { cursor: "pkgpage:next", numItems: 20 } }),
+      },
+    ]);
+    expect(init).toMatchObject({ signal, credentials: "omit" });
+    expect(new Headers(init?.headers).has("Authorization")).toBe(false);
     expect(result).toEqual({ items: [item], nextCursor: q ? null : "next" });
   });
 });

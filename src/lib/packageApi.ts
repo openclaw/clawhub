@@ -5,6 +5,7 @@ import type {
   ApiV1PackageResponse,
   ApiV1PackageVersionListResponse,
   PackageCompatibility,
+  PackageFamily,
   PackageEndorAnalysis,
   PluginManifestSummary,
   PackageVerificationSummary,
@@ -12,7 +13,9 @@ import type {
   TemplateManifestSummary,
 } from "clawhub-schema";
 import { ApiRoutes } from "clawhub-schema/routes";
+import { ConvexHttpClient } from "convex/browser";
 import type { Infer } from "convex/values";
+import { api } from "../../convex/_generated/api";
 import type { PublicPackageDocLike } from "../../convex/lib/packageReadProjection";
 import { getPluginBrowseSnapshotKind } from "../../convex/lib/pluginBrowseSnapshot";
 import type { llmAnalysisValidator } from "../../convex/schema";
@@ -22,7 +25,7 @@ import {
   fetchInitialPublicPluginCatalog,
   fetchInitialPublicPluginCategory,
 } from "./publicPluginBrowse";
-import { getRuntimeEnv } from "./runtimeEnv";
+import { getRequiredRuntimeEnv, getRuntimeEnv } from "./runtimeEnv";
 import { getPublicClawHubSiteUrl } from "./site";
 
 export type PackageListItem<
@@ -379,33 +382,50 @@ export async function fetchPackages(params: {
   );
 }
 
+const TEMPLATE_PAGE_SIZE = 20;
+
+function requireTemplateSummary(item: PackageListItem<PackageFamily>): PackageListItem<"template"> {
+  if (item.family !== "template") throw new Error("Unexpected family in Template catalog");
+  return { ...item, family: item.family };
+}
+
 export async function fetchTemplateCatalog(params: {
   q?: string;
   category?: string;
   cursor?: string;
-  limit: number;
   signal: AbortSignal;
 }): Promise<{ items: PackageListItem<"template">[]; nextCursor: string | null }> {
+  params.signal.throwIfAborted();
+  // These public queries use the same catalog implementations as the package HTTP
+  // router, without loading the compatibility router or making another service hop.
+  const client = new ConvexHttpClient(getRequiredRuntimeEnv("VITE_CONVEX_URL"), {
+    fetch: async (input, init) => {
+      const response = await fetch(input, { ...init, signal: params.signal, credentials: "omit" });
+      if (response.status === 429) throw await createPackageApiError(response);
+      return response;
+    },
+  });
+  const filters = { family: "template" as const, category: params.category };
   const query = params.q?.trim();
-  const url = await packageApiUrl(query ? `${ApiRoutes.packages}/search` : ApiRoutes.packages);
-  url.searchParams.set("family", "template");
-  url.searchParams.set("limit", String(params.limit));
-  if (params.category) url.searchParams.set("category", params.category);
   if (query) {
-    url.searchParams.set("q", query);
-    const result = await fetchJson<{ results: Array<{ package: PackageListItem<"template"> }> }>(
-      url,
-      params.signal,
-      "anonymous",
-    );
-    return { items: result?.results.map((entry) => entry.package) ?? [], nextCursor: null };
+    const results = await client.query(api.packages.searchPublic, {
+      ...filters,
+      query,
+      limit: TEMPLATE_PAGE_SIZE,
+    });
+    return {
+      items: results.map((entry) => requireTemplateSummary(entry.package)),
+      nextCursor: null,
+    };
   }
-  if (params.cursor) url.searchParams.set("cursor", params.cursor);
-  const result = await fetchJson<{
-    items: PackageListItem<"template">[];
-    nextCursor: string | null;
-  }>(url, params.signal, "anonymous");
-  return result ?? { items: [], nextCursor: null };
+  const page = await client.query(api.packages.listPublicPage, {
+    ...filters,
+    paginationOpts: { cursor: params.cursor ?? null, numItems: TEMPLATE_PAGE_SIZE },
+  });
+  return {
+    items: page.page.map(requireTemplateSummary),
+    nextCursor: page.isDone ? null : page.continueCursor,
+  };
 }
 
 export async function fetchPluginCatalog(params: {

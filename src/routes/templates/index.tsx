@@ -35,7 +35,6 @@ async function loadCatalogPage(
     return await fetchTemplateCatalog({
       ...search,
       cursor,
-      limit: 25,
       signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
     });
   } catch (error) {
