@@ -706,10 +706,10 @@ describe("Template category backfill report of listings outside the mapping", ()
         });
       }
     });
-    const { unmapped } = await run();
-    expect(unmapped.complete).toBe(false);
-    expect(unmapped.scanned).toBe(500);
-    expect(unmapped.listings).toHaveLength(500);
+    const report = (await run()).unmapped;
+    expect(report.complete).toBe(false);
+    expect(report.scanned).toBe(500);
+    expect(report.listings).toHaveLength(500);
   });
 
   it("ignores a plugin that stores Template-looking categories", async () => {
