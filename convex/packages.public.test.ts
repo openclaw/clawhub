@@ -11606,6 +11606,160 @@ describe("packages public queries", () => {
     expect(publishMutationArgs).not.toHaveProperty("extractedTemplateManifest");
   });
 
+  // The authors' CLAW.md files keep their pre-2026-11-18 category lists. Republishing one
+  // unchanged must succeed and store exactly one category.
+  describe("Template category assignment at publish", () => {
+    async function publishDeclaring(categories: string | undefined) {
+      const artifactSha256 = "a".repeat(64);
+      const storedFiles = new Map<string, string>([
+        [
+          "storage:package",
+          JSON.stringify({
+            name: "demo-claw",
+            version: "1.0.0",
+            openclaw: { template: "CLAW.md" },
+          }),
+        ],
+        [
+          "storage:claw",
+          "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n  name: Demo Template\n" +
+            (categories === undefined ? "" : `categories: ${categories}\n`) +
+            "---\nRun the demo workflow precisely.\n",
+        ],
+      ]);
+      const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+        if (isPackagePublishAttemptArgs(args)) return STAGED_PACKAGE_ATTEMPT;
+        if (args.minimumRole === "publisher") {
+          return { publisherId: "publishers:owner", linkedUserId: "users:owner" };
+        }
+        if (args.family === "claw") {
+          return { ok: true, packageId: "packages:claw", releaseId: "releases:claw-1" };
+        }
+        return null;
+      });
+      const actor = {
+        _id: "users:owner",
+        role: "user",
+        githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+      };
+      const sequentialReads = [null, actor, actor, null, null];
+      const ctx = {
+        runQuery: vi.fn(async (ref: FunctionReference<"query">) => {
+          if (getFunctionName(ref) === "publishers:getByIdInternal") {
+            return {
+              _id: "publishers:owner",
+              kind: "user",
+              handle: "owner",
+              linkedUserId: "users:owner",
+            };
+          }
+          return sequentialReads.shift() ?? null;
+        }),
+        runMutation,
+        scheduler: { runAfter: vi.fn() },
+        storage: {
+          get: vi.fn(async (storageId: string) => {
+            const content = storedFiles.get(storageId);
+            return content === undefined ? null : new Blob([content]);
+          }),
+          store: vi.fn(async () => "storage:legacy-zip"),
+        },
+        runAction: makePublishRunActionMock(),
+      };
+      const result = await publishPackageForUserInternalHandler(ctx as never, {
+        actorUserId: "users:owner",
+        payload: {
+          name: "demo-claw",
+          displayName: "Demo Template",
+          family: "template",
+          version: "1.0.0",
+          changelog: "init",
+          expectedArtifactSha256: artifactSha256,
+          files: [
+            { path: "package.json", size: 1, storageId: "storage:package", sha256: "package" },
+            { path: "CLAW.md", size: 1, storageId: "storage:claw", sha256: "template" },
+          ],
+          artifact: {
+            kind: "npm-pack",
+            storageId: "storage:archive",
+            sha256: artifactSha256,
+            size: 3,
+            format: "tgz",
+            npmIntegrity: "sha512-demo",
+            npmShasum: "b".repeat(40),
+            npmTarballName: "demo-claw-1.0.0.tgz",
+            npmUnpackedSize: 3,
+            npmFileCount: 2,
+          },
+        },
+      });
+      expect(result).toMatchObject({ ok: true, status: "pending" });
+      return runMutation.mock.calls.find(([, args]) => args.family === "claw")?.[1]?.categories;
+    }
+
+    function stubCategoryModel(category: string) {
+      vi.stubEnv("OPENAI_API_KEY", "test-key");
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          output: [
+            {
+              type: "message",
+              content: [{ type: "output_text", text: JSON.stringify({ category }) }],
+            },
+          ],
+        }),
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      return fetchMock;
+    }
+
+    afterEach(() => {
+      vi.unstubAllEnvs();
+      vi.unstubAllGlobals();
+    });
+
+    it.each([
+      { declared: "[engineering, operations]", stored: ["engineering"] },
+      { declared: "[travel, personal]", stored: ["travel"] },
+      { declared: "[household]", stored: ["household"] },
+    ])("stores the first declared category of $declared", async ({ declared, stored }) => {
+      const fetchMock = stubCategoryModel("product");
+      expect(await publishDeclaring(declared)).toEqual(stored);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      { declared: "[personal, productivity]" },
+      { declared: "[governance]" },
+      { declared: "[made-up, travel]" },
+      { declared: undefined },
+    ])(
+      "classifies instead of rejecting a publish that declares $declared",
+      async ({ declared }) => {
+        const fetchMock = stubCategoryModel("household");
+        expect(await publishDeclaring(declared)).toEqual(["household"]);
+        expect(fetchMock).toHaveBeenCalledOnce();
+      },
+    );
+
+    it.each([{ declared: "[personal, productivity]" }, { declared: undefined }])(
+      "stores Other for $declared when classification is unavailable",
+      async ({ declared }) => {
+        vi.stubEnv("OPENAI_API_KEY", "");
+        expect(await publishDeclaring(declared)).toEqual(["other"]);
+      },
+    );
+
+    // OpenClaw enforces these limits when a Template is added, so they still fail a publish.
+    it.each(["[]", "[a, b, c, d]", "[travel, travel]", "[Travel]"])(
+      "still rejects the structurally invalid declaration %s",
+      async (declared) => {
+        await expect(publishDeclaring(declared)).rejects.toThrow();
+      },
+    );
+  });
+
   it("reuses an in-flight staged Template publish for the same user and artifact", async () => {
     const artifactSha256 = "a".repeat(64);
     const storedFiles = new Map<string, string>([
