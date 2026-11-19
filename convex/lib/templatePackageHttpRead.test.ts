@@ -73,6 +73,48 @@ describe("Template HTTP reads", () => {
     });
     expect(f.runQuery).toHaveBeenCalledTimes(2);
   });
+  it("uses one authorized metadata query and only the selected immutable blob for the detail view", async () => {
+    const f = fixture();
+    const blob = new Blob(["CLAW body"]);
+    const get = vi.fn().mockResolvedValue(blob);
+    const ctx = { ...f.ctx, storage: { get } } as unknown as ActionCtx;
+    const request = req("?view=template-detail");
+    const { sha256Hex } = await import("./hash");
+    const selected = {
+      version: f.release.version,
+      file: {
+        size: blob.size,
+        sha256: await sha256Hex(new Uint8Array(await blob.arrayBuffer())),
+        storageId: "only-permitted-blob",
+      },
+      llmAnalysis: null,
+    };
+    const selection = {
+      package: f.pkg,
+      owner: null,
+      latestRelease: null,
+      templateDetail: { tags: {}, release: selected },
+    };
+    const runQuery = vi.fn().mockResolvedValue(selection);
+    ctx.runQuery = runQuery;
+    const result = await readTemplatePackageHttp(ctx, request);
+    expect(runQuery).toHaveBeenCalledExactlyOnceWith(expect.anything(), {
+      name: f.pkg.name,
+      viewerUserId: undefined,
+      includeTemplateDetail: true,
+    });
+    expect(get).toHaveBeenCalledExactlyOnceWith("only-permitted-blob");
+    expect((await result!.json()).templateRelease).toEqual({
+      version: f.release.version,
+      contents: "CLAW body",
+      llmAnalysis: null,
+    });
+    expect(result!.headers.get("X-Test-Rate")).toBe("kept");
+    get.mockRejectedValue(new Error("storage temporarily unavailable"));
+    await expect(readTemplatePackageHttp(ctx, req("?view=template-detail"))).rejects.toThrow(
+      "storage temporarily unavailable",
+    );
+  });
   it("reads an exact release without exposing storage handles", async () => {
     const f = fixture();
     const response = await readTemplatePackageHttp(f.ctx, req("/versions/1.0.0"));

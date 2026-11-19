@@ -255,6 +255,7 @@ import { hashSkillFiles } from "./lib/skills/fileHash";
 import { buildPackageInventoryDigest } from "./lib/skills/skillMarkdown";
 import { buildDeterministicPackageZip } from "./lib/skillZip";
 import { classifyTemplateCategories } from "./lib/templateCategoryClassification";
+import { selectTemplateDetailRelease } from "./lib/templateDetailView";
 import {
   toStoredPackageFamily,
   toPublicPackageFamily,
@@ -2158,13 +2159,18 @@ async function selectPublishedPackageRelease(
   return isPublishedPackageRelease(release, pkg._id) ? release : null;
 }
 
-async function readPublishedPackageTags(ctx: DbReaderCtx, pkg: Doc<"packages">) {
+async function readPublishedPackageTags(
+  ctx: DbReaderCtx,
+  pkg: Doc<"packages">,
+  knownLatest?: Doc<"packageReleases"> | null,
+) {
   // Convex objects have at most 1024 fields; aliases share one read per release.
   const releases = await Promise.all(
-    [...new Set(Object.values(pkg.tags))].map((releaseId) =>
-      selectPublishedPackageRelease(ctx, pkg, { releaseId }),
-    ),
+    [...new Set(Object.values(pkg.tags))]
+      .filter((id) => id !== knownLatest?._id)
+      .map((releaseId) => selectPublishedPackageRelease(ctx, pkg, { releaseId })),
   );
+  if (isPublishedPackageRelease(knownLatest, pkg._id)) releases.push(knownLatest);
   const versions = new Map(
     releases.flatMap((release) => (release ? [[release._id, release.version] as const] : [])),
   );
@@ -2593,17 +2599,30 @@ export const getByNameForViewerInternal = internalQuery({
   args: {
     name: v.string(),
     viewerUserId: v.optional(v.id("users")),
+    includeTemplateDetail: v.optional(v.boolean()),
   },
   handler: readPackageForViewer,
 });
 
 export async function readPackageForViewer(
   ctx: QueryCtx,
-  args: { name: string; viewerUserId?: Id<"users"> },
+  args: { name: string; viewerUserId?: Id<"users">; includeTemplateDetail?: boolean },
 ) {
   const snapshot = await readPackageSnapshotForViewer(ctx, args);
   if (!snapshot) return null;
   const { publicPackage, latestRelease, owner, pkg } = snapshot;
+  if (args.includeTemplateDetail && pkg.family === "claw") {
+    // Authority, the published latest pointer, scan and file descriptor share one DB snapshot.
+    return {
+      package: publicPackage,
+      owner,
+      latestRelease: null,
+      templateDetail: {
+        tags: await readPublishedPackageTags(ctx, pkg, latestRelease),
+        release: selectTemplateDetailRelease(publicPackage, latestRelease),
+      },
+    };
+  }
   return {
     package: publicPackage,
     latestRelease: isPublishedPackageRelease(latestRelease)

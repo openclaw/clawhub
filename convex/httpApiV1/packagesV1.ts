@@ -129,6 +129,8 @@ import {
   validateFilePath,
   type MergedExportManifestEntry,
 } from "../lib/skillZip";
+import { readBoundedPackageBlob } from "../lib/storageText";
+import { isTemplateDetailRequest, templateDetailViewResponse } from "../lib/templateDetailView";
 import { toPublicPackageFamily } from "../lib/templateStorage";
 import { generateToken, hashToken } from "../lib/tokens";
 import { managedMcpV1Handler } from "./managedMcpV1";
@@ -3442,11 +3444,10 @@ async function packageFileResponse(
   const file = resolvePackageFilePath(release, path);
   if (!file) return text("File not found", 404, headers);
   const maxBytes = preview ? MAX_RAW_FILE_BYTES : MAX_PUBLISH_FILE_BYTES;
-  if (file.size > maxBytes) return text("File too large", 413, headers);
-  const blob = await ctx.storage.get(file.storageId);
-  if (!blob) return text("File not found", 404, headers);
+  const result = await readBoundedPackageBlob(ctx, file, maxBytes);
+  if (result.status !== 200) return text(result.message, result.status, headers);
   const responseParams = {
-    blob,
+    blob: result.blob,
     path: file.path,
     contentType: file.contentType,
     sha256: file.sha256,
@@ -4076,6 +4077,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     request,
     normalizedPackageName,
     viewerUserId ?? undefined,
+    packageSegments.length === 0 && isTemplateDetailRequest(request),
   );
   const skillDetail = detail?.package
     ? null
@@ -4116,6 +4118,15 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
           await resolveSkillTags(ctx, skillDetail.skill._id, skillDetail.skill.tags),
         ),
         200,
+        rate.headers,
+      );
+    }
+    if (packageDetail?.templateDetail && publicPackage) {
+      return templateDetailViewResponse(
+        ctx,
+        publicPackage,
+        packageOwner,
+        packageDetail.templateDetail,
         rate.headers,
       );
     }
