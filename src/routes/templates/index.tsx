@@ -15,8 +15,11 @@ import { PluginListItem } from "../../components/PluginListItem";
 import { BrowseResultsSkeleton } from "../../components/skeletons/BrowseResultsSkeleton";
 import { Button } from "../../components/ui/button";
 import { formatRetryDelay } from "../../lib/formatRetryDelay";
+import { buildSocialMetaHead } from "../../lib/og";
 import { fetchTemplateCatalog, isRateLimitedPackageApiError } from "../../lib/packageApi";
+import { getClawHubSiteUrl } from "../../lib/site";
 import { buildTemplateDetailHref } from "../../lib/templateRoutes";
+import { TEMPLATE_DIRECTORY_SHARE } from "../../lib/templateShare";
 
 function parseCategory(value: unknown) {
   return typeof value === "string" && isTemplateCategorySlug(value) ? value : undefined;
@@ -55,7 +58,17 @@ export const Route = createFileRoute("/templates/")({
   }),
   loaderDeps: ({ search }) => ({ q: search.q, category: search.category }),
   loader: ({ deps, abortController }) => loadCatalogPage(deps, abortController.signal),
-  head: () => ({ meta: [{ title: "Templates - ClawHub" }] }),
+  head: () => {
+    const site = getClawHubSiteUrl();
+    const { title, description, imagePath } = TEMPLATE_DIRECTORY_SHARE;
+    const head = buildSocialMetaHead({
+      title,
+      description,
+      image: site + imagePath,
+      url: site + "/templates",
+    });
+    return { ...head, meta: [...head.meta, { name: "twitter:image:alt", content: title }] };
+  },
   pendingComponent: TemplatesPending,
   component: TemplatesIndex,
 });

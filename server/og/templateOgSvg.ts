@@ -10,7 +10,7 @@ const MONO_FONT = "IBM Plex Mono Medium";
 
 type TemplateCard = {
   title: string;
-  owner: string;
+  owner: string | null; // The directory card has no publisher.
   description: string;
   mark: string;
   artwork: string | null;
@@ -43,8 +43,10 @@ export function buildTemplateOgSvg(card: TemplateCard) {
   const step = Math.round(size * 0.94);
   const titleY = 149 + Math.round(size * 0.76);
   const ownerY = titleY + (titleLines.length - 1) * step + 58;
-  const owner = "@" + card.owner;
-  const ownerSize = Math.min(32, Math.floor(680 / (owner.length * 0.61)));
+  const owner = card.owner === null ? null : "@" + card.owner;
+  const byline = owner
+    ? `<text x="74" y="${ownerY}" fill="#ddaaa6" font-family="${MONO_FONT},monospace" font-size="${Math.min(32, Math.floor(680 / (owner.length * 0.61)))}" font-weight="500" letter-spacing="-.8">${escapeXml(owner)}</text>`
+    : "";
   const description = wrapText(card.description.slice(0, 1024), 710, 35, 3);
   const portrait = card.artwork
     ? `<image x="826" y="160" width="282" height="282" preserveAspectRatio="xMidYMid meet" href="${card.artwork}"/>`
@@ -59,10 +61,10 @@ export function buildTemplateOgSvg(card: TemplateCard) {
   </defs>
   <rect width="1200" height="630" fill="url(#base)"/><rect width="1200" height="630" fill="url(#cool)"/><rect width="1200" height="630" fill="url(#warm)"/>
   <image x="70" y="58" width="50" height="50" href="${card.mark}"/>
-  <g font-family="${MONO_FONT},monospace" font-size="26" font-weight="500" fill="#ff756d"><text x="136" y="93">ClawHub</text><text x="261" y="93" fill="#925950">/</text><text x="293" y="93">Template</text></g>
+  <g font-family="${MONO_FONT},monospace" font-size="26" font-weight="500" fill="#ff756d"><text x="136" y="93">ClawHub</text><text x="261" y="93" fill="#925950">/</text><text x="293" y="93">${owner ? "Template" : "Templates"}</text></g>
   <text fill="#f7f1ea" font-family="${TITLE_FONT},sans-serif" font-size="${size}" font-weight="800" letter-spacing="${-size * 0.053}">${lines(titleLines, 70, titleY, step)}</text>
-  <text x="74" y="${ownerY}" fill="#ddaaa6" font-family="${MONO_FONT},monospace" font-size="${ownerSize}" font-weight="500" letter-spacing="-.8">${escapeXml(owner)}</text>
-  <text fill="#c9c2bd" font-family="${COPY_FONT},sans-serif" font-size="35" font-weight="500" letter-spacing="-.65">${lines(description, 74, ownerY + 94, 42)}</text>
+  ${byline}
+  <text fill="#c9c2bd" font-family="${COPY_FONT},sans-serif" font-size="35" font-weight="500" letter-spacing="-.65">${lines(description, 74, ownerY + (owner ? 94 : 36), 42)}</text>
   <rect x="809" y="143" width="316" height="316" rx="71" fill="url(#tile)" stroke="#ffffff" stroke-opacity=".075" stroke-width="2"/>
   <g clip-path="url(#portrait)">${portrait}</g>
 </svg>`;

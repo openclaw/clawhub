@@ -99,6 +99,12 @@ filtered view can be shared. Results show download counts and link to the existi
 publisher-scoped Template detail pages. Browse lists load more entries by cursor; text
 search returns up to 25 results without pagination.
 
+The directory and its filtered URLs share the same 1200×630 “OpenClaw Templates”
+card. Its versioned PNG is bundled, not fetched from the registry, and uses the
+official unadorned OpenClaw mascot instead of a specific Template or publisher.
+Regenerate it with `bun scripts/generate-template-directory-og.ts` when the copy or
+art changes, and bump the image path to invalidate cached unfurls.
+
 Where catalog rows show an icon, they use the shared Blobster glyph to identify a Template,
 not the publisher’s profile picture. This is separate from the artwork exported for feed
 consumers.
