@@ -1,5 +1,13 @@
 import rehypeShikiFromHighlighter from "@shikijs/rehype/core";
-import { isValidElement, useEffect, useId, useMemo, useState, useSyncExternalStore } from "react";
+import {
+  isValidElement,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import ReactMarkdown, { type UrlTransform } from "react-markdown";
 import rehypeRaw from "rehype-raw";
@@ -290,10 +298,13 @@ export function MarkdownPreview({
 }: MarkdownPreviewProps) {
   const [highlighter, setHighlighter] = useState<unknown>(null);
   const shikiTheme = useShikiTheme();
+  const preview = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
-    if (highlight) {
+    // Inspect the rendered document, not the source: inline code needs no grammar,
+    // and nested Markdown or sanitized HTML can produce a block without a fence.
+    if (highlight && !highlighter && preview.current?.querySelector("pre code")) {
       loadHighlighter()
         .then((h) => {
           if (!cancelled) setHighlighter(h);
@@ -305,7 +316,7 @@ export function MarkdownPreview({
     return () => {
       cancelled = true;
     };
-  }, [highlight]);
+  }, [children, highlight, highlighter]);
 
   const rehypePlugins = useMemo<PluggableList>(() => {
     const baseRehype = buildBaseRehype(assetBaseUrl);
@@ -323,7 +334,10 @@ export function MarkdownPreview({
   }, [highlight, highlighter, assetBaseUrl, shikiTheme]);
 
   return (
-    <div className={cn("markdown", variant === "report" && "markdown-report", className)}>
+    <div
+      ref={preview}
+      className={cn("markdown", variant === "report" && "markdown-report", className)}
+    >
       <ReactMarkdown
         key={shikiTheme}
         remarkPlugins={[remarkGfm]}
