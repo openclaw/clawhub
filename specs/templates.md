@@ -114,6 +114,12 @@ Missing or invalid artwork preserves the consumer's fallback. Templates do not u
 the bundled-plugin GitHub asset recovery path. Artifact and security gates are
 unchanged, and catalog metadata becomes visible only after publication.
 
+Public Template detail pages share a 1200×630 PNG with the agent name, publisher
+handle, short description and hosted catalog artwork. When the artwork is absent
+or unreadable the card uses the Template glyph, never the publisher's profile
+image. The image route independently checks the anonymous package projection,
+family and owner; query parameters cannot override the card's content.
+
 ## Launch contract
 
 - Backend Template publication and exact-name reads are available by default.
