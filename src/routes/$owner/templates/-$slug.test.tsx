@@ -280,10 +280,12 @@ function renderTemplate(
     llmAnalysis?: LlmAnalysis | null;
     manifestSummary?: NonNullable<PackageDetailResponse["package"]>["templateManifestSummary"];
     name?: string;
+    categories?: string[];
   } = {},
 ) {
   const detail = packageDetail();
   if (options.name) detail.package!.name = options.name;
+  if (options.categories) detail.package!.categories = options.categories;
   detail.package!.scanStatus = "status" in options ? options.status : "clean";
   detail.package!.updatedAt = Date.UTC(2026, 10, 5);
   if ("version" in options) detail.package!.latestVersion = options.version;
@@ -346,6 +348,33 @@ describe("Template detail composition and interactions", () => {
     expect(card.closest(".template-detail-metadata")).not.toBeNull();
     expect(document.querySelectorAll(".skill-install-command-card")).toHaveLength(1);
   });
+
+  it.each([
+    { stored: ["household"], shown: "Household" },
+    { stored: ["entertainment"], shown: "Entertainment" },
+    // First-party listings were not rewritten and keep removed or several categories.
+    { stored: ["personal"], shown: "Personal" },
+    { stored: ["productivity", "people"], shown: "Productivity · People" },
+  ])("labels the stored category $stored", ({ stored, shown }) => {
+    renderTemplate({ categories: stored });
+    expect(document.querySelector(".template-detail-category")?.textContent).toBe(shown);
+  });
+
+  it.each([
+    { declared: ["engineering", "operations"], shown: "Engineering" },
+    { declared: ["travel", "personal"], shown: "Travel" },
+    { declared: ["personal", "productivity"], shown: undefined },
+    { declared: ["made-up"], shown: undefined },
+  ])(
+    "shows only the first declared category $declared before the registry assigns one",
+    ({ declared, shown }) => {
+      renderTemplate({
+        contents:
+          "---\n" + JSON.stringify({ ...manifest, categories: declared }) + "\n---\n# Brief",
+      });
+      expect(document.querySelector(".template-detail-category")?.textContent).toBe(shown);
+    },
+  );
 
   it("clamps overflowing descriptions and links the expand/collapse button to the full text", () => {
     mockComputedLineHeight("20px");

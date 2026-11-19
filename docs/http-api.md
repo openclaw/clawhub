@@ -748,7 +748,8 @@ Query params:
   `/api/v1/code-plugins`, `/api/v1/bundle-plugins`, or package endpoints with
   `family=code-plugin`/`family=bundle-plugin`). Controlled categories and
   legacy v1 filter aliases are documented under `GET /api/v1/plugins`. With
-  `family=template`, use a [Template category](./templates.md) or `other`;
+  `family=template`, use a [Template category](./templates.md), `other`, or a
+  removed Template category (`personal`, `governance`, `finance`, `people`);
   unrecognized categories are rejected.
 
 Notes:
@@ -781,7 +782,8 @@ Query params:
 - `category` (optional): plugin or Template category filter. For plugins, scope
   the request to plugin packages. Controlled categories and legacy v1
   filter aliases are documented under `GET /api/v1/plugins`. With
-  `family=template`, use a [Template category](./templates.md) or `other`;
+  `family=template`, use a [Template category](./templates.md), `other`, or a
+  removed Template category (`personal`, `governance`, `finance`, `people`);
   unrecognized categories are rejected.
 
 Notes:

@@ -3,7 +3,10 @@ import {
   type TemplateDependencyInventory,
   type TemplateManifest,
 } from "clawhub-schema";
-import { TEMPLATE_CATEGORY_DEFINITIONS } from "clawhub-schema/catalogMetadata";
+import {
+  getTemplateCategoryLabel,
+  resolveDeclaredTemplateCategory,
+} from "clawhub-schema/catalogMetadata";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   fetchPackageFile,
@@ -60,9 +63,11 @@ export function TemplateDetailPage({
     () => (manifest ? templateWorkspaceContents(manifest) : null),
     [manifest],
   );
-  const categories = (pkg.categories ?? manifest?.categories ?? []).map(
-    (slug) =>
-      TEMPLATE_CATEGORY_DEFINITIONS.find((category) => category.slug === slug)?.label ?? slug,
+  // Before the registry assigns a category, show only what CLAW.md can assign: its first
+  // declared slug, and only when that is in the current taxonomy.
+  const declaredCategory = resolveDeclaredTemplateCategory(manifest?.categories);
+  const categories = (pkg.categories ?? (declaredCategory ? [declaredCategory] : [])).map(
+    getTemplateCategoryLabel,
   );
   const description = pkg.summary ?? summary?.agent.description ?? manifest?.agent.description;
   const scanStatus = pkg.scanStatus ?? "pending";

@@ -38,7 +38,7 @@ import {
   PublishTokenMintRequestSchema,
   parseArk,
 } from "clawhub-schema";
-import { isTemplateCategorySlug, isPluginCategorySlug } from "clawhub-schema/catalogMetadata";
+import { isPluginCategorySlug, isTemplateCategoryFilterSlug } from "clawhub-schema/catalogMetadata";
 import { PACKAGE_CATEGORY_BATCH_LIMIT } from "clawhub-schema/packageLimits";
 import { ApiRoutes } from "clawhub-schema/routes";
 import { formatSecurityAuditOverview, aggregateAuditVerdict } from "clawhub-schema/securityAudit";
@@ -343,8 +343,8 @@ function resolvePluginCategoryFilter(value: string | undefined): PluginCategoryS
 
 function resolvePackageCategoryFilter(value: string | undefined, family: string | undefined) {
   if (!value) return undefined;
-  if (family === "template")
-    return value === "other" || isTemplateCategorySlug(value) ? value : undefined;
+  // Includes the removed slugs that unrewritten listings and released clients still use.
+  if (family === "template") return isTemplateCategoryFilterSlug(value) ? value : undefined;
   return resolvePluginCategoryFilter(value);
 }
 
