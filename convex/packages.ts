@@ -1,3 +1,4 @@
+import { getAuthUserId } from "@convex-dev/auth/server";
 import type {
   PackageArtifactSummary,
   ApiV1PackageVersionPublicationResponse,
@@ -149,6 +150,7 @@ import {
   extractCodePluginArtifacts,
   maybeParseJson,
   normalizePackageName,
+  tryNormalizePackageName,
   normalizePublishFiles,
   readStorageText,
   readOptionalTextFile,
@@ -670,6 +672,13 @@ type PackageModerationStatus = {
   } | null;
 };
 
+function isLinkedPersonalPublisher(
+  ownerUserId: Id<"users">,
+  publisher: Doc<"publishers"> | null | undefined,
+) {
+  return publisher?.kind === "user" && publisher.linkedUserId === ownerUserId;
+}
+
 function getPackageOwnerKey(
   pkg: Pick<PackageDoc, "ownerUserId" | "ownerPublisherId">,
   options?: {
@@ -680,8 +689,7 @@ function getPackageOwnerKey(
   if (pkg.ownerPublisherId) return `publisher:${pkg.ownerPublisherId}`;
   if (
     options?.nextOwnerPublisherId &&
-    options.ownerPublisher?.kind === "user" &&
-    options.ownerPublisher.linkedUserId === pkg.ownerUserId
+    isLinkedPersonalPublisher(pkg.ownerUserId, options.ownerPublisher)
   ) {
     return `publisher:${options.nextOwnerPublisherId}`;
   }
@@ -2285,6 +2293,183 @@ export const getByName = query({
         ? toPublicPackageRelease(latestRelease, pkg.family)
         : null,
       owner,
+    };
+  },
+});
+
+async function getPendingListingPublisher(
+  ctx: DbReaderCtx,
+  pkg: Doc<"packages">,
+  handle: string,
+  viewer: Doc<"users">,
+) {
+  // Never fall back from an unavailable organization to the human who uploaded the package.
+  const publisher = pkg.ownerPublisherId
+    ? await ctx.db.get(pkg.ownerPublisherId)
+    : await getOwnerPublisher(ctx, pkg);
+  if (
+    !publisher ||
+    publisher.deletedAt !== undefined ||
+    publisher.deactivatedAt !== undefined ||
+    normalizePublisherHandle(publisher.handle) !== handle
+  )
+    return null;
+  if (publisher.kind === "user") {
+    const ownerId = publisher.linkedUserId ?? pkg.ownerUserId;
+    const owner = ownerId === viewer._id ? viewer : await ctx.db.get(ownerId);
+    if (
+      !owner ||
+      owner.deletedAt !== undefined ||
+      owner.deactivatedAt !== undefined ||
+      (!pkg.ownerPublisherId && ownerId !== pkg.ownerUserId)
+    )
+      return null;
+  } else if (!pkg.ownerPublisherId) return null;
+  if (
+    viewer.role !== "admin" &&
+    viewer.role !== "moderator" &&
+    !(await canAccessPublisherOwnerScope(ctx, {
+      publisher,
+      userId: viewer._id,
+      legacyOwnerUserId: pkg.ownerUserId,
+    }))
+  )
+    return null;
+  return publisher;
+}
+
+async function getPendingListingSummary(
+  ctx: DbReaderCtx,
+  pkg: Doc<"packages">,
+  listingPublisherId: Id<"publishers">,
+) {
+  // Check the most recent submission, not the most recent *pending* row: a later
+  // publication, block or withdrawal must not resurrect a historical upload.
+  const release = await ctx.db
+    .query("packageReleases")
+    .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
+    .order("desc")
+    .first();
+  if (
+    !release ||
+    release.publicationStatus !== "pending" ||
+    release.softDeletedAt !== undefined ||
+    release.ownerDeletedAt !== undefined ||
+    isPackageBlockedFromPublic(resolvePackageReleaseScanStatus(release)) ||
+    !release.publishAttemptId
+  )
+    return null;
+  const attempt = await ctx.db.get(release.publishAttemptId);
+  if (
+    !attempt ||
+    attempt.kind !== "package" ||
+    attempt.packageId !== pkg._id ||
+    attempt.packageReleaseId !== release._id ||
+    attempt.version !== release.version ||
+    attempt.slug !== pkg.name ||
+    (!pkg.ownerPublisherId && attempt.ownerUserId !== pkg.ownerUserId) ||
+    !ACTIVE_PUBLISH_ATTEMPT_STATUSES.includes(attempt.status) ||
+    Object.values(attempt.checks).some(
+      (check) => check.status === "blocked" || check.status === "failed",
+    )
+  )
+    return null;
+  if (attempt.ownerPublisherId !== pkg.ownerPublisherId) {
+    // Staging a personal update can bind the publisher before the legacy parent does.
+    // A synthesized display publisher is not proof of a live personal link.
+    if (pkg.ownerPublisherId || attempt.ownerPublisherId !== listingPublisherId) return null;
+    const ownerPublisher = await ctx.db.get(listingPublisherId);
+    if (
+      !isLinkedPersonalPublisher(pkg.ownerUserId, ownerPublisher) ||
+      ownerPublisher?.deletedAt !== undefined ||
+      ownerPublisher?.deactivatedAt !== undefined
+    )
+      return null;
+  }
+  const metadata = pendingPackagePublicationMetadata(release);
+  if (
+    metadata.family !== pkg.family ||
+    (metadata.channel !== "official" && metadata.channel !== "community")
+  )
+    return null;
+  const latestId = getPackageTagReleaseId(pkg, "latest");
+  if (latestId) {
+    const latest = await selectPublishedPackageRelease(ctx, pkg, { releaseId: latestId });
+    if (
+      !latest ||
+      isPackageBlockedFromPublic(resolvePackageReleaseScanStatus(latest)) ||
+      comparePackageReleaseOrder(pkg.family, release, latest) <= 0
+    )
+      return null;
+  }
+  return {
+    name: pkg.name,
+    displayName: stringPendingField(metadata, "displayName") ?? pkg.displayName,
+    summary: release.summary ?? null,
+    version: release.version,
+  };
+}
+
+export const getPendingListingForViewer = query({
+  args: {
+    owner: v.string(),
+    slug: v.string(),
+    routeKind: v.union(v.literal("plugin"), v.literal("template")),
+  },
+  returns: v.union(
+    v.null(),
+    v.object({
+      name: v.string(),
+      displayName: v.string(),
+      summary: v.union(v.null(), v.string()),
+      version: v.string(),
+      owner: v.object({
+        handle: v.string(),
+        displayName: v.union(v.null(), v.string()),
+        image: v.union(v.null(), v.string()),
+      }),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    // A local impersonation or a caller-supplied owner is not a session identity.
+    const authId = await getAuthUserId(ctx);
+    const viewerId = authId && ctx.db.normalizeId("users", authId);
+    const viewer = viewerId && (await ctx.db.get(viewerId));
+    if (!viewer || viewer.deletedAt !== undefined || viewer.deactivatedAt !== undefined)
+      return null;
+    const handle = normalizePublisherHandle(args.owner);
+    const slug = tryNormalizePackageName(args.slug);
+    if (!handle || !PUBLISHER_HANDLE_PATTERN.test(handle) || !slug || slug.includes("/"))
+      return null;
+
+    // Live exact names take precedence; an unscoped alias is valid only at its real owner.
+    const exact = await getPackageByNormalizedName(ctx, `@${handle}/${slug}`);
+    const pkg =
+      exact && exact.softDeletedAt === undefined
+        ? exact
+        : await getPackageByNormalizedName(ctx, slug);
+    if (
+      !pkg ||
+      pkg.softDeletedAt !== undefined ||
+      pkg.channel === "private" ||
+      isPackageBlockedFromPublic(pkg.scanStatus) ||
+      (args.routeKind === "template"
+        ? pkg.family !== "claw"
+        : pkg.family !== "code-plugin" && pkg.family !== "bundle-plugin")
+    )
+      return null;
+    const publisher = await getPendingListingPublisher(ctx, pkg, handle, viewer);
+    if (!publisher) return null;
+
+    const summary = await getPendingListingSummary(ctx, pkg, publisher._id);
+    if (!summary) return null;
+    return {
+      ...summary,
+      owner: {
+        handle: publisher.handle,
+        displayName: publisher.displayName ?? null,
+        image: publisher.image ?? null,
+      },
     };
   },
 });

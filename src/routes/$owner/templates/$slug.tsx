@@ -1,5 +1,7 @@
-import { createFileRoute, notFound, redirect, useRouter } from "@tanstack/react-router";
+import { createFileRoute, isNotFound, notFound, redirect, useRouter } from "@tanstack/react-router";
+import { GenericNotFoundPage } from "../../../components/GenericNotFoundPage";
 import { Container } from "../../../components/layout/Container";
+import { PendingPackageListing } from "../../../components/PendingPackageListing";
 import { TemplateDetailPage } from "../../../components/TemplateDetailPage";
 import {
   fetchPackageFile,
@@ -57,7 +59,10 @@ export const Route = createFileRoute("/$owner/templates/$slug")({
     packageNameFromParams(params);
   },
   loader: async ({ params }) => {
-    const data = await loadPublisherTemplate(params);
+    const data = await loadPublisherTemplate(params).catch((error: unknown) => {
+      if (isNotFound(error)) throw notFound({ data: "listing" });
+      throw error;
+    });
     const pkg = data.detail.package!;
     const canonicalHref = buildTemplateDetailHref(pkg.name, data.detail.owner?.handle);
     const requestedHref = buildTemplateDetailHref(packageNameFromParams(params), params.owner);
@@ -95,6 +100,7 @@ export const Route = createFileRoute("/$owner/templates/$slug")({
     };
   },
   pendingComponent: TemplateDetailPending,
+  notFoundComponent: PublisherTemplateNotFound,
   errorComponent: TemplateDetailError,
   component: PublisherTemplatePage,
 });
@@ -134,6 +140,18 @@ function TemplateDetailError() {
   );
 }
 
+function PublisherTemplateNotFound({ data }: { data?: unknown }) {
+  const params = Route.useParams();
+  if (data !== "listing") return <GenericNotFoundPage />;
+  return (
+    <PendingPackageListing
+      target={{ ...params, routeKind: "template" }}
+      notFound={<GenericNotFoundPage />}
+      loading={<TemplateDetailPending />}
+    />
+  );
+}
+
 function PublisherTemplatePage() {
   const params = Route.useParams();
   const { detail, contents, llmAnalysis } = Route.useLoaderData() as TemplateDetailData;
@@ -144,6 +162,12 @@ function PublisherTemplatePage() {
       contents={contents}
       llmAnalysis={llmAnalysis}
       fallbackOwner={params.owner}
+      pendingNotice={
+        <PendingPackageListing
+          target={{ ...params, routeKind: "template" }}
+          publishedName={detail.package!.name}
+        />
+      }
     />
   );
 }

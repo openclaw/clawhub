@@ -127,6 +127,16 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   quarantined/revoked package downloads remain blocked. A pending package scan is
   not an unpublished release. Authorized owner/staff submission previews retain
   their separate access path.
+- Normal publisher-qualified plugin and Template listings may show the authenticated
+  personal publisher, current organization members with publish authority, or active
+  moderators/admins a **metadata-only** pending notice. Resolve the actual owner
+  even for an unscoped package; an organization uploader's historical user ID is
+  not membership. Only the newest submitted release can qualify: it must still be
+  pending, bound to its own active publication attempt, and newer than the published
+  latest when one exists. Do not fall back to older pending submissions after a
+  block, removal or publication. Private, blocked, removed or otherwise ineligible
+  records have no notice. This response never grants artifact, file, install,
+  version-history, search, public detail or shared-cache visibility.
 - Pending skill finalization must not lift `softDeletedAt`, `moderationStatus`
   `removed`, or a hidden staff hold such as security redaction, a ban, publisher
   deletion, or manual review. A first publish hidden only for
