@@ -240,7 +240,7 @@ export const sendTemplatePublicationOutcomeInternal = internalAction({
         ...email,
         from,
         to: args.to,
-        subject: displayName + " " + version + " is now public on ClawHub",
+        subject: `${packageName}@${version} is now public on ClawHub`,
         idempotencyKey: "template-published:" + args.releaseId,
       });
     }
@@ -256,8 +256,8 @@ export const sendTemplatePublicationOutcomeInternal = internalAction({
       to: args.to,
       subject:
         outcome === "blocked"
-          ? "ClawHub blocked " + displayName + " " + version
-          : "ClawHub couldn’t finish checking " + displayName + " " + version,
+          ? `ClawHub blocked ${packageName}@${version}`
+          : `ClawHub couldn’t finish checking ${packageName}@${version}`,
       idempotencyKey: "template-" + outcome + ":" + args.attemptId,
     });
   },

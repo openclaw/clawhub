@@ -474,7 +474,10 @@ export async function buildSecretBlockedPublishEmail(args: SecretBlockedPublishE
   const artifactKind = args.artifact.kind;
   const artifactLabelText = artifactLabel(args.artifact);
   const version = args.version?.trim() || "<version>";
-  const subject = `ClawHub blocked a ${artifactKind} publish`;
+  const subject =
+    artifactKind === "template"
+      ? `ClawHub blocked template ${args.artifact.name}${args.version?.trim() ? `@${version}` : ""}`
+      : `ClawHub blocked a ${artifactKind} publish`;
   const lines = [
     greeting(args.handle),
     "",

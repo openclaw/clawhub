@@ -126,7 +126,7 @@ describe("transactional account emails", () => {
       expect.objectContaining({
         from: "ClawHub <noreply@notifications.openclaw.ai>",
         to: args.to,
-        subject: "Standup Prep 1.0.0 is now public on ClawHub",
+        subject: "@octocat/standup-prep@1.0.0 is now public on ClawHub",
         text: expect.stringContaining("@octocat/standup-prep"),
       }),
       { idempotencyKey: "template-published:release1" },

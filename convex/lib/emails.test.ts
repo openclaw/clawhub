@@ -263,7 +263,7 @@ describe("moderation notification email copy", () => {
       artifact: { kind: "template", name: "@owner/standup" },
       version: "1.0.0",
     });
-    expect(email.subject).toContain("template");
+    expect(email.subject).toBe("ClawHub blocked template @owner/standup@1.0.0");
     expect(email.text).toContain("Template: @owner/standup");
     expect(email.html).toContain("@owner/standup@1.0.0");
     expect(email.html).not.toMatch(/Plugin Review|from the plugin/);
