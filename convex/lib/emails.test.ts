@@ -258,6 +258,17 @@ describe("moderation notification email copy", () => {
     expect(email.text).toContain("Increment the version number before uploading the fixed plugin.");
   });
 
+  it("names the template and version in the existing secret-block notice", async () => {
+    const email = await buildSecretBlockedPublishEmail({
+      artifact: { kind: "template", name: "@owner/standup" },
+      version: "1.0.0",
+    });
+    expect(email.subject).toContain("template");
+    expect(email.text).toContain("Template: @owner/standup");
+    expect(email.html).toContain("@owner/standup@1.0.0");
+    expect(email.html).not.toMatch(/Plugin Review|from the plugin/);
+  });
+
   it("builds secret-blocked publish copy without raw findings", async () => {
     const email = await buildSecretBlockedPublishEmail({
       handle: "publisher",

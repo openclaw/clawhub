@@ -14,11 +14,13 @@ import {
   buildSecretBlockedPublishEmail,
   notificationArtifactValidator,
   publisherAbuseWarningScoreValidator,
+  secretBlockedArtifactValidator,
 } from "./lib/emails";
 
 const DEFAULT_FROM = "ClawHub Security <noreply@notifications.openclaw.ai>";
 
 type SendEmailArgs = {
+  from?: string;
   idempotencyKey: string;
   to: string;
   subject: string;
@@ -57,7 +59,7 @@ async function sendTransactionalEmail(args: SendEmailArgs) {
     const resend = new Resend(config.apiKey);
     const result = await resend.emails.send(
       {
-        from: config.from,
+        from: args.from ?? config.from,
         to: args.to,
         subject: args.subject,
         text: args.text,
@@ -171,7 +173,7 @@ export const sendSecretPublishBlockedNotificationInternal = internalAction({
     userId: v.id("users"),
     to: v.string(),
     handle: v.optional(v.string()),
-    artifact: notificationArtifactValidator,
+    artifact: secretBlockedArtifactValidator,
     version: v.optional(v.string()),
   },
   handler: async (_ctx, args) => {
@@ -186,6 +188,77 @@ export const sendSecretPublishBlockedNotificationInternal = internalAction({
       subject: email.subject,
       text: email.text,
       html: email.html,
+    });
+  },
+});
+
+export const sendTemplatePublicationOutcomeInternal = internalAction({
+  args: {
+    attemptId: v.id("publishAttempts"),
+    releaseId: v.optional(v.id("packageReleases")),
+    to: v.string(),
+    outcome: v.union(v.literal("published"), v.literal("blocked"), v.literal("scan_failed")),
+    packageName: v.string(),
+    displayName: v.string(),
+    version: v.string(),
+    publishedAt: v.optional(v.number()),
+    templateUrl: v.optional(v.string()),
+    auditPassed: v.optional(v.boolean()),
+  },
+  handler: async (_ctx, args): Promise<SendEmailResult> => {
+    const { packageName, displayName, version, outcome } = args;
+    const { renderTemplatePublishedEmail, renderTemplateNotPublishedEmail } =
+      await import("./lib/emailRendering");
+    const from =
+      process.env.CLAWHUB_NOREPLY_FROM?.trim() || "ClawHub <noreply@notifications.openclaw.ai>";
+    if (outcome === "published") {
+      if (!args.releaseId || !args.templateUrl || args.publishedAt === undefined) {
+        throw new Error(
+          "Published template notification requires release, URL and publication time",
+        );
+      }
+      const date = new Date(args.publishedAt);
+      const publishedAt =
+        date.toLocaleDateString("en-US", {
+          timeZone: "UTC",
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+        }) +
+        " · " +
+        date.toISOString().slice(11, 16) +
+        " UTC";
+      const email = await renderTemplatePublishedEmail({
+        displayName,
+        packageName,
+        version,
+        publishedAt,
+        templateUrl: args.templateUrl,
+        auditPassed: args.auditPassed === true,
+      });
+      return sendTransactionalEmail({
+        ...email,
+        from,
+        to: args.to,
+        subject: displayName + " " + version + " is now public on ClawHub",
+        idempotencyKey: "template-published:" + args.releaseId,
+      });
+    }
+    const email = await renderTemplateNotPublishedEmail({
+      displayName,
+      packageName,
+      version,
+      outcome,
+    });
+    return sendTransactionalEmail({
+      ...email,
+      from,
+      to: args.to,
+      subject:
+        outcome === "blocked"
+          ? "ClawHub blocked " + displayName + " " + version
+          : "ClawHub couldn’t finish checking " + displayName + " " + version,
+      idempotencyKey: "template-" + outcome + ":" + args.attemptId,
     });
   },
 });

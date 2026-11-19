@@ -103,6 +103,36 @@ describe("transactional account emails", () => {
     vi.unstubAllEnvs();
   });
 
+  it("sends a template receipt from ClawHub keyed to the published release", async () => {
+    const { sendTemplatePublicationOutcomeInternal } = await import("./emailsNode");
+    const args = {
+      to: "publisher@example.com",
+      attemptId: "attempt1",
+      releaseId: "release1",
+      outcome: "published",
+      displayName: "Standup Prep",
+      packageName: "@octocat/standup-prep",
+      version: "1.0.0",
+      publishedAt: Date.UTC(2026, 10, 18, 21, 4),
+      auditPassed: true,
+      templateUrl: "https://clawhub.ai/octocat/templates/standup-prep",
+    };
+    await (
+      sendTemplatePublicationOutcomeInternal as unknown as {
+        _handler: (ctx: unknown, input: typeof args) => Promise<unknown>;
+      }
+    )._handler({}, args);
+    expect(resendSendMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        from: "ClawHub <noreply@notifications.openclaw.ai>",
+        to: args.to,
+        subject: "Standup Prep 1.0.0 is now public on ClawHub",
+        text: expect.stringContaining("@octocat/standup-prep"),
+      }),
+      { idempotencyKey: "template-published:release1" },
+    );
+  });
+
   it("sends ban notifications without a Reply-To header", async () => {
     const result = await (
       sendBanNotificationInternal as unknown as SendBanNotificationHandler

@@ -93,9 +93,13 @@ export type MaliciousArtifactEmailArgs = {
   findingSummary?: string;
 };
 
+export const secretBlockedArtifactValidator = v.object({
+  kind: v.union(v.literal("skill"), v.literal("plugin"), v.literal("template")),
+  name: v.string(),
+});
 export type SecretBlockedPublishEmailArgs = {
   handle?: string;
-  artifact: NotificationArtifact;
+  artifact: Infer<typeof secretBlockedArtifactValidator>;
   version?: string;
 };
 
@@ -189,8 +193,8 @@ function summarizeBanReason(args: BanNotificationEmailArgs): BanReasonSummary {
   };
 }
 
-function artifactLabel(artifact: NotificationArtifact) {
-  return `${artifact.kind === "skill" ? "Skill" : "Plugin"}: ${artifact.name}`;
+function artifactLabel(artifact: SecretBlockedPublishEmailArgs["artifact"]) {
+  return `${artifact.kind[0].toUpperCase()}${artifact.kind.slice(1)}: ${artifact.name}`;
 }
 
 function greeting(handle: string | undefined) {
@@ -293,7 +297,7 @@ function buildScanDownloadCommand(args: MaliciousArtifactEmailArgs) {
 }
 
 async function renderSecretBlockedPublishTemplate(args: {
-  artifactKind: "skill" | "plugin";
+  artifactKind: SecretBlockedPublishEmailArgs["artifact"]["kind"];
   artifactName: string;
   version: string;
   preheader: string;
@@ -467,7 +471,7 @@ export async function buildMaliciousArtifactEmail(args: MaliciousArtifactEmailAr
 }
 
 export async function buildSecretBlockedPublishEmail(args: SecretBlockedPublishEmailArgs) {
-  const artifactKind = args.artifact.kind === "skill" ? "skill" : "plugin";
+  const artifactKind = args.artifact.kind;
   const artifactLabelText = artifactLabel(args.artifact);
   const version = args.version?.trim() || "<version>";
   const subject = `ClawHub blocked a ${artifactKind} publish`;

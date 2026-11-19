@@ -14,6 +14,20 @@ import PluginInspectorFindingsEmail, {
 import SecretBlockedPublishEmail, {
   type SecretBlockedPublishEmailProps,
 } from "../../emails/secret-blocked-publish";
+import TemplateNotPublishedEmail, {
+  type TemplateNotPublishedEmailProps,
+} from "../../emails/template-not-published";
+import TemplatePublishedEmail, {
+  type TemplatePublishedEmailProps,
+} from "../../emails/template-published";
+
+export async function renderTemplatePublishedEmail(props: TemplatePublishedEmailProps) {
+  return await renderEmail(<TemplatePublishedEmail {...props} />);
+}
+
+export async function renderTemplateNotPublishedEmail(props: TemplateNotPublishedEmailProps) {
+  return await renderEmail(<TemplateNotPublishedEmail {...props} />);
+}
 
 export async function renderAccountSuspendedEmail(props: AccountSuspendedEmailProps) {
   return await renderEmail(<AccountSuspendedEmail {...props} />);
