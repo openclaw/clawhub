@@ -99,7 +99,8 @@ filtered view can be shared. Results show download counts and link to the existi
 publisher-scoped Template detail pages. Browse lists load more entries by cursor; text
 search returns up to 25 results without pagination.
 
-Where a Template row shows an icon, it displays the package’s verified artwork in color.
+Where a Template row shows an icon, it displays the package’s verified artwork in color,
+uncropped and directly on the surface without a border, background tile, or shadow.
 If the artwork is absent, untrusted or fails to load, the row uses the shared Blobster
 glyph. A publisher profile picture is never a substitute for Template artwork.
 
