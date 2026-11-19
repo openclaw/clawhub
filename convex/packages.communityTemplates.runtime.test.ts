@@ -201,20 +201,30 @@ describe("community Template discovery", () => {
       ["other", [multi]],
     ]);
     for (const section of full.sections) {
-      const response = await t.fetch(
-        "/api/v1/packages?family=template&limit=100&category=" + section.category,
-      );
-      expect(response.status).toBe(200);
-      const page = (await response.json()) as {
-        items: PublicPackageListItem[];
-        nextCursor: string | null;
-      };
-      expect(page.nextCursor).toBeNull();
-      // The category reader exhausts the page(s), then ranks by installs and name.
+      const items: PublicPackageListItem[] = [];
+      const params = new URLSearchParams({
+        family: "template",
+        category: section.category,
+        limit: "1",
+      });
+      const seen = new Set<string>();
+      for (;;) {
+        const response = await t.fetch("/api/v1/packages?" + params);
+        expect(response.status).toBe(200);
+        const page = (await response.json()) as {
+          items: PublicPackageListItem[];
+          nextCursor: string | null;
+        };
+        expect(page.items.length).toBeLessThanOrEqual(1);
+        items.push(...page.items);
+        if (page.nextCursor === null) break;
+        expect(seen.has(page.nextCursor)).toBe(false);
+        seen.add(page.nextCursor);
+        params.set("cursor", page.nextCursor);
+      }
+      // The category reader exhausts the pages before ranking by installs and name.
       expect(section.items).toEqual(
-        page.items.sort(
-          (a, b) => b.stats.installs - a.stats.installs || a.name.localeCompare(b.name),
-        ),
+        items.sort((a, b) => b.stats.installs - a.stats.installs || a.name.localeCompare(b.name)),
       );
     }
     expect(limited).toEqual({
