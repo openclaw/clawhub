@@ -2,8 +2,8 @@ import type { ApiV1PackageResponse } from "clawhub-schema";
 
 export const TEMPLATE_DIRECTORY_SHARE = {
   title: "OpenClaw Templates",
-  description: "Browse ready-to-use agents you can add to OpenClaw.",
-  imagePath: "/og/templates-v2.png",
+  description: "Ready-made Claws that get the job done",
+  imagePath: "/og/templates-v3.png",
 } as const;
 
 export function getTemplateShareCopy(pkg: NonNullable<ApiV1PackageResponse["package"]>) {
