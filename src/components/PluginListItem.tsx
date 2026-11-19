@@ -15,7 +15,7 @@ import { MarketplaceIcon } from "./MarketplaceIcon";
 import { OfficialBadge } from "./OfficialBadge";
 
 type PluginListItemProps = {
-  item: PackageListItem;
+  item: PackageListItem | PackageListItem<"template">;
   variant?: "list" | "card";
   href?: string;
   /** Templates share this row layout but are not plugins; callers pass their own `href`. */
@@ -28,7 +28,7 @@ const ITEM_KIND_COPY = {
   template: { label: "Template", fallbackSummary: "Agent template." },
 } as const;
 
-function getPluginTaxonomyDisplay(item: PackageListItem) {
+function getPluginTaxonomyDisplay(item: PluginListItemProps["item"]) {
   const topics = (item.topics ?? []).filter((topic) => topic.trim());
   if (topics.length > 0) return { labels: topics, ariaLabel: "Topics" };
 
@@ -38,7 +38,7 @@ function getPluginTaxonomyDisplay(item: PackageListItem) {
   return { labels: categories, ariaLabel: "Categories" };
 }
 
-function getPluginCategories(item: PackageListItem) {
+function getPluginCategories(item: PluginListItemProps["item"]) {
   return (item.categories ?? []).flatMap((slug) => {
     if (!isPluginCategorySlug(slug)) return [];
     const category = getPluginCategoryBySlug(slug);
@@ -56,8 +56,8 @@ export function PluginListItem({
   const kindCopy = ITEM_KIND_COPY[itemKind];
   const isOfficial = item.isOfficial || item.ownerOfficial === true;
   const downloads = formatCompactStat(item.stats?.downloads ?? 0);
-  const taxonomy = getPluginTaxonomyDisplay(item);
-  const categories = getPluginCategories(item);
+  const taxonomy = itemKind === "plugin" ? getPluginTaxonomyDisplay(item) : null;
+  const categories = itemKind === "plugin" ? getPluginCategories(item) : [];
   const primaryCategory = categories[0] ?? null;
   const pluginHref = href ?? buildPluginDetailHref(item.name, { ownerHandle: item.ownerHandle });
   const displayName = presentationTitle(item.displayName, item.name);
@@ -106,7 +106,9 @@ export function PluginListItem({
         <p className="skill-card-summary plugin-summary">
           <InlineMarkdownSummary>{item.summary ?? kindCopy.fallbackSummary}</InlineMarkdownSummary>
         </p>
-        <CatalogTopicList topics={taxonomy.labels} limit={2} ariaLabel={taxonomy.ariaLabel} />
+        {taxonomy ? (
+          <CatalogTopicList topics={taxonomy.labels} limit={2} ariaLabel={taxonomy.ariaLabel} />
+        ) : null}
         <div className="skill-card-footer">
           <div className="skill-card-bottom-row">
             <div className="skill-card-bottom-meta">
@@ -159,7 +161,9 @@ export function PluginListItem({
             ) : null}
           </span>
           {showOfficialBadge && isOfficial ? <OfficialBadge /> : null}
-          <CatalogTopicList topics={taxonomy.labels} limit={2} ariaLabel={taxonomy.ariaLabel} />
+          {taxonomy ? (
+            <CatalogTopicList topics={taxonomy.labels} limit={2} ariaLabel={taxonomy.ariaLabel} />
+          ) : null}
         </div>
         <p className="skill-list-item-summary plugin-summary">
           <InlineMarkdownSummary>{item.summary ?? kindCopy.fallbackSummary}</InlineMarkdownSummary>
