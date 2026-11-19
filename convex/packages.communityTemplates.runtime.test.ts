@@ -303,6 +303,37 @@ describe("community Template discovery", () => {
     expect(feed.entries.map((entry) => entry.id)).toEqual(["@openclaw/research-claw"]);
   });
 
+  it("serves one category through HTTP with the catalog router's own page", async () => {
+    const { t } = await fixture();
+    const read = async (search: string) => {
+      const response = await t.fetch(`/api/v1/packages?${search}`);
+      return {
+        status: response.status,
+        body: response.status === 200 ? await response.json() : null,
+      };
+    };
+    // The narrow read answers this shape; an explicit default sort keeps the router.
+    const narrow = await read("family=template&category=research&limit=100");
+    const router = await read("family=template&category=research&limit=100&sort=updated");
+    expect(narrow.status).toBe(200);
+    expect(narrow.body.items.map((entry: { name: string }) => entry.name).sort()).toEqual(
+      expectedNames,
+    );
+    expect(narrow.body.nextCursor).toBeNull();
+    expect(narrow.body).toEqual(router.body);
+    const page = await t.query(internal.packages.listPageForViewerInternal, {
+      family: "template",
+      category: "research",
+      paginationOpts: { cursor: null, numItems: 100 },
+    });
+    expect(narrow.body.items).toEqual(page.page);
+    expect((await read("family=template&category=travel&limit=100")).body).toEqual({
+      items: [],
+      nextCursor: null,
+    });
+    expect((await read("family=template&category=marketing")).status).toBe(400);
+  });
+
   it.each(["deletedAt", "deactivatedAt"] as const)(
     "removes a personal publisher with %s from every catalog path without digest backfills",
     async (field) => {
