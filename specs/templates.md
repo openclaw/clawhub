@@ -124,14 +124,16 @@ private submission. A missing email address does not affect publication.
 
 ## Catalog artwork
 
-A Template may package `assets/icon.png` for its catalog artwork, independently of
-its portable `agent.identity.avatar`. Publication validates the PNG bytes,
-decodability, size and uploaded digest through the shared package-icon path.
-Only the resulting content-addressed `/api/v1/skill-icons/<sha256>` asset is
-projected into the Official Template feed; arbitrary URLs are not accepted there.
-Missing or invalid artwork preserves the consumer's fallback. Templates do not use
-the bundled-plugin GitHub asset recovery path. Artifact and security gates are
-unchanged, and catalog metadata becomes visible only after publication.
+A valid `assets/icon.png` always wins. Otherwise publication resolves the parsed
+`agent.identity.avatar` from its declared `workspace.files[].path` destination to its
+packaged source, or decodes a bounded inline image. Only supported static artwork
+is accepted; SVG is validated and rasterized, never served as SVG. Missing or
+unusable artwork keeps the generic icon. Neither publication nor browsing fetches
+a remote avatar, and Templates never use the bundled-plugin GitHub recovery path.
+
+The catalog, release and Official Template feed project a verified,
+content-addressed PNG through the existing `/api/v1/skill-icons/<sha256>` route. Artifact
+and security gates are unchanged: metadata becomes public only after publication.
 
 ## Launch contract
 
