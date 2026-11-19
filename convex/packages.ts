@@ -121,7 +121,7 @@ import {
   getPackageByNormalizedName,
 } from "./lib/packageCatalogRead";
 import { verifyPublishFileStorageMetadata } from "./lib/packageFileVerification";
-import { resolvePackageIcon } from "./lib/packageIcons";
+import { resolvePackageIcon, resolveTemplatePackageIcon } from "./lib/packageIcons";
 import {
   packageInspectorIssueInputValidator,
   type PackageInspectorFinding,
@@ -8765,10 +8765,12 @@ async function publishPackageImpl(
         scanStatus: initialScanStatus,
       }
     : undefined;
-  const icon = await resolvePackageIcon(ctx, {
-    files,
-    ...(trustedOpenClawPlugin ? { trustedSource: verification } : {}),
-  });
+  const icon = validatedTemplate
+    ? await resolveTemplatePackageIcon(ctx, { files, manifest: validatedTemplate.manifest })
+    : await resolvePackageIcon(ctx, {
+        files,
+        ...(trustedOpenClawPlugin ? { trustedSource: verification } : {}),
+      });
   const pluginManifestSummary =
     family === "claw"
       ? undefined

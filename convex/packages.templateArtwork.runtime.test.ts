@@ -46,7 +46,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-it("publishes a Template's packaged PNG through the validated content-addressed image route", async () => {
+async function assertTemplateArtwork(source: "explicit" | "avatar") {
   vi.useFakeTimers();
   // The mock supplies the original method's Blob receiver with call(this).
   // oxlint-disable-next-line typescript/unbound-method
@@ -91,8 +91,10 @@ it("publishes a Template's packaged PNG through the validated content-addressed 
       openclaw: { template: "CLAW.md" },
     }),
     "package/CLAW.md":
-      "---\nschemaVersion: 1\nagent:\n  id: artwork-claw\n  name: Artwork Template\n---\nHelp with research.\n",
-    "package/assets/icon.png": png,
+      "---\nschemaVersion: 1\ncategories: [engineering]\nagent:\n  id: artwork-claw\n  name: Artwork Template\n  identity:\n    avatar: avatars/agent.svg\nworkspace:\n  files:\n    - path: avatars/agent.svg\n      source: art/source.svg\n---\nHelp with research.\n",
+    "package/art/source.svg":
+      '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="#ff3366"/></svg>',
+    ...(source === "explicit" ? { "package/assets/icon.png": png } : {}),
   });
   const form = new FormData();
   form.set(
@@ -132,30 +134,38 @@ it("publishes a Template's packaged PNG through the validated content-addressed 
     clawscan: { status: "clean" },
   });
   const catalog = await (await t.fetch("/api/v1/packages?family=template")).json();
-  expect(catalog.items[0]).toMatchObject({
-    name: "@openclaw/artwork-claw",
-    icon: `/api/v1/skill-icons/${await sha256Hex(png)}`,
-  });
+  const icon = catalog.items[0]?.icon;
+  expect(catalog.items[0]?.name).toBe("@openclaw/artwork-claw");
+  expect(icon).toMatch(/^\/api\/v1\/skill-icons\/[a-f0-9]{64}$/);
+  const explicitPath = `/api/v1/skill-icons/${await sha256Hex(png)}`;
+  if (source === "explicit") expect(icon).toBe(explicitPath);
+  else expect(icon).not.toBe(explicitPath);
   const versionResponse = await t.fetch(
     "/api/v1/packages/%40openclaw%2Fartwork-claw/versions/1.0.0",
   );
   expect(versionResponse.status).toBe(200);
   expect((await versionResponse.json()).version).toMatchObject({
     version: "1.0.0",
-    icon: `/api/v1/skill-icons/${await sha256Hex(png)}`,
+    icon,
   });
   await t.action(internal.catalogFeed.publish, {
     expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
   });
   const feed = await (await t.fetch("/api/v1/feeds/templates")).json();
-  expect(feed.entries[0].icon).toBe(
-    `https://clawhub.ai/api/v1/skill-icons/${await sha256Hex(png)}`,
-  );
-  const image = await t.fetch(`/api/v1/skill-icons/${await sha256Hex(png)}`);
+  expect(feed.entries[0].icon).toBe(`https://clawhub.ai${icon}`);
+  const image = await t.fetch(icon);
   expect(image.status).toBe(200);
   expect(image.headers.get("Content-Type")).toBe("image/png");
-  expect(new Uint8Array(await image.arrayBuffer())).toEqual(png);
-});
+  const bytes = new Uint8Array(await image.arrayBuffer());
+  expect(bytes.slice(0, 8)).toEqual(png.slice(0, 8));
+  expect(icon).toBe(`/api/v1/skill-icons/${await sha256Hex(bytes)}`);
+  if (source === "explicit") expect(bytes).toEqual(png);
+}
+
+it.each(["explicit", "avatar"] as const)(
+  "publishes %s Template artwork through the first-party PNG route",
+  assertTemplateArtwork,
+);
 
 it.each(["legacy-only", "mixed", "json"])(
   "rejects %s Template selectors at the public publish boundary",
