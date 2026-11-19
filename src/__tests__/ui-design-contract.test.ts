@@ -154,6 +154,20 @@ describe("restored UI design contract", () => {
     );
   });
 
+  it("displays Template silhouettes without a tile or cropping", () => {
+    const css = styles();
+    const icon = cssRule(
+      css,
+      ".browse-page .plugin-summary-item .marketplace-icon.marketplace-icon-template",
+    );
+    expect(icon).toContain("border: 0");
+    expect(icon).toContain("background: transparent");
+    expect(icon).toContain("box-shadow: none");
+    expect(cssRule(css, ".marketplace-icon-template .marketplace-icon-image")).toContain(
+      "object-fit: contain",
+    );
+  });
+
   it("removes discovery icon columns on mobile while preserving plugin icons on desktop", () => {
     const css = styles();
 

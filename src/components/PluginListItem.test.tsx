@@ -16,6 +16,29 @@ vi.mock("@tanstack/react-router", () => ({
 
 describe("PluginListItem", () => {
   it.each(["list", "card"] as const)(
+    "uses the packaged Template icon in %s and falls back to the Blobster, never the publisher",
+    (variant) => {
+      const icon = "/api/v1/skill-icons/" + "a".repeat(64);
+      const { container } = render(
+        <PluginListItem
+          item={{
+            ...makePlugin({ icon, ownerImage: "https://example.test/publisher.png" }),
+            family: "template",
+          }}
+          itemKind="template"
+          href="/local/templates/demo"
+          variant={variant}
+        />,
+      );
+      const image = container.querySelector(".marketplace-icon img");
+      expect(image?.getAttribute("src")).toBe(icon);
+      fireEvent.error(image!);
+      expect(container.querySelector(".marketplace-icon img")).toBeNull();
+      expect(container.querySelector(".marketplace-icon-template svg")).toBeTruthy();
+    },
+  );
+
+  it.each(["list", "card"] as const)(
     "shows the Blobster instead of a publisher photo in Template %s rows",
     (variant) => {
       const { container } = render(

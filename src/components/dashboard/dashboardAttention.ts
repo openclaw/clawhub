@@ -146,10 +146,11 @@ function pushPackageAttention(
   pkg: DashboardPackage,
   ownerHandle: string,
 ) {
+  const version = pkg.latestRelease?.version;
   const auditHref =
     pkg.family === "template"
-      ? buildTemplateSecurityAuditHref(pkg.name, ownerHandle)!
-      : buildPluginSecurityAuditHref(pkg.name, { ownerHandle });
+      ? buildTemplateSecurityAuditHref(pkg.name, ownerHandle, version)!
+      : buildPluginSecurityAuditHref(pkg.name, { ownerHandle, version });
   const warningCount = pkg.inspectorWarningCount ?? 0;
   const security = packageSecurityStatus(pkg);
   const validationPreview = pluginValidationPreview(pkg);
@@ -161,7 +162,7 @@ function pushPackageAttention(
       packageFamily: pkg.family,
       packageName: pkg.name,
       ownerHandle,
-      version: pkg.latestVersion ?? pkg.latestRelease?.version ?? undefined,
+      version,
       updatedAt: pkg.updatedAt,
       issueType: "retirement",
       apiRetirements: pkg.apiRetirements,
@@ -181,7 +182,7 @@ function pushPackageAttention(
       packageFamily: pkg.family,
       packageName: pkg.name,
       ownerHandle,
-      version: pkg.latestVersion ?? pkg.latestRelease?.version ?? undefined,
+      version,
       updatedAt: pkg.updatedAt,
       issueType: "validation",
       title: pkg.displayName,
@@ -199,7 +200,7 @@ function pushPackageAttention(
       packageFamily: pkg.family,
       packageName: pkg.name,
       ownerHandle,
-      version: pkg.latestVersion ?? pkg.latestRelease?.version ?? undefined,
+      version,
       updatedAt: pkg.updatedAt,
       issueType: "security",
       title: pkg.displayName,
@@ -217,7 +218,7 @@ function pushPackageAttention(
       packageFamily: pkg.family,
       packageName: pkg.name,
       ownerHandle,
-      version: pkg.latestVersion ?? pkg.latestRelease?.version ?? undefined,
+      version,
       updatedAt: pkg.updatedAt,
       issueType: "security",
       title: pkg.displayName,
@@ -233,7 +234,7 @@ function pushPackageAttention(
       packageFamily: pkg.family,
       packageName: pkg.name,
       ownerHandle,
-      version: pkg.latestVersion ?? pkg.latestRelease?.version ?? undefined,
+      version,
       updatedAt: pkg.updatedAt,
       issueType: "security",
       title: pkg.displayName,
