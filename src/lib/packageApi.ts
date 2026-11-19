@@ -608,7 +608,18 @@ export async function fetchPackageDetail(
   view?: "template-detail" | "template-inventory",
 ): Promise<PackageDetailResponse> {
   const url = await packageApiUrl(`${ApiRoutes.packages}/${encodeURIComponent(name)}`);
-  if (view) url.searchParams.set("view", view);
+  if (view === "template-inventory") {
+    if (typeof window === "undefined") {
+      // SSR knows whether this request is carrying viewer credentials. Never probe a denied
+      // public inventory and then retry the same release using a more privileged read.
+      const headers = await getForwardedHeaders("request");
+      url.searchParams.set("view", headers.authorization || headers.cookie ? "template-detail" : view);
+    } else {
+      // Same-origin visits let the web proxy inspect HttpOnly cookies. Direct cross-origin dev
+      // reads are always anonymous (packageFetch uses credentials:omit for those).
+      url.searchParams.set("view", url.origin === window.location.origin ? "website-template" : view);
+    }
+  } else if (view) url.searchParams.set("view", view);
   const response = await packageFetch(url, "application/json");
   if (response.status === 404) {
     return { package: null, owner: null };
