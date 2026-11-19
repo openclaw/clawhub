@@ -26,8 +26,9 @@ comes last. The definitions live in `TEMPLATE_CATEGORY_DEFINITIONS` in
 - A personal job search belongs under Productivity.
 
 Each definition's `description` is the classifier's entire guidance for that category. Keep the
-ten distinguishable from each other when editing one. `icon` is a Lucide icon name for whichever
-client draws the chips; the ClawHub site shows a Template's category as text only.
+ten distinguishable from each other when editing one. `icon` names the Lucide glyph used
+alongside the category label in the `/templates` browse filters. It identifies the filter,
+not the Template: catalog rows use the shared Blobster glyph instead.
 
 ## One category per Template
 
