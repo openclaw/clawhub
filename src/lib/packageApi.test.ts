@@ -933,6 +933,70 @@ describe("fetchTemplateCatalog", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("retries the same ranked read when its search index is still starting", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    const item = { name: "@maker/brief", family: "template" };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response("Search indexes bootstrapping", { status: 503 }))
+      .mockResolvedValueOnce(
+        Response.json({ status: "success", value: [{ score: 1, package: item }] }),
+      );
+    expect(
+      await fetchTemplateCatalog({ q: "brief", signal: new AbortController().signal }),
+    ).toEqual({ items: [item], nextCursor: null });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1]).toEqual(fetchMock.mock.calls[0]);
+  });
+
+  it.each([401, 403, 429, 500])("does not retry terminal search status %d", async (status) => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("Unavailable", { status }));
+    await expect(
+      fetchTemplateCatalog({ q: "brief", signal: new AbortController().signal }),
+    ).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry earlier than a server-directed delay or treat a failure as empty results", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response("Try later", { status: 503, headers: { "Retry-After": "30" } }),
+      );
+    await expect(
+      fetchTemplateCatalog({ q: "brief", signal: new AbortController().signal }),
+    ).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("bounds persistently unavailable searches", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async () => new Response("Index unavailable", { status: 503 }));
+    await expect(
+      fetchTemplateCatalog({ q: "brief", signal: new AbortController().signal }),
+    ).rejects.toThrow("Index unavailable");
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("cancels a pending index restart wait on navigation", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    const controller = new AbortController();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      setTimeout(() => controller.abort(), 5);
+      return new Response("Index unavailable", { status: 503 });
+    });
+    await expect(
+      fetchTemplateCatalog({ q: "brief", signal: controller.signal }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("does not send a cancelled search", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch");
     await expect(

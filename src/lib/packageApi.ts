@@ -384,6 +384,42 @@ export async function fetchPackages(params: {
 
 const TEMPLATE_PAGE_SIZE = 20;
 
+// A newly started Convex deployment can accept reads before its ranked search
+// index is ready. Repeat only this idempotent query, never a mutation or a 429.
+const SEARCH_RETRY_DELAYS_MS = [100, 300, 700];
+
+function waitForSearchRetry(ms: number, signal: AbortSignal) {
+  signal.throwIfAborted();
+  return new Promise<void>((resolve, reject) => {
+    const cancel = () => {
+      clearTimeout(timer);
+      reject(signal.reason);
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", cancel);
+      resolve();
+    }, ms);
+    signal.addEventListener("abort", cancel, { once: true });
+  });
+}
+
+async function readRankedTemplates<T>(read: () => Promise<T>, signal: AbortSignal): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    signal.throwIfAborted();
+    try {
+      return await read();
+    } catch (error) {
+      const delay = SEARCH_RETRY_DELAYS_MS[attempt];
+      if (!(error instanceof PackageApiError) || error.status !== 503 || delay === undefined)
+        throw error;
+      const retryAfterMs = (error.retryAfterSeconds ?? 0) * 1000;
+      // Leave longer outages visible rather than holding navigation for a server-directed delay.
+      if (retryAfterMs > 2000) throw error;
+      await waitForSearchRetry(Math.max(delay, retryAfterMs), signal);
+    }
+  }
+}
+
 function requireTemplateSummary(item: PackageListItem<PackageFamily>): PackageListItem<"template"> {
   if (item.family !== "template") throw new Error("Unexpected family in Template catalog");
   return { ...item, family: item.family };
@@ -401,18 +437,23 @@ export async function fetchTemplateCatalog(params: {
   const client = new ConvexHttpClient(getRequiredRuntimeEnv("VITE_CONVEX_URL"), {
     fetch: async (input, init) => {
       const response = await fetch(input, { ...init, signal: params.signal, credentials: "omit" });
-      if (response.status === 429) throw await createPackageApiError(response);
+      if (response.status === 429 || response.status === 503)
+        throw await createPackageApiError(response);
       return response;
     },
   });
   const filters = { family: "template" as const, category: params.category };
   const query = params.q?.trim();
   if (query) {
-    const results = await client.query(api.packages.searchPublic, {
-      ...filters,
-      query,
-      limit: TEMPLATE_PAGE_SIZE,
-    });
+    const results = await readRankedTemplates(
+      () =>
+        client.query(api.packages.searchPublic, {
+          ...filters,
+          query,
+          limit: TEMPLATE_PAGE_SIZE,
+        }),
+      params.signal,
+    );
     return {
       items: results.map((entry) => requireTemplateSummary(entry.package)),
       nextCursor: null,
