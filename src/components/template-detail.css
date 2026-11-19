@@ -352,6 +352,10 @@
   }
 }
 
+.template-detail-skeleton .animate-pulse {
+  background-color: color-mix(in srgb, var(--line) 60%, var(--surface-muted));
+}
+
 .template-skeleton-install-mobile {
   display: none;
 }
