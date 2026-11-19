@@ -25,10 +25,15 @@ import {
 import { getRuntimeEnv } from "./runtimeEnv";
 import { getPublicClawHubSiteUrl } from "./site";
 
-export type PackageListItem = {
+export type PackageListItem<
+  Family extends "skill" | "code-plugin" | "bundle-plugin" | "template" =
+    | "skill"
+    | "code-plugin"
+    | "bundle-plugin",
+> = {
   name: string;
   displayName: string;
-  family: "skill" | "code-plugin" | "bundle-plugin";
+  family: Family;
   runtimeId?: string | null;
   channel: "official" | "community" | "private";
   isOfficial: boolean;
@@ -365,6 +370,35 @@ export async function fetchPackages(params: {
     params.signal,
     params.viewerMode,
   );
+}
+
+export async function fetchTemplateCatalog(params: {
+  q?: string;
+  category?: string;
+  cursor?: string;
+  limit: number;
+  signal: AbortSignal;
+}): Promise<{ items: PackageListItem<"template">[]; nextCursor: string | null }> {
+  const query = params.q?.trim();
+  const url = await packageApiUrl(query ? `${ApiRoutes.packages}/search` : ApiRoutes.packages);
+  url.searchParams.set("family", "template");
+  url.searchParams.set("limit", String(params.limit));
+  if (params.category) url.searchParams.set("category", params.category);
+  if (query) {
+    url.searchParams.set("q", query);
+    const result = await fetchJson<{ results: Array<{ package: PackageListItem<"template"> }> }>(
+      url,
+      params.signal,
+      "anonymous",
+    );
+    return { items: result?.results.map((entry) => entry.package) ?? [], nextCursor: null };
+  }
+  if (params.cursor) url.searchParams.set("cursor", params.cursor);
+  const result = await fetchJson<{
+    items: PackageListItem<"template">[];
+    nextCursor: string | null;
+  }>(url, params.signal, "anonymous");
+  return result ?? { items: [], nextCursor: null };
 }
 
 export async function fetchPluginCatalog(params: {

@@ -90,6 +90,19 @@ again. Short descriptions have no disclosure control. Overflow is measured from
 the actual layout and rechecked on resize and font readiness, not inferred from
 character count. Route metadata and registry descriptions remain untruncated.
 
+## Website catalog
+
+`/templates` is a direct link, not an entry in the global header or navigation. It uses
+the Plugins browse layout and reads the public package list and search APIs anonymously,
+with `family=template`. The URL keeps the search text (`q`) and category filter so a
+filtered view can be shared. Results show download counts and link to the existing
+publisher-scoped Template detail pages. Browse lists load more entries by cursor; text
+search returns up to 25 results without pagination.
+
+Where catalog rows show an icon, they use the shared Blobster glyph to identify a Template,
+not the publisher’s profile picture. This is separate from the artwork exported for feed
+consumers.
+
 ## Catalog artwork
 
 A Template may package `assets/icon.png` for its catalog artwork, independently of
