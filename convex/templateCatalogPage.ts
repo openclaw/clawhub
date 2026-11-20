@@ -34,7 +34,6 @@ type Fields = Pick<
   | "summary"
   | "categories"
   | "topics"
-  | "pluginCategoryTags"
   | "ownerPublisherId"
   | "stats"
   | "channel"
@@ -72,7 +71,7 @@ async function rank(
           summary: row.summary,
           runtimeId: row.runtimeId,
           ownerHandle: owner?.handle,
-          categories: row.pluginCategoryTags,
+          categories: row.categories,
           topics: row.topics,
         },
         filters.q,

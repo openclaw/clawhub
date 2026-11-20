@@ -74,6 +74,21 @@ async function fixture() {
 }
 
 describe("ranked public Template pages", () => {
+  it.each(["ranked", "package"])(
+    "finds category-only Template matches in %s search",
+    async (mode) => {
+      const { t, publish, searchNames } = await fixture();
+      await publish("1.0.0", ["household"], "daily-brief");
+      await publish("1.0.0", ["other"], "weekly-brief");
+      const names = async (q: string) => {
+        if (mode === "package") return searchNames("q=" + q);
+        const page = await t.query(api.templateCatalogPage.get, { q, limit: 20 });
+        return page.items.map((item) => item.name);
+      };
+      expect(await names("household")).toEqual(["@template-maker/daily-brief"]);
+      expect(await names("other")).toEqual([]);
+    },
+  );
   it("finds a rare published match beyond 500 unrelated legacy family rows", async () => {
     const { t, publish } = await fixture();
     const { packageId } = await publish("1.0.0", ["travel"], "needle");

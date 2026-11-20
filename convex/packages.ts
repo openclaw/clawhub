@@ -1443,7 +1443,7 @@ function packageSearchMatch(
       displayName: digest.displayName,
       runtimeId: digest.runtimeId,
       ownerHandle: digest.ownerHandle,
-      categories: digest.pluginCategoryTags,
+      categories: digest.family === "claw" ? digest.categories : digest.pluginCategoryTags,
       topics: digest.topics,
       summary: digest.summary,
     },
