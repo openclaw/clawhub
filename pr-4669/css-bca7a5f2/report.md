@@ -1,0 +1,1 @@
+Three screenshot pairs are byte-identical. The desktop publisher screenshots differ in bytes but showed no visible layout difference on inspection.

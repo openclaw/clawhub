@@ -1,0 +1,68 @@
+{
+  "mode": "before-after",
+  "status": "passed",
+  "scenario": "CSS cleanup on home and publisher pages",
+  "provider": "isolated Chromium",
+  "baseline": "ce0714af027e124265898f9e521e83360f0b95cf",
+  "candidate": "bca7a5f275f56a4ed2021539054aaf33c947755c",
+  "lanes": [
+    {
+      "name": "baseline",
+      "steps": [
+        {
+          "slug": "home-1440",
+          "name": "Home 1440 \u00d7 900 (baseline)",
+          "screenshot": "home-1440.png",
+          "status": "passed"
+        },
+        {
+          "slug": "home-390",
+          "name": "Home 390 \u00d7 844 (baseline)",
+          "screenshot": "home-390.png",
+          "status": "passed"
+        },
+        {
+          "slug": "publisher-1440",
+          "name": "Publisher 1440 \u00d7 900 (baseline)",
+          "screenshot": "publisher-1440.png",
+          "status": "passed"
+        },
+        {
+          "slug": "publisher-390",
+          "name": "Publisher 390 \u00d7 844 (baseline)",
+          "screenshot": "publisher-390.png",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "name": "candidate",
+      "steps": [
+        {
+          "slug": "home-1440",
+          "name": "Home 1440 \u00d7 900 (candidate)",
+          "screenshot": "home-1440.png",
+          "status": "passed"
+        },
+        {
+          "slug": "home-390",
+          "name": "Home 390 \u00d7 844 (candidate)",
+          "screenshot": "home-390.png",
+          "status": "passed"
+        },
+        {
+          "slug": "publisher-1440",
+          "name": "Publisher 1440 \u00d7 900 (candidate)",
+          "screenshot": "publisher-1440.png",
+          "status": "passed"
+        },
+        {
+          "slug": "publisher-390",
+          "name": "Publisher 390 \u00d7 844 (candidate)",
+          "screenshot": "publisher-390.png",
+          "status": "passed"
+        }
+      ]
+    }
+  ]
+}
