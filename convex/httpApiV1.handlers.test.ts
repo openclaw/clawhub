@@ -15615,6 +15615,7 @@ describe("httpApiV1 handlers", () => {
 
   it("returns a large package ZIP without an extra response buffer slice", async () => {
     vi.stubEnv("TRUST_FORWARDED_IPS", "true");
+    vi.stubEnv("CLAWHUB_DOWNLOAD_METRICS_PAUSED", "");
     // Inert, incompressible data exercises the response-copy peak after ZIP hashing.
     const payload = new Uint8Array(20 * 1024 * 1024);
     let seed = 1;
@@ -15656,6 +15657,7 @@ describe("httpApiV1 handlers", () => {
       }
       return result;
     });
+    const chunks: Uint8Array[] = [];
     let response: Response;
     try {
       response = await __handlers.packagesGetRouterV1Handler(
@@ -15668,11 +15670,19 @@ describe("httpApiV1 handlers", () => {
           headers: { "cf-connecting-ip": "203.0.113.20" },
         }),
       );
+      // Convex drains the body after the handler returns. Observe that phase, too.
+      const reader = response.body!.getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+      }
     } finally {
       slice.mockRestore();
     }
     expect(response.status).toBe(200);
-    const bytes = new Uint8Array(await response.arrayBuffer());
+    expect(responsePhase).toBe(true);
+    const bytes = Buffer.concat(chunks);
     const hash = await sha256Hex(bytes);
     // Pin the pre-optimization deterministic ZIP, not just self-consistent headers.
     expect(hash).toBe("00133aceb9fa3c9d2a778250d7c45c199d9fd6a412ddfb9d741021da987473be");
@@ -15682,8 +15692,10 @@ describe("httpApiV1 handlers", () => {
     );
     expect(response.headers.get("x-clawhub-artifact-sha256")).toBe(hash);
     expect(response.headers.get("x-clawhub-artifact-type")).toBe("legacy-plugin-zip");
-    expect(unzipSync(bytes)["package/assets/inert.bin"]).toEqual(payload);
+    expect(Buffer.compare(unzipSync(bytes)["package/assets/inert.bin"], payload)).toBe(0);
     expect(responseCopies).toEqual([]);
+    expect(Math.max(...chunks.map((chunk) => chunk.byteLength))).toBeLessThanOrEqual(64 * 1024);
+    expect(response.headers.get("content-length")).toBe(String(bytes.byteLength));
   });
 
   it("package download metrics prefer API token user identity over IP", async () => {

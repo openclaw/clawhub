@@ -3411,6 +3411,23 @@ async function getReleaseForRequest(
   return snapshot?.release ?? null;
 }
 
+function streamPackageZip(zip: Uint8Array) {
+  // A BufferSource body is snapshotted; Convex also copies each stream chunk
+  // into its HTTP transport. Hand it bounded views of the already-hashed ZIP.
+  const chunkBytes = 64 * 1024;
+  let offset = 0;
+  return new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (offset < zip.byteLength) {
+        const chunk = zip.subarray(offset, offset + chunkBytes);
+        controller.enqueue(chunk);
+        offset += chunk.byteLength;
+      }
+      if (offset === zip.byteLength) controller.close();
+    },
+  });
+}
+
 async function packageFileResponse(
   ctx: ActionCtx,
   release: ReleaseLike,
@@ -4379,7 +4396,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     if (release.artifactKind === "legacy-zip" && release.clawpackStorageId && !storedZip) {
       return text("Missing stored package artifact", 500, rate.headers);
     }
-    let zip: Uint8Array<ArrayBuffer>;
+    let zip: Uint8Array;
     if (storedZip) {
       zip = new Uint8Array(await storedZip.arrayBuffer());
     } else {
@@ -4412,14 +4429,13 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     } catch {
       // Best-effort metric path; never fail package downloads.
     }
-    // The archive already owns its bytes; slicing and wrapping it in a Blob
-    // creates two more archive-sized buffers in the 64 MB HTTP-action runtime.
-    return new Response(zip, {
+    return new Response(streamPackageZip(zip), {
       status: 200,
       headers: mergeHeaders(
         rate.headers,
         {
           "Content-Type": "application/zip",
+          "Content-Length": String(zip.byteLength),
           "Content-Disposition": contentDispositionAttachment(
             `${publicPackage!.name.replaceAll("/", "-")}-${release.version}.zip`,
           ),

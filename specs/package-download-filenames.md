@@ -10,10 +10,10 @@ Plugin export zip names are built from the family and the date range. They are n
 
 ## Legacy ZIP response memory
 
-The public package download handler sends its already-owned ZIP bytes directly
-to `Response`. Do not add an archive-sized `ArrayBuffer.slice()` and `Blob`
-wrapper: the two additional copies can exhaust the 64 MB HTTP-action runtime
-after archive construction and hashing have succeeded. The large inert download
-regression pins the historical ZIP digest and response headers as well as this
-allocation boundary. This optimization does not change portable-path validation,
-moderation/access checks, archive contents, or the stored-original contract.
+After hashing, the public package download handler streams bounded views of
+the existing ZIP and sets its known `Content-Length`. A `Response` built from
+a typed array can copy the entire archive, and Convex copies each output
+chunk into its HTTP transport. Neither step should require another ZIP-sized
+buffer. This does not stream ZIP construction or hashing. The inert regression
+pins the historical digest and checks the body through consumption; stored
+originals, archive contents, path validation, and access checks are unchanged.
