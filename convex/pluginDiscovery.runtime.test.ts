@@ -1,12 +1,16 @@
 /// <reference types="vite/client" />
 /* @vitest-environment edge-runtime */
+import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { convexTest } from "convex-test";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
 import { api, internal } from "./_generated/api";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
 import schema from "./schema";
 
+// Test the anonymous catalog endpoints, not the separately tested ingress trust boundary.
+vi.mock("./lib/verifiedClientIp", () => ({ getVerifiedClientIp: async () => "203.0.113.1" }));
+const agentMail = "@agentmail/agentmail";
 const modules = import.meta.glob("./**/*.ts");
 
 async function fixture(setupCount = 0, workflowCategories = ["documents-files"]) {
@@ -18,9 +22,9 @@ async function fixture(setupCount = 0, workflowCategories = ["documents-files"])
     const variants = [
       ...Array.from(
         { length: setupCount },
-        (_, index) => [`setup-${index}`, "channels", true] as const,
+        (_, index) => [`setup-${index}`, "models", true] as const,
       ),
-      ["transport", "channels", true],
+      [agentMail, "channels", false],
       ["inference", "models", false],
       ["engine", "agent-runtimes", true],
       ["official-workflow", "documents-files", true],
@@ -81,7 +85,28 @@ async function fixture(setupCount = 0, workflowCategories = ["documents-files"])
   return { t, ...seeded };
 }
 
-it("excludes setup purposes from Trending and Featured while retaining All, search, and demand evidence", async () => {
+it("serves a staff-featured channel on the public Featured list and overview, but not Trending", async () => {
+  const { t, ids } = await fixture();
+  registerRateLimiter(t, "rateLimiterV2");
+  const moderator = await t.run((ctx) => ctx.db.insert("users", { role: "moderator" }));
+  const packageId = ids.find(({ name }) => name === agentMail)!.packageId;
+  await t.withIdentity({ subject: moderator }).mutation(api.packages.setBatch, {
+    packageId,
+    batch: "highlighted",
+  });
+  const list = await t.fetch("/api/v1/plugins?featured=true");
+  expect(list.status).toBe(200);
+  expect((await list.json()).items).toMatchObject([{ name: agentMail }]);
+  const overview = await t.fetch("/api/v1/plugins/overview");
+  expect(overview.status).toBe(200);
+  const channel = (await overview.json()).items.find(
+    (item: { name: string }) => item.name === agentMail,
+  );
+  expect(channel).toMatchObject({ featured: true, featuredRank: 0 });
+  expect(channel.trending).not.toBe(true);
+});
+
+it("keeps setup purposes out of automatic discovery and serves only allowed explicit badges", async () => {
   const { t, ids, ownerUserId } = await fixture();
   const trending = await t.query(api.packages.listPublicPage, {
     sort: "trending",
@@ -108,10 +133,10 @@ it("excludes setup purposes from Trending and Featured while retaining All, sear
   });
   expect(all.page.map((row) => row.name).sort()).toEqual(ids.map((row) => row.name).sort());
   expect(
-    (await t.query(api.packages.searchPublic, { query: "transport" })).map(
+    (await t.query(api.packages.searchPublic, { query: "agentmail" })).map(
       (row) => row.package.name,
     ),
-  ).toEqual(["transport"]);
+  ).toEqual([agentMail]);
   await t.run(async (ctx) => {
     for (const { packageId } of ids)
       await ctx.db.insert("packageBadges", {
@@ -126,6 +151,7 @@ it("excludes setup purposes from Trending and Featured while retaining All, sear
     paginationOpts: { cursor: null, numItems: 20 },
   });
   expect(featured.page.map((row) => row.name).sort()).toEqual([
+    agentMail,
     "community-workflow",
     "media-workflow",
     "official-workflow",
@@ -197,6 +223,7 @@ it("selects adoption leaders after discovery eligibility, so higher setup adopti
     paginationOpts: { cursor: null, numItems: 20 },
   });
   expect(featured.page.map((row) => row.name).sort()).toEqual([
+    agentMail,
     "community-workflow",
     "media-workflow",
     "official-workflow",

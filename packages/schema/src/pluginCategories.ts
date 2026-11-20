@@ -22,10 +22,15 @@ export function isCurrentPluginCategoryAssignment(categories: readonly string[] 
 }
 
 /** Discovery follows the primary install purpose, not secondary capabilities or publisher. */
-export function getPluginDiscoveryExclusion(categories: readonly string[] | undefined) {
+export function getPluginDiscoveryExclusion(
+  categories: readonly string[] | undefined,
+  selection: "automatic" | "explicit-featured" = "automatic",
+) {
   // Historical capability lists have no primary purpose until the reviewed refresh.
   const primary = categories?.length === 1 ? categories[0] : undefined;
-  return primary === "channels" || primary === "models" || primary === "agent-runtimes"
+  return (primary === "channels" && selection === "automatic") ||
+    primary === "models" ||
+    primary === "agent-runtimes"
     ? primary
     : null;
 }

@@ -179,7 +179,7 @@ describe("Featured publication", () => {
   it("rejects excluded install purposes through UI and admin publication while allowing removal", async () => {
     const { t, actorUserId, items } = await fixture();
     const staff = t.withIdentity({ subject: `${actorUserId}|test-session` });
-    for (const [index, category] of ["channels", "models", "agent-runtimes"].entries()) {
+    for (const [index, category] of ["models", "agent-runtimes"].entries()) {
       const item = items[index];
       await t.run((ctx) => ctx.db.patch(item.packageId, { categories: [category] }));
       await expect(

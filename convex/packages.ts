@@ -1184,9 +1184,9 @@ async function upsertPackageBadge(
     return false;
   }
   if (pkg.family === "code-plugin" || pkg.family === "bundle-plugin") {
-    if (getPluginDiscoveryExclusion(pkg.categories)) {
+    if (getPluginDiscoveryExclusion(pkg.categories, "explicit-featured")) {
       throw new ConvexError(
-        "Channels, model providers, and agent runtimes are excluded from Featured discovery.",
+        "Model providers and agent runtimes are excluded from Featured discovery.",
       );
     }
     await assertFeaturedCapacity(ctx, "plugin");
@@ -2073,7 +2073,15 @@ async function fetchHighlightedPackageEntries(
       .withIndex("by_package", (q) => q.eq("packageId", badge.packageId))
       .unique();
     if (!digest || digest.softDeletedAt) continue;
-    if (getPluginDiscoveryExclusion(digest.categories) || !isEnglishPluginListing(digest)) continue;
+    const selection =
+      digest.family === "code-plugin" || digest.family === "bundle-plugin"
+        ? "explicit-featured"
+        : "automatic";
+    if (
+      getPluginDiscoveryExclusion(digest.categories, selection) ||
+      !isEnglishPluginListing(digest)
+    )
+      continue;
     if (!(await canViewerReadPackage(ctx, digest, viewerUserId, membershipCache))) continue;
     if (!digestMatchesSearchFilters(digest, args)) continue;
     if (!(await isTemplateCatalogPublisherAvailable(ctx, digest, templatePublisherCache))) continue;

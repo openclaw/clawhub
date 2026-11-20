@@ -62,8 +62,8 @@ describe("homeListingData", () => {
     fetchCanonicalTrendingPageMock.mockResolvedValue(makeCanonicalTrendingPage([], null));
   });
 
-  it("loads Featured plugins as the initial homepage catalog", async () => {
-    const item = makePlugin("first", 100);
+  it("loads explicitly Featured channels in the initial homepage catalog", async () => {
+    const item = { ...makePlugin("@agentmail/agentmail", 100), categories: ["channels"] };
     fetchPluginCatalogMock.mockResolvedValue({ items: [item], nextCursor: null });
 
     await expect(fetchInitialHomeListing()).resolves.toEqual({
