@@ -12,6 +12,7 @@ import { isPackageBlockedFromPublic } from "./lib/packageSecurity";
 import { compareRankedSearchKeys, rankedSearchKey, verificationRank } from "./lib/searchRanking";
 import {
   badPage,
+  tooBroad,
   encodeRankedCursor,
   decodeRankedCursor,
   type RankedFilters,
@@ -21,6 +22,7 @@ import { isRankedReleasePublic } from "./lib/templateRankProjection";
 
 const BATCH = 16;
 const INDEX_BATCH = 256;
+const MAX_PAGE_LOOKUPS = 512; // per-request stale/forged reference work, not result cardinality
 type PublisherCache = Map<Id<"publishers">, Promise<Doc<"publishers"> | null>>;
 type Fields = Pick<
   Doc<"packageSearchDigest">,
@@ -237,7 +239,11 @@ export const get = query({
     const selected: Live[] = [];
     let pos = 0;
     while (pos < refs.length && selected.length < args.limit) {
-      const batch = refs.slice(pos, pos + Math.min(BATCH, args.limit - selected.length));
+      if (pos >= MAX_PAGE_LOOKUPS) return tooBroad();
+      const batch = refs.slice(
+        pos,
+        pos + Math.min(BATCH, args.limit - selected.length, MAX_PAGE_LOOKUPS - pos),
+      );
       pos += batch.length;
       const results = await Promise.all(
         batch.map(async (ref) => {

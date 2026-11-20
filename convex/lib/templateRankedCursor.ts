@@ -8,6 +8,9 @@ const CURRENT = "tr2.";
 export type RankedRef = string | number;
 const MAX_WIRE = 4096;
 const MAX_RAW = 65536;
+// Only old, name-based references require eager authorization before re-emission.
+// Do not transfer the old decoder limit onto the size of the projected family.
+const MAX_LEGACY_REFS = 500;
 export type RankedFilters = { q: string; category: string; limit: number };
 export function badPage(): never {
   throw new ConvexError({
@@ -29,6 +32,7 @@ function encodeBytes(bytes: Uint8Array) {
 }
 export function encodeRankedCursor(names: RankedRef[], { q, category, limit }: RankedFilters) {
   if (!names.length) return null;
+  if (names.filter((ref) => typeof ref === "string").length > MAX_LEGACY_REFS) return tooBroad();
   const raw = strToU8(JSON.stringify([q, category, limit, names]));
   if (raw.length >= MAX_RAW) return tooBroad();
   const token = CURRENT + encodeBytes(deflateSync(raw, { level: 1 }));
@@ -67,6 +71,7 @@ export function decodeRankedCursor(
           (typeof n === "string" && n.length > 0 && n.length <= 214) ||
           (!legacy && typeof n === "number" && Number.isSafeInteger(n) && n > 0),
       ) ||
+      names.filter((ref) => typeof ref === "string").length > MAX_LEGACY_REFS ||
       new Set(names).size !== names.length
     )
       return badPage();
