@@ -15719,6 +15719,10 @@ a.search-empty-action {
   grid-template-columns: auto minmax(0, var(--home-v2-listing-copy-max)) 1fr auto;
 }
 
+.home-v2-listing-row-with-icon.has-no-stats {
+  grid-template-columns: auto minmax(0, var(--home-v2-listing-copy-max)) 1fr;
+}
+
 .home-v2-listing-row::before {
   content: "";
   position: absolute;
@@ -18529,6 +18533,10 @@ a.home-v2-byos-import:focus-visible svg:last-child {
   .home-v2-listing-row.home-v2-listing-row-with-icon,
   .home-v2-listing-head.home-v2-listing-head-with-icon {
     grid-template-columns: minmax(0, var(--home-v2-listing-copy-max)) 1fr auto;
+  }
+  /* Featured rows show no download count, so their copy uses the full row width. */
+  .home-v2-listing-row.home-v2-listing-row-with-icon.has-no-stats {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .home-v2-listing-head-with-icon .home-v2-listing-head-icon-spacer,

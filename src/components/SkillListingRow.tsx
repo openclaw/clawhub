@@ -7,31 +7,43 @@ import { Badge } from "./ui/badge";
 import { Skeleton } from "./ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 
-export function SkillListingHead() {
+export function SkillListingHead({ showDownloads = true }: { showDownloads?: boolean }) {
   return (
     <div className="skill-listing-head" aria-hidden="true">
       <span>Skill</span>
-      <span>Downloads</span>
+      {showDownloads ? <span>Downloads</span> : null}
     </div>
   );
 }
 
-export function SkillListingSkeleton({ count = 6 }: { count?: number }) {
+export function SkillListingSkeleton({
+  count = 6,
+  showDownloads = true,
+}: {
+  count?: number;
+  showDownloads?: boolean;
+}) {
   return (
     <div role="status" aria-label="Loading results">
-      <SkillListingHead />
+      <SkillListingHead showDownloads={showDownloads} />
       {Array.from({ length: count }, (_, index) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholder count
         <div key={index} className="home-v2-listing-row skill-listing-row">
           <Skeleton className="h-5 w-56 max-w-full" />
-          <Skeleton className="h-4 w-12" />
+          {showDownloads ? <Skeleton className="h-4 w-12" /> : null}
         </div>
       ))}
     </div>
   );
 }
 
-export function SkillListingRow({ entry }: { entry: HomeSkillListingEntry }) {
+export function SkillListingRow({
+  entry,
+  showDownloads = true,
+}: {
+  entry: HomeSkillListingEntry;
+  showDownloads?: boolean;
+}) {
   const item = "external" in entry ? entry.external : "trending" in entry ? entry.trending : null;
   const isSkillsSh = item?.source === "skills-sh";
   const native = "skill" in entry ? entry : null;
@@ -70,21 +82,25 @@ export function SkillListingRow({ entry }: { entry: HomeSkillListingEntry }) {
           {owner ? <span className="home-v2-listing-row-by">@{owner}</span> : null}
         </div>
       </div>
-      <div className="home-v2-listing-row-stats">
-        {isSkillsSh ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Badge variant="compact" size="sm">
-                skills.sh
-              </Badge>
-            </TooltipTrigger>
-            <TooltipContent>Synced from skills.sh</TooltipContent>
-          </Tooltip>
-        ) : null}
-        <span aria-label={metricLabel} title={metricLabel}>
-          {typeof downloads === "number" ? formatCompactStat(downloads) : "—"}
-        </span>
-      </div>
+      {showDownloads || isSkillsSh ? (
+        <div className="home-v2-listing-row-stats">
+          {isSkillsSh ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge variant="compact" size="sm">
+                  skills.sh
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent>Synced from skills.sh</TooltipContent>
+            </Tooltip>
+          ) : null}
+          {showDownloads ? (
+            <span aria-label={metricLabel} title={metricLabel}>
+              {typeof downloads === "number" ? formatCompactStat(downloads) : "—"}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
     </Link>
   );
 }
