@@ -818,8 +818,8 @@ Query params:
   be combined with `featured` or `officialFirst`. Eligible canonical package pins
   come first, then remaining plugins by downloads descending and canonical name
   ascending, consistently across pages and both plugin families. Category browse
-  retains all listing languages. The response includes category metadata with
-  optional ordered `pinnedPackages`.
+  started without an overview `previewCursor` retains all listing languages. The
+  response includes category metadata with optional ordered `pinnedPackages`.
 
 Legacy v1 filter aliases remain accepted on read endpoints:
 
@@ -854,9 +854,14 @@ Marked items also include their zero-based `featuredRank` or `trendingRank`, so
 clients preserve each shelf's independent order after deduplicating metadata.
 Featured ranks follow newest-featured order, matching `GET /api/v1/plugins?featured=true`.
 
-The response is public and carries shared-cache headers. Use the paginated
-`GET /api/v1/plugins` endpoint for searches, category expansion, and complete
-catalog traversal.
+Request `?previewCursors=true` to include an opaque `previewCursor` on each
+category whose English shelf may have more results. Pass it as `cursor` to
+`GET /api/v1/plugins?curated=true&category=<slug>&sort=downloads&limit=100`.
+Follow any returned `nextCursor` to stay in the same public, English-only order;
+a continuation can be empty if no further eligible packages remain. Omit the
+cursor to start a complete, multilingual category browse instead.
+
+The response is public and carries shared-cache headers.
 
 ### `GET /api/v1/plugins/categories`
 

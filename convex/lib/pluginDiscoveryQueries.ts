@@ -40,21 +40,27 @@ export async function listCuratedPluginCategoryPage(
   ctx: DbReaderCtx,
   args: CuratedCategoryArgs,
 ): Promise<PublicPackageListPage> {
-  const scope = JSON.stringify([
-    args.category,
-    args.family,
-    args.channel,
-    args.isOfficial,
-    args.topic,
-    args.excludedScanStatuses,
-    args.englishOnly ?? false,
-  ]);
-  let state: CuratedCategoryCursor = { scope, pinOffset: 0 };
+  const scopeFor = (englishOnly: boolean) =>
+    JSON.stringify([
+      args.category,
+      args.family,
+      args.channel,
+      args.isOfficial,
+      args.topic,
+      args.excludedScanStatuses,
+      englishOnly,
+    ]);
+  // Existing cursors already bind the language mode along with the category and filters.
+  const previewScope = scopeFor(true);
+  let state: CuratedCategoryCursor = {
+    scope: args.englishOnly ? previewScope : scopeFor(false),
+    pinOffset: 0,
+  };
   if (args.paginationOpts.cursor) {
     try {
       const value = JSON.parse(decodeURIComponent(atob(args.paginationOpts.cursor)));
       if (
-        value.scope !== scope ||
+        (value.scope !== state.scope && value.scope !== previewScope) ||
         !Number.isSafeInteger(value.pinOffset) ||
         value.pinOffset < 0 ||
         (value.downloads !== undefined &&
@@ -74,6 +80,7 @@ export async function listCuratedPluginCategoryPage(
     1,
     Math.min(args.paginationOpts.numItems, MAX_PUBLIC_LIST_PAGE_SIZE),
   );
+  const englishOnly = state.scope === previewScope;
   const pins = getPluginDiscoveryPins(args.category);
   const pinNames = new Set(pins);
   const page: PackageDigestLike[] = [];
@@ -81,7 +88,7 @@ export async function listCuratedPluginCategoryPage(
   const eligible = async (digest: PackageDigestLike) =>
     (digest.family === "code-plugin" || digest.family === "bundle-plugin") &&
     digestMatchesSearchFilters(digest, args) &&
-    (!args.englishOnly || isEnglishPluginListing(digest)) &&
+    (!englishOnly || isEnglishPluginListing(digest)) &&
     (await canViewerReadPackage(ctx, digest, undefined, membershipCache));
   // Finish ordered selection before loading independent publisher and stat data.
   // Promise.all preserves that order while overlapping the bounded card reads.
@@ -148,18 +155,4 @@ export async function listCuratedPluginCategoryPage(
     }
   }
   return result(false);
-}
-
-export async function listPluginOverviewCategory(
-  ctx: DbReaderCtx,
-  args: { category: PluginCategorySlug; numItems: number },
-) {
-  if (args.category === "other") return [];
-  return (
-    await listCuratedPluginCategoryPage(ctx, {
-      category: args.category,
-      englishOnly: true,
-      paginationOpts: { cursor: null, numItems: args.numItems },
-    })
-  ).page;
 }

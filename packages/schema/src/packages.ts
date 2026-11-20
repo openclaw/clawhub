@@ -190,7 +190,10 @@ export const PluginDiscoveryCategorySchema = type({
 
 export const ApiV1PluginOverviewResponseSchema = type({
   "+": "reject",
-  categories: PluginDiscoveryCategorySchema.array(),
+  categories: PluginDiscoveryCategorySchema.merge({
+    "+": "reject",
+    previewCursor: "string?",
+  }).array(),
   items: PluginOverviewItemSchema.array(),
 });
 export type ApiV1PluginOverviewResponse = (typeof ApiV1PluginOverviewResponseSchema)[inferred];

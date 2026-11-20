@@ -629,6 +629,8 @@ type CatalogListItem = PackageListItem & {
   ownerOfficial?: boolean;
 };
 
+type CatalogListPage = { page: CatalogListItem[]; isDone: boolean; continueCursor: string };
+
 type PluginOverviewItem = CatalogListItem & {
   featured?: boolean;
   featuredRank?: number;
@@ -2067,13 +2069,14 @@ function mergePluginOverviewItem(
 export async function listPluginOverviewV1Handler(ctx: ActionCtx, request: Request) {
   const rate = await applyRateLimit(ctx, request, "read");
   if (!rate.ok) return rate.response;
+  const previewCursors = parseBooleanQueryParam(
+    new URL(request.url).searchParams,
+    "previewCursors",
+  );
+  if (!previewCursors.ok) return text(previewCursors.message, 400, rate.headers);
 
   const page = async (args: { highlightedOnly?: boolean; sort?: "trending" }) =>
-    await runQueryRef<{
-      page: CatalogListItem[];
-      isDone: boolean;
-      continueCursor: string;
-    }>(ctx, internalRefs.packages.listPageForViewerInternal, {
+    await runQueryRef<CatalogListPage>(ctx, internalRefs.packages.listPageForViewerInternal, {
       ...(args.highlightedOnly || args.sort === "trending"
         ? { families: [...PLUGIN_OVERVIEW_FAMILIES] }
         : {}),
@@ -2087,14 +2090,10 @@ export async function listPluginOverviewV1Handler(ctx: ActionCtx, request: Reque
     page({ highlightedOnly: true }),
     page({ sort: "trending" }),
     ...categories.map((category) =>
-      runQueryRef<CatalogListItem[]>(
-        ctx,
-        internalRefs.packages.listPluginOverviewCategoryInternal,
-        {
-          category: category.slug,
-          numItems: PLUGIN_OVERVIEW_SECTION_SIZE,
-        },
-      ),
+      runQueryRef<CatalogListPage>(ctx, internalRefs.packages.listPluginOverviewCategoryInternal, {
+        category: category.slug,
+        numItems: PLUGIN_OVERVIEW_SECTION_SIZE,
+      }),
     ),
   ]);
   const items = new Map<string, PluginOverviewItem>();
@@ -2104,15 +2103,18 @@ export async function listPluginOverviewV1Handler(ctx: ActionCtx, request: Reque
   for (const [trendingRank, item] of trending.page.entries()) {
     mergePluginOverviewItem(items, item, { trendingRank });
   }
-  for (const [index, result] of categoryPages.entries()) {
+  const overviewCategories = categoryPages.map((result, index) => {
     const category = categories[index];
-    for (const item of result) {
+    for (const item of result.page) {
       mergePluginOverviewItem(items, item, { category: category.slug });
     }
-  }
+    return previewCursors.value && !result.isDone
+      ? { ...category, previewCursor: result.continueCursor }
+      : category;
+  });
 
   const response: ApiV1PluginOverviewResponse = {
-    categories,
+    categories: overviewCategories,
     items: [...items.values()],
   };
   return json(

@@ -121,7 +121,10 @@
   category browse retains all listing languages while sharing the curated ordering. Discovery shares
   Trending's title-script and text classifier; reviewed short English false negatives match the
   exact package identity, title, and summary, and expire when the text changes. Filtering precedes
-  homepage shelf limits. Category browse, search, and direct package reads remain available in every language.
+  homepage shelf limits. With `previewCursors=true`, a category's optional `previewCursor` and its subsequent
+  `nextCursor` values continue that same public English shelf on the curated category endpoint.
+  They reuse the bounded selection's own position, not a second query or a viewer's installed IDs.
+  Starting a category browse without a cursor, search, and direct package reads remain multilingual.
 - Other and Uncategorized do not form plugin homepage shelves. Other remains a valid stored
   category and an explicit catalog filter.
 - Computer use follows Web and covers interactive desktop/browser navigation, clicks, typing,

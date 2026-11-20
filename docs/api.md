@@ -130,7 +130,7 @@ Public read:
   - Returns cursor pagination and category metadata with ordered `pinnedPackages`; unavailable pins are skipped.
   - Search and ordinary catalog reads retain listings in every language.
 - `GET /api/v1/plugins/overview`
-  - Cacheable bounded marketplace shelves and category metadata with `pinnedPackages`. Other is omitted.
+  - Cacheable bounded marketplace shelves and category metadata with `pinnedPackages`. Other is omitted. With `?previewCursors=true`, an optional category `previewCursor` continues its English-only shelf on the curated category endpoint; starting without that cursor browses all languages.
 - `GET /api/v1/plugins/categories`
   - Complete plugin taxonomy, including Computer use, and the current per-category pin policy.
 - `GET /api/v1/plugins/search?q=...`
