@@ -22,7 +22,6 @@ import { timeAgo } from "../lib/timeAgo";
 import { useHeroCreatorPublisher } from "../lib/useHeroCreatorPublisher";
 import { useMediaQuery } from "../lib/useMediaQuery";
 import { cn } from "../lib/utils";
-import { ActivityMetricLabel } from "./ActivityMetricLabel";
 import { DetailHero, DetailPageShell, DETAIL_HERO_TOPIC_LIMIT } from "./DetailPageShell";
 import { DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
 import { useDownloadsSidebarMetricBlock } from "./DownloadsMetricCard";
@@ -170,7 +169,6 @@ export type SkillDetailPageViewProps = {
   postInstallContent?: ReactNode;
   securityAuditSummary?: ReactNode;
   activityTrend?: ActivityTrend | null;
-  activityTrendLoading?: boolean;
   newVersionHref?: string | null;
   settingsHref?: string | null;
   showArchiveMetadata?: boolean;
@@ -225,7 +223,6 @@ export function SkillDetailPageView({
   postInstallContent,
   securityAuditSummary,
   activityTrend,
-  activityTrendLoading = false,
   newVersionHref,
   settingsHref,
   showArchiveMetadata = true,
@@ -389,12 +386,10 @@ export function SkillDetailPageView({
         skill={skill}
         owner={owner}
         ownerHandle={ownerHandle}
-        formattedStats={formattedStats}
         latestVersion={latestVersion}
         showArchiveMetadata={showArchiveMetadata}
         securityAuditSummary={securityAuditSummary}
         activityTrend={activityTrend}
-        activityTrendLoading={activityTrendLoading}
         hideCreator
       />
       {renderSidebarActions()}
@@ -775,30 +770,25 @@ function SkillSidebarDeferredStats({
   skill,
   owner,
   ownerHandle,
-  formattedStats,
   latestVersion,
   showArchiveMetadata,
   securityAuditSummary,
   activityTrend,
-  activityTrendLoading = false,
   hideCreator = false,
 }: {
   skill: SkillDetailViewSkill;
   owner: PublicPublisher | null;
   ownerHandle: string | null;
-  formattedStats: ReturnType<typeof formatSkillStatsTriplet>;
   latestVersion: SkillDetailLatestVersion;
   showArchiveMetadata: boolean;
   securityAuditSummary?: ReactNode;
   activityTrend?: ActivityTrend | null;
-  activityTrendLoading?: boolean;
   hideCreator?: boolean;
 }) {
   const githubRepositoryLink = getGitHubRepositoryLink(skill);
   const downloadsMetricBlock = useDownloadsSidebarMetricBlock({
     allTimeDownloads: skill.stats.downloads,
     activityTrend: activityTrend?.downloads,
-    loading: activityTrendLoading,
   });
 
   return (
@@ -807,13 +797,7 @@ function SkillSidebarDeferredStats({
       density="compact"
       className="skill-sidebar-deferred-metadata"
       blocks={[
-        activityTrend || activityTrendLoading
-          ? downloadsMetricBlock
-          : {
-              label: <ActivityMetricLabel label="Downloads" />,
-              value: formattedStats.downloads,
-              large: true,
-            },
+        downloadsMetricBlock,
         { label: "Repository", value: githubRepositoryLink },
         ...(hideCreator
           ? []

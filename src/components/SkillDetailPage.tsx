@@ -424,7 +424,7 @@ export function SkillDetailPage({
   const activityTrendEndDay = getActivityTrendEndDay();
   const canonicalOwnerParam =
     typeof canonicalOwner === "string" ? canonicalOwner.trim().toLowerCase() : null;
-  const { trend: activityTrend, loading: activityTrendLoading } = useDeferredSkillActivityTrend(
+  const { trend: activityTrend } = useDeferredSkillActivityTrend(
     skill
       ? {
           slug: skill.slug,
@@ -944,7 +944,6 @@ export function SkillDetailPage({
       staffVisibilityAlert={staffVisibilityAlert}
       securityAuditSummary={securitySummary}
       activityTrend={activityTrend}
-      activityTrendLoading={activityTrendLoading}
       newVersionHref={newVersionHref}
       settingsHref={settingsHref}
       showArchiveMetadata={!isGitHubBackedSkill}
