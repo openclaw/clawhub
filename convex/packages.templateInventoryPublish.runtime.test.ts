@@ -14,14 +14,16 @@ const version = "1.0.0";
 const manifest = (label: string) =>
   `---\nschemaVersion: 1\nagent: { id: source-test, name: ${label} }\ncategories: [productivity]\n---\nInternal guide text.\n`;
 
-async function fixture(archiveName = name) {
+async function fixture(archiveName = name, largeBundle = false) {
   vi.useFakeTimers();
   const t = convexTest(schema, modules);
   const envelope = (packageName: string) =>
     JSON.stringify({ name: packageName, version, openclaw: { template: "CLAW.md" } });
+  const bundle = largeBundle ? "x".repeat(8 * 1024 * 1024) : undefined;
   const archive = npmPackFixture({
     "package/package.json": envelope(archiveName),
     "package/CLAW.md": manifest("Exact archive"),
+    ...(bundle ? { "package/workspace/bundle.txt": bundle } : {}),
   });
   const parsed = await parseClawPack(archive);
   const archiveBlob = new Blob([Uint8Array.from(archive)]);
@@ -32,7 +34,8 @@ async function fixture(archiveName = name) {
     const files = [];
     for (const [path, body] of Object.entries({
       "package.json": envelope(name),
-      "CLAW.md": manifest("Staged marker"),
+      "CLAW.md": manifest(largeBundle ? "Exact archive" : "Staged marker"),
+      ...(bundle ? { "workspace/bundle.txt": bundle } : {}),
     })) {
       const bytes = new TextEncoder().encode(body);
       files.push({
@@ -134,6 +137,18 @@ it("captures the first pending Template even when its reserved name still has a 
   expect(
     await t.query(internal.packages.getPublicTemplateInventoryInternal, { name, version }),
   ).toBeNull();
+});
+
+it("accepts a Template beyond inventory capacity without giving the pending release public access", async () => {
+  const { t, publish, snapshot } = await fixture(name, true);
+  const result = await publish();
+  expect(result.publicationStatus).toBe("pending");
+  expect(await snapshot(result.releaseId)).toBeNull();
+  expect(await t.run((ctx) => ctx.db.get(result.releaseId))).toMatchObject({
+    extractedPackageJson: { name, version, openclaw: { template: "CLAW.md" } },
+    clawManifestSummary: { schemaVersion: 1 },
+  });
+  expect(await t.query(internal.packages.getPublicTemplateInventoryInternal, { name })).toBeNull();
 });
 
 it("keeps publication compatible but writes no display snapshot for a different archive envelope", async () => {

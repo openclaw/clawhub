@@ -4,28 +4,19 @@ import {
   TEMPLATE_BOOTSTRAP_FILE_NAMES,
 } from "clawhub-schema/templatePackage";
 import type { ActionCtx } from "../_generated/server";
-import { parseClawPack } from "./clawpack";
+import { ClawPackTarLimitError, parseClawPack } from "./clawpack";
 import {
   MAX_TEMPLATE_DISPLAY_ARCHIVE_BYTES,
   MAX_TEMPLATE_DISPLAY_DATA_BYTES,
   type TemplateDisplayBinding,
   type TemplateDisplayData,
 } from "./templateDisplayData";
-type Artifact = { kind: "npm-pack"; sha256: string; npmIntegrity: string; npmShasum?: string };
-async function verifiedInventory(
-  bytes: Uint8Array,
-  packageName: string,
-  version: string,
-  artifact: Artifact,
-) {
-  const pack = await parseClawPack(bytes, { maxTarBytes: 8 * 1024 * 1024 });
-  if (
-    pack.artifactSha256 !== artifact.sha256 ||
-    pack.npmIntegrity !== artifact.npmIntegrity ||
-    (artifact.npmShasum !== undefined && pack.npmShasum !== artifact.npmShasum) ||
-    pack.packageName !== packageName ||
-    pack.packageVersion !== version
-  )
+class InventorySizeLimitError extends Error {}
+const tooLarge = { ok: false, status: 413, message: "Template inventory too large" } as const;
+async function verifiedInventory(bytes: Uint8Array, binding: TemplateDisplayBinding) {
+  const { packageName, version } = binding;
+  const pack = await parseClawPack(bytes, { maxTarBytes: 8 * 1024 * 1024, expected: binding });
+  if (pack.packageName !== packageName || pack.packageVersion !== version)
     throw Error("Invalid artifact");
   const openclaw = pack.packageJson.openclaw;
   if (
@@ -110,7 +101,7 @@ async function verifiedInventory(
   };
   const data = { manifestPath, templateManifestSummary, contents };
   if (new TextEncoder().encode(JSON.stringify(data)).length > MAX_TEMPLATE_DISPLAY_DATA_BYTES)
-    throw Error("Inventory too large");
+    throw new InventorySizeLimitError();
   return data;
 }
 
@@ -121,21 +112,17 @@ export async function readVerifiedTemplateDisplayArchive(
 ): Promise<
   { ok: true; data: TemplateDisplayData } | { ok: false; status: 413 | 422; message: string }
 > {
-  if (binding.size > MAX_TEMPLATE_DISPLAY_ARCHIVE_BYTES)
-    return { ok: false, status: 413, message: "Template inventory too large" };
+  if (binding.size > MAX_TEMPLATE_DISPLAY_ARCHIVE_BYTES) return tooLarge;
   const blob = await storage.get(binding.storageId);
   if (!blob || blob.size !== binding.size)
     return { ok: false, status: 422, message: "Template inventory integrity mismatch" };
   const bytes = new Uint8Array(await blob.arrayBuffer());
   try {
-    const data = await verifiedInventory(bytes, binding.packageName, binding.version, {
-      kind: "npm-pack",
-      sha256: binding.sha256,
-      npmIntegrity: binding.npmIntegrity,
-      npmShasum: binding.npmShasum,
-    });
+    const data = await verifiedInventory(bytes, binding);
     return { ok: true, data };
-  } catch {
+  } catch (error) {
+    if (error instanceof ClawPackTarLimitError || error instanceof InventorySizeLimitError)
+      return tooLarge;
     return { ok: false, status: 422, message: "Template inventory could not be verified" };
   }
 }

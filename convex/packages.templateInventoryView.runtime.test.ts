@@ -2,6 +2,7 @@
 /* @vitest-environment edge-runtime */
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { convexTest } from "convex-test";
+import { gunzipSync, gzipSync } from "fflate";
 import { describe, expect, it, vi } from "vitest";
 import { npmPackFixture } from "../packages/clawhub/test/npmPack";
 import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
@@ -17,7 +18,9 @@ const base = "/api/v1/packages/@display-owner/display-template";
 const view = base + "?view=template-inventory";
 const manifestPath = "nested/CLAW.md";
 const marker = "body-not-on-the-wire";
-async function fixture(options: { declaredName?: string; schemaVersion?: number } = {}) {
+async function fixture(
+  options: { declaredName?: string; schemaVersion?: number; capacity?: "tar" | "archive" } = {},
+) {
   const t = convexTest(schema, modules);
   registerRateLimiter(t, "rateLimiterV2");
   const ids = await t.run(async (ctx) => {
@@ -40,7 +43,15 @@ async function fixture(options: { declaredName?: string; schemaVersion?: number 
       stats: { versions: 2, downloads: 0, stars: 0, installs: 0 },
     });
     const add = async (version: string) => {
-      const pack = npmPackFixture({
+      const capacity = version === "2.0.0" ? options.capacity : undefined;
+      const packed = npmPackFixture({
+        ...(capacity
+          ? {
+              "package/workspace/large.txt": new Uint8Array(
+                (capacity === "tar" ? 8 : 4) * 1024 * 1024,
+              ),
+            }
+          : {}),
         "package/package.json": JSON.stringify({
           name: options.declaredName ?? name,
           version,
@@ -80,12 +91,35 @@ async function fixture(options: { declaredName?: string; schemaVersion?: number 
         "package/skills/real/SKILL.md":
           "---\nname: Verified skill\ndescription: Real example\n---\n" + marker,
       });
+      // Stored (uncompressed) gzip blocks cross the compressed-size cap deterministically.
+      const pack = capacity === "archive" ? gzipSync(gunzipSync(packed), { level: 0 }) : packed;
       const artifact = await parseClawPack(pack);
+      const files = await Promise.all(
+        (capacity ? artifact.entries : []).map(async ({ path, bytes }) => ({
+          path,
+          size: bytes.byteLength,
+          sha256: await sha256Hex(bytes),
+          storageId: await ctx.storage.store(new Blob([Uint8Array.from(bytes)])),
+        })),
+      );
       const file = await ctx.storage.store(new Blob([Uint8Array.from(pack)]));
       const release = await ctx.db.insert("packageReleases", {
         packageId: pkg,
         version,
-        files: [],
+        files,
+        ...(capacity
+          ? {
+              extractedPackageJson: artifact.packageJson,
+              clawManifestSummary: {
+                schemaVersion: 1 as const,
+                agent: { id: "display", name: "Display " + version },
+                workspace: { bootstrapFiles: ["AGENTS.md"], fileCount: 1 },
+                packages: { skillCount: 1, pluginCount: 1 },
+                mcpServerCount: 1,
+                cronJobCount: 1,
+              },
+            }
+          : {}),
         changelog: marker,
         distTags: [],
         createdBy: owner,
@@ -111,6 +145,46 @@ async function fixture(options: { declaredName?: string; schemaVersion?: number 
 }
 
 describe("public Template inventory HTTP view", () => {
+  it.each(["tar", "archive"] as const)(
+    "offers ordinary latest metadata only for opted-in inventory capacity failures (%s)",
+    async (capacity) => {
+      const { t, latest, pkg } = await fixture({ capacity });
+      const compat = view + "&inventoryFallback=metadata";
+      const ordinary = await (await t.fetch(base)).json();
+      expect((await t.fetch(view)).status).toBe(413);
+      expect((await t.fetch(compat + "&version=2.0.0")).status).toBe(413);
+      const res = await t.fetch(compat);
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual(ordinary);
+      const preview = await t.fetch(base + "/file?path=nested%2FCLAW.md&preview=1&version=2.0.0");
+      expect(preview.status).toBe(200);
+      expect(await preview.text()).toContain("Display 2.0.0");
+      // With no verifiable publication envelope this is a strict inventory error, even on latest.
+      await t.run((ctx) =>
+        ctx.db.patch(latest.release, {
+          extractedPackageJson: { name, version: "other", openclaw: { template: manifestPath } },
+        }),
+      );
+      expect((await t.fetch(compat)).status).toBe(413);
+      await t.run((ctx) =>
+        ctx.db.patch(latest.release, {
+          extractedPackageJson: { name, version: "2.0.0", openclaw: { template: manifestPath } },
+        }),
+      );
+      // A storage digest or size mismatch is not a capacity fallback.
+      await t.run((ctx) => ctx.db.patch(latest.release, { clawpackSha256: "f".repeat(64) }));
+      expect((await t.fetch(compat)).status).toBe(422);
+      await t.run((ctx) =>
+        ctx.db.patch(latest.release, {
+          clawpackSha256: latest.sha256,
+          clawpackSize: 5 * 1024 * 1024,
+        }),
+      );
+      expect((await t.fetch(compat)).status).toBe(422);
+      await t.run((ctx) => ctx.db.patch(pkg, { channel: "private" }));
+      expect((await t.fetch(compat)).status).toBe(404);
+    },
+  );
   it("serves identical display metadata without touching the blob after a pinned backfill, but rechecks access and binding", async () => {
     const { t, pkg, latest, owner } = await fixture();
     const before = await (await t.fetch(view)).json();
@@ -282,7 +356,7 @@ describe("public Template inventory HTTP view", () => {
     "refuses unsupported data or wrong archive identity without leaking parser diagnostics (%j)",
     async (opts) => {
       const { t } = await fixture(opts);
-      const res = await t.fetch(view);
+      const res = await t.fetch(view + "&inventoryFallback=metadata");
       expect(res.status).toBe(422);
       expect(await res.text()).toBe("Template inventory could not be verified");
     },

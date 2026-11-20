@@ -67,13 +67,15 @@ function normalizeTarPath(path: string) {
   return segments.join("/");
 }
 
+export class ClawPackTarLimitError extends Error {}
+
 function gunzipBounded(bytes: Uint8Array, maxTarBytes: number): Uint8Array {
   const chunks: Uint8Array[] = [];
   let total = 0;
   const gunzip = new Gunzip((chunk) => {
     total += chunk.byteLength;
     if (total > maxTarBytes)
-      throw new Error(
+      throw new ClawPackTarLimitError(
         maxTarBytes === MAX_TAR_BYTES
           ? "ClawPack unpacked archive exceeds 64MB limit"
           : "ClawPack unpacked archive exceeds the requested byte limit",

@@ -640,6 +640,7 @@ export async function fetchPackageDetail(
 ): Promise<PackageDetailResponse> {
   const url = await packageApiUrl(`${ApiRoutes.packages}/${encodeURIComponent(name)}`);
   if (view === "template-inventory") {
+    url.searchParams.set("inventoryFallback", "metadata");
     if (typeof window === "undefined") {
       // SSR knows whether this request is carrying viewer credentials. Never probe a denied
       // public inventory and then retry the same release using a more privileged read.

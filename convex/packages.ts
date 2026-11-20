@@ -255,9 +255,11 @@ import {
 import { hashSkillFiles } from "./lib/skills/fileHash";
 import { buildPackageInventoryDigest } from "./lib/skills/skillMarkdown";
 import { buildDeterministicPackageZip } from "./lib/skillZip";
+import { matchesStorageSha256 } from "./lib/storageDigests";
 import { classifyTemplateCategories } from "./lib/templateCategoryClassification";
 import { selectTemplateDetailRelease } from "./lib/templateDetailView";
 import {
+  MAX_TEMPLATE_DISPLAY_ARCHIVE_BYTES,
   templateDisplayBindingValidator,
   templateDisplayDataValidator,
 } from "./lib/templateDisplayData";
@@ -2636,13 +2638,30 @@ export const getPublicTemplateInventoryInternal = internalQuery({
       .query("templateDisplaySnapshots")
       .withIndex("by_release", (q) => q.eq("releaseId", release._id))
       .unique();
-    const projection = !stored
+    let projection = !stored
       ? null
       : stored.packageId === pkg._id &&
           stored.schemaVersion === 1 &&
           sameTemplateDisplayBinding(templateDisplayBinding(pkg.name, release), stored.binding)
         ? stored.data
         : ("invalid" as const);
+    // A large legacy archive cannot be opened for display. Check its immutable storage
+    // size and SHA-256 without retrieving the bytes; mismatches are never capacity fallbacks.
+    if (
+      !stored &&
+      release.clawpackSize &&
+      release.clawpackSize > MAX_TEMPLATE_DISPLAY_ARCHIVE_BYTES &&
+      release.clawpackStorageId
+    ) {
+      const file = await ctx.db.system.get("_storage", release.clawpackStorageId);
+      if (
+        !file ||
+        file.size !== release.clawpackSize ||
+        !release.clawpackSha256 ||
+        !matchesStorageSha256(file.sha256, release.clawpackSha256)
+      )
+        projection = "invalid";
+    }
     const {
       _id,
       version,
@@ -2663,6 +2682,12 @@ export const getPublicTemplateInventoryInternal = internalQuery({
     } = release;
     return {
       projection,
+      // For an unprojected release, the trusted publication summary and exact manifest
+      // envelope are the evidence of supported grammar when bounded inflation cannot finish.
+      capacityMetadataEligible:
+        args.version === undefined &&
+        release.clawManifestSummary?.schemaVersion === 1 &&
+        (projection !== null || selectTemplateDetailRelease(publicPackage, release) !== null),
       package: publicPackage,
       owner,
       tags: await readPublishedPackageTags(ctx, pkg, latestRelease),

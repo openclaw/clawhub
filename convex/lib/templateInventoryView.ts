@@ -29,12 +29,24 @@ export async function templateInventoryViewResponse(
   if (!binding) return text("Template inventory unavailable", 422, headers);
   if (selected.projection === "invalid")
     return text("Template inventory integrity mismatch", 422, headers);
+  const metadata = toPackageMetadataResponse(pkg, owner, tags);
+  const allowMetadata =
+    selected.capacityMetadataEligible && params.get("inventoryFallback") === "metadata";
+  function capacityResponse() {
+    // Only a website opening latest may use ordinary metadata in place of the optional
+    // inventory. The version-one summary comes from trusted publication, not the request.
+    if (allowMetadata) return json(metadata, 200, headers);
+    return text("Template inventory too large", 413, headers);
+  }
   let data = selected.projection;
   if (!data) {
     // Read-only compatibility for old and unsupported releases. Never populate a row from a GET.
     const { readVerifiedTemplateDisplayArchive } = await import("./templateDisplayArchive");
     const parsed = await readVerifiedTemplateDisplayArchive(ctx.storage, binding);
-    if (!parsed.ok) return text(parsed.message, parsed.status, headers);
+    if (!parsed.ok)
+      return parsed.status === 413
+        ? capacityResponse()
+        : text(parsed.message, parsed.status, headers);
     data = parsed.data;
   }
   const { version, sha256, npmIntegrity, npmShasum } = binding;
@@ -44,7 +56,6 @@ export async function templateInventoryViewResponse(
     npmIntegrity,
     ...(npmShasum === undefined ? {} : { npmShasum }),
   };
-  const metadata = toPackageMetadataResponse(pkg, owner, tags);
   const security = toPackageReleaseSecurityResponse({
     request,
     pkg,
@@ -64,6 +75,6 @@ export async function templateInventoryViewResponse(
     },
   };
   if (new TextEncoder().encode(JSON.stringify(payload)).length > 512 * 1024)
-    return text("Template inventory too large", 413, headers);
+    return capacityResponse();
   return json(payload, 200, headers);
 }

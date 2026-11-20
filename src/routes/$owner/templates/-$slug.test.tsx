@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   fetchPackageVersion: vi.fn(),
 }));
 
+vi.mock("nitro/app", () => ({ serverFetch: (url: string, init: RequestInit) => fetch(url, init) }));
 vi.mock("../../../lib/packageApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../lib/packageApi")>()),
   ...mocks,
@@ -495,6 +496,50 @@ describe("Template detail composition and interactions", () => {
     mocks.fetchPackageFile.mockResolvedValue("# Workspace instructions\n\nActual file contents.");
   });
 
+  it("renders the title, summary and explicit pinned preview when the published archive exceeds inventory capacity", async () => {
+    const ordinary = packageDetail();
+    ordinary.package!.scanStatus = "clean";
+    const api =
+      await vi.importActual<typeof import("../../../lib/packageApi")>("../../../lib/packageApi");
+    const transport = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      if (typeof input !== "string") throw new Error("Expected a registry URL string");
+      const u = new URL(input);
+      if (u.searchParams.get("inventoryFallback") !== "metadata")
+        return new Response("Template inventory too large", { status: 413 });
+      return Response.json(ordinary);
+    });
+    try {
+      mocks.fetchPackageDetail.mockImplementation(api.fetchPackageDetail);
+      mocks.fetchPackageFile.mockImplementation((_name, path) =>
+        Promise.resolve(
+          path === "CLAW.md"
+            ? templateContents
+            : path === "package.json"
+              ? "{}"
+              : "# Pinned workspace preview",
+        ),
+      );
+      const loaded = await loadPublisherTemplate({ owner: "maker", slug: "release-brief" });
+      render(<TemplateDetailPage {...loaded} fallbackOwner="maker" />);
+      expect(screen.getByRole("heading", { level: 1, name: "Release Brief" })).toBeTruthy();
+      expect(screen.getByText("Summarizes releases for a new user.")).toBeTruthy();
+      expect(transport).toHaveBeenCalledTimes(1);
+      expect(mocks.fetchPackageFile.mock.calls.map((x) => x[1])).toEqual([
+        "CLAW.md",
+        "package.json",
+      ]);
+      fireEvent.click(screen.getByRole("tab", { name: "Workspace files" }));
+      fireEvent.click(screen.getByRole("button", { name: "AGENTS.md" }));
+      expect(await screen.findByRole("heading", { name: "Pinned workspace preview" })).toBeTruthy();
+      expect(mocks.fetchPackageFile).toHaveBeenLastCalledWith(
+        "@maker/release-brief",
+        "workspace/AGENTS.md",
+        "0.1.0",
+      );
+    } finally {
+      transport.mockRestore();
+    }
+  });
   it("paints named release metadata and navigates workspace mappings while the opened CLAW.md is pending", async () => {
     const detail = packageDetail();
     detail.package!.scanStatus = "clean";
