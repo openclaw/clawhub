@@ -1,5 +1,36 @@
 import type { Doc } from "../_generated/dataModel";
 
+export const USER_MODERATION_REASON = "user.moderation";
+
+export function isScannerManagedReason(reason: string | undefined) {
+  if (!reason) return false;
+  return (
+    reason === "pending.scan" || reason === "pending.scan.stale" || reason.startsWith("scanner.")
+  );
+}
+
+// Delete, removal, and staff holds must survive a staged publish. The
+// operational retry helper is stricter: it also stops scanner and
+// quality hides, because a retry must not resume a skill held after
+// staging. A normal finalizer still has to publish a corrected version.
+export function isPendingSkillFinalizationBlocked(
+  skill: Pick<Doc<"skills">, "softDeletedAt" | "moderationStatus" | "moderationReason">,
+) {
+  if (skill.softDeletedAt || skill.moderationStatus === "removed") return true;
+  if (skill.moderationStatus !== "hidden") return false;
+  const reason = skill.moderationReason;
+  if (
+    reason === "pending.publication" ||
+    reason === "quality.low" ||
+    reason === USER_MODERATION_REASON ||
+    reason === "manual.version_revoked" ||
+    isScannerManagedReason(reason)
+  ) {
+    return false;
+  }
+  return true;
+}
+
 const FLAG_RULES: Array<{ flag: string; pattern: RegExp }> = [
   // Known-bad / known-suspicious identifiers.
   // NOTE: keep these narrowly scoped; use staff review to confirm removals.

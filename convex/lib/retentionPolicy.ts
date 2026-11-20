@@ -188,6 +188,12 @@ export const RETENTION_POLICIES = {
   skillSlugAliases: permanent("Historical slug routing aliases."),
   packages: permanent("Canonical package records."),
   packageReleases: permanent("Canonical package release records."),
+  publishFinalizationCursors: ephemeral("Discardable progress for bounded ready-queue discovery.", {
+    expirationField: "expirationTime",
+    expirationIndex: "by_expiration_time",
+    prune: "retention.pruneExpiredPublishFinalizationCursorsInternal",
+    retention: "Removed when the sweep wraps, or after 24 hours without progress.",
+  }),
   publishAttempts: ephemeral(
     "Private staged publish workflow state expires unless later retained by moderation policy.",
     {
