@@ -10,6 +10,8 @@
 
 - Templates: ClawHub now lists each Template under one of ten categories: Engineering, Operations, Household, Entertainment, Travel, Productivity, Research, Health, Sales, and Product. Household and Entertainment are new; Personal, Governance, Finance, and People are removed. A Template takes the first category its `CLAW.md` declares and ClawHub ignores the rest. If that category is missing or no longer exists, ClawHub classifies the Template instead of rejecting the publish, so every published Template still republishes unchanged. `categories` in API responses stays an array, and `category=personal`, `governance`, `finance`, and `people` still work as list and search filters for the Templates that store them.
 
+- Skill reads: invalid UTF-8 in a skill file is a client error for the readme, skill card, and file text. The message stays "File is not valid UTF-8 text".
+
 ## 0.27.0 - 2026-11-17
 
 - Scan reports: `clawhub scan download <skill> --version <version>` now returns a report when a skill version's publication checks failed before a verdict. It used to answer "Scan results not found". The archive says the scan failed with no safety verdict, lists the check states and whether a retry is waiting, and says to remove Python bytecode when that stopped the scan. Worker errors are not included. Plugin versions are unchanged.
