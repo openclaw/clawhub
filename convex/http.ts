@@ -66,6 +66,7 @@ const listPluginOverviewV1Http = lazyHttpAction(
 const listPluginCategoriesV1Http = lazyHttpAction(
   async () => (await import("./httpApiV1")).listPluginCategoriesV1Http,
 );
+const skillCategoriesHttp = lazyHttpAction(async () => (await import("./skillCategoriesHttp")).get);
 const listSkillsV1Http = lazyHttpAction(async () => (await import("./httpApiV1")).listSkillsV1Http);
 const trendingV1Http = lazyHttpAction(async () => (await import("./httpApiV1")).trendingV1Http);
 const mintPublishTokenV1Http = lazyHttpAction(
@@ -252,6 +253,7 @@ for (const [path, method, handler] of [
   [{ path: ApiRoutes.resolve }, "GET", resolveSkillVersionV1Http],
   [{ path: ApiRoutes.skillsExport }, "GET", exportSkillsV1Http],
   [{ path: ApiRoutes.skills }, "GET", listSkillsV1Http],
+  [{ path: ApiRoutes.skillCategories }, "GET", skillCategoriesHttp],
   [{ path: ApiRoutes.trending }, "GET", trendingV1Http],
   [{ pathPrefix: `${ApiRoutes.skillScans}/` }, "GET", skillScanGetRouterV1Http],
   [{ path: ApiRoutes.packages }, "GET", listPackagesV1Http],

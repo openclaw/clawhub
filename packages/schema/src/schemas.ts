@@ -34,6 +34,7 @@ export const ApiV1SearchResponseSchema = type({
     summary: "string|null?",
     version: "string|null?",
     score: "number",
+    categories: "string[]?",
     downloads: "number?",
     updatedAt: "number?",
     owner: type({
@@ -46,6 +47,15 @@ export const ApiV1SearchResponseSchema = type({
   }).array(),
 });
 
+export const ApiV1SkillCategoriesResponseSchema = type({
+  categories: type({
+    slug: "string",
+    label: "string",
+    icon: "string",
+    description: "string",
+  }).array(),
+});
+
 export const ApiV1SkillListResponseSchema = type({
   items: type({
     ownerHandle: "string",
@@ -53,6 +63,7 @@ export const ApiV1SkillListResponseSchema = type({
     displayName: "string",
     summary: "string|null?",
     description: "string|null?",
+    categories: "string[]?",
     topics: "string[]?",
     tags: "unknown",
     stats: "unknown",

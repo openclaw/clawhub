@@ -1277,6 +1277,13 @@ describe("canonical Trending snapshot storage", () => {
         .unique();
       if (!control) throw new Error("catalog control missing");
       await ctx.db.patch(control._id, { mirrorPublicVisibilityEnabled: true });
+      if (native.sourceRef.kind !== "clawhub") throw new Error("expected native row");
+      const skillId = native.sourceRef.skillId;
+      const digest = await ctx.db
+        .query("skillSearchDigest")
+        .withIndex("by_skill", (q) => q.eq("skillId", skillId))
+        .unique();
+      await ctx.db.patch(digest!._id, { categories: ["research", "knowledge"] });
       const mirrorControl = await ctx.db
         .query("skillsShMirrorControls")
         .withIndex("by_key", (q) => q.eq("key", "global"))
@@ -1294,6 +1301,8 @@ describe("canonical Trending snapshot storage", () => {
     expect(pageResult.status).toBe("ok");
     if (pageResult.status !== "ok") throw new Error("Expected a materialized Trending page");
     const page = pageResult.page;
+    expect(page.items[0]).toHaveProperty("categories", ["research", "knowledge"]);
+    expect(page.items[1]).not.toHaveProperty("categories");
     expect(page?.items).toEqual([
       expect.objectContaining({
         source: "clawhub",

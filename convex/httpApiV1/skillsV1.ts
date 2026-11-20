@@ -14,6 +14,7 @@ import {
   SkillVersionRevokeRequestSchema,
   parseArk,
 } from "clawhub-schema";
+import { isSkillCategorySlug, resolveStoredSkillCategories } from "clawhub-schema/catalogMetadata";
 import { ApiRoutes } from "clawhub-schema/routes";
 import { formatSecurityAuditOverview } from "clawhub-schema/securityAudit";
 import { normalizeContentType } from "clawhub-schema/textFiles";
@@ -177,6 +178,9 @@ type ListSkillsResult = {
       slug: string;
       displayName: string;
       summary?: string;
+      categories?: string[];
+      inferredCategories?: string[];
+      inferredFromVersionId?: Id<"skillVersions">;
       topics?: string[];
       tags: Record<string, Id<"skillVersions">>;
       stats: unknown;
@@ -1532,7 +1536,14 @@ export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
   const url = new URL(request.url);
   const limit = toOptionalNumber(url.searchParams.get("limit"));
   const rawCursor = url.searchParams.get("cursor")?.trim() || undefined;
+  const categorySlug = url.searchParams.get("category")?.trim().toLowerCase();
+  if (categorySlug !== undefined && !isSkillCategorySlug(categorySlug)) {
+    return text("Invalid skill category", 400, rate.headers);
+  }
   const rawPrefix = url.searchParams.get("prefix");
+  if (categorySlug && rawPrefix !== null) {
+    return text("Category and prefix cannot be combined", 400, rate.headers);
+  }
   const prefix = rawPrefix === null ? undefined : normalizeSkillSlug(rawPrefix);
   if (
     rawPrefix !== null &&
@@ -1557,7 +1568,18 @@ export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
     result = (await ctx.runQuery(api.skills.listPublicTrendingPage, {
       limit,
       nonSuspiciousOnly: nonSuspiciousOnly || undefined,
+      ...(categorySlug ? { categorySlug } : {}),
     })) as ListSkillsResult;
+  } else if (categorySlug) {
+    // Reuse the site’s bounded, index-backed category browse, not a filter on one unscoped API page.
+    const { page, nextCursor } = await ctx.runQuery(api.skills.listPublicPageV4, {
+      categorySlug,
+      cursor,
+      numItems: limit,
+      sort: toPublicListSort(sort),
+      nonSuspiciousOnly: nonSuspiciousOnly || undefined,
+    });
+    result = { items: page, nextCursor };
   } else {
     const pageResult = (await ctx.runQuery(api.skills.listPublicApiPageV1, {
       cursor,
@@ -1596,6 +1618,7 @@ export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
       displayName: item.skill.displayName,
       summary: item.skill.summary ?? null,
       description: parsed?.description ?? null,
+      categories: resolveStoredSkillCategories(item.skill),
       topics: item.skill.topics,
       tags,
       stats: item.skill.stats,
@@ -1620,7 +1643,7 @@ export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
   });
 
   const responseHeaders =
-    sort === "trending" && getRuntimeRolloutCapabilities().skillsSh.runtimeEnabled
+    sort === "trending" && !categorySlug && getRuntimeRolloutCapabilities().skillsSh.runtimeEnabled
       ? mergeHeaders(rate.headers, {
           Deprecation: "true",
           Link: `<${ApiRoutes.trending}?kind=skills>; rel="successor-version"`,

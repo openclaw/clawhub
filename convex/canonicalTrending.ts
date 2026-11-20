@@ -1,3 +1,4 @@
+import { resolveStoredSkillCategories } from "clawhub-schema/catalogMetadata";
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
@@ -29,7 +30,10 @@ import {
   getCompletedRolling24HourWindow,
   type RollingHourlyStatTotals,
 } from "./lib/skillHourlyStats";
-import { isPublicSkillsShMirrorDigest } from "./lib/skillsShMirrorPublic";
+import {
+  getMirrorBrowseCategories,
+  isPublicSkillsShMirrorDigest,
+} from "./lib/skillsShMirrorPublic";
 import { assertTestSeedAllowed } from "./lib/testSeed";
 import { isEnglishTrendingText } from "./lib/trendingLanguage";
 import { getSkillsShPublicCatalogEnabledHandler } from "./rolloutCapabilities";
@@ -1272,7 +1276,7 @@ export const getPageInternal = internalQuery({
       return { status: "invalid-cursor" as const };
     }
     const emittedBefore = decoded?.emitted ?? 0;
-    const visibleRows: Array<Doc<"canonicalTrendingItems">> = [];
+    const visibleRows: Array<Doc<"canonicalTrendingItems"> & { categories?: string[] }> = [];
     let nextOffset = offset;
     while (
       emittedBefore + visibleRows.length < visibleTotal &&
@@ -1290,38 +1294,41 @@ export const getPageInternal = internalQuery({
         )
         .take(batchSize);
       if (rows.length === 0) break;
-      const eligibility = await Promise.all(
+      // Reuse the live visibility read for taxonomy, including snapshots made before categories shipped.
+      // null means hidden; an empty array means visible but unclassified.
+      const liveCategories = await Promise.all(
         rows.map(async (row) => {
-          if (!isEnglishTrendingText(row.card.displayName, row.card.summary)) return false;
+          if (!isEnglishTrendingText(row.card.displayName, row.card.summary)) return null;
           const sourceRef = row.sourceRef;
           if (sourceRef.kind === "clawhub") {
             const digest = await ctx.db
               .query("skillSearchDigest")
               .withIndex("by_skill", (q) => q.eq("skillId", sourceRef.skillId))
               .unique();
-            return Boolean(
-              digest &&
+            return digest &&
               !shouldExcludeSkillFromPublicBrowse(digest) &&
               digest.publicVersion?.status === "available" &&
-              isEnglishTrendingText(digest.displayName, digest.summary),
-            );
+              isEnglishTrendingText(digest.displayName, digest.summary)
+              ? resolveStoredSkillCategories(digest)
+              : null;
           }
-          if (!skillsShPublicCatalogEnabled) return false;
+          if (!skillsShPublicCatalogEnabled) return null;
           const digest = await ctx.db
             .query("skillsShMirrorDigests")
             .withIndex("by_external_id", (q) => q.eq("externalId", sourceRef.externalId))
             .unique();
-          return Boolean(
-            digest &&
+          return digest &&
             isPublicSkillsShMirrorDigest(digest) &&
-            isEnglishTrendingText(digest.displayName, digest.searchSummary),
-          );
+            isEnglishTrendingText(digest.displayName, digest.searchSummary)
+            ? (getMirrorBrowseCategories(digest) ?? [])
+            : null;
         }),
       );
       for (let index = 0; index < rows.length; index += 1) {
         const row = rows[index]!;
         nextOffset = row.position + 1;
-        if (eligibility[index]) visibleRows.push(row);
+        const categories = liveCategories[index];
+        if (categories) visibleRows.push(categories.length ? { ...row, categories } : row);
         if (visibleRows.length >= args.limit) break;
       }
     }
@@ -1343,6 +1350,7 @@ export const getPageInternal = internalQuery({
         totalItems: visibleTotal,
         items: visibleRows.map((row, index) => ({
           ...row.card,
+          ...(row.categories ? { categories: row.categories } : {}),
           rank: skillsShPublicCatalogEnabled ? row.position + 1 : emittedBefore + index + 1,
           lane: row.lane,
         })),
