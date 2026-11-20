@@ -73,7 +73,12 @@ import {
   TRENDING_LEADERBOARD_KIND,
   TRENDING_NON_SUSPICIOUS_LEADERBOARD_KIND,
 } from "./lib/leaderboards";
-import { deriveModerationFlags } from "./lib/moderation";
+import {
+  deriveModerationFlags,
+  isPendingSkillFinalizationBlocked,
+  isScannerManagedReason,
+  USER_MODERATION_REASON,
+} from "./lib/moderation";
 import { buildModerationSnapshot } from "./lib/moderationEngine";
 import {
   legacyFlagsFromVerdict,
@@ -248,7 +253,6 @@ const MAX_SKILL_SLUG_ALIASES_PER_MERGE = 200;
 const MAX_MODERATION_NOTE_LENGTH = 1200;
 const DEFAULT_STAFF_AUDIT_LOG_LIMIT = 10;
 const MAX_STAFF_AUDIT_LOG_LIMIT = 50;
-const USER_MODERATION_REASON = "user.moderation";
 const SKILL_CATALOG_CURSOR_PREFIX = "skillcat:";
 
 function buildStructuredModerationPatch(params: {
@@ -884,13 +888,6 @@ function stripSuspiciousFlag(flags: string[] | undefined) {
   return next.length ? next : undefined;
 }
 
-function isScannerManagedReason(reason: string | undefined) {
-  if (!reason) return false;
-  return (
-    reason === "pending.scan" || reason === "pending.scan.stale" || reason.startsWith("scanner.")
-  );
-}
-
 // Reasons stamped by scanners that no longer run (the static publish scan and
 // VirusTotal). The latest-version moderation backfill rebuilds these rows from
 // ClawScan so retired scanner reasons do not linger as pending or clean states.
@@ -908,28 +905,6 @@ function shouldPreserveExistingModerationLock(
 ) {
   if (skill.moderationStatus !== "hidden") return false;
   return !isScannerManagedReason(skill.moderationReason);
-}
-
-// Delete, removal, and staff holds must survive a staged publish. The
-// operational retry helper is stricter: it also stops scanner and
-// quality hides, because a retry must not resume a skill held after
-// staging. A normal finalizer still has to publish a corrected version.
-function isPendingSkillFinalizationBlocked(
-  skill: Pick<Doc<"skills">, "softDeletedAt" | "moderationStatus" | "moderationReason">,
-) {
-  if (skill.softDeletedAt || skill.moderationStatus === "removed") return true;
-  if (skill.moderationStatus !== "hidden") return false;
-  const reason = skill.moderationReason;
-  if (
-    reason === "pending.publication" ||
-    reason === "quality.low" ||
-    reason === USER_MODERATION_REASON ||
-    reason === "manual.version_revoked" ||
-    isScannerManagedReason(reason)
-  ) {
-    return false;
-  }
-  return true;
 }
 
 function shouldSyncModerationFromLatestVersion(

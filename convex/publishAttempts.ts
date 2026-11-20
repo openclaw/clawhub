@@ -5,6 +5,7 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { action, internalAction, internalMutation, internalQuery } from "./functions";
 import { reusableAigAnalysis } from "./lib/aigAnalysis";
 import { storedFilesValidator } from "./lib/fileValidators";
+import { isPendingSkillFinalizationBlocked } from "./lib/moderation";
 import { manualPackageRecovery } from "./lib/packagePublishRecovery";
 import { resolvePackageReleaseFamily } from "./lib/packageReleaseFamily";
 import { sdkUsageReportStorageId } from "./lib/packageSdkUsageStorage";
@@ -236,12 +237,7 @@ async function stagedTargetPromotionHeld(
 ) {
   if (attempt.kind === "skill" && attempt.skillId) {
     const skill = await ctx.db.get(attempt.skillId);
-    if (!skill) return false;
-    return Boolean(
-      skill.softDeletedAt ||
-        skill.moderationStatus === "removed" ||
-        (skill.moderationStatus === "hidden" && skill.moderationReason !== "pending.publication"),
-    );
+    return skill ? isPendingSkillFinalizationBlocked(skill) : false;
   }
   if (attempt.kind === "package" && attempt.packageReleaseId) {
     const release = await ctx.db.get(attempt.packageReleaseId);
