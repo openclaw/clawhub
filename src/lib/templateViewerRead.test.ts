@@ -25,6 +25,8 @@ describe("Template website view transport", () => {
       status: 403,
     });
     expect(transport).toHaveBeenCalledTimes(1);
-    expect(new URL(String(transport.mock.calls[0]?.[0])).searchParams.get("view")).toBe(view);
+    const url = transport.mock.calls[0]?.[0];
+    if (typeof url !== "string") throw new Error("Expected an SSR package URL string");
+    expect(new URL(url).searchParams.get("view")).toBe(view);
   });
 });
