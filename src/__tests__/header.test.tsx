@@ -3,6 +3,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { AriaAttributes, ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createEmptySearchResult } from "./helpers/unifiedSearch";
 
 type HeaderAuthStatus = {
   isAuthenticated: boolean;
@@ -18,7 +19,7 @@ const { profileHandleMock, signInMock, useUnifiedSearchMock } = vi.hoisted(() =>
 }));
 
 const defaultUnifiedSearchResult = {
-  results: [],
+  ...createEmptySearchResult(),
   skillResults: [
     {
       type: "skill",
@@ -85,10 +86,6 @@ const defaultUnifiedSearchResult = {
   skillCount: 1,
   pluginCount: 1,
   creatorCount: 1,
-  skillHasMore: false,
-  pluginHasMore: false,
-  creatorHasMore: false,
-  isSearching: false,
 };
 
 vi.mock("@tanstack/react-router", () => ({
@@ -762,19 +759,7 @@ describe("Header", () => {
   });
 
   it("shows a single no-results state without section footers", () => {
-    useUnifiedSearchMock.mockReturnValue({
-      results: [],
-      skillResults: [],
-      pluginResults: [],
-      creatorResults: [],
-      skillCount: 0,
-      pluginCount: 0,
-      creatorCount: 0,
-      skillHasMore: false,
-      pluginHasMore: false,
-      creatorHasMore: false,
-      isSearching: false,
-    });
+    useUnifiedSearchMock.mockReturnValue(createEmptySearchResult());
 
     render(<Header />);
 

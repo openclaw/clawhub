@@ -1,5 +1,7 @@
 import { ConvexError } from "convex/values";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createActiveSkillSeedDefaults } from "../src/__tests__/helpers/activeSkillSeed";
+import { createTableStore, type TestDbRow as Row } from "../src/__tests__/helpers/convexDb";
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { chainEq } from "../src/__tests__/helpers/convexQuery";
 
@@ -33,8 +35,6 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllEnvs();
 });
-
-type Row = Record<string, unknown> & { _id: string };
 const listForManageableOfficialPublishersHandler = getTestHandler<
   Record<string, never>,
   Array<{
@@ -54,39 +54,17 @@ function matches(doc: Row, constraints: Record<string, unknown>) {
 }
 
 function createDb(initial: Record<string, Row[]> = {}) {
-  const tables: Record<string, Row[]> = Object.fromEntries(
-    Object.entries(initial).map(([table, rows]) => [table, [...rows]]),
-  );
-  const list = (table: string) => {
-    tables[table] ??= [];
-    return tables[table];
-  };
+  const { tables, list, get, patch, delete: deleteRow } = createTableStore(initial);
 
   const db = {
-    get: async (id: string) => {
-      const table = id.split(":")[0] ?? "";
-      return list(table).find((row) => row._id === id) ?? null;
-    },
-    patch: async (id: string, patch: Record<string, unknown>) => {
-      const table = id.split(":")[0] ?? "";
-      const row = list(table).find((candidate) => candidate._id === id);
-      if (!row) return;
-      for (const [key, value] of Object.entries(patch)) {
-        if (value === undefined) delete row[key];
-        else row[key] = value;
-      }
-    },
+    get,
+    patch,
     insert: async (table: string, doc: Record<string, unknown>) => {
       const id = `${table}:${list(table).length + 1}`;
       list(table).push({ _id: id, ...doc });
       return id;
     },
-    delete: async (id: string) => {
-      const table = id.split(":")[0] ?? "";
-      const rows = list(table);
-      const index = rows.findIndex((row) => row._id === id);
-      if (index >= 0) rows.splice(index, 1);
-    },
+    delete: deleteRow,
     query: (table: string) => ({
       withIndex: (_indexName: string, build: (q: ReturnType<typeof chainEq>) => unknown) => {
         const constraints: Record<string, unknown> = {};
@@ -175,6 +153,7 @@ function makeSkillsShAliasRows(skills: Row[]) {
 
 function makeAliasSkill(id: string, githubPath = "skills/html"): Row {
   return {
+    ...createActiveSkillSeedDefaults(),
     _id: id,
     _creationTime: 1,
     slug: "html",
@@ -188,12 +167,7 @@ function makeAliasSkill(id: string, githubPath = "skills/html"): Row {
     githubCurrentContentHash: "c".repeat(64),
     githubCurrentStatus: "present",
     githubScanStatus: "clean",
-    moderationStatus: "active",
-    tags: {},
-    badges: {},
     stats: {},
-    createdAt: 1,
-    updatedAt: 1,
   };
 }
 
@@ -278,6 +252,7 @@ describe("githubSkillSources.deleteForPublisherHandler", () => {
       ],
       skills: [
         {
+          ...createActiveSkillSeedDefaults(),
           _id: "skills:github",
           slug: "source-backed",
           displayName: "Source Backed",
@@ -291,9 +266,7 @@ describe("githubSkillSources.deleteForPublisherHandler", () => {
           ownerUserId: "users:owner",
           ownerPublisherId: "publishers:openclaw",
           forkOf: undefined,
-          tags: {},
           capabilityTags: undefined,
-          badges: {},
           stats: {
             comments: 0,
             downloads: 0,
@@ -302,10 +275,8 @@ describe("githubSkillSources.deleteForPublisherHandler", () => {
             stars: 0,
             versions: 0,
           },
-          moderationStatus: "active",
           moderationFlags: [],
           isSuspicious: false,
-          createdAt: 1,
           updatedAt: 2,
           softDeletedAt: undefined,
         },

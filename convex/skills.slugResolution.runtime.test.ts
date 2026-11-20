@@ -2,6 +2,7 @@
 /* @vitest-environment edge-runtime */
 import { convexTest } from "convex-test";
 import { expect, it } from "vitest";
+import { createActiveSkillSeedDefaults } from "../src/__tests__/helpers/activeSkillSeed";
 import { api, internal } from "./_generated/api";
 import schema from "./schema";
 
@@ -88,16 +89,12 @@ async function createOwnerCollisionVerdictFixture() {
       });
       await ctx.db.patch(userId, { personalPublisherId: publisherId });
       const skillId = await ctx.db.insert("skills", {
+        ...createActiveSkillSeedDefaults(),
         slug: "shared-skill",
         displayName: `${handle} skill`,
         ownerUserId: userId,
         ownerPublisherId: publisherId,
-        tags: {},
-        badges: {},
-        moderationStatus: "active",
         stats: { comments: 0, downloads: 0, stars: 0, versions: 1 },
-        createdAt: 1,
-        updatedAt: 1,
       });
       const versionId = await ctx.db.insert("skillVersions", {
         skillId,

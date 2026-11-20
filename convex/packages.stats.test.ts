@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createMockDb } from "../src/__tests__/helpers/convexDb";
 /* @vitest-environment node */
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { ACTIVITY_TREND_DAYS, getActivityTrendRange } from "./lib/downloadTrend";
@@ -94,17 +95,12 @@ function makeActivityTrendContext<TPackageIndex, TDailyIndex>(
 ) {
   return {
     db: {
+      ...createMockDb(),
       query: vi.fn((tableName: string) => {
         if (tableName === "packages") return { withIndex: packageWithIndex };
         if (tableName === "packageDailyStats") return { withIndex: dailyWithIndex };
         throw new Error(`Unexpected table ${tableName}`);
       }),
-      get: vi.fn(),
-      normalizeId: vi.fn(),
-      insert: vi.fn(),
-      patch: vi.fn(),
-      replace: vi.fn(),
-      delete: vi.fn(),
       system: {
         get: vi.fn(),
         query: vi.fn(),
@@ -124,13 +120,8 @@ describe("package stat events", () => {
     await recordDownloadHandler(
       {
         db: {
-          query: vi.fn(),
-          get: vi.fn(),
-          normalizeId: vi.fn(),
+          ...createMockDb(),
           insert,
-          patch: vi.fn(),
-          replace: vi.fn(),
-          delete: vi.fn(),
           system: {
             get: vi.fn(),
             query: vi.fn(),
@@ -158,13 +149,8 @@ describe("package stat events", () => {
     await recordInstallHandler(
       {
         db: {
-          query: vi.fn(),
-          get: vi.fn(),
-          normalizeId: vi.fn(),
+          ...createMockDb(),
           insert,
-          patch: vi.fn(),
-          replace: vi.fn(),
-          delete: vi.fn(),
           system: {
             get: vi.fn(),
             query: vi.fn(),
@@ -200,13 +186,9 @@ describe("package stat events", () => {
     });
     const ctx = {
       db: {
+        ...createMockDb(),
         query: vi.fn(() => ({ withIndex })),
-        get: vi.fn(),
-        normalizeId: vi.fn(),
         insert,
-        patch: vi.fn(),
-        replace: vi.fn(),
-        delete: vi.fn(),
         system: {
           get: vi.fn(),
           query: vi.fn(),
@@ -291,6 +273,7 @@ describe("package stat events", () => {
     const patch = vi.fn();
     const ctx = {
       db: {
+        ...createMockDb(),
         query: vi.fn((tableName: string) => {
           if (tableName === "packageStatEvents") {
             return {
@@ -309,11 +292,8 @@ describe("package stat events", () => {
           _id: id,
           stats: { downloads: 10, installs: 1, stars: 2, versions: 3 },
         })),
-        normalizeId: vi.fn(),
         insert,
         patch,
-        replace: vi.fn(),
-        delete: vi.fn(),
         system: {
           get: vi.fn(),
           query: vi.fn(),
@@ -404,6 +384,7 @@ describe("package stat events", () => {
     const patch = vi.fn();
     const ctx = {
       db: {
+        ...createMockDb(),
         query: vi.fn((tableName: string) => {
           if (tableName === "packageStatEvents") {
             return {
@@ -429,11 +410,8 @@ describe("package stat events", () => {
           _id: id,
           stats: { downloads: 10, installs: 1, stars: 2, versions: 3 },
         })),
-        normalizeId: vi.fn(),
         insert,
         patch,
-        replace: vi.fn(),
-        delete: vi.fn(),
         system: {
           get: vi.fn(),
           query: vi.fn(),
@@ -470,6 +448,7 @@ describe("package stat events", () => {
     const runAfter = vi.fn();
     const ctx = {
       db: {
+        ...createMockDb(),
         query: vi.fn((tableName: string) => {
           if (tableName === "packageStatEvents") {
             return {
@@ -487,11 +466,7 @@ describe("package stat events", () => {
           _id: id,
           stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
         })),
-        normalizeId: vi.fn(),
-        insert: vi.fn(),
         patch,
-        replace: vi.fn(),
-        delete: vi.fn(),
         system: {
           get: vi.fn(),
           query: vi.fn(),
@@ -520,6 +495,7 @@ describe("package stat events", () => {
     const gt = vi.fn(() => ({ lt: vi.fn(() => "processed-range") }));
     const ctx = {
       db: {
+        ...createMockDb(),
         query: vi.fn((tableName: string) => {
           expect(tableName).toBe("packageStatEvents");
           return {
@@ -531,11 +507,6 @@ describe("package stat events", () => {
           };
         }),
         delete: deleteDoc,
-        get: vi.fn(),
-        insert: vi.fn(),
-        normalizeId: vi.fn(),
-        patch: vi.fn(),
-        replace: vi.fn(),
         system: {
           get: vi.fn(),
           query: vi.fn(),
@@ -751,17 +722,13 @@ describe("package stat events", () => {
       });
       const ctx = {
         db: {
+          ...createMockDb(),
           query: vi.fn((tableName: string) => {
             if (tableName === "packages") return { withIndex: packageWithIndex };
             if (tableName === "packageDailyStats") return { withIndex: dailyWithIndex };
             throw new Error(`Unexpected table ${tableName}`);
           }),
           get,
-          normalizeId: vi.fn(),
-          insert: vi.fn(),
-          patch: vi.fn(),
-          replace: vi.fn(),
-          delete: vi.fn(),
           system: {
             get: vi.fn(),
             query: vi.fn(),

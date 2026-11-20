@@ -160,6 +160,7 @@ export function Dashboard() {
   const hasQuery = query.trim().length > 0;
   const showLoadMore =
     kindFilter !== "plugin" &&
+    kindFilter !== "template" &&
     kindFilter !== "attention" &&
     skills.length > 0 &&
     skillsStatus === "CanLoadMore";
@@ -373,7 +374,7 @@ function CatalogEmpty({
         </p>
         <p className="empty-state-body">
           {attentionCount === 0
-            ? "Skills and plugins with security, visibility, or validation issues appear here."
+            ? "Skills, plugins, and templates with security, visibility, or validation issues appear here."
             : "Clear filters or switch tabs to see the full catalog."}
         </p>
         {attentionCount === 0 ? (
@@ -383,6 +384,20 @@ function CatalogEmpty({
             </Link>
           </Button>
         ) : null}
+      </div>
+    );
+  }
+
+  if (kind === "template") {
+    return (
+      <div className="empty-state">
+        <p className="empty-state-title">No templates yet</p>
+        <p className="empty-state-body">
+          Publish an agent template to share it with the community.
+        </p>
+        <Button asChild size="sm" className="mt-4">
+          <a href="/docs/templates#validate-build-and-publish">Publish a template</a>
+        </Button>
       </div>
     );
   }

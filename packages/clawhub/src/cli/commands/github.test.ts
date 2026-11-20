@@ -21,6 +21,24 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+function setGlobalFetch(value: typeof fetch) {
+  Object.defineProperty(globalThis, "fetch", {
+    value,
+    configurable: true,
+    writable: true,
+  });
+}
+
+function createGitHubSource(): Parameters<typeof fetchGitHubSource>[0] {
+  return {
+    kind: "github",
+    owner: "owner",
+    repo: "repo",
+    path: ".",
+    url: "https://github.com/owner/repo",
+  };
+}
+
 function mockGitHubCommitLookup(validRefs: string[]) {
   const originalFetch = globalThis.fetch;
   const fetchMock = vi.fn<typeof fetch>(async (input) => {
@@ -38,17 +56,9 @@ function mockGitHubCommitLookup(validRefs: string[]) {
       headers: { "content-type": "application/json" },
     });
   });
-  Object.defineProperty(globalThis, "fetch", {
-    value: fetchMock,
-    configurable: true,
-    writable: true,
-  });
+  setGlobalFetch(fetchMock);
   return () => {
-    Object.defineProperty(globalThis, "fetch", {
-      value: originalFetch,
-      configurable: true,
-      writable: true,
-    });
+    setGlobalFetch(originalFetch);
   };
 }
 
@@ -314,19 +324,9 @@ describe("github publish source helpers", () => {
         }),
       );
     const originalFetch = globalThis.fetch;
-    Object.defineProperty(globalThis, "fetch", {
-      value: fetchMock,
-      configurable: true,
-      writable: true,
-    });
+    setGlobalFetch(fetchMock);
 
-    const fetched = await fetchGitHubSource({
-      kind: "github",
-      owner: "owner",
-      repo: "repo",
-      path: ".",
-      url: "https://github.com/owner/repo",
-    });
+    const fetched = await fetchGitHubSource(createGitHubSource());
 
     try {
       expect(await readFile(join(fetched.dir, ".agents", "config.json"), "utf8")).toContain(
@@ -335,11 +335,7 @@ describe("github publish source helpers", () => {
       expect(await readFile(join(fetched.dir, "package.json"), "utf8")).toContain('"name":"demo"');
     } finally {
       await fetched.cleanup();
-      Object.defineProperty(globalThis, "fetch", {
-        value: originalFetch,
-        configurable: true,
-        writable: true,
-      });
+      setGlobalFetch(originalFetch);
     }
   });
 
@@ -378,20 +374,10 @@ describe("github publish source helpers", () => {
         }),
       );
     const originalFetch = globalThis.fetch;
-    Object.defineProperty(globalThis, "fetch", {
-      value: fetchMock,
-      configurable: true,
-      writable: true,
-    });
+    setGlobalFetch(fetchMock);
 
     try {
-      const fetchedPromise = fetchGitHubSource({
-        kind: "github",
-        owner: "owner",
-        repo: "repo",
-        path: ".",
-        url: "https://github.com/owner/repo",
-      });
+      const fetchedPromise = fetchGitHubSource(createGitHubSource());
       await vi.runAllTimersAsync();
       const fetched = await fetchedPromise;
       await fetched.cleanup();
@@ -400,11 +386,7 @@ describe("github publish source helpers", () => {
       expect(fetched.source.ref).toBe("main");
     } finally {
       vi.useRealTimers();
-      Object.defineProperty(globalThis, "fetch", {
-        value: originalFetch,
-        configurable: true,
-        writable: true,
-      });
+      setGlobalFetch(originalFetch);
     }
   });
 
@@ -413,11 +395,7 @@ describe("github publish source helpers", () => {
       .fn<typeof fetch>()
       .mockResolvedValue(new Response("not found", { status: 404 }));
     const originalFetch = globalThis.fetch;
-    Object.defineProperty(globalThis, "fetch", {
-      value: fetchMock,
-      configurable: true,
-      writable: true,
-    });
+    setGlobalFetch(fetchMock);
 
     try {
       await expect(
@@ -431,11 +409,7 @@ describe("github publish source helpers", () => {
       ).rejects.toThrow("GitHub repo not found: owner/missing");
       expect(fetchMock).toHaveBeenCalledTimes(1);
     } finally {
-      Object.defineProperty(globalThis, "fetch", {
-        value: originalFetch,
-        configurable: true,
-        writable: true,
-      });
+      setGlobalFetch(originalFetch);
     }
   });
 
@@ -478,20 +452,10 @@ describe("github publish source helpers", () => {
         }),
       );
     const originalFetch = globalThis.fetch;
-    Object.defineProperty(globalThis, "fetch", {
-      value: fetchMock,
-      configurable: true,
-      writable: true,
-    });
+    setGlobalFetch(fetchMock);
 
     try {
-      const fetchedPromise = fetchGitHubSource({
-        kind: "github",
-        owner: "owner",
-        repo: "repo",
-        path: ".",
-        url: "https://github.com/owner/repo",
-      });
+      const fetchedPromise = fetchGitHubSource(createGitHubSource());
       await vi.advanceTimersByTimeAsync(999);
       expect(fetchMock).toHaveBeenCalledTimes(1);
       await vi.advanceTimersByTimeAsync(1);
@@ -501,11 +465,7 @@ describe("github publish source helpers", () => {
       expect(fetchMock).toHaveBeenCalledTimes(4);
     } finally {
       vi.useRealTimers();
-      Object.defineProperty(globalThis, "fetch", {
-        value: originalFetch,
-        configurable: true,
-        writable: true,
-      });
+      setGlobalFetch(originalFetch);
     }
   });
 
@@ -517,29 +477,15 @@ describe("github publish source helpers", () => {
       }),
     );
     const originalFetch = globalThis.fetch;
-    Object.defineProperty(globalThis, "fetch", {
-      value: fetchMock,
-      configurable: true,
-      writable: true,
-    });
+    setGlobalFetch(fetchMock);
 
     try {
-      await expect(
-        fetchGitHubSource({
-          kind: "github",
-          owner: "owner",
-          repo: "repo",
-          path: ".",
-          url: "https://github.com/owner/repo",
-        }),
-      ).rejects.toThrow("GitHub repo lookup failed (429): owner/repo");
+      await expect(fetchGitHubSource(createGitHubSource())).rejects.toThrow(
+        "GitHub repo lookup failed (429): owner/repo",
+      );
       expect(fetchMock).toHaveBeenCalledTimes(1);
     } finally {
-      Object.defineProperty(globalThis, "fetch", {
-        value: originalFetch,
-        configurable: true,
-        writable: true,
-      });
+      setGlobalFetch(originalFetch);
     }
   });
 
@@ -582,20 +528,10 @@ describe("github publish source helpers", () => {
         }),
       );
     const originalFetch = globalThis.fetch;
-    Object.defineProperty(globalThis, "fetch", {
-      value: fetchMock,
-      configurable: true,
-      writable: true,
-    });
+    setGlobalFetch(fetchMock);
 
     try {
-      const fetchedPromise = fetchGitHubSource({
-        kind: "github",
-        owner: "owner",
-        repo: "repo",
-        path: ".",
-        url: "https://github.com/owner/repo",
-      });
+      const fetchedPromise = fetchGitHubSource(createGitHubSource());
       await vi.runAllTimersAsync();
       const fetched = await fetchedPromise;
       await fetched.cleanup();
@@ -603,11 +539,7 @@ describe("github publish source helpers", () => {
       expect(fetchMock).toHaveBeenCalledTimes(4);
     } finally {
       vi.useRealTimers();
-      Object.defineProperty(globalThis, "fetch", {
-        value: originalFetch,
-        configurable: true,
-        writable: true,
-      });
+      setGlobalFetch(originalFetch);
     }
   });
 
@@ -620,20 +552,10 @@ describe("github publish source helpers", () => {
       }),
     );
     const originalFetch = globalThis.fetch;
-    Object.defineProperty(globalThis, "fetch", {
-      value: fetchMock,
-      configurable: true,
-      writable: true,
-    });
+    setGlobalFetch(fetchMock);
 
     try {
-      const fetchedPromise = fetchGitHubSource({
-        kind: "github",
-        owner: "owner",
-        repo: "repo",
-        path: ".",
-        url: "https://github.com/owner/repo",
-      });
+      const fetchedPromise = fetchGitHubSource(createGitHubSource());
       const rejection = expect(fetchedPromise).rejects.toThrow(
         "GitHub repo lookup failed (403): owner/repo",
       );
@@ -643,11 +565,7 @@ describe("github publish source helpers", () => {
       expect(fetchMock).toHaveBeenCalledTimes(2);
     } finally {
       vi.useRealTimers();
-      Object.defineProperty(globalThis, "fetch", {
-        value: originalFetch,
-        configurable: true,
-        writable: true,
-      });
+      setGlobalFetch(originalFetch);
     }
   });
 
@@ -674,20 +592,10 @@ describe("github publish source helpers", () => {
         }),
       );
     const originalFetch = globalThis.fetch;
-    Object.defineProperty(globalThis, "fetch", {
-      value: fetchMock,
-      configurable: true,
-      writable: true,
-    });
+    setGlobalFetch(fetchMock);
 
     try {
-      const fetchedPromise = fetchGitHubSource({
-        kind: "github",
-        owner: "owner",
-        repo: "repo",
-        path: ".",
-        url: "https://github.com/owner/repo",
-      });
+      const fetchedPromise = fetchGitHubSource(createGitHubSource());
       const rejection = expect(fetchedPromise).rejects.toThrow(
         "GitHub ref not found: owner/repo@main",
       );
@@ -697,11 +605,7 @@ describe("github publish source helpers", () => {
       expect(fetchMock).toHaveBeenCalledTimes(3);
     } finally {
       vi.useRealTimers();
-      Object.defineProperty(globalThis, "fetch", {
-        value: originalFetch,
-        configurable: true,
-        writable: true,
-      });
+      setGlobalFetch(originalFetch);
     }
   });
 
@@ -729,11 +633,7 @@ describe("github publish source helpers", () => {
         }),
       );
     const originalFetch = globalThis.fetch;
-    Object.defineProperty(globalThis, "fetch", {
-      value: fetchMock,
-      configurable: true,
-      writable: true,
-    });
+    setGlobalFetch(fetchMock);
 
     try {
       const resolvedPromise = resolveSourceInput("https://github.com/owner/repo/tree/main", {
@@ -750,11 +650,7 @@ describe("github publish source helpers", () => {
       expect(fetchMock).toHaveBeenCalledTimes(3);
     } finally {
       vi.useRealTimers();
-      Object.defineProperty(globalThis, "fetch", {
-        value: originalFetch,
-        configurable: true,
-        writable: true,
-      });
+      setGlobalFetch(originalFetch);
     }
   });
 
@@ -792,28 +688,14 @@ describe("github publish source helpers", () => {
         }),
       );
     const originalFetch = globalThis.fetch;
-    Object.defineProperty(globalThis, "fetch", {
-      value: fetchMock,
-      configurable: true,
-      writable: true,
-    });
+    setGlobalFetch(fetchMock);
 
     try {
-      await expect(
-        fetchGitHubSource({
-          kind: "github",
-          owner: "owner",
-          repo: "repo",
-          path: ".",
-          url: "https://github.com/owner/repo",
-        }),
-      ).rejects.toThrow(/Unsafe path in archive/i);
+      await expect(fetchGitHubSource(createGitHubSource())).rejects.toThrow(
+        /Unsafe path in archive/i,
+      );
     } finally {
-      Object.defineProperty(globalThis, "fetch", {
-        value: originalFetch,
-        configurable: true,
-        writable: true,
-      });
+      setGlobalFetch(originalFetch);
     }
   });
 });

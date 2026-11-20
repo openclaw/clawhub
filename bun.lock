@@ -57,6 +57,7 @@
         "rehype-sanitize": "6.0.0",
         "remark-gfm": "4.0.1",
         "resend": "6.37.0",
+        "saxes": "6.0.0",
         "semver": "7.8.6",
         "sharp": "0.35.5",
         "shiki": "4.6.0",
@@ -89,6 +90,7 @@
         "@vitejs/plugin-react": "6.2.1",
         "@vitest/coverage-v8": "5.1.0",
         "convex-test": "^0.0.67",
+        "esbuild": "0.28.1",
         "jsdom": "31.0.0",
         "nitro": "3.0.260610-beta",
         "only-allow": "1.2.2",
@@ -108,7 +110,7 @@
     },
     "packages/clawhub": {
       "name": "clawhub",
-      "version": "0.26.0",
+      "version": "0.27.0",
       "bin": {
         "clawdhub": "bin/clawdhub.js",
         "clawhub": "bin/clawdhub.js",

@@ -56,6 +56,11 @@ export function filterByKind(
 ): DashboardCatalogItem[] {
   if (kind === "all") return items;
   if (kind === "attention") return items;
+  // Templates share package storage, but are not plugins in the catalog.
+  if (kind === "template")
+    return items.filter((item) => item.kind === "plugin" && item.data.family === "template");
+  if (kind === "plugin")
+    return items.filter((item) => item.kind === "plugin" && item.data.family !== "template");
   return items.filter((item) => item.kind === kind);
 }
 

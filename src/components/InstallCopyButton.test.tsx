@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { deferred } from "../__tests__/helpers/deferred";
 import { registerAnalyticsOperations } from "../lib/analyticsEvents";
 import { createGoogleAnalytics } from "../lib/googleAnalytics";
 import { InstallCopyButton } from "./InstallCopyButton";
@@ -48,13 +49,12 @@ function deferredCopy() {
   Object.defineProperty(navigator, "clipboard", {
     configurable: true,
     value: {
-      writeText: vi.fn(
-        () =>
-          new Promise<void>((yes, no) => {
-            resolve = yes;
-            reject = no;
-          }),
-      ),
+      writeText: vi.fn(() => {
+        const pending = deferred();
+        resolve = pending.resolve;
+        reject = pending.reject;
+        return pending.promise;
+      }),
     },
   });
   render(<InstallCopyButton text="never-send-copied-text" analyticsMethod="cli" />);

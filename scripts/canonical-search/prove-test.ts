@@ -5,6 +5,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { promisify } from "node:util";
 import { CANONICAL_SKILL_SEARCH_BOUNDS } from "../../convex/lib/canonicalSkillSearchBounds";
+import { requireEnv } from "../lib/scriptConfig";
 import {
   assertCanonicalSearchResults,
   assertStableOrder,
@@ -17,12 +18,6 @@ const OUTPUT_PATH = resolve("proof/claw-577/canonical-search-test-proof.json");
 const EXTERNAL_ID = "clawhub-test/claw-577/search-popularity-decoy";
 const SAMPLE_COUNT = 3;
 const LIMIT = 100;
-
-function requireEnv(name: string) {
-  const value = process.env[name]?.trim();
-  if (!value) throw new Error(`${name} is required`);
-  return value;
-}
 
 const deploySha = requireEnv("DEPLOY_SHA");
 const siteUrl = requireEnv("TEST_SITE_URL").replace(/\/$/, "");

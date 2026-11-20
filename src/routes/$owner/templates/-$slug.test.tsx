@@ -208,6 +208,30 @@ describe("publisher Template route invariants", () => {
     );
   });
 
+  it("advertises the same absolute full-size image to Open Graph and Twitter", async () => {
+    const detail = packageDetail();
+    detail.package!.displayName = detail.package!.name;
+    const head = Route.options.head!;
+    const result = await head({ loaderData: { detail } } as Parameters<typeof head>[0]);
+    const image =
+      "https://clawhub.ai/og/template.png?v=2&name=%40maker%2Frelease-brief&owner=maker&version=0.1.0";
+    expect(result?.meta).toEqual(
+      expect.arrayContaining([
+        { title: "Release Brief — ClawHub Templates" },
+        { property: "og:image", content: image },
+        { property: "og:image:width", content: "1200" },
+        { property: "og:image:height", content: "630" },
+        { name: "twitter:card", content: "summary_large_image" },
+        { name: "twitter:image", content: image },
+      ]),
+    );
+    expect(result?.links).toEqual([
+      { rel: "canonical", href: "https://clawhub.ai/maker/templates/release-brief" },
+    ]);
+    detail.package!.channel = "private";
+    expect(await head({ loaderData: { detail } } as Parameters<typeof head>[0])).toEqual({});
+  });
+
   it("redirects aliases to the actual package's canonical publisher URL", async () => {
     const detail = packageDetail();
     detail.package!.name = "@maker/canonical-brief";
@@ -280,10 +304,12 @@ function renderTemplate(
     llmAnalysis?: LlmAnalysis | null;
     manifestSummary?: NonNullable<PackageDetailResponse["package"]>["templateManifestSummary"];
     name?: string;
+    categories?: string[];
   } = {},
 ) {
   const detail = packageDetail();
   if (options.name) detail.package!.name = options.name;
+  if (options.categories) detail.package!.categories = options.categories;
   detail.package!.scanStatus = "status" in options ? options.status : "clean";
   detail.package!.updatedAt = Date.UTC(2026, 10, 5);
   if ("version" in options) detail.package!.latestVersion = options.version;
@@ -311,6 +337,68 @@ describe("Template detail composition and interactions", () => {
     mocks.fetchPackageVersion.mockResolvedValue(null);
     mocks.fetchPackageFile.mockResolvedValue("# Workspace instructions\n\nActual file contents.");
   });
+
+  it("uses one mobile command fallback without duplicating the rail card", () => {
+    vi.stubGlobal("matchMedia", () => ({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }));
+    try {
+      renderTemplate();
+      const card = screen.getByRole("article", { name: "Install" });
+      expect(card.closest(".template-detail-main")).not.toBeNull();
+      expect(document.querySelectorAll(".skill-install-command-card")).toHaveLength(1);
+      expect(screen.getByRole("button", { name: "Copy template install command" })).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "Desktop" }));
+      expect(
+        screen.getByRole("link", { name: "Install in OpenClaw" }).closest(".template-detail-main"),
+      ).not.toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("offers the exact Template package identity and one desktop rail command card", () => {
+    renderTemplate();
+    fireEvent.click(screen.getByRole("button", { name: "Desktop" }));
+    const link = screen.getByRole("link", { name: "Install in OpenClaw" });
+    expect(link.getAttribute("href")).toBe(
+      "openclaw://templates/install?name=%40maker%2Frelease-brief",
+    );
+    expect(link.closest(".template-detail-metadata")).not.toBeNull();
+    expect(link.querySelector("svg")).toBeNull();
+    const card = screen.getByRole("article", { name: "Install" });
+    expect(card.closest(".template-detail-metadata")).not.toBeNull();
+    expect(document.querySelectorAll(".skill-install-command-card")).toHaveLength(1);
+  });
+
+  it.each([
+    { stored: ["household"], shown: "Household" },
+    { stored: ["entertainment"], shown: "Entertainment" },
+    // First-party listings were not rewritten and keep removed or several categories.
+    { stored: ["personal"], shown: "Personal" },
+    { stored: ["productivity", "people"], shown: "Productivity · People" },
+  ])("labels the stored category $stored", ({ stored, shown }) => {
+    renderTemplate({ categories: stored });
+    expect(document.querySelector(".template-detail-category")?.textContent).toBe(shown);
+  });
+
+  it.each([
+    { declared: ["engineering", "operations"], shown: "Engineering" },
+    { declared: ["travel", "personal"], shown: "Travel" },
+    { declared: ["personal", "productivity"], shown: undefined },
+    { declared: ["made-up"], shown: undefined },
+  ])(
+    "shows only the first declared category $declared before the registry assigns one",
+    ({ declared, shown }) => {
+      renderTemplate({
+        contents:
+          "---\n" + JSON.stringify({ ...manifest, categories: declared }) + "\n---\n# Brief",
+      });
+      expect(document.querySelector(".template-detail-category")?.textContent).toBe(shown);
+    },
+  );
 
   it("clamps overflowing descriptions and links the expand/collapse button to the full text", () => {
     mockComputedLineHeight("20px");
@@ -573,6 +661,15 @@ describe("Template detail composition and interactions", () => {
     await waitFor(() =>
       expect(writeText).toHaveBeenCalledWith("openclaw templates add @maker/release-brief"),
     );
+    fireEvent.click(screen.getByRole("button", { name: "Desktop" }));
+    expect(screen.getByRole("link", { name: "Install in OpenClaw" }).getAttribute("href")).toBe(
+      "openclaw://templates/install?name=%40maker%2Frelease-brief",
+    );
+  });
+
+  it("words the prompt for an unscoped package with its publisher", () => {
+    // The prompt tab only remains when the Desktop action is unavailable.
+    renderTemplate({ name: "release-brief", version: null });
     fireEvent.click(screen.getByRole("button", { name: "Prompt" }));
     expect(screen.getByText("Install the @maker/release-brief template from ClawHub")).toBeTruthy();
   });
@@ -581,6 +678,7 @@ describe("Template detail composition and interactions", () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
     renderTemplate();
+    fireEvent.click(screen.getByRole("button", { name: "CLI" }));
     const button = screen.getByRole("button", { name: "Copy template install command" });
     fireEvent.click(button);
     await waitFor(() => expect(button.getAttribute("data-copy-state")).toBe("copied"));
@@ -591,19 +689,12 @@ describe("Template detail composition and interactions", () => {
     expect(document.querySelector(".skill-install-command-verb")?.textContent).toBe(
       "openclaw templates add",
     );
-    fireEvent.click(screen.getByRole("button", { name: "Prompt" }));
-    expect(screen.getByRole("button", { name: "Prompt" }).getAttribute("aria-pressed")).toBe(
+    fireEvent.click(screen.getByRole("button", { name: "Desktop" }));
+    expect(screen.getByRole("button", { name: "Desktop" }).getAttribute("aria-pressed")).toBe(
       "true",
     );
-    expect(screen.getByText("Install the @maker/release-brief template from ClawHub")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Copy OpenClaw prompt" }));
-    await waitFor(() =>
-      expect(writeText).toHaveBeenLastCalledWith(
-        "Install the @maker/release-brief template from ClawHub",
-      ),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "CLI" }));
-    expect(screen.getByRole("button", { name: "Copy template install command" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Install in OpenClaw" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Copy template install command" })).toBeNull();
   });
 
   it.each([
@@ -625,6 +716,7 @@ describe("Template detail composition and interactions", () => {
       screen.getByRole("link", { name: "Download release archive" }).getAttribute("href"),
     ).toBe("/api/v1/packages/%40maker%2Frelease-brief/versions/0.1.0/artifact/download");
     expect(screen.queryByRole("button", { name: "Copy template install command" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Install in OpenClaw" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Prompt" }));
     expect(screen.queryByRole("button", { name: "Copy OpenClaw prompt" })).toBeNull();
     if (contents !== null) {
@@ -649,6 +741,7 @@ describe("Template detail composition and interactions", () => {
     });
     expect(screen.getByRole("status").textContent).toContain("retired Template profiles");
     expect(screen.queryByRole("button", { name: "Copy template install command" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Install in OpenClaw" })).toBeNull();
     expect(screen.getByText("View original CLAW.md").closest("details")?.textContent).toContain(
       contents,
     );
@@ -669,6 +762,7 @@ describe("Template detail composition and interactions", () => {
       value: { writeText: vi.fn().mockRejectedValue(new Error("Denied")) },
     });
     renderTemplate();
+    fireEvent.click(screen.getByRole("button", { name: "CLI" }));
     const button = screen.getByRole("button", { name: "Copy template install command" });
     fireEvent.click(button);
     await waitFor(() => expect(button.getAttribute("data-copy-state")).toBe("failed"));
@@ -703,6 +797,7 @@ describe("Template detail composition and interactions", () => {
         level,
       );
       expect(screen.queryByRole("button", { name: "Copy template install command" })).toBeNull();
+      expect(screen.queryByRole("link", { name: "Install in OpenClaw" })).toBeNull();
       expect(document.querySelector(".skill-install-command")?.textContent).toBe(
         "openclaw templates add @maker/release-brief",
       );
@@ -717,6 +812,7 @@ describe("Template detail composition and interactions", () => {
     expect(screen.queryByText(/no current release/)).toBeNull();
     expect(screen.getByRole("region", { name: "Install Template" }).querySelector("p")).toBeNull();
     expect(screen.queryByRole("button", { name: "Copy template install command" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Install in OpenClaw" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Prompt" }));
     expect(screen.queryByRole("button", { name: "Copy OpenClaw prompt" })).toBeNull();
   });

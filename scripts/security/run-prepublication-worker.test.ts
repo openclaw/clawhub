@@ -1665,7 +1665,7 @@ wait "$child_pid"
     const previousTimeout = process.env.PREPUBLICATION_CLAWSCAN_TIMEOUT_MS;
     process.env.PREPUBLICATION_CLAWSCAN_COMMAND = fakeClawScan;
     process.env.PREPUBLICATION_CLAWSCAN_TIMEOUT_MS = "500";
-    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
 
     try {
       const scanPromise = runNativeClawScan(
@@ -1679,8 +1679,9 @@ wait "$child_pid"
       );
       void scanPromise.catch(() => undefined);
       const descendantPid = await readStartedPid(descendantPidPath);
-      await vi.advanceTimersByTimeAsync(10_500);
-      await expect(scanPromise).rejects.toThrow("timed out");
+      // Include the shared runner's bounded process-group cleanup allowance.
+      await vi.advanceTimersByTimeAsync(60_500);
+      await expect(scanPromise).rejects.toMatchObject({ timedOut: true });
       vi.useRealTimers();
 
       let descendantRunning = true;
@@ -1708,6 +1709,27 @@ wait "$child_pid"
       if (previousTimeout === undefined) delete process.env.PREPUBLICATION_CLAWSCAN_TIMEOUT_MS;
       else process.env.PREPUBLICATION_CLAWSCAN_TIMEOUT_MS = previousTimeout;
     }
+  });
+
+  it.each([
+    ["stdout", 33 * 1024 * 1024],
+    ["stderr", 2 * 1024 * 1024],
+  ] as const)("bounds excessive %s from a native scanner", async (stream, bytes) => {
+    const workspace = await tempDirs.create();
+    const command = join(workspace, "noisy-scanner");
+    await writeFile(
+      command,
+      `#!/usr/bin/env node
+process.${stream}.write(Buffer.alloc(${bytes}, "x"));
+`,
+    );
+    await chmod(command, 0o755);
+    vi.stubEnv("PREPUBLICATION_TRUFFLEHOG_COMMAND", command);
+
+    await expect(runNativeTruffleHog(workspace)).rejects.toMatchObject({
+      failureKind: "output_limit",
+      outputLimitExceeded: stream,
+    });
   });
 
   it("maps TruffleHog verified-secret exit code to a blocked result", async () => {

@@ -2,7 +2,7 @@ import {
   getCatalogTopicSlugs,
   normalizeCatalogTopic,
   normalizeCatalogTopics,
-} from "clawhub-schema";
+} from "clawhub-schema/catalogMetadata";
 import { paginationOptsValidator } from "convex/server";
 import { ConvexError, type Infer, v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -11,6 +11,11 @@ import { internalMutation, internalQuery } from "./functions";
 import { toHex } from "./lib/hash";
 import { getMirrorFirstSearchToken } from "./lib/skillSearchDigest";
 import { assertSkillsShMirrorEnvironmentAllowed } from "./lib/skillsShCatalogEnvironment";
+import { getSkillsShMirrorClassificationState } from "./lib/skillsShMirrorClassification";
+import {
+  skillsShMirrorRowValidator as rowValidator,
+  skillsShMirrorSourceRowValidator as sourceListRowValidator,
+} from "./lib/skillsShMirrorContract";
 import { skillsShMirrorFreshObservationFlags } from "./lib/skillsShPublicVisibility";
 
 const CONTROL_KEY = "global";
@@ -45,79 +50,12 @@ const MAX_LEGACY_LEADERBOARD_CAPTURES = 100;
 const SKILLS_SH_PROOF_SNAPSHOT_PREFIX = "skills-sh:proof:";
 const PRESERVE_EXISTING_QUARANTINE_REASONS = new Set(["identity-page-fetch-failed"]);
 
-const detailValidator = v.object({
-  contentKind: v.union(v.literal("skill-md"), v.literal("readme")),
-  path: v.string(),
-  content: v.string(),
-  contentBytes: v.number(),
-  sourceBytes: v.number(),
-  sourceFileCount: v.number(),
-  truncated: v.boolean(),
-});
-
-const upstreamScannerValidator = v.object({
-  status: v.string(),
-  sourceCheckedAt: v.optional(v.string()),
-  sourceUrl: v.optional(v.string()),
-});
-
-const upstreamScannersValidator = v.object({
-  genAgentTrustHub: upstreamScannerValidator,
-  socket: upstreamScannerValidator,
-  snyk: upstreamScannerValidator,
-});
-
-const classificationConfidenceValidator = v.union(
-  v.literal("high"),
-  v.literal("medium"),
-  v.literal("low"),
-);
-
-const sourceListRowValidator = v.object({
-  id: v.string(),
-  installUrl: v.union(v.string(), v.null()),
-  installs: v.number(),
-  name: v.string(),
-  slug: v.string(),
-  source: v.string(),
-  sourceType: v.string(),
-  url: v.string(),
-});
-
 const sourceViewValidator = v.union(v.literal("leaderboard"), v.literal("trending"));
 
 const trendingRowValidator = v.object({
   externalId: v.string(),
   lifetimeInstalls: v.number(),
   rank: v.number(),
-});
-
-const rowValidator = v.object({
-  externalId: v.string(),
-  sourceType: v.union(v.literal("github"), v.literal("well-known")),
-  upstreamSourceType: v.string(),
-  owner: v.optional(v.string()),
-  repo: v.optional(v.string()),
-  sourceHost: v.optional(v.string()),
-  slug: v.string(),
-  displayName: v.string(),
-  sourceUrl: v.string(),
-  canonicalRepoUrl: v.optional(v.string()),
-  githubPath: v.optional(v.string()),
-  githubCommit: v.optional(v.string()),
-  sourceContentHash: v.optional(v.string()),
-  upstreamInstalls: v.number(),
-  upstreamScanners: upstreamScannersValidator,
-  inferredCategories: v.array(v.string()),
-  inferredTopics: v.array(v.string()),
-  inferredCategoryConfidence: classificationConfidenceValidator,
-  inferredTopicConfidence: classificationConfidenceValidator,
-  inferredClassifierVersion: v.string(),
-  inferredTopicClassifierVersion: v.string(),
-  inferredInputHash: v.string(),
-  inferredTopicInputHash: v.string(),
-  inferredAt: v.number(),
-  detail: v.optional(detailValidator),
 });
 
 type MirrorRow = Infer<typeof rowValidator>;
@@ -2297,37 +2235,8 @@ export const getClassificationStatesInternal = internalQuery({
       ),
     );
     return digests.flatMap((digest) => {
-      if (
-        !digest ||
-        !digest.inferredCategories ||
-        !digest.inferredTopics ||
-        !digest.inferredCategoryConfidence ||
-        !digest.inferredTopicConfidence ||
-        !digest.inferredClassifierVersion ||
-        !digest.inferredTopicClassifierVersion ||
-        !digest.inferredInputHash ||
-        !digest.inferredTopicInputHash ||
-        digest.inferredAt === undefined
-      ) {
-        return [];
-      }
-      return [
-        {
-          externalId: digest.externalId,
-          slug: digest.slug,
-          displayName: digest.displayName,
-          ...(digest.sourceContentHash ? { sourceContentHash: digest.sourceContentHash } : {}),
-          inferredCategories: digest.inferredCategories,
-          inferredTopics: digest.inferredTopics,
-          inferredCategoryConfidence: digest.inferredCategoryConfidence,
-          inferredTopicConfidence: digest.inferredTopicConfidence,
-          inferredClassifierVersion: digest.inferredClassifierVersion,
-          inferredTopicClassifierVersion: digest.inferredTopicClassifierVersion,
-          inferredInputHash: digest.inferredInputHash,
-          inferredTopicInputHash: digest.inferredTopicInputHash,
-          inferredAt: digest.inferredAt,
-        },
-      ];
+      const state = getSkillsShMirrorClassificationState(digest);
+      return state ? [state] : [];
     });
   },
 });

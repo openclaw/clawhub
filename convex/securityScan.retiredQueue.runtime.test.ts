@@ -2,7 +2,9 @@
 /* @vitest-environment edge-runtime */
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { internal } from "./_generated/api";
+import { createActiveSkillSeedDefaults } from "../src/__tests__/helpers/activeSkillSeed";
+import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
+import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { dispatchGitHubRepositoryEvent } from "./lib/githubRepositoryDispatch";
 import schema from "./schema";
@@ -15,10 +17,14 @@ vi.mock("./lib/githubAuth", () => ({
     permissions: { contents: "write" },
   }),
 }));
-vi.mock("./lib/githubRepositoryDispatch", () => ({
-  getGitHubRepositoryDispatchPermission: () => ({ canDispatch: true }),
-  dispatchGitHubRepositoryEvent: vi.fn(async () => ({ ok: true })),
-}));
+vi.mock("./lib/githubRepositoryDispatch", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./lib/githubRepositoryDispatch")>();
+  return {
+    ...original,
+    getGitHubRepositoryDispatchPermission: () => ({ canDispatch: true }),
+    dispatchGitHubRepositoryEvent: vi.fn(async () => ({ ok: true })),
+  };
+});
 
 const modules = import.meta.glob("./**/*.ts");
 const NOW = 1_000_000;
@@ -39,20 +45,16 @@ async function fixture(
     const releases: Id<"packageReleases">[] = [];
     for (const family of ["code-plugin", "bundle-plugin", "claw"] as const) {
       const packageId = await ctx.db.insert("packages", {
+        ...createPackageSeedDefaults(),
         name: "fixture-" + family,
         normalizedName: "fixture-" + family,
         displayName: family,
         ownerUserId: userId,
         family,
-        channel: "community",
-        isOfficial: false,
-        tags: {},
         compatibility: {},
         verification,
         scanStatus: "clean",
         stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
-        createdAt: 1,
-        updatedAt: 1,
       });
       releases.push(
         await ctx.db.insert("packageReleases", {
@@ -72,15 +74,11 @@ async function fixture(
       );
     }
     const skillId = await ctx.db.insert("skills", {
+      ...createActiveSkillSeedDefaults(),
       slug: "retired-queue-fixture",
       displayName: "Queue fixture",
       ownerUserId: userId,
-      tags: {},
-      badges: {},
-      moderationStatus: "active",
       stats: { comments: 0, downloads: 0, stars: 0, versions: 1 },
-      createdAt: 1,
-      updatedAt: 1,
     });
     const versionId = await ctx.db.insert("skillVersions", {
       skillId,
@@ -224,6 +222,23 @@ describe("retired automatic plugin queue heads", () => {
     ).rejects.toThrow("Lease mismatch");
     expect(await readReleases(f)).toEqual(releases);
     await assertScheduledFunctionsSucceeded(f);
+  });
+
+  it("never leases retired automatic plugin scans through the planned worker claim", async () => {
+    const f = await fixture("queued", 7);
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "fixture-worker-token");
+    const claimed = await f.t
+      .action(api.securityScan.claimCodexScanJobLeases, {
+        token: "fixture-worker-token",
+        workerId: "eligible-worker",
+        lane: "shared",
+        limit: 20,
+      })
+      .finally(() => vi.unstubAllEnvs());
+    expect(new Set(claimed.map((job) => job._id))).toEqual(new Set(f.eligibleIds));
+    for (const job of await readJobs(f, f.retiredIds)) {
+      expect(job).toMatchObject({ status: "queued", attempts: 2 });
+    }
   });
 
   it.each([true, false])(

@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("./lib/verifiedClientIp", () => ({
   getVerifiedClientIp: async () => "203.0.113.1",
 }));
+import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
 import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
@@ -25,19 +26,15 @@ async function fixture() {
   }) =>
     await t.run(async (ctx) => {
       const packageId = await ctx.db.insert("packages", {
+        ...createPackageSeedDefaults(),
         name: options.name,
         normalizedName: options.name,
         displayName: options.name,
         family: options.family,
         ownerUserId: options.ownerUserId,
         ownerPublisherId: options.ownerPublisherId,
-        channel: "community",
-        isOfficial: false,
         scanStatus: "clean",
-        tags: {},
         stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
-        createdAt: 1,
-        updatedAt: 1,
       });
       const releaseId = await ctx.db.insert("packageReleases", {
         packageId,
@@ -93,6 +90,28 @@ describe("publisher-qualified Template references", () => {
 
     const detail = await t.query(api.packages.getByName, { name: "@Maker/solo-brief" });
     expect(detail?.package.name).toBe("solo-brief");
+  });
+
+  it("links Template security audits to the publisher's Template page", async () => {
+    const { t, owner, insertPackage } = await fixture();
+    await insertPackage({ name: "@maker/scoped-brief", family: "claw", ...owner });
+    const auditUrl = async (name: string) => {
+      const response = await t.fetch(`/api/v1/packages/${name}/versions/1.0.0/security`);
+      expect(response.status, name).toBe(200);
+      return (await response.json()).securityAuditUrl;
+    };
+    const origin = "https://some.convex.site";
+
+    // An unscoped Template has no publisher in its name; the link needs its owner.
+    expect(await auditUrl("solo-brief")).toBe(
+      `${origin}/maker/templates/solo-brief/security-audit?version=1.0.0`,
+    );
+    expect(await auditUrl("@maker/scoped-brief")).toBe(
+      `${origin}/maker/templates/scoped-brief/security-audit?version=1.0.0`,
+    );
+    expect(await auditUrl("solo-plugin")).toBe(
+      `${origin}/plugins/solo-plugin/security-audit?version=1.0.0`,
+    );
   });
 
   it("does not resolve another publisher's handle or a non-Template package", async () => {

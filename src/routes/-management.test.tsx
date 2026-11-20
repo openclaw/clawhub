@@ -17,6 +17,19 @@ let authUser: { _id: string; handle: string; role: "admin" | "moderator" | "user
   role: "admin",
 };
 
+function makeEmptyPublisherAbuseDashboard(overrides: Record<string, unknown> = {}) {
+  return {
+    latestRun: null,
+    // The backend returns per-tab queues so one label cannot be hidden by
+    // the capped combined list.
+    pendingItems: [],
+    pendingPotentialBanCandidateItems: [],
+    pendingReviewItems: [],
+    recentResolvedItems: [],
+    ...overrides,
+  };
+}
+
 function makePublisherAbuseItem({
   handle = "spammy-pub",
   id = "1",
@@ -274,13 +287,7 @@ describe("Management", () => {
       if (name === "skills:listReportedSkills") return [];
       if (name === "skills:listDuplicateCandidates") return [];
       if (name === "publisherAbuse:listReviewDashboard") {
-        return {
-          latestRun: null,
-          pendingItems: [],
-          pendingPotentialBanCandidateItems: [],
-          pendingReviewItems: [],
-          recentResolvedItems: [],
-        };
+        return makeEmptyPublisherAbuseDashboard();
       }
       if (name === "users:list") return { items: [], total: 0 };
       return undefined;
@@ -319,13 +326,7 @@ describe("Management", () => {
       if (name === "skills:listReportedSkills") return [];
       if (name === "skills:listDuplicateCandidates") return [];
       if (name === "publisherAbuse:listReviewDashboard") {
-        return {
-          latestRun: null,
-          pendingItems: [],
-          pendingPotentialBanCandidateItems: [],
-          pendingReviewItems: [],
-          recentResolvedItems: [resolvedItem],
-        };
+        return makeEmptyPublisherAbuseDashboard({ recentResolvedItems: [resolvedItem] });
       }
       if (name === "publisherAbuse:getReviewNominationDetail") {
         return { item: resolvedItem, scoreHistory: [] };
@@ -1425,13 +1426,7 @@ describe("Management", () => {
       if (name === "skills:listReportedSkills") return [];
       if (name === "skills:listDuplicateCandidates") return [];
       if (name === "publisherAbuse:listReviewDashboard") {
-        return {
-          latestRun: null,
-          pendingItems: [],
-          pendingPotentialBanCandidateItems: [],
-          pendingReviewItems: [],
-          recentResolvedItems: [],
-        };
+        return makeEmptyPublisherAbuseDashboard();
       }
       if (name === "publisherAbuse:getPublisherAbuseAutobanSetting") {
         return {
@@ -1481,13 +1476,7 @@ describe("Management", () => {
       if (name === "skills:listReportedSkills") return [];
       if (name === "skills:listDuplicateCandidates") return [];
       if (name === "publisherAbuse:listReviewDashboard") {
-        return {
-          latestRun: null,
-          pendingItems: [],
-          pendingPotentialBanCandidateItems: [],
-          pendingReviewItems: [],
-          recentResolvedItems: [],
-        };
+        return makeEmptyPublisherAbuseDashboard();
       }
       if (name === "publisherAbuse:getPublisherAbuseAutobanSetting") {
         return {
@@ -1522,13 +1511,7 @@ describe("Management", () => {
       if (name === "skills:listReportedSkills") return [];
       if (name === "skills:listDuplicateCandidates") return [];
       if (name === "publisherAbuse:listReviewDashboard") {
-        return {
-          latestRun: null,
-          pendingItems: [],
-          pendingPotentialBanCandidateItems: [],
-          pendingReviewItems: [],
-          recentResolvedItems: [],
-        };
+        return makeEmptyPublisherAbuseDashboard();
       }
       if (name === "users:list") {
         return args &&
@@ -1583,7 +1566,7 @@ describe("Management", () => {
       if (name === "skills:listReportedSkills") return [];
       if (name === "skills:listDuplicateCandidates") return [];
       if (name === "publisherAbuse:listReviewDashboard") {
-        return {
+        return makeEmptyPublisherAbuseDashboard({
           latestRun: {
             status: "completed",
             startedAt: 1715000000000,
@@ -1594,13 +1577,8 @@ describe("Management", () => {
             reviewCount: 0,
             potentialBanCandidateCount: 1,
           },
-          // The backend returns per-tab queues so one label cannot be hidden by
-          // the capped combined list.
-          pendingItems: [],
           pendingPotentialBanCandidateItems: [item, secondItem],
-          pendingReviewItems: [],
-          recentResolvedItems: [],
-        };
+        });
       }
       if (name === "publisherAbuse:getReviewNominationDetail") {
         return {
@@ -1664,13 +1642,9 @@ describe("Management", () => {
       if (name === "skills:listReportedSkills") return [];
       if (name === "skills:listDuplicateCandidates") return [];
       if (name === "publisherAbuse:listReviewDashboard") {
-        return {
-          latestRun: null,
-          pendingItems: [],
+        return makeEmptyPublisherAbuseDashboard({
           pendingPotentialBanCandidateItems: [item, secondItem],
-          pendingReviewItems: [],
-          recentResolvedItems: [],
-        };
+        });
       }
       if (name === "publisherAbuse:getReviewNominationDetail") {
         const nominationId =
@@ -1720,13 +1694,7 @@ describe("Management", () => {
       if (name === "skills:listReportedSkills") return [];
       if (name === "skills:listDuplicateCandidates") return [];
       if (name === "publisherAbuse:listReviewDashboard") {
-        return {
-          latestRun: null,
-          pendingItems: [],
-          pendingPotentialBanCandidateItems: [],
-          pendingReviewItems: [reviewItem],
-          recentResolvedItems: [],
-        };
+        return makeEmptyPublisherAbuseDashboard({ pendingReviewItems: [reviewItem] });
       }
       if (name === "users:list") return { items: [], total: 0 };
       return undefined;
@@ -1835,13 +1803,9 @@ describe("Management", () => {
       if (name === "skills:listReportedSkills") return [];
       if (name === "skills:listDuplicateCandidates") return [];
       if (name === "publisherAbuse:listReviewDashboard") {
-        return {
-          latestRun: null,
-          pendingItems: [],
+        return makeEmptyPublisherAbuseDashboard({
           pendingPotentialBanCandidateItems: [item, legacyItem],
-          pendingReviewItems: [],
-          recentResolvedItems: [],
-        };
+        });
       }
       if (name === "users:list") return { items: [], total: 0 };
       return undefined;
@@ -1883,13 +1847,7 @@ describe("Management", () => {
       if (name === "skills:listReportedSkills") return [];
       if (name === "skills:listDuplicateCandidates") return [];
       if (name === "publisherAbuse:listReviewDashboard") {
-        return {
-          latestRun: null,
-          pendingItems: [],
-          pendingPotentialBanCandidateItems: [item],
-          pendingReviewItems: [],
-          recentResolvedItems: [],
-        };
+        return makeEmptyPublisherAbuseDashboard({ pendingPotentialBanCandidateItems: [item] });
       }
       if (name === "users:list") return { items: [], total: 0 };
       return undefined;
@@ -1938,13 +1896,7 @@ describe("Management", () => {
       if (name === "skills:listReportedSkills") return [];
       if (name === "skills:listDuplicateCandidates") return [];
       if (name === "publisherAbuse:listReviewDashboard") {
-        return {
-          latestRun: null,
-          pendingItems: [],
-          pendingPotentialBanCandidateItems: [item],
-          pendingReviewItems: [],
-          recentResolvedItems: [],
-        };
+        return makeEmptyPublisherAbuseDashboard({ pendingPotentialBanCandidateItems: [item] });
       }
       if (name === "users:list") return { items: [], total: 0 };
       return undefined;
@@ -1991,13 +1943,7 @@ describe("Management", () => {
       if (name === "skills:listReportedSkills") return [];
       if (name === "skills:listDuplicateCandidates") return [];
       if (name === "publisherAbuse:listReviewDashboard") {
-        return {
-          latestRun: null,
-          pendingItems: [],
-          pendingPotentialBanCandidateItems: [item],
-          pendingReviewItems: [],
-          recentResolvedItems: [],
-        };
+        return makeEmptyPublisherAbuseDashboard({ pendingPotentialBanCandidateItems: [item] });
       }
       if (name === "users:list") return { items: [], total: 0 };
       return undefined;

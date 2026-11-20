@@ -3,6 +3,7 @@
 
 import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
+import { createActiveSkillSeedDefaults } from "../src/__tests__/helpers/activeSkillSeed";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -28,16 +29,12 @@ describe("publisher abuse signal workflow retirement", () => {
         updatedAt: 1,
       });
       const skillId = await ctx.db.insert("skills", {
+        ...createActiveSkillSeedDefaults(),
         slug: "legacy-signal-skill",
         displayName: "Legacy Signal Skill",
         ownerUserId,
         ownerPublisherId: publisherId,
-        tags: {},
-        badges: {},
-        moderationStatus: "active",
         stats: { comments: 0, downloads: 100, stars: 0, versions: 1 },
-        createdAt: 1,
-        updatedAt: 1,
       });
       const commonSignal = {
         ownerKey: `publisher:${publisherId}`,

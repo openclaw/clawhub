@@ -1,6 +1,7 @@
 import { unzipSync } from "fflate";
 import { exportJWK, exportPKCS8, generateKeyPair } from "jose";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { deferred } from "../src/__tests__/helpers/deferred";
 import { isRateLimitArgs, okRate } from "../src/__tests__/helpers/rateLimit";
 
 // Route behavior assumes verified ingress; trust validation is covered by httpRateLimit.edge.test.ts.
@@ -73,14 +74,6 @@ function stubZipResponse() {
     }
   }
   vi.stubGlobal("Response", MockResponse as unknown as typeof Response);
-}
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((resolvePromise) => {
-    resolve = resolvePromise;
-  });
-  return { promise, resolve };
 }
 
 function streamingBlob(text: string) {
@@ -562,7 +555,7 @@ describe("downloads helpers", () => {
   it("streams stored file chunks and stays deterministic", async () => {
     const firstChunk = new Uint8Array(64 * 1024).fill(0x61);
     const secondChunk = new TextEncoder().encode("streamed body\n");
-    const releaseSecondChunk = deferred<void>();
+    const releaseSecondChunk = deferred();
     const arrayBuffer = vi.fn(() => Promise.reject(new Error("whole Blob read")));
     const stream = vi.fn(
       () =>

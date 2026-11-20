@@ -14,6 +14,7 @@ import {
 } from "./lib/skillsShCatalogEnvironment";
 import {
   getSkillsShCatalogFixture,
+  skillsShCatalogRowValidator as stagingLiveRowValidator,
   type SkillsShCatalogFixtureRow,
 } from "./lib/skillsShCatalogFixtures";
 import {
@@ -57,23 +58,6 @@ const scanVerdictValidator = v.union(
   v.literal("failed"),
 );
 const dispatchKindValidator = v.union(v.literal("deterministic"), v.literal("real"));
-const stagingLiveRowValidator = v.object({
-  externalId: v.string(),
-  githubOwnerId: v.number(),
-  owner: v.string(),
-  repo: v.string(),
-  slug: v.string(),
-  displayName: v.string(),
-  sourceUrl: v.string(),
-  githubRepoUrl: v.string(),
-  githubPath: v.optional(v.string()),
-  githubCommit: v.optional(v.string()),
-  githubContentHash: v.optional(v.string()),
-  claimPublisherHandle: v.optional(v.string()),
-  sourceContentHash: v.string(),
-  installs: v.number(),
-  githubStars: v.optional(v.number()),
-});
 const sourceVerificationValidator = v.object({
   githubOwnerId: v.number(),
   githubCommit: v.string(),

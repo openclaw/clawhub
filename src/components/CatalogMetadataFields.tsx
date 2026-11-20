@@ -2,10 +2,9 @@ import {
   CATALOG_CATEGORY_LIMIT,
   CATALOG_TOPIC_LIMIT,
   INTERNAL_UNCATEGORIZED_CATEGORY,
-  PLUGIN_CATEGORY_DEFINITIONS,
-  SKILL_CATEGORY_DEFINITIONS,
 } from "clawhub-schema/catalogMetadata";
 import { ChevronDown, Lightbulb, Sparkles } from "lucide-react";
+import { PLUGIN_CATEGORIES, SKILL_CATEGORIES } from "../lib/categories";
 import { getCategoryIconComponent } from "../lib/categoryIcons";
 import { CatalogTopicInput, parseCatalogTopicsInput } from "./CatalogTopicInput";
 import { Button } from "./ui/button";
@@ -45,7 +44,7 @@ export function CatalogMetadataFields({
   onTopicsChange,
 }: CatalogMetadataFieldsProps) {
   const isPublishPresentation = presentation === "publish";
-  const categories = kind === "skill" ? SKILL_CATEGORY_DEFINITIONS : PLUGIN_CATEGORY_DEFINITIONS;
+  const categories = kind === "skill" ? SKILL_CATEGORIES : PLUGIN_CATEGORIES;
   const prefix = kind === "skill" ? "skill" : "plugin";
   const fieldIdPrefix = idPrefix ?? prefix;
   const topicCountId = `${fieldIdPrefix}TopicsCount`;

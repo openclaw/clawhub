@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createMockDb } from "../src/__tests__/helpers/convexDb";
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import {
   __test,
@@ -60,13 +61,10 @@ function makeDb(
   const delete_ = vi.fn();
   return {
     db: {
+      ...createMockDb(),
       query,
-      get: vi.fn(),
       insert,
-      patch: vi.fn(),
-      replace: vi.fn(),
       delete: delete_,
-      normalizeId: vi.fn(),
       system: {
         get: vi.fn(),
         query: vi.fn(),

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createMockDb } from "../src/__tests__/helpers/convexDb";
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 
 vi.mock("@convex-dev/auth/server", () => ({
@@ -63,9 +64,7 @@ function makeMutationCtx({
   const inserts: Array<{ table: string; doc: Record<string, unknown> }> = [];
   const patches: Array<{ id: string; patch: Record<string, unknown> }> = [];
   const db = {
-    normalizeId: vi.fn(),
-    system: {},
-    get: vi.fn(),
+    ...createMockDb(),
     query: vi.fn(() => ({
       withIndex: vi.fn(() => ({
         unique: vi.fn(async () => existing),
@@ -79,8 +78,6 @@ function makeMutationCtx({
     patch: vi.fn(async (id: string, patch: Record<string, unknown>) => {
       patches.push({ id, patch });
     }),
-    replace: vi.fn(),
-    delete: vi.fn(),
   };
   const scheduler = makeScheduler();
   return { ctx: { db, scheduler } as never, db, scheduler, inserts, patches };
@@ -280,16 +277,12 @@ describe("promotions.update", () => {
     const replace = vi.fn();
     const insert = vi.fn(async () => "auditLogs:1");
     const db = {
-      normalizeId: vi.fn(),
-      system: {},
-      get: vi.fn(),
+      ...createMockDb(),
       query: vi.fn(() => ({
         withIndex: vi.fn(() => ({ unique: uniqueMock })),
       })),
       insert,
-      patch: vi.fn(),
       replace,
-      delete: vi.fn(),
     };
     const scheduler = makeScheduler();
     return { ctx: { db, scheduler } as never, replace, insert, scheduler };

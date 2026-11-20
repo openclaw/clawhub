@@ -64,10 +64,11 @@ import {
 } from "../../schema/index.js";
 import { buildGitHubFolderContentHash, hashSkillFiles } from "../../skills.js";
 import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
+import { pathExists } from "../fs.js";
 import { withLoaderErrorHandling } from "../loader.js";
 import { writeJsonIfRequested } from "../output.js";
 import { getRegistry } from "../registry.js";
-import { titleCase } from "../slug.js";
+import { displayNameFromArchive, titleCase } from "../slug.js";
 import type { GlobalOpts } from "../types.js";
 import {
   createCrabLoader,
@@ -742,8 +743,8 @@ export async function cmdValidatePackage(
 
 async function createPluginInspectorConfigIfNeeded(sourcePath: string) {
   if (
-    (await fileExists(join(sourcePath, "plugin-inspector.config.json"))) ||
-    (await fileExists(join(sourcePath, ".plugin-inspector.json")))
+    (await pathExists(join(sourcePath, "plugin-inspector.config.json"))) ||
+    (await pathExists(join(sourcePath, ".plugin-inspector.json")))
   ) {
     return null;
   }
@@ -777,10 +778,6 @@ async function createPluginInspectorConfigIfNeeded(sourcePath: string) {
     )}\n`,
   );
   return { dir: configDir, path: configPath };
-}
-
-async function fileExists(path: string) {
-  return Boolean(await stat(path).catch(() => null));
 }
 
 function hasPackagePluginInspectorConfig(packageJson: Record<string, unknown> | null) {
@@ -2752,13 +2749,12 @@ async function preparePackagePublishPlan(
     packageJsonString(pluginManifest, "id") ||
     packageJsonString(bundleManifest, "id") ||
     basename(folder).trim().toLowerCase();
-  const displayName =
+  const declaredDisplayName =
     options.displayName?.trim() ||
     packageJsonString(pluginManifest, "name") ||
     packageJsonString(packageJson, "displayName") ||
-    packageJsonString(bundleManifest, "name") ||
-    readReadmeH1FromPackageFiles(filesOnDisk) ||
-    titleCase(basename(folder));
+    packageJsonString(bundleManifest, "name");
+  let templateAgentName: string | undefined;
   const ownerHandle = options.owner?.trim().replace(/^@+/, "");
   const version =
     options.version?.trim() ||
@@ -2769,7 +2765,6 @@ async function preparePackagePublishPlan(
   const source = buildSource(options, inferredSource);
 
   if (!name) fail("--name required");
-  if (!displayName) fail("--display-name required");
   if (!version) fail("--version required");
   if (family === "code-plugin" && !fileSet.has("openclaw.plugin.json")) {
     fail("openclaw.plugin.json required");
@@ -2803,10 +2798,20 @@ async function preparePackagePublishPlan(
     if (!validation.ok) {
       fail(validation.issues.map((issue) => `${issue.path}: ${issue.message}`).join(" "));
     }
+    templateAgentName = validation.value.manifest.agent.name?.trim() || undefined;
     if (!clawpackOnDisk) {
       fail("Template publication requires an already-built package tarball (.tgz)");
     }
   }
+
+  const displayName =
+    declaredDisplayName ||
+    templateAgentName ||
+    (family === "template" ? undefined : readReadmeH1FromPackageFiles(filesOnDisk)) ||
+    (parsedClawpack
+      ? displayNameFromArchive(basename(folder), parsedClawpack.packageVersion)
+      : titleCase(basename(folder)));
+  if (!displayName) fail("--display-name required");
 
   if (family === "code-plugin" && !clawpackOnDisk) {
     const packDestination = await mkdtemp(join(tmpdir(), "clawhub-clawpack-"));
@@ -3050,7 +3055,10 @@ async function resolvePackagePublishToken(params: {
     if (params.spinner) {
       params.spinner.text = "Trusted publishing unavailable, falling back to ClawHub token";
     }
-    return { kind: "user" as const, token: await requireAuthToken(params.registry) };
+    // Do not let a missing fallback token hide the trusted-publishing failure.
+    const token = await getOptionalAuthToken(params.registry);
+    if (!token) throw error;
+    return { kind: "user" as const, token };
   }
 }
 

@@ -75,6 +75,26 @@ function contrastRatio(foreground: string, background: string) {
 }
 
 describe("restored UI design contract", () => {
+  it("keeps install heading spacing independent of divider-aligned metadata rows", () => {
+    const css = read("src/styles.css");
+    expect(cssRule(css, ".skill-install-command-card")).toContain("gap: 12px");
+    const header = cssRule(css, ".skill-install-command-header");
+    expect(header).toContain("min-height: 0");
+    expect(header).toContain("padding: 0");
+    expect(read("src/components/SkillInstallSurface.tsx")).not.toContain(
+      'className="skill-install-command-header detail-hero-summary-row"',
+    );
+  });
+
+  it("separates right-rail install content from metadata without changing its spacing", () => {
+    const css = read("src/styles.css");
+    const divider = cssRule(css, ".template-detail-metadata > .template-detail-install::after");
+    expect(css).toContain(".skill-hero-sidebar-stack > .skill-install-command-card::after,");
+    expect(divider).toContain("bottom: -12px");
+    expect(divider).toContain("border-bottom: 1px solid var(--line)");
+    expect(divider).toContain("pointer-events: none");
+  });
+
   const rootRoute = () => read("src/routes/__root.tsx");
   const home = () => read("src/routes/index.tsx");
   const styles = () => read("src/styles.css");
@@ -131,6 +151,20 @@ describe("restored UI design contract", () => {
     }
     expect(cssRule(css, ".marketplace-icon-user")).toContain(
       "border-radius: var(--oc-radius-round)",
+    );
+  });
+
+  it("displays Template silhouettes without a tile or cropping", () => {
+    const css = styles();
+    const icon = cssRule(
+      css,
+      ".browse-page .plugin-summary-item .marketplace-icon.marketplace-icon-template",
+    );
+    expect(icon).toContain("border: 0");
+    expect(icon).toContain("background: transparent");
+    expect(icon).toContain("box-shadow: none");
+    expect(cssRule(css, ".marketplace-icon-template .marketplace-icon-image")).toContain(
+      "object-fit: contain",
     );
   });
 

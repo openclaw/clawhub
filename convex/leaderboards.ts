@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery } from "./functions";
+import { skillLeaderboardEntryValidator } from "./lib/leaderboardEntry";
 import {
   compareTrendingEntries,
   getTrendingRange,
@@ -49,14 +50,7 @@ export const getDailyStatsPage = internalQuery({
 
 export const filterTopNonSuspiciousTrendingEntries = internalQuery({
   args: {
-    entries: v.array(
-      v.object({
-        skillId: v.id("skills"),
-        score: v.number(),
-        installs: v.number(),
-        downloads: v.number(),
-      }),
-    ),
+    entries: v.array(skillLeaderboardEntryValidator),
     limit: v.number(),
   },
   handler: async (ctx, { entries, limit }) => {
@@ -68,14 +62,7 @@ export const filterTopNonSuspiciousTrendingEntries = internalQuery({
 export const writeTrendingLeaderboard = internalMutation({
   args: {
     kind: v.string(),
-    items: v.array(
-      v.object({
-        skillId: v.id("skills"),
-        score: v.number(),
-        installs: v.number(),
-        downloads: v.number(),
-      }),
-    ),
+    items: v.array(skillLeaderboardEntryValidator),
     startDay: v.number(),
     endDay: v.number(),
   },

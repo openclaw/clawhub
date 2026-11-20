@@ -1,5 +1,6 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createMockDb } from "../src/__tests__/helpers/convexDb";
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import type { EndorAnalysis } from "./lib/endorAnalysis";
 import {
@@ -683,7 +684,7 @@ function makeFailedScanRecoveryCtx(
   return {
     ctx: {
       db: {
-        delete: vi.fn(),
+        ...createMockDb(),
         get: vi.fn(async (id: string) => docs[id] ?? null),
         insert: vi.fn(async (table: string, doc: Record<string, unknown>) => {
           inserts.push({ table, doc });
@@ -692,8 +693,6 @@ function makeFailedScanRecoveryCtx(
         normalizeId: vi.fn((_table: string, id: string) => id),
         patch,
         query,
-        replace: vi.fn(),
-        system: {},
       },
     },
     patches,
@@ -869,14 +868,12 @@ function makeRescanCtx(options: {
   return {
     ctx: {
       db: {
+        ...createMockDb(),
         get,
         insert,
         patch,
         query,
-        replace: vi.fn(),
-        delete: vi.fn(),
         normalizeId: vi.fn(() => null),
-        system: {},
       },
       scheduler,
     },
@@ -976,14 +973,12 @@ function makeBulkRescanCtx(options: {
   return {
     ctx: {
       db: {
+        ...createMockDb(),
         get,
         insert,
         patch,
         query,
-        replace: vi.fn(),
-        delete: vi.fn(),
         normalizeId: vi.fn(() => null),
-        system: {},
       },
     },
     inserts,
@@ -993,6 +988,27 @@ function makeBulkRescanCtx(options: {
     patch,
     query,
   };
+}
+
+function makeCatalogControl(overrides: Record<string, unknown> = {}) {
+  return {
+    key: "global",
+    mode: "staging-live",
+    paused: false,
+    scanAdmissionEnabled: true,
+    maxNativeQueued: 10,
+    maxNativeInFlight: 10,
+    maxCatalogQueued: 10,
+    maxCatalogInFlight: 1,
+    ...overrides,
+  };
+}
+
+function stubCatalogTestEnvironment() {
+  vi.stubEnv("CLAWHUB_ENV", "test");
+  vi.stubEnv("CLAWHUB_DISABLE_CRONS", "1");
+  vi.stubEnv("CLAWHUB_DEPLOYMENT_NAME", "academic-chihuahua-392");
+  vi.stubEnv("CONVEX_CLOUD_URL", "https://academic-chihuahua-392.convex.cloud");
 }
 
 function makeClaimCtx(
@@ -1138,14 +1154,11 @@ function makeClaimCtx(
 
   const ctx = {
     db: {
+      ...createMockDb(),
       query,
       patch,
       get: vi.fn(async (id: string) => docs[id] ?? jobs.find((job) => job._id === id) ?? null),
-      insert: vi.fn(),
-      replace: vi.fn(),
-      delete: vi.fn(),
       normalizeId: vi.fn(() => null),
-      system: {},
     },
     runQuery: vi.fn(async (_ref: unknown, args: unknown) =>
       listReadySourceJobsForClaimHandler(ctx as never, args as never),
@@ -2199,6 +2212,139 @@ describe("securityScan", () => {
         version: "1.2.3",
       }),
     ).rejects.toThrow("Forbidden");
+  });
+
+  function failedPublicationDocs(clawscanSummary: string, attemptStatus = "failed") {
+    return {
+      "skills:held": {
+        _id: "skills:held",
+        slug: "held-skill",
+        displayName: "Held Skill",
+        ownerUserId: "users:owner",
+      },
+      "skillVersions:held": {
+        _id: "skillVersions:held",
+        skillId: "skills:held",
+        version: "1.0.0",
+        publicationStatus: "pending",
+        publishAttemptId: "publishAttempts:held",
+        fingerprint: "fingerprint-held",
+        files: [{ path: "SKILL.md" }],
+        createdAt: 1_700_000_000_000,
+      },
+      "publishAttempts:held": {
+        _id: "publishAttempts:held",
+        kind: "skill",
+        status: attemptStatus,
+        skillId: "skills:held",
+        skillVersionId: "skillVersions:held",
+        version: "1.0.0",
+        artifactFingerprint: "fingerprint-held",
+        checkClaimLastError: "runner /home/runner/work/_temp/clawscan-bin/clawscan exited 1",
+        checks: {
+          trufflehog: { status: "clean" },
+          clawscan: { status: "failed", summary: clawscanSummary },
+        },
+        updatedAt: 1_700_000_200_000,
+      },
+    };
+  }
+
+  it("reports failed publication checks to the owner when no scanner verdict was stored", async () => {
+    const ctx = makeStoredScanReportCtx({
+      actor: { _id: "users:owner", role: "user" },
+      docs: failedPublicationDocs(
+        "ClawScan failed before returning a verdict: judge not started: scanner skillspector failed",
+      ),
+    });
+
+    const report = await getStoredScanReportForUserInternalHandler(ctx, {
+      actorUserId: "users:owner",
+      kind: "skill",
+      name: "held-skill",
+      version: "1.0.0",
+    });
+
+    expect(report).toMatchObject({
+      ok: true,
+      status: "failed",
+      writtenBack: false,
+      artifact: { slug: "held-skill", version: "1.0.0", fileCount: 1 },
+      report: { aig: null, clawscan: null, endor: null, skillspector: null },
+      publication: {
+        stage: "checks_failed",
+        retrying: false,
+        checks: { trufflehog: "clean", clawscan: "failed" },
+        guidance: "scanner_incomplete",
+      },
+      updatedAt: 1_700_000_200_000,
+    });
+    expect(JSON.stringify(report)).not.toContain("skillspector failed");
+    expect(JSON.stringify(report)).not.toContain("/home/runner");
+    expect(JSON.stringify(report)).not.toContain("publishAttempts:held");
+  });
+
+  it("tells the owner to remove Python bytecode when that stopped the scan", async () => {
+    const ctx = makeStoredScanReportCtx({
+      actor: { _id: "users:owner", role: "user" },
+      docs: failedPublicationDocs(
+        "A.I.G 0.2.1 cannot safely inspect packaged Python bytecode; remove .pyc, .pyo, and .pyd files before publishing (CVE-2026-84809).",
+        "pending_checks",
+      ),
+    });
+
+    const report = await getStoredScanReportForUserInternalHandler(ctx, {
+      actorUserId: "users:owner",
+      kind: "skill",
+      name: "held-skill",
+      version: "1.0.0",
+    });
+
+    expect(report).toMatchObject({
+      status: "failed",
+      publication: { stage: "checks_failed", retrying: true, guidance: "remove_python_bytecode" },
+    });
+  });
+
+  it("denies failed publication reports to non-owners", async () => {
+    const ctx = makeStoredScanReportCtx({
+      actor: { _id: "users:intruder", role: "user" },
+      docs: failedPublicationDocs("ClawScan failed before returning a verdict"),
+    });
+
+    await expect(
+      getStoredScanReportForUserInternalHandler(ctx, {
+        actorUserId: "users:intruder",
+        kind: "skill",
+        name: "held-skill",
+        version: "1.0.0",
+      }),
+    ).rejects.toThrow("Forbidden");
+  });
+
+  it("still reports missing scan results when no publication check failed", async () => {
+    const docs = failedPublicationDocs("unused");
+    const ctx = makeStoredScanReportCtx({
+      actor: { _id: "users:owner", role: "user" },
+      docs: {
+        ...docs,
+        "publishAttempts:held": {
+          ...docs["publishAttempts:held"],
+          status: "pending_checks",
+          checkClaimLastError: undefined,
+          checks: { trufflehog: { status: "pending" }, clawscan: { status: "pending" } },
+        },
+      },
+    });
+
+    await expect(
+      getStoredScanReportForUserInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        kind: "skill",
+        name: "held-skill",
+        version: "1.0.0",
+      }),
+    ).rejects.toThrow("Scan results not found");
   });
 
   it("returns stored scan reports for hidden plugin releases to platform moderators", async () => {
@@ -3311,42 +3457,57 @@ describe("securityScan", () => {
     expect(getUrl).toHaveBeenCalledWith("storage:skill");
   });
 
-  it("claims several lightweight leases in one mutation without hydrating signed URLs", async () => {
+  it("replans a contended claim instead of reporting a short queue", async () => {
     vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
-    const leases = Array.from({ length: 4 }, (_, index) => ({
+    const lease = (id: string) => ({
       ...claimedJob,
-      _id: `securityScanJobs:${index}`,
-      leaseToken: `lease-${index}`,
-    }));
-    const runMutation = vi.fn(async () => leases);
-    const runQuery = vi.fn();
+      _id: `securityScanJobs:${id}`,
+      leaseToken: id,
+    });
+    const plan = (ids: string[]) => ({
+      candidates: ids.map((id) => ({ jobId: `securityScanJobs:${id}`, tier: 0 })),
+      requiresLegacyClaim: false,
+    });
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(plan(["a", "b"]))
+      .mockResolvedValueOnce(plan(["c"]));
+    // Another worker won "b" between planning and admission.
+    const runMutation = vi
+      .fn()
+      .mockResolvedValueOnce({ jobs: [lease("a")], staleCount: 1 })
+      .mockResolvedValueOnce({ jobs: [lease("c")], staleCount: 0 });
     const getUrl = vi.fn();
 
     const result = await claimCodexScanJobLeasesHandler(
-      {
-        runMutation,
-        runQuery,
-        storage: { getUrl, generateUploadUrl: async () => "https://storage.example/report-upload" },
-      },
-      {
-        token: "worker-secret",
-        workerId: "worker-1",
-        lane: "shared",
-        limit: 4,
-      },
+      { runMutation, runQuery, storage: { getUrl } },
+      { token: "worker-secret", workerId: "worker-1", lane: "shared", limit: 2 },
     );
 
-    expect(runMutation).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        workerId: "worker-1",
-        lane: "shared",
-        limit: 4,
-      }),
-    );
-    expect(result).toEqual(leases);
-    expect(runQuery).not.toHaveBeenCalled();
+    expect(result).toEqual([lease("a"), lease("c")]);
+    expect(runQuery.mock.calls.map(([, args]) => args.limit)).toEqual([2, 1]);
+    expect(runMutation.mock.calls.map(([, args]) => args.limit)).toEqual([2, 1]);
     expect(getUrl).not.toHaveBeenCalled();
+  });
+
+  it("returns committed leases when a later claim round fails", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
+    const committed = { ...claimedJob, _id: "securityScanJobs:a", leaseToken: "a" };
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({
+        candidates: [{ jobId: "securityScanJobs:a", tier: 0 }],
+        requiresLegacyClaim: false,
+      })
+      .mockRejectedValueOnce(new Error("Server Error"));
+    const runMutation = vi.fn().mockResolvedValueOnce({ jobs: [committed], staleCount: 1 });
+
+    await expect(
+      claimCodexScanJobLeasesHandler(
+        { runMutation, runQuery, storage: { getUrl: vi.fn() } },
+        { token: "worker-secret", workerId: "worker-1", lane: "shared", limit: 2 },
+      ),
+    ).resolves.toEqual([committed]);
   });
 
   it("forwards exact Test GitHub Skill Sync job IDs to the lease mutation", async () => {
@@ -3560,18 +3721,14 @@ describe("securityScan", () => {
     ]);
     const ctx = {
       db: {
+        ...createMockDb(),
         get: vi.fn(async (id: string) => docs.get(id) ?? null),
         query: vi.fn(() => ({
           withIndex: vi.fn(() => ({
             unique: vi.fn(async () => null),
           })),
         })),
-        insert: vi.fn(),
-        patch: vi.fn(),
-        replace: vi.fn(),
-        delete: vi.fn(),
         normalizeId: vi.fn(() => null),
-        system: {},
       },
     };
 
@@ -4371,10 +4528,7 @@ describe("securityScan", () => {
   });
 
   it("lets the catalog lane claim only the lowest-priority catalog source", async () => {
-    vi.stubEnv("CLAWHUB_ENV", "test");
-    vi.stubEnv("CLAWHUB_DISABLE_CRONS", "1");
-    vi.stubEnv("CLAWHUB_DEPLOYMENT_NAME", "academic-chihuahua-392");
-    vi.stubEnv("CONVEX_CLOUD_URL", "https://academic-chihuahua-392.convex.cloud");
+    stubCatalogTestEnvironment();
     const { ctx } = makeClaimCtx(
       [
         makeScanJob({
@@ -4418,16 +4572,7 @@ describe("securityScan", () => {
           status: "completed",
         },
       },
-      {
-        key: "global",
-        mode: "staging-live",
-        paused: false,
-        scanAdmissionEnabled: true,
-        maxNativeQueued: 10,
-        maxNativeInFlight: 10,
-        maxCatalogQueued: 10,
-        maxCatalogInFlight: 1,
-      },
+      makeCatalogControl(),
     );
 
     const claimed = await claimQueuedJobsInternalHandler(ctx, {
@@ -4441,10 +4586,7 @@ describe("securityScan", () => {
   });
 
   it("skips paused catalog runs without starving later runnable jobs", async () => {
-    vi.stubEnv("CLAWHUB_ENV", "test");
-    vi.stubEnv("CLAWHUB_DISABLE_CRONS", "1");
-    vi.stubEnv("CLAWHUB_DEPLOYMENT_NAME", "academic-chihuahua-392");
-    vi.stubEnv("CONVEX_CLOUD_URL", "https://academic-chihuahua-392.convex.cloud");
+    stubCatalogTestEnvironment();
     const jobs = ["paused", "active"].map((kind, index) =>
       makeScanJob({
         _id: `securityScanJobs:${kind}`,
@@ -4487,16 +4629,7 @@ describe("securityScan", () => {
         ];
       }),
     );
-    const { ctx } = makeClaimCtx(jobs, docs, {
-      key: "global",
-      mode: "staging-live",
-      paused: false,
-      scanAdmissionEnabled: true,
-      maxNativeQueued: 10,
-      maxNativeInFlight: 10,
-      maxCatalogQueued: 1,
-      maxCatalogInFlight: 1,
-    });
+    const { ctx } = makeClaimCtx(jobs, docs, makeCatalogControl({ maxCatalogQueued: 1 }));
 
     const claimed = await claimQueuedJobsInternalHandler(ctx, {
       workerId: "catalog-worker",
@@ -4508,10 +4641,7 @@ describe("securityScan", () => {
   });
 
   it("stops catalog claims when the native queue is unhealthy", async () => {
-    vi.stubEnv("CLAWHUB_ENV", "test");
-    vi.stubEnv("CLAWHUB_DISABLE_CRONS", "1");
-    vi.stubEnv("CLAWHUB_DEPLOYMENT_NAME", "academic-chihuahua-392");
-    vi.stubEnv("CONVEX_CLOUD_URL", "https://academic-chihuahua-392.convex.cloud");
+    stubCatalogTestEnvironment();
     const { ctx } = makeClaimCtx(
       [
         makeScanJob({
@@ -4544,16 +4674,7 @@ describe("securityScan", () => {
           status: "completed",
         },
       },
-      {
-        key: "global",
-        mode: "staging-live",
-        paused: false,
-        scanAdmissionEnabled: true,
-        maxNativeQueued: 0,
-        maxNativeInFlight: 10,
-        maxCatalogQueued: 10,
-        maxCatalogInFlight: 1,
-      },
+      makeCatalogControl({ maxNativeQueued: 0 }),
     );
 
     const claimed = await claimQueuedJobsInternalHandler(ctx, {
@@ -4566,10 +4687,7 @@ describe("securityScan", () => {
   });
 
   it("ignores deterministic attempts when checking real catalog claim capacity", async () => {
-    vi.stubEnv("CLAWHUB_ENV", "test");
-    vi.stubEnv("CLAWHUB_DISABLE_CRONS", "1");
-    vi.stubEnv("CLAWHUB_DEPLOYMENT_NAME", "academic-chihuahua-392");
-    vi.stubEnv("CONVEX_CLOUD_URL", "https://academic-chihuahua-392.convex.cloud");
+    stubCatalogTestEnvironment();
     const catalogJob = makeScanJob({
       _id: "securityScanJobs:catalog",
       source: "skills-sh-catalog-test",
@@ -4607,16 +4725,7 @@ describe("securityScan", () => {
           status: "completed",
         },
       },
-      {
-        key: "global",
-        mode: "staging-live",
-        paused: false,
-        scanAdmissionEnabled: true,
-        maxNativeQueued: 10,
-        maxNativeInFlight: 10,
-        maxCatalogQueued: 1,
-        maxCatalogInFlight: 1,
-      },
+      makeCatalogControl({ maxCatalogQueued: 1 }),
     );
 
     const claimed = await claimQueuedJobsInternalHandler(ctx, {
@@ -4629,10 +4738,7 @@ describe("securityScan", () => {
   });
 
   it("drains an admitted catalog backlog above a lowered queue cap", async () => {
-    vi.stubEnv("CLAWHUB_ENV", "test");
-    vi.stubEnv("CLAWHUB_DISABLE_CRONS", "1");
-    vi.stubEnv("CLAWHUB_DEPLOYMENT_NAME", "academic-chihuahua-392");
-    vi.stubEnv("CONVEX_CLOUD_URL", "https://academic-chihuahua-392.convex.cloud");
+    stubCatalogTestEnvironment();
     const jobs = [0, 1].map((index) =>
       makeScanJob({
         _id: `securityScanJobs:catalog-${index}`,
@@ -4670,16 +4776,7 @@ describe("securityScan", () => {
       _id: "skillsShCatalogRuns:catalog",
       status: "completed",
     };
-    const { ctx } = makeClaimCtx(jobs, docs, {
-      key: "global",
-      mode: "staging-live",
-      paused: false,
-      scanAdmissionEnabled: true,
-      maxNativeQueued: 10,
-      maxNativeInFlight: 10,
-      maxCatalogQueued: 1,
-      maxCatalogInFlight: 1,
-    });
+    const { ctx } = makeClaimCtx(jobs, docs, makeCatalogControl({ maxCatalogQueued: 1 }));
 
     const claimed = await claimQueuedJobsInternalHandler(ctx, {
       workerId: "catalog-worker",
@@ -4697,10 +4794,7 @@ describe("securityScan", () => {
   });
 
   it("caps catalog claims at the configured in-flight capacity", async () => {
-    vi.stubEnv("CLAWHUB_ENV", "test");
-    vi.stubEnv("CLAWHUB_DISABLE_CRONS", "1");
-    vi.stubEnv("CLAWHUB_DEPLOYMENT_NAME", "academic-chihuahua-392");
-    vi.stubEnv("CONVEX_CLOUD_URL", "https://academic-chihuahua-392.convex.cloud");
+    stubCatalogTestEnvironment();
     const jobs = [0, 1].map((index) =>
       makeScanJob({
         _id: `securityScanJobs:catalog-${index}`,
@@ -4737,16 +4831,7 @@ describe("securityScan", () => {
       _id: "skillsShCatalogRuns:catalog",
       status: "completed",
     };
-    const { ctx } = makeClaimCtx(jobs, docs, {
-      key: "global",
-      mode: "staging-live",
-      paused: false,
-      scanAdmissionEnabled: true,
-      maxNativeQueued: 10,
-      maxNativeInFlight: 10,
-      maxCatalogQueued: 10,
-      maxCatalogInFlight: 1,
-    });
+    const { ctx } = makeClaimCtx(jobs, docs, makeCatalogControl());
 
     const claimed = await claimQueuedJobsInternalHandler(ctx, {
       workerId: "catalog-worker",
@@ -5945,6 +6030,7 @@ describe("securityScan", () => {
       });
       const ctx = {
         db: {
+          ...createMockDb(),
           get: vi.fn(async (id: string) => docs.get(id) ?? null),
           query: vi.fn((table: string) => {
             if (table === "skillScanRequestFileChunks") {
@@ -5970,10 +6056,7 @@ describe("securityScan", () => {
           }),
           insert,
           patch,
-          replace: vi.fn(),
-          delete: vi.fn(),
           normalizeId: vi.fn(() => null),
-          system: {},
         },
       };
 
@@ -6112,14 +6195,12 @@ describe("securityScan", () => {
     }));
     const ctx = {
       db: {
+        ...createMockDb(),
         get: vi.fn(async (id: string) => docs.get(id) ?? null),
         query,
         insert,
         patch,
-        replace: vi.fn(),
-        delete: vi.fn(),
         normalizeId: vi.fn(() => null),
-        system: {},
       },
     };
     const args = {
@@ -6182,6 +6263,7 @@ describe("securityScan", () => {
     const insert = vi.fn();
     const ctx = {
       db: {
+        ...createMockDb(),
         get: vi.fn(async (id: string) => {
           if (id === "skills:1") {
             return {
@@ -6202,13 +6284,8 @@ describe("securityScan", () => {
           }
           return null;
         }),
-        query: vi.fn(),
         insert,
-        patch: vi.fn(),
-        replace: vi.fn(),
-        delete: vi.fn(),
         normalizeId: vi.fn(() => null),
-        system: {},
       },
     };
 
@@ -6258,14 +6335,9 @@ describe("securityScan", () => {
     ]);
     const ctx = {
       db: {
+        ...createMockDb(),
         get: vi.fn(async (id: string) => docs.get(id) ?? null),
-        query: vi.fn(),
-        insert: vi.fn(),
-        patch: vi.fn(),
-        replace: vi.fn(),
-        delete: vi.fn(),
         normalizeId: vi.fn(() => null),
-        system: {},
       },
     };
 
@@ -6353,6 +6425,7 @@ describe("securityScan", () => {
     });
     const ctx = {
       db: {
+        ...createMockDb(),
         get: vi.fn(async (id: string) => docs.get(id) ?? null),
         query: vi.fn(() => ({
           withIndex: vi.fn(() => ({
@@ -6361,10 +6434,7 @@ describe("securityScan", () => {
         })),
         insert,
         patch,
-        replace: vi.fn(),
-        delete: vi.fn(),
         normalizeId: vi.fn(() => null),
-        system: {},
       },
     };
 
@@ -6437,18 +6507,15 @@ describe("securityScan", () => {
     });
     const ctx = {
       db: {
+        ...createMockDb(),
         get: vi.fn(async (id: string) => docs.get(id) ?? null),
         query: vi.fn(() => ({
           withIndex: vi.fn(() => ({
             unique: vi.fn(async () => docs.get("githubSkillScans:1")),
           })),
         })),
-        insert: vi.fn(),
         patch,
-        replace: vi.fn(),
-        delete: vi.fn(),
         normalizeId: vi.fn(() => null),
-        system: {},
       },
     };
     const result = await prepareGitHubSkillScanRequestInternalHandler(ctx as never, {

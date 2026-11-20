@@ -14,6 +14,7 @@ import {
 } from "../../schema/index.js";
 import { getOptionalAuthToken } from "../authToken.js";
 import { withLoaderErrorHandling } from "../loader.js";
+import { writeJsonIfRequested } from "../output.js";
 import { getRegistry } from "../registry.js";
 import {
   parsePublishedSkillRef,
@@ -446,6 +447,49 @@ async function fetchPublicationAfterReadFailure(
   }
 }
 
+export async function cmdSkillPublication(
+  opts: GlobalOpts,
+  skillArg: string,
+  options: { version?: string; json?: boolean } = {},
+) {
+  const requested = parsePublishedSkillRef(skillArg);
+  const version = options.version?.trim();
+  if (!version) {
+    fail(
+      "Pass --version. Publication status is for one exact version, not the public latest version.",
+    );
+  }
+  const registry = await getRegistry(opts, { cache: true });
+  const token = await getOptionalAuthToken(registry);
+  if (!token) fail("Not logged in to this registry. Run: clawhub login");
+  const result = await apiRequest(
+    registry,
+    {
+      method: "GET",
+      url: ownerScopedUrl(
+        registry,
+        `${ApiRoutes.skills}/${encodeURIComponent(requested.slug)}/versions/${encodeURIComponent(version)}/publication`,
+        requested.ownerHandle,
+      ),
+      token,
+    },
+    ApiV1SkillPublicationResponseSchema,
+  );
+  if (writeJsonIfRequested(options.json, result)) return;
+  const skillRef = requested.ownerHandle
+    ? `@${requested.ownerHandle}/${result.skill.slug}`
+    : result.skill.slug;
+  console.log(`${result.skill.displayName} (${skillRef}) ${result.publication.version}`);
+  if (result.publication.stage === "published") {
+    console.log("Published");
+    console.log(
+      "Publication of this version is complete. Current visibility can still be restricted.",
+    );
+    return;
+  }
+  printPublicationGuidance(result, skillRef);
+}
+
 function printOwnerPublication(
   result: ApiV1SkillPublicationResponse,
   ownerHandle: string | undefined,
@@ -479,6 +523,20 @@ function printOwnerPublication(
     );
     return;
   }
+  console.log(`${result.skill.displayName} (${skillRef}) — ${publication.version}`);
+  printPublicationGuidance(result, skillRef, publicDetail);
+}
+
+function printPublicationGuidance(
+  result: ApiV1SkillPublicationResponse,
+  skillRef: string,
+  publicDetail?: Awaited<ReturnType<typeof fetchSkillDetail>>,
+) {
+  const publication = result.publication;
+  const nextSteps = {
+    scanReport: `clawhub scan download ${skillRef} --version ${publication.version}`,
+    supportUrl: "https://github.com/openclaw/clawhub/issues/new",
+  };
   const labels: Record<ApiV1SkillPublicationResponse["publication"]["stage"], string> = {
     pending_checks: "Pending publication",
     checks_failed: "Publication checks failed",
@@ -491,7 +549,6 @@ function printOwnerPublication(
     unavailable: "Publication status unavailable",
     published: "Published",
   };
-  console.log(`${result.skill.displayName} (${skillRef}) — ${publication.version}`);
   console.log(labels[publication.stage]);
   console.log(
     "This version is not public or installable. The submitted version is still recorded.",

@@ -8,6 +8,55 @@ import schema from "./schema";
 const modules = import.meta.glob("./**/*.ts");
 
 describe("dashboard metrics ownership", () => {
+  it.each(["claw", "code-plugin"] as const)(
+    "reports complete family presence beyond 100 newer %s packages",
+    async (newerFamily) => {
+      const t = convexTest(schema, modules);
+      const ids = await t.run(async (ctx) => {
+        const owner = await ctx.db.insert("users", { handle: "mixed-owner" });
+        const publisherId = await ctx.db.insert("publishers", {
+          kind: "user",
+          handle: "mixed-owner",
+          displayName: "Mixed owner",
+          linkedUserId: owner,
+          createdAt: 1,
+          updatedAt: 1,
+        });
+        await ctx.db.patch(owner, { personalPublisherId: publisherId });
+        for (let index = 0; index <= 100; index++) {
+          const family =
+            index === 0 ? (newerFamily === "claw" ? "code-plugin" : "claw") : newerFamily;
+          await ctx.db.insert("packages", {
+            name: `mixed-${index}`,
+            normalizedName: `mixed-${index}`,
+            displayName: `Mixed ${index}`,
+            ownerUserId: owner,
+            ownerPublisherId: publisherId,
+            family,
+            channel: "community",
+            isOfficial: false,
+            tags: {},
+            stats: { downloads: 1, installs: 0, stars: 0, versions: 0 },
+            createdAt: index + 1,
+            updatedAt: index + 1,
+          });
+        }
+        return { owner, publisherId };
+      });
+      const metrics = await t
+        .withIdentity({ subject: ids.owner })
+        .query(api.dashboard.getDownloadMetrics, {
+          publisherId: ids.publisherId,
+          endDay: Date.now(),
+        });
+      expect(metrics.plugins).toMatchObject({
+        allTimeDownloads: 101,
+        hasTemplates: true,
+        hasPlugins: true,
+      });
+    },
+  );
+
   for (const kind of ["legacy", "linked", "org"] as const) {
     it(`authorizes the stored ${kind} owner and denies unrelated callers`, async () => {
       const t = convexTest(schema, modules);

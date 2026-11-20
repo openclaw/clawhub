@@ -4,6 +4,7 @@ import {
   RETENTION_POLICIES,
   RETENTION_STANDARD_BATCH_SIZE,
   getRetentionPolicy,
+  normalizeRetentionBatchSize,
 } from "./retentionPolicy";
 
 describe("retention policies", () => {
@@ -102,5 +103,26 @@ describe("retention policies", () => {
       expirationIndex: "by_unprocessed",
       prune: "packages.pruneProcessedPackageStatEventsInternal",
     });
+  });
+});
+
+describe("retention batch sizes", () => {
+  it.each([
+    [undefined, 500],
+    [NaN, 500],
+    [Infinity, 500],
+    [-Infinity, 500],
+    [-1.9, 1],
+    [-0, 1],
+    [0.9, 1],
+    [1.9, 1],
+    [499.9, 499],
+    [500, 500],
+    [999.9, 999],
+    [1000, 1000],
+    [1001.9, 1000],
+    [Number.MAX_VALUE, 1000],
+  ])("normalizes %s to %s", (input, expected) => {
+    expect(normalizeRetentionBatchSize(input)).toBe(expected);
   });
 });

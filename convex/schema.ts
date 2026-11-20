@@ -1,11 +1,15 @@
 import { authTables } from "@convex-dev/auth/server";
-import { createTemplateManifestSummarySchema } from "clawhub-schema";
+import { createTemplateManifestSummarySchema } from "clawhub-schema/templateManifestSummary";
 import { defineSchema, defineTable } from "convex/server";
 import { type GenericValidator, v } from "convex/values";
 import {
   canonicalTrendingCardValidator,
   canonicalTrendingSourceRefValidator,
 } from "./lib/canonicalTrending";
+import {
+  catalogClassificationConfidenceValidator,
+  catalogClassificationResultValidator,
+} from "./lib/catalogClassificationContract";
 import { displayManifestStatusValidator, displayManifestValidator } from "./lib/displayManifest";
 import { analyticsBuildValidator, analyticsSnapshotValidator } from "./lib/downloadAnalytics";
 import { EMBEDDING_DIMENSIONS } from "./lib/embeddings";
@@ -13,16 +17,30 @@ import { endorAnalysisValidator } from "./lib/endorAnalysis";
 import { editorialSelection, featuredPublication } from "./lib/featuredSelections";
 import { storedFilesValidator } from "./lib/fileValidators";
 import {
+  packageLeaderboardEntryValidator,
+  skillLeaderboardEntryValidator,
+} from "./lib/leaderboardEntry";
+import { packageInspectorIssueInputValidator } from "./lib/packageInspectorFinding";
+import {
   packageInspectorFailureValidator,
   packageInspectorOutcomeValidator,
 } from "./lib/packageInspectorOutcome";
 import { packagePublishTokenFields } from "./lib/packagePublishTokenValidators";
+import {
+  packagePublishActorValidator,
+  packageTemplateInventoryValidator,
+} from "./lib/packageReleaseValidators";
 import { sdkUsageEntry, sdkUsageScan } from "./lib/packageSdkUsageContract";
 import {
   pluginCategoryClassificationValidator,
   pluginCategoryReviewValidator,
 } from "./lib/pluginCategoryClassificationContract";
 import { storedTemporalBenchmarkValidator } from "./lib/publisherAbuseBenchmark";
+import { publisherAbusePortfolioEvidenceValidator } from "./lib/publisherAbuseOwnerSynchronyContract";
+import {
+  publisherAbuseModelConfigValidator,
+  publisherAbuseTemporalScoreValidator,
+} from "./lib/publisherAbuseScoreContract";
 import { searchDigestValidator } from "./lib/searchDigestContract";
 import {
   searchArtifactKind,
@@ -40,10 +58,34 @@ import {
 import { skillEvaluationMetricsValidator } from "./lib/skillEvaluationMetrics";
 import { skillPresentationValidator } from "./lib/skillPresentationValidator";
 import { qualityAssessmentValidator } from "./lib/skillQualityContract";
+import {
+  skillsShMirrorDetailValidator,
+  skillsShMirrorSourceRowValidator,
+  skillsShMirrorStoredRowValidator,
+} from "./lib/skillsShMirrorContract";
 
 export { skillSpectorAnalysisValidator } from "./lib/securityAnalysisValidators";
 
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
+
+export const skillParsedMetadataValidator = v.object({
+  frontmatter: v.record(v.string(), v.any()),
+  metadata: v.optional(v.any()),
+  clawdis: v.optional(v.any()),
+  moltbot: v.optional(v.any()),
+  license: v.optional(v.literal(PLATFORM_SKILL_LICENSE)),
+  presentation: v.optional(skillPresentationValidator),
+});
+
+export const skillSourceProvenanceValidator = v.object({
+  kind: v.literal("github"),
+  url: v.string(),
+  repo: v.string(),
+  ref: v.string(),
+  commit: v.string(),
+  path: v.optional(v.string()),
+  importedAt: v.number(),
+});
 
 const manualModerationOverride = v.object({
   verdict: v.literal("clean"),
@@ -590,25 +632,6 @@ const publisherAbuseTriageStatusValidator = v.union(
   v.literal("candidate_for_future_action"),
 );
 
-const publisherAbuseModelConfigValidator = v.object({
-  modelVersion: v.string(),
-  skillPivot: v.number(),
-  installsPerSkillPivot: v.number(),
-  starsPerSkillPivot: v.number(),
-  downloadsPerSkillPivot: v.number(),
-  outputElasticity: v.number(),
-  engagementElasticity: v.optional(v.number()),
-  minPublishedSkillsForAggregateLabel: v.optional(v.number()),
-  installTrustElasticity: v.number(),
-  starTrustElasticity: v.number(),
-  downloadDemandElasticity: v.number(),
-  minInstallsPerSkill: v.number(),
-  minStarsPerSkill: v.number(),
-  minDownloadsPerSkill: v.number(),
-  reviewZThreshold: v.number(),
-  potentialBanCandidateZThreshold: v.number(),
-});
-
 const packageStatsValidator = v.object({
   downloads: v.number(),
   installs: v.number(),
@@ -730,23 +753,6 @@ const packageVerificationValidator = v.optional(
   }),
 );
 
-const packagePublishActorValidator = v.optional(
-  v.union(
-    v.object({
-      kind: v.literal("user"),
-      userId: v.id("users"),
-    }),
-    v.object({
-      kind: v.literal("github-actions"),
-      repository: v.string(),
-      workflow: v.string(),
-      runId: v.string(),
-      runAttempt: v.string(),
-      sha: v.string(),
-    }),
-  ),
-);
-
 const packageScanStatusValidator = v.optional(
   v.union(
     v.literal("clean"),
@@ -806,12 +812,6 @@ const skillCardGenerationJobSourceValidator = v.union(
 
 const packageFilesValidator = storedFilesValidator;
 
-const catalogClassificationConfidenceValidator = v.union(
-  v.literal("high"),
-  v.literal("medium"),
-  v.literal("low"),
-);
-
 const catalogClassificationApplyStatusValidator = v.union(
   v.literal("preview"),
   v.literal("applied"),
@@ -819,30 +819,6 @@ const catalogClassificationApplyStatusValidator = v.union(
   v.literal("skipped-author"),
   v.literal("error"),
 );
-
-const catalogCategoryCandidateValidator = v.object({
-  category: v.string(),
-  score: v.number(),
-  sources: v.array(v.string()),
-  evidence: v.array(v.string()),
-  strongEvidence: v.optional(v.boolean()),
-  primaryEvidence: v.optional(v.boolean()),
-  strongPrimaryEvidence: v.optional(v.boolean()),
-  primaryEvidenceCount: v.optional(v.number()),
-});
-
-const catalogTopicCandidateValidator = v.object({
-  topic: v.string(),
-  slug: v.string(),
-  score: v.number(),
-  sources: v.array(v.string()),
-  evidence: v.array(v.string()),
-  primaryEvidence: v.boolean(),
-  primarySourceCount: v.number(),
-  strongEvidence: v.boolean(),
-  confidence: catalogClassificationConfidenceValidator,
-  suppressedBy: v.optional(v.string()),
-});
 
 const skillScanRequestSourceKindValidator = v.union(
   v.literal("upload"),
@@ -1087,30 +1063,13 @@ const skillVersions = defineTable({
   finalizationRecovery: v.optional(operationalPublishRetryValidator),
   pendingPublication: v.optional(v.any()),
   fingerprint: v.optional(v.string()),
-  sourceProvenance: v.optional(
-    v.object({
-      kind: v.literal("github"),
-      url: v.string(),
-      repo: v.string(),
-      ref: v.string(),
-      commit: v.string(),
-      path: v.optional(v.string()),
-      importedAt: v.number(),
-    }),
-  ),
+  sourceProvenance: v.optional(skillSourceProvenanceValidator),
   changelog: v.string(),
   changelogSource: v.optional(v.union(v.literal("auto"), v.literal("user"))),
   icon: v.optional(v.string()),
   files: storedFilesValidator,
   skillCardGeneration: v.optional(v.object({ inputHash: v.string(), cardSha256: v.string() })),
-  parsed: v.object({
-    frontmatter: v.record(v.string(), v.any()),
-    metadata: v.optional(v.any()),
-    clawdis: v.optional(v.any()),
-    moltbot: v.optional(v.any()),
-    license: v.optional(v.literal(PLATFORM_SKILL_LICENSE)),
-    presentation: v.optional(skillPresentationValidator),
-  }),
+  parsed: skillParsedMetadataValidator,
   createdBy: v.id("users"),
   createdAt: v.number(),
   softDeletedAt: v.optional(v.number()),
@@ -1737,24 +1696,7 @@ const packageReleases = defineTable({
   categoryClassification: v.optional(pluginCategoryClassificationValidator),
   // Preserve published releases and immutable archive lineage; expose templateManifestSummary on the wire.
   clawManifestSummary: v.optional(clawManifestSummaryValidator),
-  templateInventory: v.optional(
-    v.array(
-      v.union(
-        v.object({
-          kind: v.union(v.literal("skill"), v.literal("plugin")),
-          source: v.literal("clawhub"),
-          ref: v.string(),
-          version: v.string(),
-        }),
-        v.object({
-          kind: v.union(v.literal("skill"), v.literal("plugin")),
-          source: v.literal("bundled"),
-          path: v.string(),
-          name: v.optional(v.string()),
-        }),
-      ),
-    ),
-  ),
+  templateInventory: packageTemplateInventoryValidator,
   compatibility: packageCompatibilityValidator,
   runtimeId: v.optional(v.string()),
   sourceRepo: v.optional(v.string()),
@@ -1822,26 +1764,7 @@ const pluginCategoryRefreshes = defineTable({
   .index("by_status", ["status"]);
 
 const catalogClassificationResults = defineTable({
-  targetKind: v.union(v.literal("skill"), v.literal("plugin")),
-  skillId: v.optional(v.id("skills")),
-  packageId: v.optional(v.id("packages")),
-  skillVersionId: v.optional(v.id("skillVersions")),
-  packageReleaseId: v.optional(v.id("packageReleases")),
-  categories: v.array(v.string()),
-  topics: v.array(v.string()),
-  categoryCandidates: v.array(catalogCategoryCandidateValidator),
-  topicCandidates: v.array(catalogTopicCandidateValidator),
-  categoryCandidateCount: v.number(),
-  topicCandidateCount: v.number(),
-  categoryConfidence: catalogClassificationConfidenceValidator,
-  topicConfidence: catalogClassificationConfidenceValidator,
-  categoryNeedsReview: v.boolean(),
-  topicNeedsReview: v.boolean(),
-  unknownSignals: v.array(v.string()),
-  classifierVersion: v.string(),
-  topicClassifierVersion: v.string(),
-  inputHash: v.string(),
-  topicInputHash: v.string(),
+  ...catalogClassificationResultValidator.fields,
   applyStatus: catalogClassificationApplyStatusValidator,
   error: v.optional(v.string()),
   classifiedAt: v.number(),
@@ -1864,25 +1787,7 @@ const packageInspectorWarnings = defineTable({
   scanSource: v.optional(v.union(v.literal("publish"), v.literal("nightly"))),
   inspectorVersion: v.optional(v.string()),
   targetOpenClawVersion: v.optional(v.string()),
-  code: v.string(),
-  severity: v.optional(v.string()),
-  level: v.optional(v.string()),
-  issueClass: v.optional(v.string()),
-  compatStatus: v.optional(v.string()),
-  deprecated: v.optional(v.boolean()),
-  deprecatedApi: v.optional(v.string()),
-  replacement: v.optional(v.string()),
-  removeAfter: v.optional(v.string()),
-  message: v.string(),
-  evidence: v.optional(v.array(v.string())),
-  authorRemediation: v.optional(
-    v.object({
-      summary: v.string(),
-      docsUrl: v.optional(v.string()),
-    }),
-  ),
-  fixture: v.optional(v.string()),
-  decision: v.optional(v.string()),
+  ...packageInspectorIssueInputValidator.omit("id").fields,
   inspectorFindingId: v.optional(v.string()),
   createdAt: v.number(),
 })
@@ -2071,16 +1976,7 @@ const skillScanRequests = defineTable({
   files: packageFilesValidator,
   fileChunkCount: v.optional(v.number()),
   fileManifestBytes: v.optional(v.number()),
-  parsed: v.optional(
-    v.object({
-      frontmatter: v.record(v.string(), v.any()),
-      metadata: v.optional(v.any()),
-      clawdis: v.optional(v.any()),
-      moltbot: v.optional(v.any()),
-      license: v.optional(v.literal(PLATFORM_SKILL_LICENSE)),
-      presentation: v.optional(skillPresentationValidator),
-    }),
-  ),
+  parsed: v.optional(skillParsedMetadataValidator),
   sha256hash: v.optional(v.string()),
   // Retired VirusTotal / static publish scan results. Historical rows only.
   vtAnalysis: v.optional(vtAnalysisValidator),
@@ -2185,14 +2081,7 @@ const packageLeaderboards = defineTable({
   rangeEndDay: v.number(),
   rangeStartAt: v.optional(v.number()),
   rangeEndAt: v.optional(v.number()),
-  items: v.array(
-    v.object({
-      packageId: v.id("packages"),
-      score: v.number(),
-      installs: v.number(),
-      downloads: v.number(),
-    }),
-  ),
+  items: v.array(packageLeaderboardEntryValidator),
 }).index("by_kind", ["kind", "generatedAt"]);
 
 const packageTrustedPublishers = defineTable({
@@ -2621,14 +2510,7 @@ const skillLeaderboards = defineTable({
   generatedAt: v.number(),
   rangeStartDay: v.number(),
   rangeEndDay: v.number(),
-  items: v.array(
-    v.object({
-      skillId: v.id("skills"),
-      score: v.number(),
-      installs: v.number(),
-      downloads: v.number(),
-    }),
-  ),
+  items: v.array(skillLeaderboardEntryValidator),
 }).index("by_kind", ["kind", "generatedAt"]);
 
 const skillStatBackfillState = defineTable({
@@ -3370,34 +3252,11 @@ const skillsShMirrorSourcePages = defineTable({
   contentHash: v.string(),
   sourceBytes: v.number(),
   serializedBytes: v.number(),
-  rows: v.array(
-    v.object({
-      id: v.string(),
-      installUrl: v.union(v.string(), v.null()),
-      installs: v.number(),
-      name: v.string(),
-      slug: v.string(),
-      source: v.string(),
-      sourceType: v.string(),
-      url: v.string(),
-    }),
-  ),
+  rows: v.array(skillsShMirrorSourceRowValidator),
   createdAt: v.number(),
 })
   .index("by_snapshot_hash_and_page", ["snapshotHash", "page"])
   .index("by_source_view_and_page_and_created_at", ["sourceView", "page", "createdAt"]);
-
-const skillsShMirrorUpstreamScannerValidator = v.object({
-  status: v.string(),
-  sourceCheckedAt: v.optional(v.string()),
-  sourceUrl: v.optional(v.string()),
-});
-
-const skillsShMirrorClassificationConfidenceValidator = v.union(
-  v.literal("high"),
-  v.literal("medium"),
-  v.literal("low"),
-);
 
 const skillsShMirrorClaimStatusValidator = v.union(
   v.literal("pending"),
@@ -3406,45 +3265,18 @@ const skillsShMirrorClaimStatusValidator = v.union(
 );
 
 const skillsShMirrorDigests = defineTable({
-  externalId: v.string(),
-  sourceType: v.union(v.literal("github"), v.literal("well-known")),
-  upstreamSourceType: v.optional(v.string()),
-  owner: v.optional(v.string()),
-  repo: v.optional(v.string()),
-  sourceHost: v.optional(v.string()),
-  slug: v.string(),
+  ...skillsShMirrorStoredRowValidator.fields,
   normalizedSlug: v.string(),
   normalizedSlugFirstToken: v.string(),
-  displayName: v.string(),
   normalizedDisplayName: v.string(),
   normalizedDisplayNameFirstToken: v.string(),
   searchSummary: v.optional(v.string()),
   searchText: v.string(),
-  sourceUrl: v.string(),
-  canonicalRepoUrl: v.optional(v.string()),
-  githubPath: v.optional(v.string()),
-  githubCommit: v.optional(v.string()),
-  sourceContentHash: v.optional(v.string()),
-  upstreamInstalls: v.number(),
   trendingRank: v.optional(v.number()),
   trendingLifetimeInstalls: v.optional(v.number()),
   trendingObservedAt: v.optional(v.number()),
   trendingSnapshotId: v.optional(v.string()),
   trendingObservedRunId: v.optional(v.id("skillsShMirrorRuns")),
-  upstreamScanners: v.object({
-    genAgentTrustHub: skillsShMirrorUpstreamScannerValidator,
-    socket: skillsShMirrorUpstreamScannerValidator,
-    snyk: skillsShMirrorUpstreamScannerValidator,
-  }),
-  inferredCategories: v.optional(v.array(v.string())),
-  inferredTopics: v.optional(v.array(v.string())),
-  inferredCategoryConfidence: v.optional(skillsShMirrorClassificationConfidenceValidator),
-  inferredTopicConfidence: v.optional(skillsShMirrorClassificationConfidenceValidator),
-  inferredClassifierVersion: v.optional(v.string()),
-  inferredTopicClassifierVersion: v.optional(v.string()),
-  inferredInputHash: v.optional(v.string()),
-  inferredTopicInputHash: v.optional(v.string()),
-  inferredAt: v.optional(v.number()),
   sourceFreshnessStatus: v.union(v.literal("observed-only"), v.literal("stale")),
   staleQuarantineReason: v.optional(v.string()),
   detailStatus: v.union(v.literal("available"), v.literal("missing")),
@@ -3536,13 +3368,7 @@ const skillsShMirrorDigests = defineTable({
 const skillsShMirrorDetails = defineTable({
   externalId: v.string(),
   digestId: v.id("skillsShMirrorDigests"),
-  contentKind: v.union(v.literal("skill-md"), v.literal("readme")),
-  path: v.string(),
-  content: v.string(),
-  contentBytes: v.number(),
-  sourceBytes: v.number(),
-  sourceFileCount: v.number(),
-  truncated: v.boolean(),
+  ...skillsShMirrorDetailValidator.fields,
   sourceContentHash: v.optional(v.string()),
   sourceSnapshotId: v.string(),
   lastObservedRunId: v.id("skillsShMirrorRuns"),
@@ -3706,27 +3532,11 @@ const publisherAbuseTemporalScanSamples = defineTable({
   .index("by_run_id_and_excess7_downloads", ["runId", "excess7Downloads"])
   .index("by_expiration_time", ["expirationTime"]);
 
+// Historical scan rows can omit fields required by newly computed scores.
 const publisherAbuseTemporalScanScoreValidator = v.object({
-  spike: v.boolean(),
-  sustained: v.boolean(),
-  nearConversion: v.boolean(),
-  pressure: v.number(),
-  recent7Downloads: v.number(),
-  recent7Installs: v.number(),
-  previous30Downloads: v.number(),
-  baseline7Downloads: v.number(),
-  spikeMultiplier: v.number(),
+  ...publisherAbuseTemporalScoreValidator.fields,
   expected7Downloads: v.optional(v.number()),
   excess7Downloads: v.optional(v.number()),
-  recent30Downloads: v.number(),
-  recent30Installs: v.number(),
-  downloadInstallRatio30: v.number(),
-  downloads30dCohortBand: v.optional(v.union(v.literal("p95"), v.literal("p99"))),
-  spikeMultiplierCohortBand: v.optional(v.union(v.literal("p95"), v.literal("p99"))),
-  excess7DownloadsCohortBand: v.optional(v.union(v.literal("p95"), v.literal("p99"))),
-  downloads30dVsPeerP95: v.optional(v.number()),
-  spikeMultiplierVsPeerP95: v.optional(v.number()),
-  excess7DownloadsVsPeerP95: v.optional(v.number()),
   sustainedDaysAboveThreshold: v.optional(v.number()),
   sustainedWindowDays: v.optional(v.number()),
   sustainedDailyDownloadThreshold: v.optional(v.number()),
@@ -3734,17 +3544,6 @@ const publisherAbuseTemporalScanScoreValidator = v.object({
   sustainedWindowDownloads: v.optional(v.number()),
   sustainedWindowInstalls: v.optional(v.number()),
   sustainedDailyDownloads: v.optional(v.array(v.number())),
-  installDownloadRatio7: v.number(),
-  installDownloadRatio30: v.number(),
-  installDownloadExcessZScore7: v.number(),
-  installDownloadExcessZScore30: v.number(),
-  spikeWindowStartDay: v.optional(v.number()),
-  spikeWindowEndDay: v.optional(v.number()),
-  sustainedWindowStartDay: v.optional(v.number()),
-  sustainedWindowEndDay: v.optional(v.number()),
-  nearConversionWindowStartDay: v.optional(v.number()),
-  nearConversionWindowEndDay: v.optional(v.number()),
-  reasonCodes: v.array(v.string()),
 });
 
 const publisherAbuseTemporalScanCandidates = defineTable({
@@ -3962,20 +3761,7 @@ const publisherAbuseSignals = defineTable({
   sustainedWindowDownloads: v.optional(v.number()),
   sustainedWindowInstalls: v.optional(v.number()),
   reasonCodes: v.optional(v.array(v.string())),
-  portfolioEvidence: v.optional(
-    v.object({
-      skillCount: v.number(),
-      publisherSkillCount: v.number(),
-      allPublisherSkills: v.boolean(),
-      correlationFloor: v.number(),
-      correlationMedian: v.number(),
-      peak7DownloadsMin: v.number(),
-      peak7DownloadsMax: v.number(),
-      catalogCoverage: v.number(),
-      windowStartDay: v.number(),
-      windowEndDay: v.number(),
-    }),
-  ),
+  portfolioEvidence: v.optional(publisherAbusePortfolioEvidenceValidator),
   // The workflow is retired, but production rows keep this data until a
   // separately approved migration exports or removes it.
   reviewStatus: v.optional(publisherAbuseSignalReviewStatusValidator),

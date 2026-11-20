@@ -2,6 +2,7 @@
 /* @vitest-environment edge-runtime */
 import { convexTest } from "convex-test";
 import { expect, it } from "vitest";
+import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
 import { api } from "./_generated/api";
 import { RECOMMENDATION_SCORE_VERSION } from "./lib/recommendationScore";
 import schema from "./schema";
@@ -15,19 +16,15 @@ async function fixture(withCount = true) {
     const packages = await Promise.all(
       (["code-plugin", "bundle-plugin"] as const).map((family) =>
         ctx.db.insert("packages", {
+          ...createPackageSeedDefaults(),
           name: family,
           normalizedName: family,
           displayName: family,
           family,
           ownerUserId,
-          channel: "community",
-          isOfficial: false,
-          tags: {},
           stats: { downloads: 1, installs: 1, stars: 0, versions: 1 },
           recommendedScore: 100,
           recommendedScoreVersion: RECOMMENDATION_SCORE_VERSION,
-          createdAt: 1,
-          updatedAt: 1,
         }),
       ),
     );

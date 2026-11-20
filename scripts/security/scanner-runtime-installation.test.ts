@@ -298,6 +298,9 @@ describe("explicit qualified candidate installation", () => {
   ])("rejects candidate source drift before image or build tools (%j)", async (failure) => {
     const fixture = await installFixture();
     try {
+      // Tool names in path arguments must not count as command invocations.
+      const runnerTemp = join(fixture.root, "go ");
+      await mkdir(runnerTemp);
       for (const args of [
         ["install-clawscan.sh", candidate],
         ["install-clawscan-scanners.sh", "aig-mcp", candidate],
@@ -308,12 +311,13 @@ describe("explicit qualified candidate installation", () => {
               ...fixture.env,
               CLAWSCAN_PIN: candidate,
               CLAWSCAN_SOURCE_DIR: fixture.fixture,
+              RUNNER_TEMP: runnerTemp,
               ...failure,
             },
           }),
         ).rejects.toThrow();
       }
-      expect(await fixture.readCommands()).not.toMatch(/docker |go /);
+      expect(await fixture.readCommands()).not.toMatch(/^(?:docker|go) /m);
       await expect(readFile(fixture.env.GITHUB_PATH, "utf8")).rejects.toThrow();
       await expect(readFile(fixture.env.GITHUB_ENV, "utf8")).rejects.toThrow();
     } finally {

@@ -22,6 +22,8 @@ import {
   buildGitHubSkillSourceSnapshot,
   buildGitHubSkillSyncPlan,
   type DiscoveredGitHubSkill,
+  discoveredGitHubSkillContentValidator,
+  discoveredGitHubSkillMetadataValidator,
   type DisplayManifestStatus,
   githubBackedSkillModeration,
   type GitHubSkillScanStatus,
@@ -123,15 +125,7 @@ export type SyncOneResult = {
   };
 };
 
-type GitHubSkillSourceSyncIssue = {
-  slug: string;
-  path: string;
-  displayName: string;
-  kind: "invalid_slug" | "slug_conflict";
-  severity: "error" | "warning";
-  message: string;
-  existingOwnerHandle?: string;
-};
+type GitHubSkillSourceSyncIssue = NonNullable<Doc<"githubSkillSources">["lastSyncIssues"]>[number];
 
 type SyncManyResult = {
   ok: true;
@@ -211,46 +205,6 @@ function clampInt(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, finite));
 }
 
-const discoveredSkillMetadataValidator = v.object({
-  slug: v.string(),
-  displayName: v.string(),
-  summary: v.optional(v.string()),
-  upstreamVersion: v.optional(v.string()),
-  path: v.string(),
-  skillMarkdownPath: v.string(),
-  skillCardMarkdownPath: v.optional(v.string()),
-  iconAsset: v.optional(
-    v.object({
-      path: v.string(),
-      sha256: v.string(),
-      contentType: v.string(),
-      size: v.number(),
-    }),
-  ),
-  contentHash: v.string(),
-});
-
-const discoveredSkillContentValidator = v.object({
-  slug: v.string(),
-  displayName: v.string(),
-  summary: v.optional(v.string()),
-  upstreamVersion: v.optional(v.string()),
-  path: v.string(),
-  skillMarkdownPath: v.string(),
-  skillMarkdown: v.string(),
-  skillCardMarkdownPath: v.optional(v.string()),
-  skillCardMarkdown: v.optional(v.string()),
-  iconAsset: v.optional(
-    v.object({
-      path: v.string(),
-      sha256: v.string(),
-      contentType: v.string(),
-      size: v.number(),
-    }),
-  ),
-  contentHash: v.string(),
-});
-
 export const sourceSnapshotValidator = v.object({
   repo: v.string(),
   defaultBranch: v.string(),
@@ -258,7 +212,7 @@ export const sourceSnapshotValidator = v.object({
   manifestStatus: displayManifestStatusValidator,
   manifestHash: v.optional(v.string()),
   manifest: v.optional(displayManifestValidator),
-  skills: v.array(discoveredSkillMetadataValidator),
+  skills: v.array(discoveredGitHubSkillMetadataValidator),
 });
 
 const githubSkillScanStatusValidator = v.union(
@@ -1943,7 +1897,7 @@ export const upsertGitHubSkillContentInternal = internalMutation({
   args: {
     skillId: v.id("skills"),
     sourceId: v.id("githubSkillSources"),
-    discovered: discoveredSkillContentValidator,
+    discovered: discoveredGitHubSkillContentValidator,
     commit: v.string(),
     now: v.optional(v.number()),
   },
@@ -1994,7 +1948,7 @@ export async function upsertGitHubSkillCandidateContentHandler(
 export const upsertGitHubSkillCandidateContentInternal = internalMutation({
   args: {
     candidateId: v.id("githubSkillCandidates"),
-    discovered: discoveredSkillContentValidator,
+    discovered: discoveredGitHubSkillContentValidator,
     commit: v.string(),
     now: v.optional(v.number()),
   },

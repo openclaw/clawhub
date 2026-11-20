@@ -58,6 +58,18 @@ async function loadRoute() {
   };
 }
 
+function createPublishedItemDefaults() {
+  return {
+    summary: null,
+    topics: [],
+    icon: null,
+    installs: 1,
+    stars: 0,
+    isOfficial: true,
+    updatedAt: 1,
+  };
+}
+
 const publisher = {
   _id: "publishers:nvidia",
   _creationTime: 1,
@@ -236,17 +248,11 @@ describe("user profile route", () => {
     paginatedQueryMock.mockReturnValue({
       loadMore: vi.fn(),
       results: Array.from({ length: 8 }, (_, index) => ({
+        ...createPublishedItemDefaults(),
         _id: `skills:item-${index}`,
         kind: "skill",
         displayName: `Skill ${index}`,
-        summary: null,
-        topics: [],
-        icon: null,
         href: `/nvidia/skill-${index}`,
-        installs: 1,
-        stars: 0,
-        isOfficial: true,
-        updatedAt: 1,
       })),
       status: "Exhausted",
     });
@@ -264,17 +270,12 @@ describe("user profile route", () => {
       loadMore: vi.fn(),
       results: [
         {
+          ...createPublishedItemDefaults(),
           _id: "skills:gpu",
           kind: "skill",
           displayName: "GPU Helper",
           summary: "GPU tasks",
-          topics: [],
-          icon: null,
           href: "/nvidia/gpu-helper",
-          installs: 1,
-          stars: 0,
-          isOfficial: true,
-          updatedAt: 1,
         },
       ],
       status: "Exhausted",
@@ -313,33 +314,23 @@ describe("user profile route", () => {
         args.kind === "plugin"
           ? [
               {
+                ...createPublishedItemDefaults(),
                 _id: "packages:diagnostics",
                 kind: "plugin",
                 displayName: "Diagnostics",
                 summary: "Plugin diagnostics",
-                topics: [],
-                icon: null,
                 href: "/nvidia/plugins/diagnostics",
-                installs: 1,
-                stars: 0,
-                isOfficial: true,
-                updatedAt: 1,
               },
             ]
           : args.kind === "skill"
             ? [
                 {
+                  ...createPublishedItemDefaults(),
                   _id: "skills:gpu",
                   kind: "skill",
                   displayName: "GPU Helper",
                   summary: "GPU tasks",
-                  topics: [],
-                  icon: null,
                   href: "/nvidia/gpu-helper",
-                  installs: 1,
-                  stars: 0,
-                  isOfficial: true,
-                  updatedAt: 1,
                 },
               ]
             : [],
@@ -358,6 +349,153 @@ describe("user profile route", () => {
 
     expect(within(catalog).getByText("Diagnostics")).toBeTruthy();
     expect(within(catalog).getByLabelText("Official")).toBeTruthy();
+  });
+
+  it("lists templates on their own tab, separate from plugins", async () => {
+    const templatePublisher = {
+      ...publisher,
+      official: false,
+      stats: { ...publisher.stats, skills: 0, packages: 9, plugins: 6, templates: 3 },
+    };
+    loaderDataMock.mockReturnValue({ publisher: templatePublisher });
+    queryMock.mockImplementation((_query, args: Record<string, unknown> | "skip") => {
+      if (args === "skip") return undefined;
+      if ("publisherHandle" in args) return { publisher: templatePublisher, members: [] };
+      if ("kind" in args) return null;
+      return templatePublisher;
+    });
+    paginatedQueryMock.mockImplementation((_query, args: Record<string, unknown>) => ({
+      loadMore: vi.fn(),
+      results:
+        args.kind === "template"
+          ? [
+              {
+                ...createPublishedItemDefaults(),
+                _id: "packages:travel-copilot",
+                kind: "template",
+                displayName: "Travel Copilot",
+                href: "/nvidia/templates/travel-copilot",
+              },
+            ]
+          : args.kind === "plugin"
+            ? [
+                {
+                  ...createPublishedItemDefaults(),
+                  _id: "packages:diagnostics",
+                  kind: "plugin",
+                  displayName: "Diagnostics",
+                  href: "/nvidia/plugins/diagnostics",
+                },
+              ]
+            : [],
+      status: "Exhausted",
+    }));
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    const catalogTabs = screen.getByRole("group", { name: "Catalog" });
+    const catalog = screen.getByLabelText("Publisher catalog");
+    // Plugins no longer include the three templates stored alongside them.
+    expect(
+      within(catalogTabs).getByRole("button", { name: /plugins 6/i, pressed: true }),
+    ).toBeTruthy();
+    expect(within(catalog).getByText("Diagnostics")).toBeTruthy();
+    expect(within(catalog).queryByText("Travel Copilot")).toBeNull();
+
+    fireEvent.click(within(catalogTabs).getByRole("button", { name: /templates 3/i }));
+
+    expect(window.location.hash).toBe("#templates");
+    expect(paginatedQueryMock.mock.calls.map((call) => call[1])).toContainEqual(
+      expect.objectContaining({ handle: "nvidia", kind: "template" }),
+    );
+    expect(within(catalog).queryByText("Diagnostics")).toBeNull();
+    expect(within(catalog).getByText("Travel Copilot")).toBeTruthy();
+    expect(within(catalog).getByText("Agent template.")).toBeTruthy();
+    expect(catalog.querySelector('a[href="/nvidia/templates/travel-copilot"]')).toBeTruthy();
+  });
+
+  it("shows an empty Templates tab for publishers without templates", async () => {
+    const noTemplatesPublisher = {
+      ...publisher,
+      stats: { ...publisher.stats, plugins: 0, templates: 0 },
+    };
+    loaderDataMock.mockReturnValue({ publisher: noTemplatesPublisher });
+    queryMock.mockImplementation((_query, args: Record<string, unknown> | "skip") => {
+      if (args === "skip") return undefined;
+      if ("publisherHandle" in args) return { publisher: noTemplatesPublisher, members: [] };
+      if ("kind" in args) return null;
+      return noTemplatesPublisher;
+    });
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    fireEvent.click(screen.getByRole("button", { name: /templates 0/i }));
+
+    expect(screen.getByText("No published templates yet")).toBeTruthy();
+  });
+
+  it("keeps the previous tabs while the backend does not report template counts", async () => {
+    const olderBackendPublisher = {
+      ...publisher,
+      stats: { ...publisher.stats, skills: 0, packages: 9 },
+    };
+    loaderDataMock.mockReturnValue({ publisher: olderBackendPublisher });
+    queryMock.mockImplementation((_query, args: Record<string, unknown> | "skip") => {
+      if (args === "skip") return undefined;
+      if ("publisherHandle" in args) return { publisher: olderBackendPublisher, members: [] };
+      if ("kind" in args) return null;
+      return olderBackendPublisher;
+    });
+    window.history.replaceState(null, "", `${window.location.pathname}#templates`);
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    const catalogTabs = screen.getByRole("group", { name: "Catalog" });
+    expect(
+      within(catalogTabs).getByRole("button", { name: /plugins 9/i, pressed: true }),
+    ).toBeTruthy();
+    expect(within(catalogTabs).queryByRole("button", { name: /templates/i })).toBeNull();
+    // That backend rejects the template kind, so the page must not request it.
+    expect(paginatedQueryMock.mock.calls.map((call) => call[1])).not.toContainEqual(
+      expect.objectContaining({ kind: "template" }),
+    );
+  });
+
+  it("keeps the Templates tab selectable when template counts arrive after page load", async () => {
+    // The page loaded from a backend without template counts; the live profile
+    // query then reports them after that backend deploys.
+    const loadedPublisher = { ...publisher, stats: { ...publisher.stats, skills: 0, packages: 9 } };
+    const livePublisher = {
+      ...loadedPublisher,
+      stats: { ...loadedPublisher.stats, plugins: 6, templates: 3 },
+    };
+    loaderDataMock.mockReturnValue({ publisher: loadedPublisher });
+    queryMock.mockImplementation((_query, args: Record<string, unknown> | "skip") => {
+      if (args === "skip") return undefined;
+      if ("publisherHandle" in args) return { publisher: livePublisher, members: [] };
+      if ("kind" in args) return null;
+      return livePublisher;
+    });
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    const catalogTabs = screen.getByRole("group", { name: "Catalog" });
+    fireEvent.click(within(catalogTabs).getByRole("button", { name: /templates 3/i }));
+    // jsdom does not dispatch hashchange for programmatic hash writes.
+    fireEvent(window, new HashChangeEvent("hashchange"));
+
+    expect(window.location.hash).toBe("#templates");
+    expect(
+      within(catalogTabs).getByRole("button", { name: /templates 3/i, pressed: true }),
+    ).toBeTruthy();
   });
 
   it("uses downloads sort for published catalog pages by default", async () => {
@@ -387,43 +525,30 @@ describe("user profile route", () => {
       loadMore: vi.fn(),
       results: [
         {
+          ...createPublishedItemDefaults(),
           _id: "skills:gpu",
           kind: "skill",
           displayName: "GPU Helper",
           summary: "GPU tasks",
           topics: ["GPU development", "CUDA"],
-          icon: null,
           href: "/nvidia/gpu-helper",
-          installs: 1,
-          stars: 0,
-          isOfficial: true,
-          updatedAt: 1,
         },
         {
+          ...createPublishedItemDefaults(),
           _id: "skills:travel",
           kind: "skill",
           displayName: "Travel Helper",
           summary: "Travel tasks",
           topics: ["Travel"],
-          icon: null,
           href: "/nvidia/travel-helper",
-          installs: 1,
-          stars: 0,
-          isOfficial: true,
-          updatedAt: 1,
         },
         {
+          ...createPublishedItemDefaults(),
           _id: "skills:orphan",
           kind: "skill",
           displayName: "Orphan Helper",
           summary: "No topic",
-          topics: [],
-          icon: null,
           href: "/nvidia/orphan-helper",
-          installs: 1,
-          stars: 0,
-          isOfficial: true,
-          updatedAt: 1,
         },
       ],
       status: "Exhausted",
@@ -476,43 +601,28 @@ describe("user profile route", () => {
       loadMore: vi.fn(),
       results: [
         {
+          ...createPublishedItemDefaults(),
           _id: "packages:codex",
           kind: "plugin",
           displayName: "Codex",
-          summary: null,
           topics: ["Codex"],
-          icon: null,
           href: "/openclaw/plugins/codex",
-          installs: 1,
-          stars: 0,
-          isOfficial: true,
-          updatedAt: 1,
         },
         {
+          ...createPublishedItemDefaults(),
           _id: "packages:diagnostics",
           kind: "plugin",
           displayName: "Diagnostics",
-          summary: null,
           topics: ["Diagnostics"],
-          icon: null,
           href: "/openclaw/plugins/diagnostics",
-          installs: 1,
-          stars: 0,
-          isOfficial: true,
-          updatedAt: 1,
         },
         ...Array.from({ length: 10 }, (_, index) => ({
+          ...createPublishedItemDefaults(),
           _id: `packages:plugin-${index}`,
           kind: "plugin" as const,
           displayName: `Plugin ${index}`,
-          summary: null,
           topics: ["Feishu"],
-          icon: null,
           href: `/openclaw/plugins/plugin-${index}`,
-          installs: 1,
-          stars: 0,
-          isOfficial: true,
-          updatedAt: 1,
         })),
       ],
       status: "CanLoadMore",
@@ -542,35 +652,39 @@ describe("publisher profile helpers", () => {
     );
     expect(resolveDefaultCatalogTab({ stats: { skills: 5, packages: 2 } } as never)).toBe("skills");
     expect(resolveDefaultCatalogTab({ stats: { skills: 0, packages: 0 } } as never)).toBe("skills");
+    expect(
+      resolveDefaultCatalogTab({
+        stats: { skills: 0, packages: 3, plugins: 0, templates: 3 },
+      } as never),
+    ).toBe("templates");
+    expect(
+      resolveDefaultCatalogTab({
+        stats: { skills: 0, packages: 4, plugins: 1, templates: 3 },
+      } as never),
+    ).toBe("plugins");
   });
 
   it("uses publisher total for grouped All tab when provided", () => {
     const groups = groupPublisherCatalogItemsByTopic([
       {
+        ...createPublishedItemDefaults(),
         _id: "packages:a",
         kind: "plugin",
         displayName: "A",
-        summary: null,
         topics: ["Codex"],
-        icon: null,
         href: "/openclaw/plugins/a",
         installs: 0,
-        stars: 0,
         isOfficial: false,
-        updatedAt: 1,
       },
       {
+        ...createPublishedItemDefaults(),
         _id: "packages:b",
         kind: "plugin",
         displayName: "B",
-        summary: null,
         topics: ["Diagnostics"],
-        icon: null,
         href: "/openclaw/plugins/b",
         installs: 0,
-        stars: 0,
         isOfficial: false,
-        updatedAt: 1,
       },
     ]);
 
@@ -606,30 +720,23 @@ describe("publisher profile helpers", () => {
   it("renames empty topic groups to uncategorized and sorts them last", () => {
     const groups = groupPublisherCatalogItemsByTopic([
       {
+        ...createPublishedItemDefaults(),
         _id: "skills:orphan",
         kind: "skill",
         displayName: "Orphan",
-        summary: null,
-        topics: [],
-        icon: null,
         href: "/x/orphan",
         installs: 0,
-        stars: 0,
         isOfficial: false,
-        updatedAt: 1,
       },
       {
+        ...createPublishedItemDefaults(),
         _id: "skills:prompt",
         kind: "skill",
         displayName: "Prompt",
-        summary: null,
         topics: ["Prompt"],
-        icon: null,
         href: "/x/prompt",
         installs: 0,
-        stars: 0,
         isOfficial: false,
-        updatedAt: 1,
       },
     ]);
 

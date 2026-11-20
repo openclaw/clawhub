@@ -1,6 +1,6 @@
 /* @vitest-environment node */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { indexedUnique } from "../src/__tests__/helpers/convexQuery";
+import { indexedUnique, orderedTake, indexedTake } from "../src/__tests__/helpers/convexQuery";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -251,21 +251,13 @@ function makeCtx(args: {
       return indexedUnique(() => args.membership ?? null);
     }
     if (table === "skillSlugAliases") {
-      return {
-        withIndex: vi.fn(() => ({
-          take: vi.fn().mockResolvedValue([]),
-        })),
-      };
+      return indexedTake(() => []);
     }
     if (table === "githubSkillScans") {
       return indexedUnique(() => args.githubScan ?? null);
     }
     if (table === "skillDailyStats") {
-      return {
-        withIndex: vi.fn(() => ({
-          take: vi.fn().mockResolvedValue(args.skillDailyStats ?? []),
-        })),
-      };
+      return indexedTake(() => args.skillDailyStats ?? []);
     }
     if (table !== "skills") throw new Error(`Unexpected query table: ${table}`);
     return { withIndex };
@@ -324,6 +316,46 @@ function makeSkill(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function makeGitHubScanCtx(contentHash: string, currentCommit: string, scanOriginCommit: string) {
+  return makeCtx({
+    skill: makeSkill({
+      installKind: "github",
+      githubPath: "skills/demo",
+      githubCurrentCommit: currentCommit,
+      githubCurrentContentHash: contentHash,
+      githubCurrentStatus: "present",
+      githubScanStatus: "clean",
+      latestVersionSummary: {
+        version: "1.2.3",
+        createdAt: 2,
+        changelog: "Synced from GitHub source.",
+      },
+    }),
+    owner: makeOwner("users:1", "demo-owner"),
+    githubScan: {
+      _id: "githubSkillScans:1",
+      skillId: "skills:1",
+      githubSourceId: "githubSkillSources:1",
+      contentHash,
+      commit: scanOriginCommit,
+      path: "skills/old-demo",
+      status: "clean",
+      staticScan: {
+        status: "clean",
+        reasonCodes: [],
+        findings: [],
+        summary: "No findings.",
+        engineVersion: "test",
+        checkedAt: 2,
+      },
+      llmAnalysis: { status: "clean", checkedAt: 3 },
+      createdAt: 2,
+      updatedAt: 3,
+      completedAt: 3,
+    },
+  });
+}
+
 function makeResolveCtx(args: {
   skill: Record<string, unknown>;
   latestVersion?: Record<string, unknown> | null;
@@ -335,24 +367,18 @@ function makeResolveCtx(args: {
   ];
   const query = vi.fn((table: string) => {
     if (table === "skills") {
-      return { withIndex: vi.fn(() => ({ unique: vi.fn().mockResolvedValue(args.skill) })) };
+      return indexedUnique(() => args.skill);
     }
     if (table === "skillVersionFingerprints") {
-      return { withIndex: vi.fn(() => ({ take: vi.fn().mockResolvedValue(fingerprintMatches) })) };
+      return indexedTake(() => fingerprintMatches);
     }
     if (table === "skillVersions") {
       return {
-        withIndex: vi.fn(() => ({
-          order: vi.fn(() => ({ take: vi.fn().mockResolvedValue([]) })),
-        })),
+        withIndex: vi.fn(() => orderedTake(() => [])),
       };
     }
     if (table === "skillSlugAliases") {
-      return {
-        withIndex: vi.fn(() => ({
-          take: vi.fn().mockResolvedValue([]),
-        })),
-      };
+      return indexedTake(() => []);
     }
     throw new Error(`Unexpected query table: ${table}`);
   });
@@ -386,31 +412,7 @@ describe("skills.getBySlug", () => {
 
   it("sanitizes owner fields in the public response", async () => {
     const ctx = makeCtx({
-      skill: {
-        _id: "skills:1",
-        _creationTime: 1,
-        slug: "demo",
-        displayName: "Demo",
-        summary: "Public demo skill",
-        ownerUserId: "users:1",
-        canonicalSkillId: undefined,
-        forkOf: undefined,
-        latestVersionId: null,
-        tags: {},
-        stats: {
-          downloads: 10,
-          installsCurrent: 2,
-          installsAllTime: 5,
-          stars: 3,
-          versions: 1,
-          comments: 0,
-        },
-        createdAt: 1,
-        updatedAt: 2,
-        moderationStatus: "active",
-        moderationFlags: undefined,
-        softDeletedAt: undefined,
-      },
+      skill: makeSkill(),
       owner: {
         _id: "users:1",
         _creationTime: 1,
@@ -450,43 +452,7 @@ describe("skills.getBySlug", () => {
     const contentHash = "a".repeat(64);
     const currentCommit = "b".repeat(40);
     const scanOriginCommit = "c".repeat(40);
-    const ctx = makeCtx({
-      skill: makeSkill({
-        installKind: "github",
-        githubPath: "skills/demo",
-        githubCurrentCommit: currentCommit,
-        githubCurrentContentHash: contentHash,
-        githubCurrentStatus: "present",
-        githubScanStatus: "clean",
-        latestVersionSummary: {
-          version: "1.2.3",
-          createdAt: 2,
-          changelog: "Synced from GitHub source.",
-        },
-      }),
-      owner: makeOwner("users:1", "demo-owner"),
-      githubScan: {
-        _id: "githubSkillScans:1",
-        skillId: "skills:1",
-        githubSourceId: "githubSkillSources:1",
-        contentHash,
-        commit: scanOriginCommit,
-        path: "skills/old-demo",
-        status: "clean",
-        staticScan: {
-          status: "clean",
-          reasonCodes: [],
-          findings: [],
-          summary: "No findings.",
-          engineVersion: "test",
-          checkedAt: 2,
-        },
-        llmAnalysis: { status: "clean", checkedAt: 3 },
-        createdAt: 2,
-        updatedAt: 3,
-        completedAt: 3,
-      },
-    });
+    const ctx = makeGitHubScanCtx(contentHash, currentCommit, scanOriginCommit);
 
     const result = await getBySlugHandler(ctx, { slug: "demo" } as never);
 
@@ -504,43 +470,7 @@ describe("skills.getBySlug", () => {
     const contentHash = "a".repeat(64);
     const currentCommit = "b".repeat(40);
     const scanOriginCommit = "c".repeat(40);
-    const ctx = makeCtx({
-      skill: makeSkill({
-        installKind: "github",
-        githubPath: "skills/demo",
-        githubCurrentCommit: currentCommit,
-        githubCurrentContentHash: contentHash,
-        githubCurrentStatus: "present",
-        githubScanStatus: "clean",
-        latestVersionSummary: {
-          version: "1.2.3",
-          createdAt: 2,
-          changelog: "Synced from GitHub source.",
-        },
-      }),
-      owner: makeOwner("users:1", "demo-owner"),
-      githubScan: {
-        _id: "githubSkillScans:1",
-        skillId: "skills:1",
-        githubSourceId: "githubSkillSources:1",
-        contentHash,
-        commit: scanOriginCommit,
-        path: "skills/old-demo",
-        status: "clean",
-        staticScan: {
-          status: "clean",
-          reasonCodes: [],
-          findings: [],
-          summary: "No findings.",
-          engineVersion: "test",
-          checkedAt: 2,
-        },
-        llmAnalysis: { status: "clean", checkedAt: 3 },
-        createdAt: 2,
-        updatedAt: 3,
-        completedAt: 3,
-      },
-    });
+    const ctx = makeGitHubScanCtx(contentHash, currentCommit, scanOriginCommit);
 
     const result = await getGitHubScanForAuditHandler(ctx, { slug: "demo" });
 
@@ -556,31 +486,7 @@ describe("skills.getBySlug", () => {
 
   it("hides skills whose owner is deleted or banned", async () => {
     const ctx = makeCtx({
-      skill: {
-        _id: "skills:1",
-        _creationTime: 1,
-        slug: "demo",
-        displayName: "Demo",
-        summary: "Public demo skill",
-        ownerUserId: "users:1",
-        canonicalSkillId: undefined,
-        forkOf: undefined,
-        latestVersionId: null,
-        tags: {},
-        stats: {
-          downloads: 10,
-          installsCurrent: 2,
-          installsAllTime: 5,
-          stars: 3,
-          versions: 1,
-          comments: 0,
-        },
-        createdAt: 1,
-        updatedAt: 2,
-        moderationStatus: "active",
-        moderationFlags: undefined,
-        softDeletedAt: undefined,
-      },
+      skill: makeSkill(),
       owner: {
         _id: "users:1",
         _creationTime: 1,
@@ -1119,7 +1025,7 @@ describe("skill artifact moderation", () => {
               };
             }
             if (table === "skillSlugAliases") {
-              return { withIndex: vi.fn(() => ({ take: vi.fn().mockResolvedValue([]) })) };
+              return indexedTake(() => []);
             }
             throw new Error(`Unexpected query table: ${table}`);
           }),
@@ -1200,7 +1106,7 @@ describe("skill artifact moderation", () => {
                 }));
               }
               if (table === "skillSlugAliases") {
-                return { withIndex: vi.fn(() => ({ take: vi.fn().mockResolvedValue([]) })) };
+                return indexedTake(() => []);
               }
               throw new Error(`Unexpected query table: ${table}`);
             }),
@@ -1253,7 +1159,7 @@ describe("skill artifact moderation", () => {
                 return indexedUnique(() => null);
               }
               if (table === "skillSlugAliases") {
-                return { withIndex: vi.fn(() => ({ take: vi.fn().mockResolvedValue([]) })) };
+                return indexedTake(() => []);
               }
               throw new Error(`Unexpected query table: ${table}`);
             }),
@@ -1325,7 +1231,7 @@ describe("skill artifact moderation", () => {
               };
             }
             if (table === "skillSlugAliases") {
-              return { withIndex: vi.fn(() => ({ take: vi.fn().mockResolvedValue([]) })) };
+              return indexedTake(() => []);
             }
             throw new Error(`Unexpected query table: ${table}`);
           }),
@@ -1442,7 +1348,7 @@ describe("skill artifact moderation", () => {
               return { withIndex: vi.fn(() => ({ collect: vi.fn().mockResolvedValue([]) })) };
             }
             if (table === "globalStats") {
-              return { withIndex: vi.fn(() => ({ unique: vi.fn().mockResolvedValue(null) })) };
+              return indexedUnique(() => null);
             }
             throw new Error(`Unexpected query table: ${table}`);
           }),
@@ -1537,7 +1443,7 @@ describe("skill artifact moderation", () => {
               return { withIndex: vi.fn(() => ({ collect: vi.fn().mockResolvedValue([]) })) };
             }
             if (table === "globalStats") {
-              return { withIndex: vi.fn(() => ({ unique: vi.fn().mockResolvedValue(null) })) };
+              return indexedUnique(() => null);
             }
             throw new Error(`Unexpected query table: ${table}`);
           }),

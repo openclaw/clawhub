@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("./lib/verifiedClientIp", () => ({
   getVerifiedClientIp: async () => "203.0.113.1",
 }));
+import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
 import schema from "./schema";
 
@@ -36,20 +37,16 @@ describe("plugin publisher badges", () => {
           updatedAt: 1,
         });
         const packageId = await ctx.db.insert("packages", {
+          ...createPackageSeedDefaults(),
           name: "@composio/composio",
           normalizedName: "@composio/composio",
           displayName: "Composio",
           ownerUserId,
           ownerPublisherId: publisherId,
           family,
-          channel: "community",
-          isOfficial: false,
           scanStatus: "clean",
           categories: ["integrations"],
-          tags: {},
           stats: { downloads: 1, installs: 1, stars: 0, versions: 1 },
-          createdAt: 1,
-          updatedAt: 1,
         });
         const releaseId = await ctx.db.insert("packageReleases", {
           packageId,

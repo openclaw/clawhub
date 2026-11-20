@@ -1,4 +1,5 @@
 import type { DisplayManifest, DisplayManifestStatus } from "./displayManifest";
+import { normalizeGitHubSkillKey } from "./githubSkillKey";
 
 export type GitHubSkillCatalogSource = {
   _id: string;
@@ -9,7 +10,7 @@ export type GitHubSkillCatalogSource = {
 
 export type GitHubSkillCatalogItem = {
   _id: string;
-  kind: "skill" | "plugin";
+  kind: "skill" | "plugin" | "template";
   displayName: string;
   slug?: string | null;
   sourceBacked?: boolean;
@@ -46,23 +47,13 @@ export type GitHubSkillCatalogDisplay = {
   sections: GitHubSkillCatalogSection[];
 };
 
-function normalizeManifestSkillKey(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[\s_]+/g, "-")
-    .replace(/[^a-z0-9-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-}
-
 function getItemKeys(item: GitHubSkillCatalogItem) {
   const keys = new Set<string>();
-  if (item.slug) keys.add(normalizeManifestSkillKey(item.slug));
-  keys.add(normalizeManifestSkillKey(item.displayName));
+  if (item.slug) keys.add(normalizeGitHubSkillKey(item.slug));
+  keys.add(normalizeGitHubSkillKey(item.displayName));
 
   const sourcePathName = item.sourcePath?.split("/").filter(Boolean).at(-1);
-  if (sourcePathName) keys.add(normalizeManifestSkillKey(sourcePathName));
+  if (sourcePathName) keys.add(normalizeGitHubSkillKey(sourcePathName));
 
   return keys;
 }
@@ -72,7 +63,7 @@ function findManifestItem(
   manifestEntry: string,
   usedItemIds: Set<string>,
 ) {
-  const key = normalizeManifestSkillKey(manifestEntry);
+  const key = normalizeGitHubSkillKey(manifestEntry);
   if (!key) return null;
 
   return (

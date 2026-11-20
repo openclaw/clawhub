@@ -1,4 +1,4 @@
-import { ApiRoutes } from "clawhub-schema";
+import { ApiRoutes } from "clawhub-schema/routes";
 import type { ActionCtx } from "../_generated/server";
 import { applyRateLimit } from "../lib/httpRateLimit";
 import {

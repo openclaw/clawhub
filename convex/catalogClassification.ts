@@ -5,59 +5,15 @@ import type { QueryCtx } from "./_generated/server";
 import { action, internalMutation, internalQuery } from "./_generated/server";
 import { assertRole, requireUserFromAction } from "./lib/access";
 import type { CatalogClassificationConfidence } from "./lib/catalogClassification";
+import {
+  catalogClassificationResultValidator,
+  catalogTargetKindValidator,
+} from "./lib/catalogClassificationContract";
 
 const DEFAULT_CLASSIFICATION_BATCH_SIZE = 10;
 const MAX_CLASSIFICATION_BATCH_SIZE = 25;
 const MAX_STATIC_TEXT_FILE_SIZE = 512_000;
 const MAX_PLUGIN_TEXT_FILES = 8;
-
-const targetKindValidator = v.union(v.literal("skill"), v.literal("plugin"));
-const confidenceValidator = v.union(v.literal("high"), v.literal("medium"), v.literal("low"));
-const categoryCandidateValidator = v.object({
-  category: v.string(),
-  score: v.number(),
-  sources: v.array(v.string()),
-  evidence: v.array(v.string()),
-  strongEvidence: v.optional(v.boolean()),
-  primaryEvidence: v.optional(v.boolean()),
-  strongPrimaryEvidence: v.optional(v.boolean()),
-  primaryEvidenceCount: v.optional(v.number()),
-});
-const topicCandidateValidator = v.object({
-  topic: v.string(),
-  slug: v.string(),
-  score: v.number(),
-  sources: v.array(v.string()),
-  evidence: v.array(v.string()),
-  primaryEvidence: v.boolean(),
-  primarySourceCount: v.number(),
-  strongEvidence: v.boolean(),
-  confidence: confidenceValidator,
-  suppressedBy: v.optional(v.string()),
-});
-
-const classificationResultInputValidator = v.object({
-  targetKind: targetKindValidator,
-  skillId: v.optional(v.id("skills")),
-  packageId: v.optional(v.id("packages")),
-  skillVersionId: v.optional(v.id("skillVersions")),
-  packageReleaseId: v.optional(v.id("packageReleases")),
-  categories: v.array(v.string()),
-  topics: v.array(v.string()),
-  categoryCandidates: v.array(categoryCandidateValidator),
-  topicCandidates: v.array(topicCandidateValidator),
-  categoryCandidateCount: v.number(),
-  topicCandidateCount: v.number(),
-  categoryConfidence: confidenceValidator,
-  topicConfidence: confidenceValidator,
-  categoryNeedsReview: v.boolean(),
-  topicNeedsReview: v.boolean(),
-  unknownSignals: v.array(v.string()),
-  classifierVersion: v.string(),
-  topicClassifierVersion: v.string(),
-  inputHash: v.string(),
-  topicInputHash: v.string(),
-});
 
 type CatalogTextFile = {
   path: string;
@@ -246,7 +202,7 @@ export async function getCatalogClassificationPageInternalHandler(
 
 export const getCatalogClassificationPageInternal = internalQuery({
   args: {
-    targetKind: targetKindValidator,
+    targetKind: catalogTargetKindValidator,
     cursor: v.optional(v.string()),
     batchSize: v.optional(v.number()),
   },
@@ -254,7 +210,7 @@ export const getCatalogClassificationPageInternal = internalQuery({
 });
 
 export const upsertCatalogClassificationResultsInternal = internalMutation({
-  args: { results: v.array(classificationResultInputValidator) },
+  args: { results: v.array(catalogClassificationResultValidator) },
   returns: v.object({ ok: v.literal(true), upserted: v.number() }),
   handler: async (ctx, args) => {
     const classifiedAt = Date.now();
@@ -291,7 +247,7 @@ export const upsertCatalogClassificationResultsInternal = internalMutation({
 
 export const classifyCatalog: ReturnType<typeof action> = action({
   args: {
-    targetKind: targetKindValidator,
+    targetKind: catalogTargetKindValidator,
     cursor: v.optional(v.string()),
     batchSize: v.optional(v.number()),
     maxBatches: v.optional(v.number()),

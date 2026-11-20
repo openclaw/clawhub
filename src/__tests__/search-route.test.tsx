@@ -3,6 +3,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { ComponentType, ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createEmptySearchResult } from "./helpers/unifiedSearch";
 
 const navigateMock = vi.fn();
 let searchMock: {
@@ -85,19 +86,7 @@ describe("search route", () => {
     loaderDataMock = null;
     navigateMock.mockReset();
     useUnifiedSearchMock.mockReset();
-    useUnifiedSearchMock.mockReturnValue({
-      results: [],
-      skillResults: [],
-      pluginResults: [],
-      creatorResults: [],
-      skillCount: 0,
-      pluginCount: 0,
-      creatorCount: 0,
-      skillHasMore: false,
-      pluginHasMore: false,
-      creatorHasMore: false,
-      isSearching: false,
-    });
+    useUnifiedSearchMock.mockReturnValue(createEmptySearchResult());
   });
 
   it("keeps the input synced with query param changes while mounted", async () => {
@@ -153,17 +142,9 @@ describe("search route", () => {
 
   it("does not render count chips in active search tabs", async () => {
     useUnifiedSearchMock.mockReturnValue({
-      results: [],
-      skillResults: [],
+      ...createEmptySearchResult(),
       pluginResults: [{ type: "plugin", plugin: { name: "github-plugin" } }],
-      creatorResults: [],
-      skillCount: 0,
       pluginCount: 3,
-      creatorCount: 0,
-      skillHasMore: false,
-      pluginHasMore: false,
-      creatorHasMore: false,
-      isSearching: false,
     });
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
@@ -215,17 +196,10 @@ describe("search route", () => {
       score: 5000,
     };
     useUnifiedSearchMock.mockReturnValue({
+      ...createEmptySearchResult(),
       results: [external],
       skillResults: [external],
-      pluginResults: [],
-      creatorResults: [],
       skillCount: 1,
-      pluginCount: 0,
-      creatorCount: 0,
-      skillHasMore: false,
-      pluginHasMore: false,
-      creatorHasMore: false,
-      isSearching: false,
     });
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
@@ -252,17 +226,11 @@ describe("search route", () => {
       score: 1,
     }));
     useUnifiedSearchMock.mockReturnValue({
+      ...createEmptySearchResult(),
       results: skills,
       skillResults: skills,
-      pluginResults: [],
-      creatorResults: [],
       skillCount: 25,
-      pluginCount: 0,
-      creatorCount: 0,
       skillHasMore: true,
-      pluginHasMore: false,
-      creatorHasMore: false,
-      isSearching: false,
     });
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
@@ -283,6 +251,7 @@ describe("search route", () => {
   it("keeps inactive tab labels visible while rendering the active tab", async () => {
     searchMock = { q: "weather", type: "skills" };
     useUnifiedSearchMock.mockReturnValue({
+      ...createEmptySearchResult(),
       results: [
         {
           type: "skill",
@@ -338,10 +307,6 @@ describe("search route", () => {
       skillCount: 1,
       pluginCount: 1,
       creatorCount: 1,
-      skillHasMore: false,
-      pluginHasMore: false,
-      creatorHasMore: false,
-      isSearching: false,
     });
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
@@ -386,17 +351,10 @@ describe("search route", () => {
       score: 1,
     };
     useUnifiedSearchMock.mockReturnValue({
+      ...createEmptySearchResult(),
       results: [skill],
       skillResults: [skill],
-      pluginResults: [],
-      creatorResults: [],
       skillCount: 1,
-      pluginCount: 0,
-      creatorCount: 0,
-      skillHasMore: false,
-      pluginHasMore: false,
-      creatorHasMore: false,
-      isSearching: false,
     });
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
@@ -408,17 +366,10 @@ describe("search route", () => {
 
   it("does not render partial count labels when more results are available", async () => {
     useUnifiedSearchMock.mockReturnValue({
-      results: [],
-      skillResults: [],
+      ...createEmptySearchResult(),
       pluginResults: [{ type: "plugin", plugin: { name: "github-plugin" } }],
-      creatorResults: [],
-      skillCount: 0,
       pluginCount: 25,
-      creatorCount: 0,
-      skillHasMore: false,
       pluginHasMore: true,
-      creatorHasMore: false,
-      isSearching: false,
     });
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
@@ -433,6 +384,7 @@ describe("search route", () => {
   it("does not show load more only because the current page is full", async () => {
     searchMock = { q: "weather", type: "skills" };
     useUnifiedSearchMock.mockReturnValue({
+      ...createEmptySearchResult(),
       results: Array.from({ length: 25 }, (_, index) => ({
         type: "skill",
         skill: {
@@ -447,16 +399,7 @@ describe("search route", () => {
         ownerHandle: "clawhub",
         score: 1,
       })),
-      skillResults: [],
-      pluginResults: [],
-      creatorResults: [],
       skillCount: 25,
-      pluginCount: 0,
-      creatorCount: 0,
-      skillHasMore: false,
-      pluginHasMore: false,
-      creatorHasMore: false,
-      isSearching: false,
     });
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
@@ -500,17 +443,10 @@ describe("search route", () => {
   it("offers all-types recovery when the active type is empty but another type matched", async () => {
     searchMock = { q: "weather", type: "skills" };
     useUnifiedSearchMock.mockReturnValue({
+      ...createEmptySearchResult(),
       results: [{ type: "plugin", plugin: { name: "weather-plugin" } }],
-      skillResults: [],
       pluginResults: [{ type: "plugin", plugin: { name: "weather-plugin" } }],
-      creatorResults: [],
-      skillCount: 0,
       pluginCount: 1,
-      creatorCount: 0,
-      skillHasMore: false,
-      pluginHasMore: false,
-      creatorHasMore: false,
-      isSearching: false,
     });
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
@@ -581,6 +517,7 @@ describe("search route", () => {
   it("renders creators as their own all-results section and active tab", async () => {
     searchMock = { q: "weather" };
     useUnifiedSearchMock.mockReturnValue({
+      ...createEmptySearchResult(),
       results: [
         {
           type: "creator",
@@ -599,8 +536,6 @@ describe("search route", () => {
           },
         },
       ],
-      skillResults: [],
-      pluginResults: [],
       creatorResults: [
         {
           type: "creator",
@@ -619,13 +554,7 @@ describe("search route", () => {
           },
         },
       ],
-      skillCount: 0,
-      pluginCount: 0,
       creatorCount: 1,
-      skillHasMore: false,
-      pluginHasMore: false,
-      creatorHasMore: false,
-      isSearching: false,
     });
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;

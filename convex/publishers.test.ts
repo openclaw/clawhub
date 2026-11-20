@@ -1,7 +1,10 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { describe, expect, it, vi } from "vitest";
+import { createActiveSkillSeedDefaults } from "../src/__tests__/helpers/activeSkillSeed";
+import { createMockDb } from "../src/__tests__/helpers/convexDb";
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
-import { indexedUnique } from "../src/__tests__/helpers/convexQuery";
+import { chainEq, indexedUnique } from "../src/__tests__/helpers/convexQuery";
+import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
 import {
   assertCanManageOwnedResource,
   ensurePersonalPublisherForUser,
@@ -271,18 +274,19 @@ const listPublicPageHandler = getTestHandler<
 const listPublishedPageHandler = getTestHandler<
   {
     handle: string;
-    kind?: "skill" | "plugin";
+    kind?: "skill" | "plugin" | "template";
     sort?: "installs" | "recent" | "downloads";
-    paginationOpts: { cursor: string | null; numItems: number };
+    paginationOpts: { cursor: string | null; endCursor?: string | null; numItems: number };
   },
   {
     page: Array<{
       displayName: string;
       href: string;
-      kind: "skill" | "plugin";
+      kind: "skill" | "plugin" | "template";
       downloads: number;
     }>;
     continueCursor: string;
+    splitCursor?: string | null;
     isDone: boolean;
   }
 >(listPublishedPage);
@@ -489,14 +493,37 @@ function buildPublisherMemberQuery<T extends Record<string, unknown>>(
   };
 }
 
+function makeUserMembershipQuery<T>(memberships: Record<string, T>) {
+  return vi.fn((table: string) => {
+    if (table === "publisherMembers") {
+      return {
+        withIndex: vi.fn(
+          (
+            _indexName: string,
+            builder: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+          ) => {
+            let userId = "";
+            const q = {
+              eq: (field: string, value: string) => {
+                if (field === "userId") userId = value;
+                return q;
+              },
+            };
+            builder(q);
+            return {
+              unique: vi.fn().mockResolvedValue(memberships[userId] ?? null),
+            };
+          },
+        ),
+      };
+    }
+    throw new Error(`unexpected table ${table}`);
+  });
+}
+
 function captureIndexFields(buildQuery: (q: unknown) => unknown) {
   const fields: Record<string, unknown> = {};
-  const q = {
-    eq: (field: string, value: unknown) => {
-      fields[field] = value;
-      return q;
-    },
-  };
+  const q = chainEq(fields);
   buildQuery(q);
   return fields;
 }
@@ -522,20 +549,62 @@ function captureIndexRange(buildQuery: (q: unknown) => unknown) {
   return { fields, range };
 }
 
+type RowPredicate = (row: Record<string, unknown>) => boolean;
+
+/** Evaluates the `q.eq` / `q.neq` field comparisons a Convex `.filter()` callback builds. */
+function buildRowPredicate(buildFilter: (q: unknown) => unknown): RowPredicate {
+  const isFieldRef = (operand: unknown): operand is { fieldName: string } =>
+    typeof operand === "object" && operand !== null && "fieldName" in operand;
+  const read = (operand: unknown, row: Record<string, unknown>) =>
+    isFieldRef(operand) ? row[operand.fieldName] : operand;
+  return buildFilter({
+    field: (fieldName: string) => ({ fieldName }),
+    eq: (left: unknown, right: unknown) => (row: Record<string, unknown>) =>
+      read(left, row) === read(right, row),
+    neq: (left: unknown, right: unknown) => (row: Record<string, unknown>) =>
+      read(left, row) !== read(right, row),
+  }) as RowPredicate;
+}
+
 function indexedRows(rows: unknown[]) {
+  // Like Convex, a `.filter()` narrows rows before the page is cut.
+  let predicate: RowPredicate | null = null;
   const paginate = vi.fn(
-    async ({ cursor, numItems }: { cursor: string | null; numItems: number }) => {
+    async ({
+      cursor,
+      numItems,
+      endCursor,
+    }: {
+      cursor: string | null;
+      numItems: number;
+      endCursor?: string | null;
+    }) => {
+      const activePredicate = predicate;
+      const matching = activePredicate
+        ? rows.filter((row) => activePredicate(row as Record<string, unknown>))
+        : rows;
       const offset = cursor ? Number(cursor) : 0;
-      const page = rows.slice(offset, offset + numItems);
+      // Like Convex, an end cursor pins the page range instead of `numItems`.
+      const page = matching.slice(offset, endCursor ? Number(endCursor) : offset + numItems);
       const nextOffset = offset + page.length;
-      const isDone = nextOffset >= rows.length;
+      const isDone = nextOffset >= matching.length;
       return {
         page,
         isDone,
         continueCursor: isDone ? "" : String(nextOffset),
+        ...(page.length > 1 ? { splitCursor: String(offset + Math.floor(page.length / 2)) } : {}),
       };
     },
   );
+  const ordered = {
+    collect: vi.fn(async () => rows),
+    take: vi.fn(async (limit: number) => rows.slice(0, limit)),
+    paginate,
+    filter: vi.fn((buildFilter: (q: unknown) => unknown) => {
+      predicate = buildRowPredicate(buildFilter);
+      return ordered;
+    }),
+  };
   return {
     async *[Symbol.asyncIterator]() {
       for (const row of rows) yield row;
@@ -544,11 +613,7 @@ function indexedRows(rows: unknown[]) {
     first: vi.fn(async (): Promise<unknown> => null),
     take: vi.fn(async (limit: number) => rows.slice(0, limit)),
     paginate,
-    order: vi.fn(() => ({
-      collect: vi.fn(async () => rows),
-      take: vi.fn(async (limit: number) => rows.slice(0, limit)),
-      paginate,
-    })),
+    order: vi.fn(() => ordered),
   };
 }
 
@@ -558,22 +623,16 @@ function makePublicPublisherVisibilityCtx(options?: {
   skillModerationStatus?: string;
 }) {
   const legacyPersonalPublisher = options?.legacyPersonalPublisher ?? false;
-  const publisher = {
-    _id: "publishers:proof-banned-builder",
-    _creationTime: 1,
-    kind: "user",
-    handle: "proof-banned-builder",
+  const publisher = makePersonalPublisher("proof-banned-builder", {
     displayName: "Proof Banned Builder",
     linkedUserId: legacyPersonalPublisher ? undefined : "users:proof-banned-builder",
     trustedPublisher: false,
     publishedSkills: 1,
-    publishedPackages: 0,
     totalInstalls: 1,
     totalDownloads: 4,
     totalStars: 2,
-    createdAt: 1,
     updatedAt: 2,
-  };
+  });
   const linkedUser =
     options && "linkedUser" in options
       ? options.linkedUser
@@ -669,6 +728,9 @@ function makePublicPublisherVisibilityCtx(options?: {
       }
       if (table === "officialPublishers" && indexName === "by_publisher") {
         return { unique: vi.fn(async () => null) };
+      }
+      if (table === "packageSearchDigest" && indexName === "by_active_family_owner_handle") {
+        return indexedRows([]);
       }
 
       throw new Error(`unexpected ${table} index ${indexName}`);
@@ -806,6 +868,7 @@ function makeResolvePublishTargetCtx(options: {
   });
   return {
     db: {
+      ...createMockDb(),
       get: vi.fn(async (tableOrId: string, maybeId?: string) => {
         const id = maybeId ?? tableOrId;
         if (id === "users:vincent") return actor;
@@ -814,17 +877,63 @@ function makeResolvePublishTargetCtx(options: {
         return null;
       }),
       query,
-      patch: vi.fn(),
       insert: vi.fn(async () => "auditLogs:resolve"),
-      delete: vi.fn(),
-      replace: vi.fn(),
       normalizeId: vi.fn((table: string, id: string) => (id.startsWith(`${table}:`) ? id : null)),
-      system: {},
     },
   };
 }
 
-function makeHomeSummaryPublisher(handle: string, overrides: Record<string, unknown> = {}) {
+function makeOrgPublisherIdentity(handle: string, displayName: string) {
+  return {
+    _id: `publishers:${handle}`,
+    _creationTime: 1,
+    kind: "org",
+    handle,
+    displayName,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+}
+
+function makeUserPublisherIdentity(
+  handle: string,
+  displayName: string,
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    _id: `publishers:${handle}`,
+    _creationTime: 1,
+    kind: "user",
+    handle,
+    displayName,
+    linkedUserId: `users:${handle}`,
+    trustedPublisher: false,
+    createdAt: 1,
+    updatedAt: 1,
+    ...overrides,
+  };
+}
+
+function makePersonalPublisher(handle: string, overrides: Record<string, unknown> = {}) {
+  return {
+    _id: `publishers:${handle}`,
+    _creationTime: 1,
+    kind: "user" as const,
+    handle,
+    displayName: handle,
+    linkedUserId: `users:${handle}`,
+    publishedSkills: 0,
+    publishedPackages: 0,
+    totalInstalls: 0,
+    totalDownloads: 0,
+    totalStars: 0,
+    createdAt: 1,
+    updatedAt: 1,
+    ...overrides,
+  };
+}
+
+function makeOrgPublisher(handle: string, overrides: Record<string, unknown> = {}) {
   return {
     _id: `publishers:${handle}`,
     _creationTime: 1,
@@ -843,7 +952,7 @@ function makeHomeSummaryPublisher(handle: string, overrides: Record<string, unkn
 }
 
 function makeHomePublisherSummariesCtx(
-  publishers: Array<ReturnType<typeof makeHomeSummaryPublisher>>,
+  publishers: Array<ReturnType<typeof makeOrgPublisher>>,
   users: Record<string, Record<string, unknown> | null> = {},
 ) {
   const publishersByHandle = new Map(publishers.map((publisher) => [publisher.handle, publisher]));
@@ -896,12 +1005,12 @@ describe("home publisher summaries", () => {
   });
 
   it("normalizes and deduplicates handles while preserving first-seen order", async () => {
-    const bravo = makeHomeSummaryPublisher("bravo", {
+    const bravo = makeOrgPublisher("bravo", {
       kind: "user",
       linkedUserId: "users:bravo",
       displayName: "Publisher fallback",
     });
-    const alpha = makeHomeSummaryPublisher("alpha");
+    const alpha = makeOrgPublisher("alpha");
     const { ctx, publisherReads, get } = makeHomePublisherSummariesCtx([bravo, alpha], {
       "users:bravo": {
         _id: "users:bravo",
@@ -936,22 +1045,22 @@ describe("home publisher summaries", () => {
 
   it("omits incomplete or invisible summaries without reading catalog or membership tables", async () => {
     const publishers = [
-      makeHomeSummaryPublisher("incomplete", { totalStars: undefined }),
-      makeHomeSummaryPublisher("deactivated", { deactivatedAt: 2 }),
-      makeHomeSummaryPublisher("deleted", { deletedAt: 2 }),
-      makeHomeSummaryPublisher("missing-user", {
+      makeOrgPublisher("incomplete", { totalStars: undefined }),
+      makeOrgPublisher("deactivated", { deactivatedAt: 2 }),
+      makeOrgPublisher("deleted", { deletedAt: 2 }),
+      makeOrgPublisher("missing-user", {
         kind: "user",
         linkedUserId: "users:missing",
       }),
-      makeHomeSummaryPublisher("deleted-user", {
+      makeOrgPublisher("deleted-user", {
         kind: "user",
         linkedUserId: "users:deleted",
       }),
-      makeHomeSummaryPublisher("deactivated-user", {
+      makeOrgPublisher("deactivated-user", {
         kind: "user",
         linkedUserId: "users:deactivated",
       }),
-      makeHomeSummaryPublisher("legacy-unlinked", { kind: "user" }),
+      makeOrgPublisher("legacy-unlinked", { kind: "user" }),
     ];
     const { ctx, query, get } = makeHomePublisherSummariesCtx(publishers, {
       "users:deleted": { _id: "users:deleted", deletedAt: 2 },
@@ -971,18 +1080,18 @@ describe("home publisher summaries", () => {
 describe("home official creator summaries", () => {
   it("pages the official publisher index and returns only active organizations with content", async () => {
     const publishers = [
-      makeHomeSummaryPublisher("high", { totalInstalls: 100 }),
-      makeHomeSummaryPublisher("person", {
+      makeOrgPublisher("high", { totalInstalls: 100 }),
+      makeOrgPublisher("person", {
         kind: "user",
         linkedUserId: "users:person",
         totalInstalls: 80,
       }),
-      makeHomeSummaryPublisher("empty", {
+      makeOrgPublisher("empty", {
         publishedSkills: 0,
         publishedPackages: 0,
         totalInstalls: 70,
       }),
-      makeHomeSummaryPublisher("inactive", { deactivatedAt: 2, totalInstalls: 50 }),
+      makeOrgPublisher("inactive", { deactivatedAt: 2, totalInstalls: 50 }),
     ];
     const officialRows = publishers.map((publisher, index) => ({
       _id: `officialPublishers:${index}`,
@@ -1022,7 +1131,7 @@ describe("home official creator summaries", () => {
 
   it("collects every official page, orders by installs, and clamps the result to sixteen", async () => {
     const makeSummary = (index: number, installs: number) => ({
-      ...makeHomeSummaryPublisher(`org-${index}`, { totalInstalls: installs }),
+      ...makeOrgPublisher(`org-${index}`, { totalInstalls: installs }),
       stats: { skills: 2, packages: 1, installs, downloads: installs, stars: 5 },
     });
     const firstPage = Array.from({ length: 12 }, (_, index) => makeSummary(index, 20 - index));
@@ -1308,12 +1417,7 @@ describe("publishers membership controls", () => {
                 throw new Error(`unexpected index ${indexName}`);
               }
               const fields: Record<string, string> = {};
-              const q = {
-                eq: (field: string, value: string) => {
-                  fields[field] = value;
-                  return q;
-                },
-              };
+              const q = chainEq(fields);
               builder?.(q);
               return {
                 collect: vi.fn(async () =>
@@ -1644,15 +1748,7 @@ describe("publishers membership controls", () => {
         createdAt: 1,
         updatedAt: 1,
       },
-      {
-        _id: "publishers:openclaw",
-        _creationTime: 1,
-        kind: "org",
-        handle: "openclaw",
-        displayName: "OpenClaw",
-        createdAt: 1,
-        updatedAt: 1,
-      },
+      makeOrgPublisherIdentity("openclaw", "OpenClaw"),
     ];
     const skillRows = [
       {
@@ -1730,35 +1826,20 @@ describe("publishers membership controls", () => {
 
   it("filters public publisher listings by kind", async () => {
     const publisherRows = [
-      {
-        _id: "publishers:alice",
-        _creationTime: 1,
-        kind: "user",
-        handle: "alice",
+      makePersonalPublisher("alice", {
         displayName: "Alice",
-        linkedUserId: "users:alice",
         publishedSkills: 1,
-        publishedPackages: 0,
         totalInstalls: 4,
         totalDownloads: 10,
         totalStars: 1,
-        createdAt: 1,
-        updatedAt: 1,
-      },
-      {
-        _id: "publishers:openclaw",
-        _creationTime: 1,
-        kind: "org",
-        handle: "openclaw",
+      }),
+      makeOrgPublisher("openclaw", {
         displayName: "OpenClaw",
         publishedSkills: 0,
-        publishedPackages: 1,
         totalInstalls: 20,
         totalDownloads: 40,
         totalStars: 2,
-        createdAt: 1,
-        updatedAt: 1,
-      },
+      }),
     ];
     const ctx = {
       db: {
@@ -1801,20 +1882,14 @@ describe("publishers membership controls", () => {
 
   it("omits hidden publisher preview skills without scanning extra pages", async () => {
     const publisherRows = [
-      {
-        _id: "publishers:nvidia",
-        _creationTime: 1,
-        kind: "org",
-        handle: "nvidia",
+      makeOrgPublisher("nvidia", {
         displayName: "NVIDIA",
         publishedSkills: 1,
         publishedPackages: 0,
         totalInstalls: 0,
         totalDownloads: 70,
         totalStars: 0,
-        createdAt: 1,
-        updatedAt: 1,
-      },
+      }),
     ];
     const skillRows = [
       ...Array.from({ length: 3 }, (_, index) => 100 - index).map((installs, index) => ({
@@ -1901,50 +1976,27 @@ describe("publishers membership controls", () => {
 
   it("pages public publishers by kind and query", async () => {
     const publisherRows = [
-      {
-        _id: "publishers:alice",
-        _creationTime: 1,
-        kind: "user",
-        handle: "alice",
+      makePersonalPublisher("alice", {
         displayName: "Alice Labs",
-        linkedUserId: "users:alice",
         publishedSkills: 1,
-        publishedPackages: 0,
         totalInstalls: 4,
         totalDownloads: 10,
         totalStars: 1,
-        createdAt: 1,
-        updatedAt: 1,
-      },
-      {
-        _id: "publishers:bob",
-        _creationTime: 1,
-        kind: "user",
-        handle: "bob",
+      }),
+      makePersonalPublisher("bob", {
         displayName: "Bob Tools",
-        linkedUserId: "users:bob",
         publishedSkills: 1,
-        publishedPackages: 0,
         totalInstalls: 2,
         totalDownloads: 8,
         totalStars: 1,
-        createdAt: 1,
-        updatedAt: 1,
-      },
-      {
-        _id: "publishers:openclaw",
-        _creationTime: 1,
-        kind: "org",
-        handle: "openclaw",
+      }),
+      makeOrgPublisher("openclaw", {
         displayName: "OpenClaw",
         publishedSkills: 0,
-        publishedPackages: 1,
         totalInstalls: 20,
         totalDownloads: 40,
         totalStars: 2,
-        createdAt: 1,
-        updatedAt: 1,
-      },
+      }),
     ];
     const ctx = {
       db: {
@@ -2033,36 +2085,19 @@ describe("publishers membership controls", () => {
   });
 
   it("finds publishers outside the popular install window via handle prefix search", async () => {
-    const popularRows = Array.from({ length: 500 }, (_, index) => ({
-      _id: `publishers:popular-${index}`,
-      _creationTime: index,
-      kind: "user" as const,
-      handle: `popular-${index}`,
-      displayName: `Popular ${index}`,
-      linkedUserId: `users:popular-${index}`,
-      publishedSkills: 1,
-      publishedPackages: 0,
-      totalInstalls: 500 - index,
-      totalDownloads: 500 - index,
-      totalStars: 1,
-      createdAt: 1,
-      updatedAt: 1,
-    }));
-    const vincentkoc = {
-      _id: "publishers:vincentkoc",
-      _creationTime: 1,
-      kind: "user" as const,
-      handle: "vincentkoc",
+    const popularRows = Array.from({ length: 500 }, (_, index) =>
+      makePersonalPublisher(`popular-${index}`, {
+        _creationTime: index,
+        displayName: `Popular ${index}`,
+        publishedSkills: 1,
+        totalInstalls: 500 - index,
+        totalDownloads: 500 - index,
+        totalStars: 1,
+      }),
+    );
+    const vincentkoc = makePersonalPublisher("vincentkoc", {
       displayName: "Vincent Koc",
-      linkedUserId: "users:vincentkoc",
-      publishedSkills: 0,
-      publishedPackages: 0,
-      totalInstalls: 0,
-      totalDownloads: 0,
-      totalStars: 0,
-      createdAt: 1,
-      updatedAt: 1,
-    };
+    });
     const ctx = {
       db: {
         get: vi.fn(async (id: string) => {
@@ -2136,36 +2171,23 @@ describe("publishers membership controls", () => {
   });
 
   it("finds publishers with published skills outside the popular install window", async () => {
-    const popularRows = Array.from({ length: 500 }, (_, index) => ({
-      _id: `publishers:popular-${index}`,
-      _creationTime: index,
-      kind: "user" as const,
-      handle: `popular-${index}`,
-      displayName: `Popular ${index}`,
-      linkedUserId: `users:popular-${index}`,
-      publishedSkills: 1,
-      publishedPackages: 0,
-      totalInstalls: 500 - index,
-      totalDownloads: 500 - index,
-      totalStars: 1,
-      createdAt: 1,
-      updatedAt: 1,
-    }));
-    const vyctorbrzezowski = {
-      _id: "publishers:vyctorbrzezowski",
-      _creationTime: 1,
-      kind: "user" as const,
-      handle: "vyctorbrzezowski",
+    const popularRows = Array.from({ length: 500 }, (_, index) =>
+      makePersonalPublisher(`popular-${index}`, {
+        _creationTime: index,
+        displayName: `Popular ${index}`,
+        publishedSkills: 1,
+        totalInstalls: 500 - index,
+        totalDownloads: 500 - index,
+        totalStars: 1,
+      }),
+    );
+    const vyctorbrzezowski = makePersonalPublisher("vyctorbrzezowski", {
       displayName: "Vyctor Brzezowski",
-      linkedUserId: "users:vyctorbrzezowski",
       publishedSkills: 5,
       publishedPackages: 1,
       totalInstalls: 46,
       totalDownloads: 1288,
-      totalStars: 0,
-      createdAt: 1,
-      updatedAt: 1,
-    };
+    });
     const ctx = {
       db: {
         get: vi.fn(async (id: string) => {
@@ -2251,36 +2273,21 @@ describe("publishers membership controls", () => {
 
   it("filters hidden legacy user publishers before counting and paginating public publisher pages", async () => {
     const publisherRows = [
-      {
-        _id: "publishers:proof-banned-builder",
-        _creationTime: 1,
-        kind: "user",
-        handle: "proof-banned-builder",
+      makePersonalPublisher("proof-banned-builder", {
         displayName: "Proof Banned Builder",
         linkedUserId: undefined,
         publishedSkills: 1,
-        publishedPackages: 0,
         totalInstalls: 10,
         totalDownloads: 100,
         totalStars: 5,
-        createdAt: 1,
-        updatedAt: 1,
-      },
-      {
-        _id: "publishers:alice",
-        _creationTime: 1,
-        kind: "user",
-        handle: "alice",
+      }),
+      makePersonalPublisher("alice", {
         displayName: "Alice Labs",
-        linkedUserId: "users:alice",
         publishedSkills: 1,
-        publishedPackages: 0,
         totalInstalls: 4,
         totalDownloads: 10,
         totalStars: 1,
-        createdAt: 1,
-        updatedAt: 1,
-      },
+      }),
     ];
     const get = vi.fn(async (id: string) => {
       if (id === "users:proof-banned-builder") {
@@ -2360,21 +2367,12 @@ describe("publishers membership controls", () => {
 
   it("lists official creators and organizations from the official publisher index", async () => {
     const publishers = [
-      {
-        _id: "publishers:steipete",
-        _creationTime: 1,
-        kind: "user",
-        handle: "steipete",
-        displayName: "steipete",
-        linkedUserId: "users:steipete",
+      makePersonalPublisher("steipete", {
         publishedSkills: 1,
-        publishedPackages: 0,
         totalInstalls: 85_400,
         totalDownloads: 100_000,
         totalStars: 100,
-        createdAt: 1,
-        updatedAt: 1,
-      },
+      }),
       {
         _id: "publishers:openclaw",
         _creationTime: 2,
@@ -2431,12 +2429,7 @@ describe("publishers membership controls", () => {
         query: vi.fn((table: string) => ({
           withIndex: vi.fn((indexName: string, buildQuery?: (q: unknown) => unknown) => {
             const fields: Record<string, unknown> = {};
-            const q = {
-              eq: (field: string, value: unknown) => {
-                fields[field] = value;
-                return q;
-              },
-            };
+            const q = chainEq(fields);
             buildQuery?.(q);
 
             if (table === "officialPublishers" && indexName === "by_created") {
@@ -2486,20 +2479,14 @@ describe("publishers membership controls", () => {
 
   it("orders and renders public publisher card previews by downloads", async () => {
     const publisherRows = [
-      {
-        _id: "publishers:openclaw",
-        _creationTime: 1,
-        kind: "org",
-        handle: "openclaw",
+      makeOrgPublisher("openclaw", {
         displayName: "OpenClaw",
         publishedSkills: 1,
         publishedPackages: 4,
         totalInstalls: 20,
         totalDownloads: 364,
         totalStars: 2,
-        createdAt: 1,
-        updatedAt: 1,
-      },
+      }),
     ];
     const skillRows = [
       {
@@ -2657,17 +2644,7 @@ describe("publishers membership controls", () => {
   });
 
   it("omits private packages from public directory previews when counters are missing", async () => {
-    const publisherRows = [
-      {
-        _id: "publishers:openclaw",
-        _creationTime: 1,
-        kind: "org",
-        handle: "openclaw",
-        displayName: "OpenClaw",
-        createdAt: 1,
-        updatedAt: 1,
-      },
-    ];
+    const publisherRows = [makeOrgPublisherIdentity("openclaw", "OpenClaw")];
     const packageRows = [
       {
         _id: "packages:secret-package",
@@ -2772,21 +2749,16 @@ describe("publishers membership controls", () => {
   });
 
   it("does not hydrate every publisher catalog preview before filtering public publisher pages", async () => {
-    const publisherRows = Array.from({ length: 120 }, (_, index) => ({
-      _id: `publishers:user-${index}`,
-      _creationTime: index,
-      kind: "user",
-      handle: `user-${index}`,
-      displayName: `User ${index}`,
-      linkedUserId: `users:user-${index}`,
-      publishedSkills: 1,
-      publishedPackages: 0,
-      totalInstalls: 120 - index,
-      totalDownloads: 120 - index,
-      totalStars: 1,
-      createdAt: 1,
-      updatedAt: 1,
-    }));
+    const publisherRows = Array.from({ length: 120 }, (_, index) =>
+      makePersonalPublisher(`user-${index}`, {
+        _creationTime: index,
+        displayName: `User ${index}`,
+        publishedSkills: 1,
+        totalInstalls: 120 - index,
+        totalDownloads: 120 - index,
+        totalStars: 1,
+      }),
+    );
     const get = vi.fn(async (id: string) => ({ _id: id, image: `https://github.com/${id}.png` }));
     const ownerPublisherQueries: string[] = [];
     const ctx = {
@@ -2841,21 +2813,16 @@ describe("publishers membership controls", () => {
   });
 
   it("ranks bounded legacy publishers missing download aggregates before paginating", async () => {
-    const rankedPublisherRows = Array.from({ length: 2 }, (_, index) => ({
-      _id: `publishers:user-${index}`,
-      _creationTime: index,
-      kind: "user",
-      handle: `user-${index}`,
-      displayName: `User ${index}`,
-      linkedUserId: `users:user-${index}`,
-      publishedSkills: 1,
-      publishedPackages: 0,
-      totalInstalls: 500 - index,
-      totalDownloads: 500 - index,
-      totalStars: 1,
-      createdAt: 1,
-      updatedAt: 1,
-    }));
+    const rankedPublisherRows = Array.from({ length: 2 }, (_, index) =>
+      makePersonalPublisher(`user-${index}`, {
+        _creationTime: index,
+        displayName: `User ${index}`,
+        publishedSkills: 1,
+        totalInstalls: 500 - index,
+        totalDownloads: 500 - index,
+        totalStars: 1,
+      }),
+    );
     const legacyFillerRows = Array.from({ length: 500 }, (_, index) => ({
       _id: `publishers:legacy-filler-${index}`,
       _creationTime: 100 + index,
@@ -2990,21 +2957,16 @@ describe("publishers membership controls", () => {
   });
 
   it("does not hydrate publisher catalog previews when a public publisher search has no matches", async () => {
-    const publisherRows = Array.from({ length: 120 }, (_, index) => ({
-      _id: `publishers:user-${index}`,
-      _creationTime: index,
-      kind: "user",
-      handle: `user-${index}`,
-      displayName: `User ${index}`,
-      linkedUserId: `users:user-${index}`,
-      publishedSkills: 1,
-      publishedPackages: 0,
-      totalInstalls: 120 - index,
-      totalDownloads: 120 - index,
-      totalStars: 1,
-      createdAt: 1,
-      updatedAt: 1,
-    }));
+    const publisherRows = Array.from({ length: 120 }, (_, index) =>
+      makePersonalPublisher(`user-${index}`, {
+        _creationTime: index,
+        displayName: `User ${index}`,
+        publishedSkills: 1,
+        totalInstalls: 120 - index,
+        totalDownloads: 120 - index,
+        totalStars: 1,
+      }),
+    );
     const get = vi.fn(async (id: string) => ({ _id: id }));
     const ownerPublisherQueries: string[] = [];
     const ctx = {
@@ -3062,15 +3024,7 @@ describe("publishers membership controls", () => {
   });
 
   it("orders profile catalog items by downloads", async () => {
-    const publisher = {
-      _id: "publishers:openclaw",
-      _creationTime: 1,
-      kind: "org",
-      handle: "openclaw",
-      displayName: "OpenClaw",
-      createdAt: 1,
-      updatedAt: 1,
-    };
+    const publisher = makeOrgPublisherIdentity("openclaw", "OpenClaw");
     const packageRows = [
       {
         _id: "packages:high-download-plugin",
@@ -3172,15 +3126,7 @@ describe("publishers membership controls", () => {
   });
 
   it("preserves mixed catalog pagination when kind is omitted", async () => {
-    const publisher = {
-      _id: "publishers:openclaw",
-      _creationTime: 1,
-      kind: "org",
-      handle: "openclaw",
-      displayName: "OpenClaw",
-      createdAt: 1,
-      updatedAt: 1,
-    };
+    const publisher = makeOrgPublisherIdentity("openclaw", "OpenClaw");
     const skill = {
       _id: "skills:demo",
       _creationTime: 2,
@@ -3248,20 +3194,13 @@ describe("publishers membership controls", () => {
   });
 
   it("preserves canonical download order for legacy skills across pages", async () => {
-    const publisher = {
-      _id: "publishers:legacy",
-      _creationTime: 1,
-      kind: "org",
-      handle: "legacy",
+    const publisher = makeOrgPublisher("legacy", {
       displayName: "Legacy",
-      publishedSkills: 2,
       publishedPackages: 0,
       totalInstalls: 4,
       totalDownloads: 77,
       totalStars: 2,
-      createdAt: 1,
-      updatedAt: 1,
-    };
+    });
     const highDownloadLegacySkill = {
       _id: "skills:legacy-high",
       _creationTime: 1,
@@ -3350,20 +3289,13 @@ describe("publishers membership controls", () => {
   });
 
   it("resumes untagged pre-index cursors with the original comparator across backfill", async () => {
-    const publisher = {
-      _id: "publishers:preindex",
-      _creationTime: 1,
-      kind: "org",
-      handle: "preindex",
+    const publisher = makeOrgPublisher("preindex", {
       displayName: "Pre-index",
       publishedSkills: 3,
       publishedPackages: 0,
-      totalInstalls: 3,
       totalDownloads: 30,
       totalStars: 6,
-      createdAt: 1,
-      updatedAt: 1,
-    };
+    });
     const originalRows = [
       {
         _id: "skills:old-a",
@@ -3449,32 +3381,57 @@ describe("publishers membership controls", () => {
   });
 
   it("uses complete profile counters without reading resource or star tables", async () => {
-    const publisher = {
-      _id: "publishers:openclaw",
-      _creationTime: 1,
-      kind: "org",
-      handle: "openclaw",
+    const publisher = makeOrgPublisher("openclaw", {
       displayName: "OpenClaw",
       publishedSkills: 3,
-      publishedPackages: 2,
+      publishedPackages: 6,
       totalInstalls: 50,
       totalDownloads: 80,
       totalStars: 7,
-      createdAt: 1,
-      updatedAt: 1,
-    };
+    });
+    const templateDigest = (overrides: Record<string, unknown>) => ({
+      family: "claw",
+      ownerHandle: "openclaw",
+      ownerPublisherId: publisher._id,
+      channel: "community",
+      latestVersion: "1.0.0",
+      stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+      ...overrides,
+    });
+    const templateDigests = [
+      templateDigest({ packageId: "packages:listed-a" }),
+      templateDigest({ packageId: "packages:listed-b", channel: "official" }),
+      // Counted by `publishedPackages`, but never listed publicly.
+      templateDigest({ packageId: "packages:private", channel: "private" }),
+      // A staged first publish has no public version and was never counted.
+      templateDigest({
+        packageId: "packages:staged",
+        latestVersion: undefined,
+        stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
+      }),
+      // Another publisher's legacy row can share a handle-keyed digest range.
+      templateDigest({ packageId: "packages:other", ownerPublisherId: "publishers:other" }),
+    ];
     const queriedTables: string[] = [];
+    const digestRanges: Array<Record<string, unknown>> = [];
     const ctx = {
       db: {
         query: vi.fn((table: string) => {
           queriedTables.push(table);
           return {
-            withIndex: vi.fn((indexName: string) => {
+            withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
               if (table === "publishers" && indexName === "by_handle") {
                 return { unique: vi.fn(async () => publisher) };
               }
               if (table === "officialPublishers" && indexName === "by_publisher") {
                 return { unique: vi.fn(async () => null) };
+              }
+              if (
+                table === "packageSearchDigest" &&
+                indexName === "by_active_family_owner_handle"
+              ) {
+                digestRanges.push(captureIndexFields(buildQuery));
+                return indexedRows(templateDigests);
               }
               throw new Error(`unexpected ${table} index ${indexName}`);
             }),
@@ -3487,25 +3444,155 @@ describe("publishers membership controls", () => {
 
     expect(result).toEqual(
       expect.objectContaining({
-        stats: { skills: 3, packages: 2, installs: 50, downloads: 80, stars: 7 },
+        stats: {
+          skills: 3,
+          packages: 6,
+          plugins: 3,
+          templates: 2,
+          installs: 50,
+          downloads: 80,
+          stars: 7,
+        },
       }),
     );
+    expect(digestRanges).toEqual([
+      { softDeletedAt: undefined, family: "claw", ownerHandle: "openclaw" },
+    ]);
     expect(result).not.toHaveProperty("publishedItems");
     expect(queriedTables).not.toContain("skills");
     expect(queriedTables).not.toContain("packages");
     expect(queriedTables).not.toContain("stars");
   });
 
-  it("computes OG metadata stats when publisher denormalized stats are missing", async () => {
-    const publisher = {
-      _id: "publishers:openclaw",
+  it("lists templates on their own profile tab instead of among plugins", async () => {
+    const publisher = makeOrgPublisherIdentity("openclaw", "OpenClaw");
+    const packageRow = (overrides: Record<string, unknown>) => ({
       _creationTime: 1,
-      kind: "org",
-      handle: "openclaw",
-      displayName: "OpenClaw",
-      createdAt: 1,
+      ownerPublisherId: "publishers:openclaw",
+      softDeletedAt: undefined,
+      summary: null,
+      channel: "community",
+      scanStatus: "clean",
       updatedAt: 1,
+      ...overrides,
+    });
+    // Download order interleaves the two kinds, as it does for real publishers.
+    const packageRows = [
+      packageRow({
+        _id: "packages:scoped-template",
+        family: "claw",
+        name: "@openclaw/travel-copilot",
+        displayName: "Travel Copilot",
+        stats: { downloads: 40, installs: 4, stars: 0, versions: 1 },
+      }),
+      packageRow({
+        _id: "packages:code-plugin",
+        family: "code-plugin",
+        name: "@openclaw/pet",
+        displayName: "OpenClaw Pet",
+        stats: { downloads: 30, installs: 3, stars: 0, versions: 1 },
+      }),
+      packageRow({
+        _id: "packages:unscoped-template",
+        family: "claw",
+        name: "meal-planner",
+        displayName: "Meal Planner",
+        stats: { downloads: 20, installs: 2, stars: 0, versions: 1 },
+      }),
+      packageRow({
+        _id: "packages:bundle-plugin",
+        family: "bundle-plugin",
+        name: "openclaw-travel-themes",
+        displayName: "Travel Themes",
+        stats: { downloads: 10, installs: 1, stars: 0, versions: 1 },
+      }),
+      packageRow({
+        _id: "packages:private-template",
+        family: "claw",
+        name: "@openclaw/private-template",
+        displayName: "Private Template",
+        channel: "private",
+        stats: { downloads: 5, installs: 0, stars: 0, versions: 1 },
+      }),
+    ];
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => (id === "publishers:openclaw" ? publisher : null)),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields = captureIndexFields(buildQuery);
+            if (table === "publishers" && indexName === "by_handle") {
+              return {
+                unique: vi.fn(async () => (fields.handle === "openclaw" ? publisher : null)),
+              };
+            }
+            if (table === "skills") return indexedRows([]);
+            if (table === "packages") return indexedRows(packageRows);
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return { unique: vi.fn(async () => null) };
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
     };
+    const list = (kind: "plugin" | "template" | undefined, cursor: string | null, numItems = 24) =>
+      listPublishedPageHandler(ctx as never, {
+        handle: "openclaw",
+        kind,
+        sort: "downloads",
+        paginationOpts: { cursor, numItems },
+      });
+    const summarize = (page: Array<{ displayName: string; kind: string; href: string }>) =>
+      page.map((item) => [item.displayName, item.kind, item.href]);
+
+    const expectedPlugins = [
+      ["OpenClaw Pet", "plugin", "/plugins/@openclaw/pet"],
+      ["Travel Themes", "plugin", "/plugins/openclaw-travel-themes"],
+    ];
+    const expectedTemplates = [
+      ["Travel Copilot", "template", "/openclaw/templates/travel-copilot"],
+      ["Meal Planner", "template", "/openclaw/templates/meal-planner"],
+    ];
+
+    for (const cursor of [null, "legacy:0", "preindex:0"]) {
+      expect(summarize((await list("plugin", cursor)).page)).toEqual(expectedPlugins);
+      expect(summarize((await list("template", cursor)).page)).toEqual(expectedTemplates);
+    }
+
+    // The family filter runs before the page is cut, so mixed publishers get full pages.
+    const firstTemplatePage = await list("template", null, 1);
+    const secondTemplatePage = await list("template", firstTemplatePage.continueCursor, 1);
+    expect(summarize(firstTemplatePage.page)).toEqual([expectedTemplates[0]]);
+    expect(firstTemplatePage.isDone).toBe(false);
+    expect(summarize(secondTemplatePage.page)).toEqual([expectedTemplates[1]]);
+
+    // A client splits an oversized page by reusing `splitCursor` as the first
+    // half's end and the second half's start. Both halves must cover the page once.
+    const wholePage = await list("plugin", null, 2);
+    expect(wholePage.splitCursor).toBe("indexed:1");
+    const splitHalf = (cursor: string | null, endCursor: string) =>
+      listPublishedPageHandler(ctx as never, {
+        handle: "openclaw",
+        kind: "plugin",
+        sort: "downloads",
+        paginationOpts: { cursor, endCursor, numItems: 2 },
+      });
+    const firstHalf = await splitHalf(null, wholePage.splitCursor as string);
+    const secondHalf = await splitHalf(wholePage.splitCursor as string, "indexed:2");
+    expect(summarize([...firstHalf.page, ...secondHalf.page])).toEqual(expectedPlugins);
+
+    // The unfiltered catalog keeps every public package and labels each kind.
+    expect(summarize((await list(undefined, null)).page)).toEqual([
+      expectedTemplates[0],
+      expectedPlugins[0],
+      expectedTemplates[1],
+      expectedPlugins[1],
+    ]);
+  });
+
+  it("computes OG metadata stats when publisher denormalized stats are missing", async () => {
+    const publisher = makeOrgPublisherIdentity("openclaw", "OpenClaw");
     const skill = {
       _id: "skills:demo",
       ownerPublisherId: "publishers:openclaw",
@@ -3558,18 +3645,9 @@ describe("publishers membership controls", () => {
   });
 
   it("returns verified visible organization affiliations for user OG metadata", async () => {
-    const personalPublisher = {
-      _id: "publishers:teoslayer",
-      _creationTime: 1,
-      kind: "user",
+    const personalPublisher = makePersonalPublisher("teoslayer", {
       userId: "users:teoslayer",
-      linkedUserId: "users:teoslayer",
-      handle: "teoslayer",
       displayName: null,
-      createdAt: 1,
-      updatedAt: 1,
-      publishedSkills: 0,
-      publishedPackages: 0,
       totalInstalls: 3,
       totalDownloads: 10,
       totalStars: 4,
@@ -3578,7 +3656,7 @@ describe("publishers membership controls", () => {
       statsInstallsAllTime: 3,
       statsStars: 4,
       stats: { downloads: 10, installsCurrent: 2, installsAllTime: 3, stars: 4 },
-    };
+    });
     const user = {
       _id: "users:teoslayer",
       handle: "teoslayer",
@@ -3681,17 +3759,8 @@ describe("publishers membership controls", () => {
   });
 
   it("bounds raw membership rows scanned for user OG metadata", async () => {
-    const personalPublisher = {
-      _id: "publishers:teoslayer",
-      _creationTime: 1,
-      kind: "user",
-      linkedUserId: "users:teoslayer",
-      handle: "teoslayer",
+    const personalPublisher = makePersonalPublisher("teoslayer", {
       displayName: null,
-      createdAt: 1,
-      updatedAt: 1,
-      publishedSkills: 0,
-      publishedPackages: 0,
       totalInstalls: 3,
       totalDownloads: 10,
       totalStars: 4,
@@ -3700,7 +3769,7 @@ describe("publishers membership controls", () => {
       statsInstallsAllTime: 3,
       statsStars: 4,
       stats: { downloads: 10, installsCurrent: 2, installsAllTime: 3, stars: 4 },
-    };
+    });
     const user = {
       _id: "users:teoslayer",
       handle: "teoslayer",
@@ -3756,15 +3825,7 @@ describe("publishers membership controls", () => {
   });
 
   it("excludes hidden and removed skills from publisher catalogs", async () => {
-    const publisher = {
-      _id: "publishers:nvidia",
-      _creationTime: 1,
-      kind: "org",
-      handle: "nvidia",
-      displayName: "NVIDIA",
-      createdAt: 1,
-      updatedAt: 1,
-    };
+    const publisher = makeOrgPublisherIdentity("nvidia", "NVIDIA");
     const skillRows = [
       {
         _id: "skills:visible",
@@ -3846,15 +3907,7 @@ describe("publishers membership controls", () => {
     // render the same custom glyph that SkillCard / SkillListItem show on
     // /skills and /search. Public plugin icons mirror browse cards, but private
     // plugin URLs must not leak through public publisher profiles.
-    const publisher = {
-      _id: "publishers:openclaw",
-      _creationTime: 1,
-      kind: "org",
-      handle: "openclaw",
-      displayName: "OpenClaw",
-      createdAt: 1,
-      updatedAt: 1,
-    };
+    const publisher = makeOrgPublisherIdentity("openclaw", "OpenClaw");
     const ctx = {
       db: {
         get: vi.fn(async (id: string) => (id === "publishers:openclaw" ? publisher : null)),
@@ -4021,15 +4074,7 @@ describe("publishers membership controls", () => {
   });
 
   it("omits private packages from every public publisher catalog page", async () => {
-    const publisher = {
-      _id: "publishers:openclaw",
-      _creationTime: 1,
-      kind: "org",
-      handle: "openclaw",
-      displayName: "OpenClaw",
-      createdAt: 1,
-      updatedAt: 1,
-    };
+    const publisher = makeOrgPublisherIdentity("openclaw", "OpenClaw");
     const packages = [
       {
         _id: "packages:secret",
@@ -4124,15 +4169,7 @@ describe("publishers membership controls", () => {
   });
 
   it("returns GitHub-backed display manifest groups for publisher catalogs", async () => {
-    const publisher = {
-      _id: "publishers:nvidia",
-      _creationTime: 1,
-      kind: "org",
-      handle: "nvidia",
-      displayName: "NVIDIA",
-      createdAt: 1,
-      updatedAt: 1,
-    };
+    const publisher = makeOrgPublisherIdentity("nvidia", "NVIDIA");
     const githubSource = {
       _id: "githubSkillSources:nvidia",
       repo: "NVIDIA/skills",
@@ -4255,15 +4292,7 @@ describe("publishers membership controls", () => {
   });
 
   it("falls back to the normal catalog when no valid display manifest exists", async () => {
-    const publisher = {
-      _id: "publishers:nvidia",
-      _creationTime: 1,
-      kind: "org",
-      handle: "nvidia",
-      displayName: "NVIDIA",
-      createdAt: 1,
-      updatedAt: 1,
-    };
+    const publisher = makeOrgPublisherIdentity("nvidia", "NVIDIA");
     const ctx = {
       db: {
         get: vi.fn(async (id: string) => (id === "publishers:nvidia" ? publisher : null)),
@@ -4630,31 +4659,7 @@ describe("publishers membership controls", () => {
           }
           return null;
         }),
-        query: vi.fn((table: string) => {
-          if (table === "publisherMembers") {
-            return {
-              withIndex: vi.fn(
-                (
-                  _indexName: string,
-                  builder: (q: { eq: (field: string, value: string) => unknown }) => unknown,
-                ) => {
-                  let userId = "";
-                  const q = {
-                    eq: (field: string, value: string) => {
-                      if (field === "userId") userId = value;
-                      return q;
-                    },
-                  };
-                  builder(q);
-                  return {
-                    unique: vi.fn().mockResolvedValue(memberships[userId] ?? null),
-                  };
-                },
-              ),
-            };
-          }
-          throw new Error(`unexpected table ${table}`);
-        }),
+        query: makeUserMembershipQuery(memberships),
         delete: vi.fn(),
         insert: vi.fn(),
         patch: vi.fn(),
@@ -4704,31 +4709,7 @@ describe("publishers membership controls", () => {
           }
           return null;
         }),
-        query: vi.fn((table: string) => {
-          if (table === "publisherMembers") {
-            return {
-              withIndex: vi.fn(
-                (
-                  _indexName: string,
-                  builder: (q: { eq: (field: string, value: string) => unknown }) => unknown,
-                ) => {
-                  let userId = "";
-                  const q = {
-                    eq: (field: string, value: string) => {
-                      if (field === "userId") userId = value;
-                      return q;
-                    },
-                  };
-                  builder(q);
-                  return {
-                    unique: vi.fn().mockResolvedValue(memberships[userId] ?? null),
-                  };
-                },
-              ),
-            };
-          }
-          throw new Error(`unexpected table ${table}`);
-        }),
+        query: makeUserMembershipQuery(memberships),
         delete: vi.fn(),
         insert: vi.fn(),
         patch: vi.fn(),
@@ -4998,17 +4979,10 @@ describe("publishers membership controls", () => {
             };
           }
           if (id === "publishers:jaredforreal") {
-            return {
+            return makeUserPublisherIdentity("jaredforreal", "Jared", {
               _id: id,
-              _creationTime: 1,
-              kind: "user",
-              handle: "jaredforreal",
-              displayName: "Jared",
               linkedUserId: "users:jared",
-              trustedPublisher: false,
-              createdAt: 1,
-              updatedAt: 1,
-            };
+            });
           }
           return null;
         }),
@@ -5076,30 +5050,14 @@ describe("publishers membership controls", () => {
                   return {
                     unique: vi.fn(async () => {
                       if (indexName === "by_handle" && handle === "jaredforreal") {
-                        return {
-                          _id: "publishers:jaredforreal",
-                          _creationTime: 1,
-                          kind: "user",
-                          handle: "jaredforreal",
-                          displayName: "Jared",
+                        return makeUserPublisherIdentity("jaredforreal", "Jared", {
                           linkedUserId: "users:jared",
-                          trustedPublisher: false,
-                          createdAt: 1,
-                          updatedAt: 1,
-                        };
+                        });
                       }
                       if (indexName === "by_linked_user" && linkedUserId === "users:jared") {
-                        return {
-                          _id: "publishers:jaredforreal",
-                          _creationTime: 1,
-                          kind: "user",
-                          handle: "jaredforreal",
-                          displayName: "Jared",
+                        return makeUserPublisherIdentity("jaredforreal", "Jared", {
                           linkedUserId: "users:jared",
-                          trustedPublisher: false,
-                          createdAt: 1,
-                          updatedAt: 1,
-                        };
+                        });
                       }
                       return null;
                     }),
@@ -5130,6 +5088,25 @@ describe("publishers membership controls", () => {
     expect(insert).not.toHaveBeenCalledWith("publisherMembers", expect.anything());
     expect(ctx.db.patch).not.toHaveBeenCalled();
   });
+
+  const publisherInviteDefaults = {
+    publisherId: "publishers:org",
+    inviterUserId: "users:owner",
+    targetHandle: "target",
+    targetUserId: "users:target",
+    role: "publisher",
+    status: "pending",
+    createdAt: 9_000,
+    updatedAt: 9_000,
+    expiresAt: 20_000,
+  };
+
+  function makePublisherInvite(
+    _id: string,
+    overrides: Partial<typeof publisherInviteDefaults> = {},
+  ) {
+    return { _id, ...publisherInviteDefaults, ...overrides };
+  }
 
   function makeInviteCtx(options?: {
     authUserId?: string;
@@ -5532,20 +5509,7 @@ describe("publishers membership controls", () => {
   it("rejects duplicate active member invitations", async () => {
     const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10_000);
     const { ctx } = makeInviteCtx({
-      invites: [
-        {
-          _id: "publisherInvites:existing",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
-          targetHandle: "target",
-          targetUserId: "users:target",
-          role: "publisher",
-          status: "pending",
-          createdAt: 9_000,
-          updatedAt: 9_000,
-          expiresAt: 20_000,
-        },
-      ],
+      invites: [makePublisherInvite("publisherInvites:existing")],
     });
     try {
       await expect(
@@ -5563,30 +5527,12 @@ describe("publishers membership controls", () => {
     const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10_000);
     const { ctx, insert } = makeInviteCtx({
       invites: [
-        {
-          _id: "publisherInvites:expired",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
-          targetHandle: "target",
-          targetUserId: "users:target",
-          role: "publisher",
-          status: "pending",
+        makePublisherInvite("publisherInvites:expired", {
           createdAt: 1_000,
           updatedAt: 1_000,
           expiresAt: 9_000,
-        },
-        {
-          _id: "publisherInvites:active",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
-          targetHandle: "target",
-          targetUserId: "users:target",
-          role: "publisher",
-          status: "pending",
-          createdAt: 9_000,
-          updatedAt: 9_000,
-          expiresAt: 20_000,
-        },
+        }),
+        makePublisherInvite("publisherInvites:active"),
       ],
     });
     try {
@@ -5607,18 +5553,11 @@ describe("publishers membership controls", () => {
     const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10_000);
     const { ctx, insert } = makeInviteCtx({
       invites: [
-        {
-          _id: "publisherInvites:expired",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
-          targetHandle: "target",
-          targetUserId: "users:target",
-          role: "publisher",
-          status: "pending",
+        makePublisherInvite("publisherInvites:expired", {
           createdAt: 1_000,
           updatedAt: 1_000,
           expiresAt: 9_000,
-        },
+        }),
       ],
     });
     try {
@@ -5647,18 +5586,9 @@ describe("publishers membership controls", () => {
     const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10_000);
     const { ctx, insert } = makeInviteCtx({
       invites: [
-        {
-          _id: "publisherInvites:active",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
+        makePublisherInvite("publisherInvites:active", {
           targetHandle: "target-personal",
-          targetUserId: "users:target",
-          role: "publisher",
-          status: "pending",
-          createdAt: 9_000,
-          updatedAt: 9_000,
-          expiresAt: 20_000,
-        },
+        }),
       ],
     });
     try {
@@ -5679,18 +5609,9 @@ describe("publishers membership controls", () => {
     const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10_000);
     const { ctx, insert } = makeInviteCtx({
       invites: [
-        {
-          _id: "publisherInvites:old-target",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
-          targetHandle: "target",
+        makePublisherInvite("publisherInvites:old-target", {
           targetUserId: "users:stranger",
-          role: "publisher",
-          status: "pending",
-          createdAt: 9_000,
-          updatedAt: 9_000,
-          expiresAt: 20_000,
-        },
+        }),
       ],
     });
     try {
@@ -5720,18 +5641,9 @@ describe("publishers membership controls", () => {
     const { ctx, insert, patch } = makeInviteCtx({
       authUserId: "users:target",
       invites: [
-        {
-          _id: "publisherInvites:accepted",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
-          targetHandle: "target",
-          targetUserId: "users:target",
+        makePublisherInvite("publisherInvites:accepted", {
           role: "admin",
-          status: "pending",
-          createdAt: 9_000,
-          updatedAt: 9_000,
-          expiresAt: 20_000,
-        },
+        }),
       ],
     });
     try {
@@ -5769,18 +5681,12 @@ describe("publishers membership controls", () => {
     const { ctx, insert, patch } = makeInviteCtx({
       authUserId: "users:target",
       invites: [
-        {
-          _id: "publisherInvites:expired",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
-          targetHandle: "target",
-          targetUserId: "users:target",
+        makePublisherInvite("publisherInvites:expired", {
           role: "admin",
-          status: "pending",
           createdAt: 1_000,
           updatedAt: 1_000,
           expiresAt: 9_000,
-        },
+        }),
       ],
     });
     try {
@@ -5806,18 +5712,9 @@ describe("publishers membership controls", () => {
       authUserId: "users:target",
       targetIsMember: true,
       invites: [
-        {
-          _id: "publisherInvites:accepted",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
-          targetHandle: "target",
-          targetUserId: "users:target",
+        makePublisherInvite("publisherInvites:accepted", {
           role: "owner",
-          status: "pending",
-          createdAt: 9_000,
-          updatedAt: 9_000,
-          expiresAt: 20_000,
-        },
+        }),
       ],
     });
     try {
@@ -5854,18 +5751,9 @@ describe("publishers membership controls", () => {
     const { ctx, insert, patch } = makeInviteCtx({
       authUserId: "users:stranger",
       invites: [
-        {
-          _id: "publisherInvites:target",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
-          targetHandle: "target",
-          targetUserId: "users:target",
+        makePublisherInvite("publisherInvites:target", {
           role: "admin",
-          status: "pending",
-          createdAt: 9_000,
-          updatedAt: 9_000,
-          expiresAt: 20_000,
-        },
+        }),
       ],
     });
 
@@ -5887,18 +5775,9 @@ describe("publishers membership controls", () => {
       authUserId: "users:stranger",
       strangerHandle: "target",
       invites: [
-        {
-          _id: "publisherInvites:target",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
-          targetHandle: "target",
-          targetUserId: "users:target",
+        makePublisherInvite("publisherInvites:target", {
           role: "admin",
-          status: "pending",
-          createdAt: 9_000,
-          updatedAt: 9_000,
-          expiresAt: 20_000,
-        },
+        }),
       ],
     });
 
@@ -5920,18 +5799,11 @@ describe("publishers membership controls", () => {
       authUserId: "users:stranger",
       strangerHandle: "target",
       invites: [
-        {
-          _id: "publisherInvites:bound-to-original",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
-          targetHandle: "target",
-          targetUserId: "users:target",
+        makePublisherInvite("publisherInvites:bound-to-original", {
           role: "admin",
-          status: "pending",
           createdAt: 8_000,
           updatedAt: 8_000,
-          expiresAt: 20_000,
-        },
+        }),
         {
           _id: "publisherInvites:handle-only",
           publisherId: "publishers:org",
@@ -5960,18 +5832,9 @@ describe("publishers membership controls", () => {
     const { ctx, patch, insert } = makeInviteCtx({
       authUserId: "users:target",
       invites: [
-        {
-          _id: "publisherInvites:target",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
-          targetHandle: "target",
-          targetUserId: "users:target",
+        makePublisherInvite("publisherInvites:target", {
           role: "admin",
-          status: "pending",
-          createdAt: 9_000,
-          updatedAt: 9_000,
-          expiresAt: 20_000,
-        },
+        }),
       ],
     });
     try {
@@ -6004,18 +5867,9 @@ describe("publishers membership controls", () => {
     const { ctx, patch, insert } = makeInviteCtx({
       authUserId: "users:stranger",
       invites: [
-        {
-          _id: "publisherInvites:target",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
-          targetHandle: "target",
-          targetUserId: "users:target",
+        makePublisherInvite("publisherInvites:target", {
           role: "admin",
-          status: "pending",
-          createdAt: 9_000,
-          updatedAt: 9_000,
-          expiresAt: 20_000,
-        },
+        }),
       ],
     });
 
@@ -6034,20 +5888,7 @@ describe("publishers membership controls", () => {
   it("lets org managers revoke pending member invitations", async () => {
     const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10_000);
     const { ctx, patch, insert } = makeInviteCtx({
-      invites: [
-        {
-          _id: "publisherInvites:pending",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
-          targetHandle: "target",
-          targetUserId: "users:target",
-          role: "publisher",
-          status: "pending",
-          createdAt: 9_000,
-          updatedAt: 9_000,
-          expiresAt: 20_000,
-        },
-      ],
+      invites: [makePublisherInvite("publisherInvites:pending")],
     });
     try {
       await expect(
@@ -6075,18 +5916,9 @@ describe("publishers membership controls", () => {
     const { ctx, patch } = makeInviteCtx({
       actorRole: "admin",
       invites: [
-        {
-          _id: "publisherInvites:pending",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
-          targetHandle: "target",
-          targetUserId: "users:target",
+        makePublisherInvite("publisherInvites:pending", {
           role: "owner",
-          status: "pending",
-          createdAt: 9_000,
-          updatedAt: 9_000,
-          expiresAt: 20_000,
-        },
+        }),
       ],
     });
     try {
@@ -6104,42 +5936,17 @@ describe("publishers membership controls", () => {
     const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10_000);
     const { ctx } = makeInviteCtx({
       invites: [
-        {
-          _id: "publisherInvites:active",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
-          targetHandle: "target",
-          targetUserId: "users:target",
+        makePublisherInvite("publisherInvites:active", {
           role: "admin",
-          status: "pending",
-          createdAt: 9_000,
-          updatedAt: 9_000,
-          expiresAt: 20_000,
-        },
-        {
-          _id: "publisherInvites:expired",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
-          targetHandle: "target",
-          targetUserId: "users:target",
-          role: "publisher",
-          status: "pending",
+        }),
+        makePublisherInvite("publisherInvites:expired", {
           createdAt: 1_000,
           updatedAt: 1_000,
           expiresAt: 9_000,
-        },
-        {
-          _id: "publisherInvites:revoked",
-          publisherId: "publishers:org",
-          inviterUserId: "users:owner",
-          targetHandle: "target",
-          targetUserId: "users:target",
-          role: "publisher",
+        }),
+        makePublisherInvite("publisherInvites:revoked", {
           status: "revoked",
-          createdAt: 9_000,
-          updatedAt: 9_000,
-          expiresAt: 20_000,
-        },
+        }),
       ],
     });
     try {
@@ -6228,17 +6035,10 @@ describe("publishers membership controls", () => {
             };
           }
           if (id === "publishers:jaredforreal") {
-            return {
+            return makeUserPublisherIdentity("jaredforreal", "Jared", {
               _id: id,
-              _creationTime: 1,
-              kind: "user",
-              handle: "jaredforreal",
-              displayName: "Jared",
               linkedUserId: "users:jared",
-              trustedPublisher: false,
-              createdAt: 1,
-              updatedAt: 1,
-            };
+            });
           }
           return null;
         }),
@@ -6309,17 +6109,9 @@ describe("publishers membership controls", () => {
                   return {
                     unique: vi.fn(async () => {
                       if (indexName === "by_linked_user" && linkedUserId === "users:jared") {
-                        return {
-                          _id: "publishers:jaredforreal",
-                          _creationTime: 1,
-                          kind: "user",
-                          handle: "jaredforreal",
-                          displayName: "Jared",
+                        return makeUserPublisherIdentity("jaredforreal", "Jared", {
                           linkedUserId: "users:jared",
-                          trustedPublisher: false,
-                          createdAt: 1,
-                          updatedAt: 1,
-                        };
+                        });
                       }
                       return null;
                     }),
@@ -6619,6 +6411,7 @@ describe("publishers membership controls", () => {
     const deleteStorage = vi.fn(async () => {});
     const ctx = {
       db: {
+        ...createMockDb(),
         get: vi.fn(async (id: string) => {
           if (id === "users:admin") return { _id: id };
           if (id === "publishers:org") {
@@ -6662,9 +6455,6 @@ describe("publishers membership controls", () => {
         }),
         patch,
         insert,
-        delete: vi.fn(),
-        replace: vi.fn(),
-        normalizeId: vi.fn(),
       },
       storage: {
         getUrl: vi.fn(async () => "https://storage.example/new-logo"),
@@ -6884,12 +6674,7 @@ describe("official publisher administration", () => {
           builder: (q: { eq: (field: string, value: string) => unknown }) => unknown,
         ) => {
           const fields: Record<string, string> = {};
-          const q = {
-            eq: (field: string, value: string) => {
-              fields[field] = value;
-              return q;
-            },
-          };
+          const q = chainEq(fields);
           builder(q);
           if (table === "publishers" && indexName === "by_handle") {
             return {
@@ -7452,28 +7237,8 @@ describe("publisher bootstrap", () => {
       },
     ];
     const publishers = {
-      "publishers:owner": {
-        _id: "publishers:owner",
-        _creationTime: 1,
-        kind: "user",
-        handle: "owner",
-        displayName: "Owner",
-        linkedUserId: "users:owner",
-        trustedPublisher: false,
-        createdAt: 1,
-        updatedAt: 1,
-      },
-      "publishers:friend": {
-        _id: "publishers:friend",
-        _creationTime: 1,
-        kind: "user",
-        handle: "friend",
-        displayName: "Friend",
-        linkedUserId: "users:friend",
-        trustedPublisher: false,
-        createdAt: 1,
-        updatedAt: 1,
-      },
+      "publishers:owner": makeUserPublisherIdentity("owner", "Owner"),
+      "publishers:friend": makeUserPublisherIdentity("friend", "Friend"),
       "publishers:team": {
         _id: "publishers:team",
         _creationTime: 1,
@@ -7558,21 +7323,13 @@ describe("publisher bootstrap", () => {
 
   it("uses complete counters for mine summaries without reading resource tables", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:alice" as never);
-    const publisher = {
-      _id: "publishers:alice",
-      _creationTime: 1,
-      kind: "user",
-      handle: "alice",
+    const publisher = makePersonalPublisher("alice", {
       displayName: "Alice",
-      linkedUserId: "users:alice",
       publishedSkills: 4,
       publishedPackages: 1,
       totalInstalls: 14,
       totalDownloads: 14,
-      totalStars: 0,
-      createdAt: 1,
-      updatedAt: 1,
-    };
+    });
     const ctx = {
       db: {
         get: vi.fn(async (id: string) => {
@@ -7628,21 +7385,13 @@ describe("publisher bootstrap", () => {
 
   it("keeps complete published items for listMine callers without the lightweight opt-out", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:alice" as never);
-    const publisher = {
-      _id: "publishers:alice",
-      _creationTime: 1,
-      kind: "user",
-      handle: "alice",
+    const publisher = makePersonalPublisher("alice", {
       displayName: "Alice",
-      linkedUserId: "users:alice",
       publishedSkills: 1,
       publishedPackages: 1,
       totalInstalls: 3,
       totalDownloads: 5,
-      totalStars: 0,
-      createdAt: 1,
-      updatedAt: 1,
-    };
+    });
     const ctx = {
       db: {
         get: vi.fn(async (id: string) => {
@@ -7727,17 +7476,7 @@ describe("publisher bootstrap", () => {
 
   it("loads every published item only from deletion inventory", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:alice" as never);
-    const publisher = {
-      _id: "publishers:alice",
-      _creationTime: 1,
-      kind: "user",
-      handle: "alice",
-      displayName: "Alice",
-      linkedUserId: "users:alice",
-      trustedPublisher: false,
-      createdAt: 1,
-      updatedAt: 1,
-    };
+    const publisher = makeUserPublisherIdentity("alice", "Alice");
     const skills = Array.from({ length: 4 }, (_, index) => ({
       _id: `skills:tool-${index}`,
       _creationTime: index,
@@ -8405,6 +8144,7 @@ describe("legacy publisher migration", () => {
       ],
     ]);
     const baseSkill = {
+      ...createActiveSkillSeedDefaults(),
       _id: "skills:legacy-skill",
       slug: "demo-skill",
       displayName: "Demo Skill",
@@ -8412,8 +8152,6 @@ describe("legacy publisher migration", () => {
       ownerUserId: options.unexpectedResourceOwner ? "users:someone-else" : "users:legacy",
       ownerPublisherId: "publishers:gingiris",
       forkOf: undefined,
-      tags: {},
-      badges: {},
       stats: {
         downloads: 99,
         stars: 19,
@@ -8424,8 +8162,6 @@ describe("legacy publisher migration", () => {
       statsDownloads: 12,
       statsStars: 3,
       moderationStatus: "approved",
-      createdAt: 1,
-      updatedAt: 1,
     };
     const skills = new Map<string, Record<string, unknown>>(
       options.legacyResources
@@ -8475,22 +8211,17 @@ describe("legacy publisher migration", () => {
         : [],
     );
     const basePackage = {
+      ...createPackageSeedDefaults(),
       _id: "packages:legacy-package",
       name: "@gingiris/demo-plugin",
       normalizedName: "@gingiris/demo-plugin",
       displayName: "Demo Plugin",
       ownerUserId: "users:legacy",
       ownerPublisherId: "publishers:gingiris",
-      family: "code-plugin",
-      channel: "community",
-      isOfficial: false,
-      tags: {},
       compatibility: {},
       verification: {},
       scanStatus: "pending",
       stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
-      createdAt: 1,
-      updatedAt: 1,
     };
     const packages = new Map<string, Record<string, unknown>>(
       options.legacyResources ? [["packages:legacy-package", basePackage]] : [],
@@ -8633,12 +8364,7 @@ describe("legacy publisher migration", () => {
           builder?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
         ) => {
           const fields: Record<string, unknown> = {};
-          const q = {
-            eq: (field: string, value: unknown) => {
-              fields[field] = value;
-              return q;
-            },
-          };
+          const q = chainEq(fields);
           builder?.(q);
           const indexedQuery = {
             unique: vi.fn(async () => {
@@ -9290,6 +9016,7 @@ describe("legacy publisher migration", () => {
     const deleteStorage = vi.fn(async () => {});
     const ctx = {
       db: {
+        ...createMockDb(),
         get: vi.fn(async (id: string) => {
           if (id === "users:admin") return { _id: id, role: "admin" };
           return null;
@@ -9302,9 +9029,6 @@ describe("legacy publisher migration", () => {
         })),
         patch,
         insert: vi.fn(async () => "auditLogs:1"),
-        delete: vi.fn(),
-        replace: vi.fn(),
-        normalizeId: vi.fn(),
       },
       storage: {
         getUrl: vi.fn(async () => "https://storage.example/new-logo"),
@@ -9569,17 +9293,7 @@ describe("legacy publisher migration", () => {
     const publishers = new Map<string, Record<string, unknown>>([
       [
         "publishers:openclaw",
-        {
-          _id: "publishers:openclaw",
-          _creationTime: 1,
-          kind: "user",
-          handle: "openclaw",
-          displayName: "OpenClaw",
-          linkedUserId: "users:openclaw",
-          trustedPublisher: true,
-          createdAt: 1,
-          updatedAt: 1,
-        },
+        makeUserPublisherIdentity("openclaw", "OpenClaw", { trustedPublisher: true }),
       ],
     ]);
     const packages = [

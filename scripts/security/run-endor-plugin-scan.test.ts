@@ -106,9 +106,11 @@ describe("runEndorPluginScan", () => {
         name: "fixture-plugin",
         dependencies: { "runtime-workspace": "workspace:*", lodash: "4.17.20" },
         devDependencies: { "dev-workspace": "workspace:^", typescript: "6.0.3" },
+        packageManager: "pnpm@10.33.2",
       })}\n`,
     );
     await writeFile(join(root, "npm-shrinkwrap.json"), '{"lockfileVersion":3}\n');
+    await writeFile(join(root, "pnpm-workspace.yaml"), "allowBuilds:\n  esbuild: true\n");
     await writeFile(
       join(workspace, "docker-run-stdout"),
       report([
@@ -159,12 +161,22 @@ describe("runEndorPluginScan", () => {
     await expect(
       readFile(join(workspace, "endor-artifact", "package-lock.json"), "utf8"),
     ).resolves.toContain('"lockfileVersion":3');
+    // Either pnpm marker makes endorctl demand the pnpm binary.
+    await expect(
+      stat(join(workspace, "endor-artifact", "pnpm-workspace.yaml")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
     // The uploaded artifact stays untouched.
     await expect(readFile(join(root, "npm-shrinkwrap.json"), "utf8")).resolves.toContain(
       '"lockfileVersion":3',
     );
     const runArgs = await dockerRunArgs(workspace);
     expect(runArgs).toContain("--rm");
+    // Without a cap, concurrent large scans exhaust the hosted runner's memory;
+    // a swap limit equal to the memory limit keeps the container off swap.
+    expect(runArgs).toEqual(expect.arrayContaining(["--memory", "--memory-swap"]));
+    const memory = runArgs[runArgs.indexOf("--memory") + 1];
+    expect(memory).toMatch(/^\d+g$/);
+    expect(runArgs[runArgs.indexOf("--memory-swap") + 1]).toBe(memory);
     expect(runArgs).toContain(
       `type=bind,source=${join(workspace, "endor-artifact")},target=/workspace,readonly`,
     );

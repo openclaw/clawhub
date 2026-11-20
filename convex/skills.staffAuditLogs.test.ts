@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
+import { indexedTake } from "../src/__tests__/helpers/convexQuery";
 
 vi.mock("./lib/access", async () => {
   const actual = await vi.importActual<typeof import("./lib/access")>("./lib/access");
@@ -102,11 +103,7 @@ function makeCtx() {
     }
 
     if (table === "skillSlugAliases") {
-      return {
-        withIndex: vi.fn(() => ({
-          take: vi.fn().mockResolvedValue([]),
-        })),
-      };
+      return indexedTake(() => []);
     }
 
     throw new Error(`Unexpected query table: ${table}`);

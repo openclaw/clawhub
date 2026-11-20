@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rename, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, rename, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import semver from "semver";
 import { apiRequest, downloadZip, fetchBinary, registryUrl } from "../../http.js";
@@ -31,6 +31,7 @@ import {
   writeSkillOrigin,
 } from "../../skills.js";
 import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
+import { pathExists } from "../fs.js";
 import { withLoaderErrorHandling } from "../loader.js";
 import { writeJsonIfRequested } from "../output.js";
 import { getRegistry } from "../registry.js";
@@ -420,7 +421,7 @@ export async function cmdInstall(
       ? requested
       : parseStoredSkillRefOrFail(lockKey);
   const target = skillTarget(opts.dir, localRef);
-  const targetExists = await fileExists(target);
+  const targetExists = await pathExists(target);
   const existingOrigin = requested.sourceRef && targetExists ? await readSkillOrigin(target) : null;
   if (requested.sourceRef) {
     assertSkillsShTargetOwnership({
@@ -705,7 +706,7 @@ export async function cmdUpdate(
     };
     try {
       const target = skillTarget(opts.dir, entryRef);
-      const exists = await fileExists(target);
+      const exists = await pathExists(target);
       const existingOrigin = exists ? await readSkillOrigin(target) : null;
       if (entryRef.sourceRef && entryRef.skillsSh) {
         assertSkillsShTargetOwnership({
@@ -1768,13 +1769,4 @@ function encodeGitHubRepo(repo: string) {
 
 function formatGitHubVersion(commit: string) {
   return commit.length > 12 ? commit.slice(0, 12) : commit;
-}
-
-async function fileExists(path: string) {
-  try {
-    await stat(path);
-    return true;
-  } catch {
-    return false;
-  }
 }

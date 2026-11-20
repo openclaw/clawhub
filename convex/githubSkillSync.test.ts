@@ -3,6 +3,7 @@ import { getFunctionName } from "convex/server";
 import { ConvexError } from "convex/values";
 import { zipSync } from "fflate";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createTableStore, type TestDbRow as Row } from "../src/__tests__/helpers/convexDb";
 import { chainEq } from "../src/__tests__/helpers/convexQuery";
 import {
   __test,
@@ -36,7 +37,76 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-type Row = Record<string, unknown> & { _id: string };
+function createPublicGitHubRepo(
+  fullName: string,
+  id: number,
+  ownerId: number,
+  defaultBranch = "main",
+) {
+  return {
+    id,
+    full_name: fullName,
+    owner: { id: ownerId },
+    private: false,
+    visibility: "public",
+    default_branch: defaultBranch,
+    disabled: false,
+  };
+}
+
+function createGitHubScan(
+  _id: string,
+  contentHash: string,
+  commit: string,
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    _id,
+    skillId: "skills:html",
+    githubSourceId: "githubSkillSources:current",
+    contentHash,
+    commit,
+    path: "skills/html",
+    status: "clean",
+    createdAt: 1,
+    updatedAt: 1,
+    ...overrides,
+  };
+}
+
+type SourceSyncArgs = Parameters<typeof applyGitHubSkillSourceSyncHandler>[1];
+
+function createPatrickSyncArgs(
+  snapshot: SourceSyncArgs["snapshot"],
+  now: number,
+  overrides: Partial<Pick<SourceSyncArgs, "sourceId" | "repo">> = {},
+): SourceSyncArgs {
+  return {
+    sourceId: "githubSkillSources:current" as never,
+    repo: "patrick-erichsen/skills",
+    ownerUserId: "users:patrick" as never,
+    ownerPublisherId: "publishers:patrick" as never,
+    githubRepositoryId: "100",
+    githubOwnerId: "200",
+    snapshot,
+    now,
+    ...overrides,
+  };
+}
+
+function createNvidiaSyncArgs(
+  snapshot: SourceSyncArgs["snapshot"],
+  sourceId: SourceSyncArgs["sourceId"] = "githubSkillSources:nvidia" as never,
+): SourceSyncArgs {
+  return {
+    sourceId,
+    repo: "NVIDIA/skills",
+    ownerUserId: "users:nvidia" as never,
+    ownerPublisherId: "publishers:nvidia" as never,
+    snapshot,
+    now: 123,
+  };
+}
 
 function createNvidiaSource() {
   return {
@@ -45,6 +115,24 @@ function createNvidiaSource() {
     ownerPublisherId: "publishers:nvidia",
     createdAt: 1,
     updatedAt: 1,
+  };
+}
+
+function createAiqDeploySkill(overrides: Record<string, unknown> = {}) {
+  return {
+    _id: "skills:aiq-deploy",
+    slug: "aiq-deploy",
+    displayName: "AIQ Deploy",
+    ownerUserId: "users:nvidia",
+    ownerPublisherId: "publishers:nvidia",
+    installKind: "github",
+    githubSourceId: "githubSkillSources:nvidia",
+    githubPath: "skills/aiq-deploy",
+    tags: {},
+    stats: { downloads: 0, stars: 0, installsCurrent: 0, installsAllTime: 0, versions: 0 },
+    createdAt: 1,
+    updatedAt: 1,
+    ...overrides,
   };
 }
 
@@ -65,20 +153,11 @@ function matches(doc: Row, constraints: Record<string, unknown>) {
 }
 
 function createDb(initial: Record<string, Row[]> = {}) {
-  const tables: Record<string, Row[]> = Object.fromEntries(
-    Object.entries(initial).map(([table, rows]) => [table, [...rows]]),
-  );
+  const { tables, list, get, patch, delete: deleteRow } = createTableStore(initial);
   const counters: Record<string, number> = {};
-  const list = (table: string) => {
-    tables[table] ??= [];
-    return tables[table];
-  };
 
   const db = {
-    get: async (id: string) => {
-      const table = id.split(":")[0] ?? "";
-      return list(table).find((row) => row._id === id) ?? null;
-    },
+    get,
     insert: async (table: string, doc: Record<string, unknown>) => {
       counters[table] = (counters[table] ?? 0) + 1;
       const inserted = {
@@ -89,21 +168,8 @@ function createDb(initial: Record<string, Row[]> = {}) {
       list(table).push(inserted);
       return inserted._id;
     },
-    patch: async (id: string, patch: Record<string, unknown>) => {
-      const table = id.split(":")[0] ?? "";
-      const row = list(table).find((candidate) => candidate._id === id);
-      if (row) {
-        for (const [key, value] of Object.entries(patch)) {
-          if (value === undefined) delete row[key];
-          else row[key] = value;
-        }
-      }
-    },
-    delete: async (id: string) => {
-      const table = id.split(":")[0] ?? "";
-      const index = list(table).findIndex((candidate) => candidate._id === id);
-      if (index >= 0) list(table).splice(index, 1);
-    },
+    patch,
+    delete: deleteRow,
     query: (table: string) => ({
       withIndex: (_indexName: string, build?: (q: ReturnType<typeof chainEq>) => unknown) => {
         const constraints: Record<string, unknown> = {};
@@ -145,6 +211,61 @@ function createDb(initial: Record<string, Row[]> = {}) {
   return { db, tables };
 }
 
+function createPendingReplacementDb(scanStatus: "malicious" | "failed") {
+  return createDb({
+    skills: [
+      {
+        _id: "skills:html",
+        slug: "html",
+        displayName: "HTML A",
+        ownerUserId: "users:patrick",
+        installKind: "github",
+        githubSourceId: "githubSkillSources:current",
+        githubPath: "skills/html",
+        githubCurrentCommit: "a".repeat(40),
+        githubCurrentContentHash: "a".repeat(64),
+        githubCurrentStatus: "present",
+        githubScanStatus: "clean",
+        githubPendingCandidateId: "githubSkillCandidates:b",
+        tags: {},
+        stats: { downloads: 0, stars: 0, versions: 0, comments: 0 },
+        moderationStatus: "active",
+        moderationFlags: [],
+        isSuspicious: false,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ],
+    githubSkillCandidates: [
+      {
+        _id: "githubSkillCandidates:b",
+        skillId: "skills:html",
+        githubSourceId: "githubSkillSources:current",
+        githubRepo: "patrick-erichsen/skills",
+        githubPath: "skills/html",
+        githubHasSkillCard: false,
+        githubCommit: "b".repeat(40),
+        githubContentHash: "b".repeat(64),
+        displayName: "HTML B",
+        skillMarkdownPath: "skills/html/SKILL.md",
+        skillMarkdown: "# HTML B\n",
+        scanStatus: "pending",
+        lifecycleStatus: "pending",
+        verdictSourceScanId: "githubSkillScans:b",
+        createdAt: 2,
+        updatedAt: 2,
+      },
+    ],
+    githubSkillScans: [
+      createGitHubScan("githubSkillScans:b", "b".repeat(64), "b".repeat(40), {
+        status: scanStatus,
+        createdAt: 2,
+        updatedAt: 3,
+      }),
+    ],
+  });
+}
+
 function createFakeGitHubSkillsRepo() {
   let commit = "a".repeat(40);
   let entries: Record<string, string> = {};
@@ -165,18 +286,9 @@ function createFakeGitHubSkillsRepo() {
       parsed.hostname === "api.github.com" &&
       parsed.pathname === "/repos/openclaw/agent-skills"
     ) {
-      return new Response(
-        JSON.stringify({
-          id: 100,
-          full_name: repo,
-          owner: { id: 200 },
-          private: false,
-          visibility: "public",
-          default_branch: defaultBranch,
-          disabled: false,
-        }),
-        { headers: { "content-type": "application/json" } },
-      );
+      return new Response(JSON.stringify(createPublicGitHubRepo(repo, 100, 200, defaultBranch)), {
+        headers: { "content-type": "application/json" },
+      });
     }
 
     if (
@@ -447,15 +559,7 @@ describe("configurePublicGitHubSkillSourceHandler", () => {
       .fn()
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({
-          id: 101,
-          full_name: "SomeoneElse/public-skills",
-          owner: { id: 201 },
-          private: false,
-          visibility: "public",
-          default_branch: "main",
-          disabled: false,
-        }),
+        json: async () => createPublicGitHubRepo("SomeoneElse/public-skills", 101, 201),
       })
       .mockResolvedValueOnce({
         ok: true,
@@ -469,15 +573,7 @@ describe("configurePublicGitHubSkillSourceHandler", () => {
       })
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({
-          id: 101,
-          full_name: "SomeoneElse/public-skills",
-          owner: { id: 201 },
-          private: false,
-          visibility: "public",
-          default_branch: "main",
-          disabled: false,
-        }),
+        json: async () => createPublicGitHubRepo("SomeoneElse/public-skills", 101, 201),
       });
 
     const result = await configurePublicGitHubSkillSourceHandler(
@@ -537,15 +633,7 @@ describe("configurePublicGitHubSkillSourceHandler", () => {
       .fn()
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({
-          id: 101,
-          full_name: "patrick-erichsen/skills",
-          owner: { id: 201 },
-          private: false,
-          visibility: "public",
-          default_branch: "main",
-          disabled: false,
-        }),
+        json: async () => createPublicGitHubRepo("patrick-erichsen/skills", 101, 201),
       })
       .mockResolvedValueOnce({
         ok: true,
@@ -559,15 +647,7 @@ describe("configurePublicGitHubSkillSourceHandler", () => {
       })
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({
-          id: 101,
-          full_name: "patrick-erichsen/skills",
-          owner: { id: 201 },
-          private: false,
-          visibility: "public",
-          default_branch: "main",
-          disabled: false,
-        }),
+        json: async () => createPublicGitHubRepo("patrick-erichsen/skills", 101, 201),
       });
 
     await expect(
@@ -680,15 +760,7 @@ describe("configurePublicGitHubSkillSourceHandler", () => {
       .fn()
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({
-          id: 102,
-          full_name: "aws/agent-toolkit-for-aws",
-          owner: { id: 202 },
-          private: false,
-          visibility: "public",
-          default_branch: "main",
-          disabled: false,
-        }),
+        json: async () => createPublicGitHubRepo("aws/agent-toolkit-for-aws", 102, 202),
       })
       .mockResolvedValueOnce({
         ok: true,
@@ -702,15 +774,7 @@ describe("configurePublicGitHubSkillSourceHandler", () => {
       })
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({
-          id: 102,
-          full_name: "aws/agent-toolkit-for-aws",
-          owner: { id: 202 },
-          private: false,
-          visibility: "public",
-          default_branch: "main",
-          disabled: false,
-        }),
+        json: async () => createPublicGitHubRepo("aws/agent-toolkit-for-aws", 102, 202),
       });
 
     await expect(
@@ -760,15 +824,7 @@ describe("configurePublicGitHubSkillSourceHandler", () => {
       .fn()
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({
-          id: 103,
-          full_name: "aws/agent-toolkit-for-aws",
-          owner: { id: 203 },
-          private: false,
-          visibility: "public",
-          default_branch: "main",
-          disabled: false,
-        }),
+        json: async () => createPublicGitHubRepo("aws/agent-toolkit-for-aws", 103, 203),
       })
       .mockResolvedValueOnce({
         ok: true,
@@ -812,15 +868,7 @@ describe("configurePublicGitHubSkillSourceHandler", () => {
     const runMutation = vi.fn();
     const fetchMock = vi.fn().mockResolvedValueOnce({
       ok: true,
-      json: async () => ({
-        id: 104,
-        full_name: "SomeoneElse/public-skills",
-        owner: { id: 204 },
-        private: false,
-        visibility: "public",
-        default_branch: "main",
-        disabled: false,
-      }),
+      json: async () => createPublicGitHubRepo("SomeoneElse/public-skills", 104, 204),
     });
 
     await expect(
@@ -854,15 +902,7 @@ describe("configurePublicGitHubSkillSourceHandler", () => {
       .fn()
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({
-          id: 105,
-          full_name: "patrick-erichsen/skills",
-          owner: { id: 205 },
-          private: false,
-          visibility: "public",
-          default_branch: "main",
-          disabled: false,
-        }),
+        json: async () => createPublicGitHubRepo("patrick-erichsen/skills", 105, 205),
       })
       .mockResolvedValueOnce({
         ok: true,
@@ -876,15 +916,7 @@ describe("configurePublicGitHubSkillSourceHandler", () => {
       })
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({
-          id: 105,
-          full_name: "someone-else/skills",
-          owner: { id: 999 },
-          private: false,
-          visibility: "public",
-          default_branch: "main",
-          disabled: false,
-        }),
+        json: async () => createPublicGitHubRepo("someone-else/skills", 105, 999),
       });
 
     await expect(
@@ -1314,18 +1346,9 @@ describe("bounded legacy GitHub source apply", () => {
       const url =
         typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
       if (url === "https://api.github.com/repos/NVIDIA/skills") {
-        return new Response(
-          JSON.stringify({
-            id: 1,
-            full_name: "NVIDIA/skills",
-            owner: { id: 2 },
-            private: false,
-            visibility: "public",
-            default_branch: "main",
-            disabled: false,
-          }),
-          { headers: { "content-type": "application/json" } },
-        );
+        return new Response(JSON.stringify(createPublicGitHubRepo("NVIDIA/skills", 1, 2)), {
+          headers: { "content-type": "application/json" },
+        });
       }
       if (url.startsWith("https://api.github.com/repos/NVIDIA/skills/commits/")) {
         return new Response(JSON.stringify({ sha: commit }), {
@@ -2133,16 +2156,10 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
       ],
     });
 
-    await applyGitHubSkillSourceSyncHandler({ db } as never, {
-      sourceId: "githubSkillSources:patrick" as never,
-      repo: "patrick-erichsen/skills",
-      ownerUserId: "users:patrick" as never,
-      ownerPublisherId: "publishers:patrick" as never,
-      githubRepositoryId: "100",
-      githubOwnerId: "200",
-      snapshot,
-      now: 100,
-    });
+    await applyGitHubSkillSourceSyncHandler(
+      { db } as never,
+      createPatrickSyncArgs(snapshot, 100, { sourceId: "githubSkillSources:patrick" as never }),
+    );
 
     expect(tables.skills[0]).toMatchObject({
       softDeletedAt: 50,
@@ -2153,32 +2170,22 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
     });
     expect(tables.githubSkillCandidates ?? []).toEqual([]);
 
-    await applyGitHubSkillSourceSyncHandler({ db } as never, {
-      sourceId: "githubSkillSources:patrick" as never,
-      repo: "patrick-erichsen/skills",
-      ownerUserId: "users:patrick" as never,
-      ownerPublisherId: "publishers:patrick" as never,
-      githubRepositoryId: "100",
-      githubOwnerId: "200",
-      snapshot: { ...snapshot, skills: [] },
-      now: 110,
-    });
+    await applyGitHubSkillSourceSyncHandler(
+      { db } as never,
+      createPatrickSyncArgs({ ...snapshot, skills: [] }, 110, {
+        sourceId: "githubSkillSources:patrick" as never,
+      }),
+    );
     expect(tables.skills[0]).toMatchObject({
       softDeletedAt: 50,
       githubRemovedAt: 110,
       githubCurrentStatus: "missing",
     });
 
-    await applyGitHubSkillSourceSyncHandler({ db } as never, {
-      sourceId: "githubSkillSources:patrick" as never,
-      repo: "patrick-erichsen/skills",
-      ownerUserId: "users:patrick" as never,
-      ownerPublisherId: "publishers:patrick" as never,
-      githubRepositoryId: "100",
-      githubOwnerId: "200",
-      snapshot,
-      now: 120,
-    });
+    await applyGitHubSkillSourceSyncHandler(
+      { db } as never,
+      createPatrickSyncArgs(snapshot, 120, { sourceId: "githubSkillSources:patrick" as never }),
+    );
     expect(tables.skills[0]).toMatchObject({
       softDeletedAt: 50,
       githubRemovedAt: 110,
@@ -2309,17 +2316,11 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
         },
       ],
       githubSkillScans: [
-        {
-          _id: "githubSkillScans:html",
-          skillId: "skills:html",
+        createGitHubScan("githubSkillScans:html", contentHash, "1".repeat(40), {
           githubSourceId: "githubSkillSources:old",
-          contentHash,
-          commit: "1".repeat(40),
-          path: "skills/html",
-          status: "clean",
           createdAt: 20,
           updatedAt: 20,
-        },
+        }),
       ],
     });
     const scheduler = { runAfter: vi.fn(async () => undefined) };
@@ -2413,32 +2414,14 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
           updatedAt: 1,
         },
       ],
-      githubSkillScans: [
-        {
-          _id: "githubSkillScans:html",
-          skillId: "skills:html",
-          githubSourceId: "githubSkillSources:current",
-          contentHash,
-          commit: "a".repeat(40),
-          path: "skills/html",
-          status: "clean",
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
+      githubSkillScans: [createGitHubScan("githubSkillScans:html", contentHash, "a".repeat(40))],
     });
     const scheduler = { runAfter: vi.fn(async () => undefined) };
 
-    await applyGitHubSkillSourceSyncHandler({ db, scheduler } as never, {
-      sourceId: "githubSkillSources:current" as never,
-      repo: "patrick-erichsen/skills",
-      ownerUserId: "users:patrick" as never,
-      ownerPublisherId: "publishers:patrick" as never,
-      githubRepositoryId: "100",
-      githubOwnerId: "200",
-      snapshot,
-      now: 2,
-    });
+    await applyGitHubSkillSourceSyncHandler(
+      { db, scheduler } as never,
+      createPatrickSyncArgs(snapshot, 2),
+    );
 
     const candidate = tables.githubSkillCandidates.find(
       (row) => row._id === tables.skills[0]?.githubPendingCandidateId,
@@ -2486,16 +2469,10 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
     });
 
     const snapshotA = { ...snapshot, commit: "a".repeat(40) };
-    await applyGitHubSkillSourceSyncHandler({ db, scheduler } as never, {
-      sourceId: "githubSkillSources:current" as never,
-      repo: "patrick-erichsen/skills",
-      ownerUserId: "users:patrick" as never,
-      ownerPublisherId: "publishers:patrick" as never,
-      githubRepositoryId: "100",
-      githubOwnerId: "200",
-      snapshot: snapshotA,
-      now: 4,
-    });
+    await applyGitHubSkillSourceSyncHandler(
+      { db, scheduler } as never,
+      createPatrickSyncArgs(snapshotA, 4),
+    );
     const candidateA = tables.githubSkillCandidates.find(
       (row) => row._id === tables.skills[0]?.githubPendingCandidateId,
     );
@@ -2510,16 +2487,10 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
       githubCurrentCandidateId: candidateA?._id,
     });
 
-    await applyGitHubSkillSourceSyncHandler({ db, scheduler } as never, {
-      sourceId: "githubSkillSources:current" as never,
-      repo: "patrick-erichsen/skills",
-      ownerUserId: "users:patrick" as never,
-      ownerPublisherId: "publishers:patrick" as never,
-      githubRepositoryId: "100",
-      githubOwnerId: "200",
-      snapshot,
-      now: 6,
-    });
+    await applyGitHubSkillSourceSyncHandler(
+      { db, scheduler } as never,
+      createPatrickSyncArgs(snapshot, 6),
+    );
     expect(tables.githubSkillCandidates).toHaveLength(2);
     expect(tables.skills[0]).toMatchObject({
       githubCurrentCommit: "b".repeat(40),
@@ -2530,16 +2501,10 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
       ...snapshot,
       repo: "patrick-erichsen/renamed-skills",
     };
-    await applyGitHubSkillSourceSyncHandler({ db, scheduler } as never, {
-      sourceId: "githubSkillSources:current" as never,
-      repo: "patrick-erichsen/renamed-skills",
-      ownerUserId: "users:patrick" as never,
-      ownerPublisherId: "publishers:patrick" as never,
-      githubRepositoryId: "100",
-      githubOwnerId: "200",
-      snapshot: redirectedSnapshot,
-      now: 7,
-    });
+    await applyGitHubSkillSourceSyncHandler(
+      { db, scheduler } as never,
+      createPatrickSyncArgs(redirectedSnapshot, 7, { repo: "patrick-erichsen/renamed-skills" }),
+    );
     const redirectCandidate = tables.githubSkillCandidates.find(
       (row) => row._id === tables.skills[0]?.githubPendingCandidateId,
     );
@@ -2601,17 +2566,10 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
         },
       ],
       githubSkillScans: [
-        {
-          _id: "githubSkillScans:b",
-          skillId: "skills:html",
-          githubSourceId: "githubSkillSources:current",
-          contentHash: "b".repeat(64),
-          commit: "b".repeat(40),
-          path: "skills/html",
-          status: "clean",
+        createGitHubScan("githubSkillScans:b", "b".repeat(64), "b".repeat(40), {
           createdAt: 2,
           updatedAt: 2,
-        },
+        }),
       ],
     });
 
@@ -2795,28 +2753,11 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
         },
       ],
       githubSkillScans: [
-        {
-          _id: "githubSkillScans:a",
-          skillId: "skills:html",
-          githubSourceId: "githubSkillSources:current",
-          contentHash: "a".repeat(64),
-          commit: "a".repeat(40),
-          path: "skills/html",
-          status: "clean",
-          createdAt: 1,
-          updatedAt: 1,
-        },
-        {
-          _id: "githubSkillScans:b",
-          skillId: "skills:html",
-          githubSourceId: "githubSkillSources:current",
-          contentHash: "b".repeat(64),
-          commit: "b".repeat(40),
-          path: "skills/html",
-          status: "clean",
+        createGitHubScan("githubSkillScans:a", "a".repeat(64), "a".repeat(40)),
+        createGitHubScan("githubSkillScans:b", "b".repeat(64), "b".repeat(40), {
           createdAt: 2,
           updatedAt: 2,
-        },
+        }),
       ],
     });
 
@@ -2939,19 +2880,7 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
           updatedAt: 4,
         },
       ],
-      githubSkillScans: [
-        {
-          _id: "githubSkillScans:html",
-          skillId: "skills:html",
-          githubSourceId: "githubSkillSources:current",
-          contentHash,
-          commit,
-          path: "skills/html",
-          status: "clean",
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
+      githubSkillScans: [createGitHubScan("githubSkillScans:html", contentHash, commit)],
     });
 
     await expect(
@@ -3025,32 +2954,14 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
           updatedAt: 2,
         },
       ],
-      githubSkillScans: [
-        {
-          _id: "githubSkillScans:html",
-          skillId: "skills:html",
-          githubSourceId: "githubSkillSources:current",
-          contentHash,
-          commit: snapshot.commit,
-          path: "skills/html",
-          status: "clean",
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
+      githubSkillScans: [createGitHubScan("githubSkillScans:html", contentHash, snapshot.commit)],
     });
     const scheduler = { runAfter: vi.fn(async () => undefined) };
 
-    await applyGitHubSkillSourceSyncHandler({ db, scheduler } as never, {
-      sourceId: "githubSkillSources:current" as never,
-      repo: "patrick-erichsen/renamed-skills",
-      ownerUserId: "users:patrick" as never,
-      ownerPublisherId: "publishers:patrick" as never,
-      githubRepositoryId: "100",
-      githubOwnerId: "200",
-      snapshot,
-      now: 3,
-    });
+    await applyGitHubSkillSourceSyncHandler(
+      { db, scheduler } as never,
+      createPatrickSyncArgs(snapshot, 3, { repo: "patrick-erichsen/renamed-skills" }),
+    );
 
     expect(tables.skills[0]).toMatchObject({
       githubCurrentRepo: "patrick-erichsen/skills",
@@ -3315,28 +3226,16 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
         },
       ],
       githubSkillScans: [
-        {
-          _id: "githubSkillScans:stale-b",
-          skillId: "skills:html",
-          githubSourceId: "githubSkillSources:current",
-          contentHash,
-          commit: "2".repeat(40),
+        createGitHubScan("githubSkillScans:stale-b", contentHash, "2".repeat(40), {
           path: "skills/html-old-pointer",
-          status: "clean",
           createdAt: 2,
           updatedAt: 2,
-        },
-        {
-          _id: "githubSkillScans:return-a",
-          skillId: "skills:html",
-          githubSourceId: "githubSkillSources:current",
-          contentHash,
-          commit: "3".repeat(40),
+        }),
+        createGitHubScan("githubSkillScans:return-a", contentHash, "3".repeat(40), {
           path: "skills/html-renamed",
-          status: "clean",
           createdAt: 3,
           updatedAt: 3,
-        },
+        }),
       ],
     });
 
@@ -3371,64 +3270,7 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
   });
 
   it("retains a rejected candidate without replacing the allowed GitHub version", async () => {
-    const { db, tables } = createDb({
-      skills: [
-        {
-          _id: "skills:html",
-          slug: "html",
-          displayName: "HTML A",
-          ownerUserId: "users:patrick",
-          installKind: "github",
-          githubSourceId: "githubSkillSources:current",
-          githubPath: "skills/html",
-          githubCurrentCommit: "a".repeat(40),
-          githubCurrentContentHash: "a".repeat(64),
-          githubCurrentStatus: "present",
-          githubScanStatus: "clean",
-          githubPendingCandidateId: "githubSkillCandidates:b",
-          tags: {},
-          stats: { downloads: 0, stars: 0, versions: 0, comments: 0 },
-          moderationStatus: "active",
-          moderationFlags: [],
-          isSuspicious: false,
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
-      githubSkillCandidates: [
-        {
-          _id: "githubSkillCandidates:b",
-          skillId: "skills:html",
-          githubSourceId: "githubSkillSources:current",
-          githubRepo: "patrick-erichsen/skills",
-          githubPath: "skills/html",
-          githubHasSkillCard: false,
-          githubCommit: "b".repeat(40),
-          githubContentHash: "b".repeat(64),
-          displayName: "HTML B",
-          skillMarkdownPath: "skills/html/SKILL.md",
-          skillMarkdown: "# HTML B\n",
-          scanStatus: "pending",
-          lifecycleStatus: "pending",
-          verdictSourceScanId: "githubSkillScans:b",
-          createdAt: 2,
-          updatedAt: 2,
-        },
-      ],
-      githubSkillScans: [
-        {
-          _id: "githubSkillScans:b",
-          skillId: "skills:html",
-          githubSourceId: "githubSkillSources:current",
-          contentHash: "b".repeat(64),
-          commit: "b".repeat(40),
-          path: "skills/html",
-          status: "malicious",
-          createdAt: 2,
-          updatedAt: 3,
-        },
-      ],
-    });
+    const { db, tables } = createPendingReplacementDb("malicious");
 
     await expect(
       applyGitHubSkillVerificationResultHandler({ db } as never, {
@@ -3454,64 +3296,7 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
   });
 
   it("keeps a failed candidate addressable so the exact scan can be retried", async () => {
-    const { db, tables } = createDb({
-      skills: [
-        {
-          _id: "skills:html",
-          slug: "html",
-          displayName: "HTML A",
-          ownerUserId: "users:patrick",
-          installKind: "github",
-          githubSourceId: "githubSkillSources:current",
-          githubPath: "skills/html",
-          githubCurrentCommit: "a".repeat(40),
-          githubCurrentContentHash: "a".repeat(64),
-          githubCurrentStatus: "present",
-          githubScanStatus: "clean",
-          githubPendingCandidateId: "githubSkillCandidates:b",
-          tags: {},
-          stats: { downloads: 0, stars: 0, versions: 0, comments: 0 },
-          moderationStatus: "active",
-          moderationFlags: [],
-          isSuspicious: false,
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
-      githubSkillCandidates: [
-        {
-          _id: "githubSkillCandidates:b",
-          skillId: "skills:html",
-          githubSourceId: "githubSkillSources:current",
-          githubRepo: "patrick-erichsen/skills",
-          githubPath: "skills/html",
-          githubHasSkillCard: false,
-          githubCommit: "b".repeat(40),
-          githubContentHash: "b".repeat(64),
-          displayName: "HTML B",
-          skillMarkdownPath: "skills/html/SKILL.md",
-          skillMarkdown: "# HTML B\n",
-          scanStatus: "pending",
-          lifecycleStatus: "pending",
-          verdictSourceScanId: "githubSkillScans:b",
-          createdAt: 2,
-          updatedAt: 2,
-        },
-      ],
-      githubSkillScans: [
-        {
-          _id: "githubSkillScans:b",
-          skillId: "skills:html",
-          githubSourceId: "githubSkillSources:current",
-          contentHash: "b".repeat(64),
-          commit: "b".repeat(40),
-          path: "skills/html",
-          status: "failed",
-          createdAt: 2,
-          updatedAt: 3,
-        },
-      ],
-    });
+    const { db, tables } = createPendingReplacementDb("failed");
 
     await applyGitHubSkillVerificationResultHandler({ db } as never, {
       skillId: "skills:html" as never,
@@ -3601,31 +3386,19 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
         },
       ],
       githubSkillScans: [
-        {
-          _id: "githubSkillScans:b",
-          skillId: "skills:html",
-          githubSourceId: "githubSkillSources:current",
-          contentHash,
-          commit: "b".repeat(40),
-          path: "skills/html",
+        createGitHubScan("githubSkillScans:b", contentHash, "b".repeat(40), {
           status: "malicious",
           createdAt: 2,
           updatedAt: 2,
-        },
+        }),
       ],
     });
     const scheduler = { runAfter: vi.fn(async () => undefined) };
 
-    await applyGitHubSkillSourceSyncHandler({ db, scheduler } as never, {
-      sourceId: "githubSkillSources:current" as never,
-      repo: "patrick-erichsen/skills",
-      ownerUserId: "users:patrick" as never,
-      ownerPublisherId: "publishers:patrick" as never,
-      githubRepositoryId: "100",
-      githubOwnerId: "200",
-      snapshot,
-      now: 3,
-    });
+    await applyGitHubSkillSourceSyncHandler(
+      { db, scheduler } as never,
+      createPatrickSyncArgs(snapshot, 3),
+    );
 
     expect(tables.skills[0]).toMatchObject({
       githubCurrentCommit: "a".repeat(40),
@@ -3754,28 +3527,11 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
         },
       ],
       githubSkillScans: [
-        {
-          _id: "githubSkillScans:a",
-          skillId: "skills:html",
-          githubSourceId: "githubSkillSources:current",
-          contentHash: "a".repeat(64),
-          commit: "a".repeat(40),
-          path: "skills/html",
-          status: "clean",
-          createdAt: 1,
-          updatedAt: 1,
-        },
-        {
-          _id: "githubSkillScans:b",
-          skillId: "skills:html",
-          githubSourceId: "githubSkillSources:current",
-          contentHash: "b".repeat(64),
-          commit: "b".repeat(40),
-          path: "skills/html",
-          status: "clean",
+        createGitHubScan("githubSkillScans:a", "a".repeat(64), "a".repeat(40)),
+        createGitHubScan("githubSkillScans:b", "b".repeat(64), "b".repeat(40), {
           createdAt: 2,
           updatedAt: 2,
-        },
+        }),
       ],
     });
 
@@ -4039,44 +3795,22 @@ description: Build HTML artifacts.
     const { db, tables } = createDb({
       githubSkillSources: [createNvidiaSource()],
       skills: [
-        {
-          _id: "skills:aiq-deploy",
-          slug: "aiq-deploy",
-          displayName: "AIQ Deploy",
-          ownerUserId: "users:nvidia",
-          ownerPublisherId: "publishers:nvidia",
-          installKind: "github",
-          githubSourceId: "githubSkillSources:nvidia",
-          githubPath: "skills/aiq-deploy",
+        createAiqDeploySkill({
           githubCurrentCommit: "1".repeat(40),
           githubCurrentContentHash: contentHash,
           githubCurrentStatus: "present",
           githubScanStatus: "clean",
           moderationStatus: "active",
           moderationVerdict: "clean",
-          tags: {},
-          stats: {
-            downloads: 0,
-            stars: 0,
-            installsCurrent: 0,
-            installsAllTime: 0,
-            versions: 0,
-          },
-          createdAt: 1,
-          updatedAt: 1,
-        },
+        }),
       ],
     });
     const scheduler = { runAfter: vi.fn(async () => undefined) };
 
-    await applyGitHubSkillSourceSyncHandler({ db, scheduler } as never, {
-      sourceId: "githubSkillSources:nvidia" as never,
-      repo: "NVIDIA/skills",
-      ownerUserId: "users:nvidia" as never,
-      ownerPublisherId: "publishers:nvidia" as never,
-      snapshot,
-      now: 123,
-    });
+    await applyGitHubSkillSourceSyncHandler(
+      { db, scheduler } as never,
+      createNvidiaSyncArgs(snapshot),
+    );
 
     expect(tables.skills[0]).toMatchObject({
       githubScanStatus: "pending",
@@ -4134,29 +3868,11 @@ description: Build HTML artifacts.
         },
       ],
       skills: [
-        {
-          _id: "skills:aiq-deploy",
-          slug: "aiq-deploy",
-          displayName: "AIQ Deploy",
-          ownerUserId: "users:nvidia",
-          ownerPublisherId: "publishers:nvidia",
-          installKind: "github",
-          githubSourceId: "githubSkillSources:nvidia",
-          githubPath: "skills/aiq-deploy",
+        createAiqDeploySkill({
           githubCurrentStatus: "present",
           githubCurrentContentHash: "old-hash",
           githubScanStatus: "clean",
-          tags: {},
-          stats: {
-            downloads: 0,
-            stars: 0,
-            installsCurrent: 0,
-            installsAllTime: 0,
-            versions: 0,
-          },
-          createdAt: 1,
-          updatedAt: 1,
-        },
+        }),
         {
           _id: "skills:vision-helper-conflict",
           slug: "vision-helper",
@@ -4177,14 +3893,10 @@ description: Build HTML artifacts.
       ],
     });
 
-    const result = await applyGitHubSkillSourceSyncHandler({ db } as never, {
-      sourceId: "githubSkillSources:nvidia" as never,
-      repo: "NVIDIA/skills",
-      ownerUserId: "users:nvidia" as never,
-      ownerPublisherId: "publishers:nvidia" as never,
-      snapshot,
-      now: 123,
-    });
+    const result = await applyGitHubSkillSourceSyncHandler(
+      { db } as never,
+      createNvidiaSyncArgs(snapshot),
+    );
 
     expect(result.stats).toMatchObject({
       discovered: 2,
@@ -4266,41 +3978,17 @@ description: Build HTML artifacts.
     const { db, tables } = createDb({
       githubSkillSources: [createNvidiaSource()],
       skills: [
-        {
-          _id: "skills:aiq-deploy",
-          slug: "aiq-deploy",
-          displayName: "AIQ Deploy",
-          ownerUserId: "users:nvidia",
-          ownerPublisherId: "publishers:nvidia",
-          installKind: "github",
-          githubSourceId: "githubSkillSources:nvidia",
-          githubPath: "skills/aiq-deploy",
+        createAiqDeploySkill({
           githubCurrentStatus: "missing",
           githubRemovedAt: 60,
           softDeletedAt: 40,
           githubScanStatus: "clean",
-          tags: {},
-          stats: {
-            downloads: 0,
-            stars: 0,
-            installsCurrent: 0,
-            installsAllTime: 0,
-            versions: 0,
-          },
-          createdAt: 1,
           updatedAt: 60,
-        },
+        }),
       ],
     });
 
-    await applyGitHubSkillSourceSyncHandler({ db } as never, {
-      sourceId: "githubSkillSources:nvidia" as never,
-      repo: "NVIDIA/skills",
-      ownerUserId: "users:nvidia" as never,
-      ownerPublisherId: "publishers:nvidia" as never,
-      snapshot,
-      now: 123,
-    });
+    await applyGitHubSkillSourceSyncHandler({ db } as never, createNvidiaSyncArgs(snapshot));
 
     expect(tables.skills[0]).toMatchObject({
       githubCurrentStatus: "missing",
@@ -4331,14 +4019,10 @@ description: Build HTML artifacts.
       ],
     });
 
-    const result = await applyGitHubSkillSourceSyncHandler({ db } as never, {
-      sourceId: "githubSkillSources:nvidia" as never,
-      repo: "NVIDIA/skills",
-      ownerUserId: "users:nvidia" as never,
-      ownerPublisherId: "publishers:nvidia" as never,
-      snapshot,
-      now: 123,
-    });
+    const result = await applyGitHubSkillSourceSyncHandler(
+      { db } as never,
+      createNvidiaSyncArgs(snapshot),
+    );
 
     expect(result.stats).toMatchObject({
       inserted: 1,
@@ -4388,15 +4072,9 @@ description: Build HTML artifacts.
         },
       ],
       skills: [
-        {
-          _id: "skills:aiq-deploy",
-          slug: "aiq-deploy",
+        createAiqDeploySkill({
           displayName: "AIQ Deploy old",
-          ownerUserId: "users:nvidia",
-          ownerPublisherId: "publishers:nvidia",
-          installKind: "github",
           githubSourceId: "githubSkillSources:deleted-nvidia",
-          githubPath: "skills/aiq-deploy",
           githubCurrentStatus: "missing",
           githubCurrentContentHash: "old-hash",
           githubScanStatus: "clean",
@@ -4404,7 +4082,6 @@ description: Build HTML artifacts.
           softDeletedAt: 60,
           moderationStatus: "hidden",
           moderationReason: "github.upstream.removed",
-          tags: {},
           statsDownloads: 7,
           statsStars: 3,
           statsInstallsCurrent: 2,
@@ -4418,21 +4095,16 @@ description: Build HTML artifacts.
             installsAllTime: 5,
             versions: 0,
           },
-          createdAt: 1,
           updatedAt: 60,
-        },
+        }),
       ],
     });
     const scheduler = { runAfter: vi.fn(async () => undefined) };
 
-    const result = await applyGitHubSkillSourceSyncHandler({ db, scheduler } as never, {
-      sourceId: "githubSkillSources:new-nvidia" as never,
-      repo: "NVIDIA/skills",
-      ownerUserId: "users:nvidia" as never,
-      ownerPublisherId: "publishers:nvidia" as never,
-      snapshot,
-      now: 123,
-    });
+    const result = await applyGitHubSkillSourceSyncHandler(
+      { db, scheduler } as never,
+      createNvidiaSyncArgs(snapshot, "githubSkillSources:new-nvidia" as never),
+    );
 
     expect(result.stats).toMatchObject({
       discovered: 1,
@@ -4532,14 +4204,10 @@ description: Build HTML artifacts.
       ),
     };
 
-    await applyGitHubSkillSourceSyncHandler({ db, scheduler } as never, {
-      sourceId: "githubSkillSources:nvidia" as never,
-      repo: "NVIDIA/skills",
-      ownerUserId: "users:nvidia" as never,
-      ownerPublisherId: "publishers:nvidia" as never,
-      snapshot,
-      now: 123,
-    });
+    await applyGitHubSkillSourceSyncHandler(
+      { db, scheduler } as never,
+      createNvidiaSyncArgs(snapshot),
+    );
 
     expect(scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), {
       skillId: "skills:new-1",
@@ -4610,30 +4278,18 @@ description: Build HTML artifacts.
     const { db } = createDb({
       githubSkillSources: [createNvidiaSource()],
       skills: [
-        {
-          _id: "skills:aiq-deploy",
-          slug: "aiq-deploy",
-          displayName: "AIQ Deploy",
-          ownerUserId: "users:nvidia",
-          ownerPublisherId: "publishers:nvidia",
-          installKind: "github",
-          githubSourceId: "githubSkillSources:nvidia",
-          githubPath: "skills/aiq-deploy",
+        createAiqDeploySkill({
           githubCurrentCommit: "1".repeat(40),
           githubCurrentContentHash: contentHash,
           githubCurrentStatus: "present",
           githubScanStatus: "pending",
-          tags: {},
           statsDownloads: 7,
           statsStars: 3,
           statsInstallsCurrent: 2,
           statsInstallsAllTime: 5,
           statsSkillsShInstalls: 17,
           statsGithubStars: 321,
-          stats: { downloads: 0, stars: 0, installsCurrent: 0, installsAllTime: 0, versions: 0 },
-          createdAt: 1,
-          updatedAt: 1,
-        },
+        }),
       ],
       githubSkillScans: [
         {
@@ -4660,14 +4316,10 @@ description: Build HTML artifacts.
     });
     const scheduler = { runAfter: vi.fn(async () => undefined) };
 
-    await applyGitHubSkillSourceSyncHandler({ db, scheduler } as never, {
-      sourceId: "githubSkillSources:nvidia" as never,
-      repo: "NVIDIA/skills",
-      ownerUserId: "users:nvidia" as never,
-      ownerPublisherId: "publishers:nvidia" as never,
-      snapshot,
-      now: 123,
-    });
+    await applyGitHubSkillSourceSyncHandler(
+      { db, scheduler } as never,
+      createNvidiaSyncArgs(snapshot),
+    );
 
     expect(scheduler.runAfter).toHaveBeenCalledTimes(0);
   });
@@ -4685,30 +4337,12 @@ description: Build HTML artifacts.
     const { db } = createDb({
       githubSkillSources: [createNvidiaSource()],
       skills: [
-        {
-          _id: "skills:aiq-deploy",
-          slug: "aiq-deploy",
-          displayName: "AIQ Deploy",
-          ownerUserId: "users:nvidia",
-          ownerPublisherId: "publishers:nvidia",
-          installKind: "github",
-          githubSourceId: "githubSkillSources:nvidia",
-          githubPath: "skills/aiq-deploy",
+        createAiqDeploySkill({
           githubCurrentCommit: "1".repeat(40),
           githubCurrentContentHash: contentHash,
           githubCurrentStatus: "present",
           githubScanStatus: "pending",
-          tags: {},
-          stats: {
-            downloads: 0,
-            stars: 0,
-            installsCurrent: 0,
-            installsAllTime: 0,
-            versions: 0,
-          },
-          createdAt: 1,
-          updatedAt: 1,
-        },
+        }),
       ],
       githubSkillScans: [
         {
@@ -4735,14 +4369,10 @@ description: Build HTML artifacts.
     });
     const scheduler = { runAfter: vi.fn(async () => undefined) };
 
-    await applyGitHubSkillSourceSyncHandler({ db, scheduler } as never, {
-      sourceId: "githubSkillSources:nvidia" as never,
-      repo: "NVIDIA/skills",
-      ownerUserId: "users:nvidia" as never,
-      ownerPublisherId: "publishers:nvidia" as never,
-      snapshot,
-      now: 123,
-    });
+    await applyGitHubSkillSourceSyncHandler(
+      { db, scheduler } as never,
+      createNvidiaSyncArgs(snapshot),
+    );
 
     expect(scheduler.runAfter).toHaveBeenCalledTimes(0);
   });
@@ -4760,30 +4390,12 @@ description: Build HTML artifacts.
     const { db, tables } = createDb({
       githubSkillSources: [createNvidiaSource()],
       skills: [
-        {
-          _id: "skills:aiq-deploy",
-          slug: "aiq-deploy",
-          displayName: "AIQ Deploy",
-          ownerUserId: "users:nvidia",
-          ownerPublisherId: "publishers:nvidia",
-          installKind: "github",
-          githubSourceId: "githubSkillSources:nvidia",
-          githubPath: "skills/aiq-deploy",
+        createAiqDeploySkill({
           githubCurrentCommit: "1".repeat(40),
           githubCurrentContentHash: contentHash,
           githubCurrentStatus: "present",
           githubScanStatus: "clean",
-          tags: {},
-          stats: {
-            downloads: 0,
-            stars: 0,
-            installsCurrent: 0,
-            installsAllTime: 0,
-            versions: 0,
-          },
-          createdAt: 1,
-          updatedAt: 1,
-        },
+        }),
       ],
       githubSkillContents: [
         {
@@ -4802,14 +4414,7 @@ description: Build HTML artifacts.
       ],
     });
 
-    await applyGitHubSkillSourceSyncHandler({ db } as never, {
-      sourceId: "githubSkillSources:nvidia" as never,
-      repo: "NVIDIA/skills",
-      ownerUserId: "users:nvidia" as never,
-      ownerPublisherId: "publishers:nvidia" as never,
-      snapshot,
-      now: 123,
-    });
+    await applyGitHubSkillSourceSyncHandler({ db } as never, createNvidiaSyncArgs(snapshot));
 
     expect(tables.githubSkillContents[0]).toMatchObject({
       githubPath: "skills/aiq-deploy",
@@ -4833,30 +4438,12 @@ description: Build HTML artifacts.
     const { db, tables } = createDb({
       githubSkillSources: [createNvidiaSource()],
       skills: [
-        {
-          _id: "skills:aiq-deploy",
-          slug: "aiq-deploy",
-          displayName: "AIQ Deploy",
-          ownerUserId: "users:nvidia",
-          ownerPublisherId: "publishers:nvidia",
-          installKind: "github",
-          githubSourceId: "githubSkillSources:nvidia",
-          githubPath: "skills/aiq-deploy",
+        createAiqDeploySkill({
           githubHasSkillCard: true,
           githubCurrentStatus: "present",
           githubCurrentContentHash: "old-hash",
           githubScanStatus: "clean",
-          tags: {},
-          stats: {
-            downloads: 0,
-            stars: 0,
-            installsCurrent: 0,
-            installsAllTime: 0,
-            versions: 0,
-          },
-          createdAt: 1,
-          updatedAt: 1,
-        },
+        }),
       ],
       githubSkillContents: [
         {
@@ -4877,14 +4464,7 @@ description: Build HTML artifacts.
       ],
     });
 
-    await applyGitHubSkillSourceSyncHandler({ db } as never, {
-      sourceId: "githubSkillSources:nvidia" as never,
-      repo: "NVIDIA/skills",
-      ownerUserId: "users:nvidia" as never,
-      ownerPublisherId: "publishers:nvidia" as never,
-      snapshot,
-      now: 123,
-    });
+    await applyGitHubSkillSourceSyncHandler({ db } as never, createNvidiaSyncArgs(snapshot));
 
     expect(tables.skills[0]).toMatchObject({ githubHasSkillCard: false });
     expect(tables.githubSkillContents[0]).toMatchObject({
@@ -4947,32 +4527,20 @@ describe("applyGitHubSkillVerificationResultHandler", () => {
   it("applies scan results only to the exact current content hash", async () => {
     const { db, tables } = createDb({
       skills: [
-        {
-          _id: "skills:aiq-deploy",
-          slug: "aiq-deploy",
-          displayName: "AIQ Deploy",
-          ownerUserId: "users:nvidia",
-          ownerPublisherId: "publishers:nvidia",
-          installKind: "github",
-          githubSourceId: "githubSkillSources:nvidia",
-          githubPath: "skills/aiq-deploy",
+        createAiqDeploySkill({
           githubCurrentCommit: "2".repeat(40),
           githubCurrentContentHash: "new-hash",
           githubCurrentStatus: "present",
           githubScanStatus: "pending",
-          tags: {},
           statsDownloads: 7,
           statsStars: 3,
           statsInstallsCurrent: 2,
           statsInstallsAllTime: 5,
           statsSkillsShInstalls: 17,
           statsGithubStars: 321,
-          stats: { downloads: 0, stars: 0, installsCurrent: 0, installsAllTime: 0, versions: 0 },
           moderationStatus: "hidden",
           moderationReason: "pending.scan",
-          createdAt: 1,
-          updatedAt: 1,
-        },
+        }),
       ],
       globalStats: [
         {

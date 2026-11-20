@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 
 import { describe, expect, it, vi } from "vitest";
+import { chainEq } from "../src/__tests__/helpers/convexQuery";
 
 vi.mock("./functions", () => ({
   action: (def: { handler: unknown }) => ({ _handler: def.handler }),
@@ -375,6 +376,20 @@ function makeCompletePageQuery<T>(getPage: () => T[]) {
   };
 }
 
+function makeOrderedCompletePageQuery<T>(getPage: () => T[]) {
+  return {
+    withIndex: () => ({
+      order: () => ({
+        paginate: async () => ({
+          page: getPage(),
+          isDone: true,
+          continueCursor: "",
+        }),
+      }),
+    }),
+  };
+}
+
 function makeCollectingRunGetter(
   modelConfig: Partial<typeof TEST_MODEL_CONFIG> = TEST_MODEL_CONFIG,
   trigger?: "manual" | "cron",
@@ -394,8 +409,17 @@ function makeCollectingRunGetter(
   }));
 }
 
-function makeFinalizingRunGetter() {
-  return vi.fn(async () => ({
+function makeFinalizingRun(
+  overrides: {
+    _id?: string;
+    modelVersion?: string;
+    modelConfig?: Partial<typeof TEST_MODEL_CONFIG>;
+    scoredPublishers?: number;
+    sumLogPressure?: number;
+    sumSquaredLogPressure?: number;
+  } = {},
+) {
+  return {
     _id: "publisherAbuseScoreRuns:run",
     status: "running",
     phase: "finalizing",
@@ -409,40 +433,35 @@ function makeFinalizingRunGetter() {
     nominatedPublishers: 0,
     sumLogPressure: 3,
     sumSquaredLogPressure: 9,
-  }));
+    ...overrides,
+  };
+}
+
+function makeFinalizingRunGetter() {
+  return vi.fn(async () => makeFinalizingRun());
 }
 
 function makeRepeatPublisherScoreQuery() {
-  return {
-    withIndex: () => ({
-      order: () => ({
-        paginate: async () => ({
-          page: [
-            {
-              _id: "publisherAbuseScores:repeat",
-              ownerKey: "publisher:publishers:repeat",
-              ownerPublisherId: "publishers:repeat",
-              ownerUserId: "users:repeat",
-              handleSnapshot: "repeat",
-              modelVersion: "publisher-abuse-pressure.v2",
-              pressure: 1000,
-              logPressure: 6,
-              publishedSkills: 1200,
-              totalInstalls: 8,
-              totalStars: 0,
-              totalDownloads: 120,
-              installsPerSkill: 0.006,
-              starsPerSkill: 0,
-              downloadsPerSkill: 0.1,
-              reasonCodes: ["high_catalog_volume"],
-            },
-          ],
-          isDone: true,
-          continueCursor: "",
-        }),
-      }),
-    }),
-  };
+  return makeOrderedCompletePageQuery(() => [
+    {
+      _id: "publisherAbuseScores:repeat",
+      ownerKey: "publisher:publishers:repeat",
+      ownerPublisherId: "publishers:repeat",
+      ownerUserId: "users:repeat",
+      handleSnapshot: "repeat",
+      modelVersion: "publisher-abuse-pressure.v2",
+      pressure: 1000,
+      logPressure: 6,
+      publishedSkills: 1200,
+      totalInstalls: 8,
+      totalStars: 0,
+      totalDownloads: 120,
+      installsPerSkill: 0.006,
+      starsPerSkill: 0,
+      downloadsPerSkill: 0.1,
+      reasonCodes: ["high_catalog_volume"],
+    },
+  ]);
 }
 
 function makeScore(
@@ -569,12 +588,7 @@ function makeOfficialPublisherLookupQuery() {
     ) => {
       expect(indexName).toBe("by_publisher");
       const constraints: Record<string, unknown> = {};
-      const q = {
-        eq(field: string, value: unknown) {
-          constraints[field] = value;
-          return q;
-        },
-      };
+      const q = chainEq(constraints);
       build(q);
       return {
         unique: async () =>
@@ -669,12 +683,7 @@ function makePublisherAbuseNominationCountQuery(nominations: unknown[] = []) {
         indexName,
       );
       const constraints: Record<string, unknown> = {};
-      const q = {
-        eq(field: string, value: unknown) {
-          constraints[field] = value;
-          return q;
-        },
-      };
+      const q = chainEq(constraints);
       build(q);
       expect(constraints.status).toBeDefined();
       return {
@@ -710,12 +719,7 @@ function makeEmptyPublisherAbuseScoreRunsQuery() {
         "by_model_version_and_temporal_pipeline_kind_and_phase_started_at",
       ]).toContain(indexName);
       const constraints: Record<string, unknown> = {};
-      const q = {
-        eq(field: string, value: unknown) {
-          constraints[field] = value;
-          return q;
-        },
-      };
+      const q = chainEq(constraints);
       build(q);
       if (indexName === "by_model_version_and_started_at") {
         expect(constraints.modelVersion).toBeTypeOf("string");
@@ -756,12 +760,7 @@ function makeAutoBanNominationQuery(
     ) => {
       expect(indexName).toBe("by_status_and_label_and_last_scored_at");
       const constraints: Record<string, unknown> = {};
-      const q = {
-        eq(field: string, value: unknown) {
-          constraints[field] = value;
-          return q;
-        },
-      };
+      const q = chainEq(constraints);
       build(q);
       expect(constraints).toEqual({
         status: "pending",
@@ -792,12 +791,7 @@ function makePublisherAbuseAutobanSettingQuery(setting: unknown) {
     ) => {
       expect(indexName).toBe("by_key_and_updated_at");
       const constraints: Record<string, unknown> = {};
-      const q = {
-        eq(field: string, value: unknown) {
-          constraints[field] = value;
-          return q;
-        },
-      };
+      const q = chainEq(constraints);
       build(q);
       expect(constraints).toEqual({ key: "publisherAbuseAutobanEnabled" });
       return {
@@ -1139,12 +1133,7 @@ describe("publisher abuse dry-run persistence", () => {
               build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
             ) => {
               const constraints: Record<string, unknown> = {};
-              const q = {
-                eq(field: string, value: unknown) {
-                  constraints[field] = value;
-                  return q;
-                },
-              };
+              const q = chainEq(constraints);
               build(q);
               return {
                 order: () => ({
@@ -3598,12 +3587,7 @@ describe("publisher abuse dry-run persistence", () => {
             build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
           ) => {
             const constraints: Record<string, unknown> = {};
-            const q = {
-              eq(field: string, value: unknown) {
-                constraints[field] = value;
-                return q;
-              },
-            };
+            const q = chainEq(constraints);
             build(q);
             if (indexName === "by_status_and_label_and_last_scored_at") {
               return {
@@ -3744,12 +3728,7 @@ describe("publisher abuse dry-run persistence", () => {
                 build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
               ) => {
                 const constraints: Record<string, unknown> = {};
-                const q = {
-                  eq(field: string, value: unknown) {
-                    constraints[field] = value;
-                    return q;
-                  },
-                };
+                const q = chainEq(constraints);
                 build(q);
                 if (indexName === "by_status_and_label_and_last_scored_at") {
                   expect(constraints).toEqual({
@@ -3916,17 +3895,7 @@ describe("publisher abuse dry-run persistence", () => {
         }),
         query: vi.fn((table: string) => {
           if (table === "publisherAbuseReviewNominations") {
-            return {
-              withIndex: () => ({
-                order: () => ({
-                  paginate: async () => ({
-                    page: [nomination],
-                    isDone: true,
-                    continueCursor: "",
-                  }),
-                }),
-              }),
-            };
+            return makeOrderedCompletePageQuery(() => [nomination]);
           }
           if (table === "officialPublishers") return makeEmptyOfficialPublishersQuery();
           throw new Error(`unexpected table ${table}`);
@@ -4059,12 +4028,7 @@ describe("publisher abuse dry-run persistence", () => {
                 build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
               ) => {
                 const constraints: Record<string, unknown> = {};
-                const q = {
-                  eq(field: string, value: unknown) {
-                    constraints[field] = value;
-                    return q;
-                  },
-                };
+                const q = chainEq(constraints);
                 build(q);
                 expect(indexName).toBe("by_signal_type_and_last_seen_at");
                 expect(constraints).toEqual({ signalType: "high_install_download_ratio" });
@@ -4415,12 +4379,7 @@ describe("publisher abuse dry-run persistence", () => {
             build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
           ) => {
             const constraints: Record<string, unknown> = {};
-            const q = {
-              eq(field: string, value: unknown) {
-                constraints[field] = value;
-                return q;
-              },
-            };
+            const q = chainEq(constraints);
             build(q);
             if (indexName === "by_status_and_label_and_last_scored_at") {
               return {
@@ -4713,55 +4672,36 @@ describe("publisher abuse dry-run persistence", () => {
     const patch = vi.fn(async () => null);
     const ctx = {
       db: {
-        get: vi.fn(async () => ({
-          _id: "publisherAbuseScoreRuns:legacy-run",
-          status: "running",
-          phase: "finalizing",
-          modelVersion: "publisher-abuse-pressure.v2",
-          modelConfig: legacyModelConfig,
-          scoredPublishers: 1,
-          finalizedScores: 0,
-          passCount: 0,
-          reviewCount: 0,
-          potentialBanCandidateCount: 0,
-          nominatedPublishers: 0,
-          sumLogPressure: 3,
-          sumSquaredLogPressure: 9,
-        })),
+        get: vi.fn(async () =>
+          makeFinalizingRun({
+            _id: "publisherAbuseScoreRuns:legacy-run",
+            modelConfig: legacyModelConfig,
+          }),
+        ),
         insert,
         patch,
         query: vi.fn((table: string) => {
           if (table === "publisherAbuseScores") {
-            return {
-              withIndex: () => ({
-                order: () => ({
-                  paginate: async () => ({
-                    page: [
-                      {
-                        _id: "publisherAbuseScores:legacy-score",
-                        ownerKey: "publisher:publishers:legacy-score",
-                        ownerPublisherId: "publishers:legacy-score",
-                        ownerUserId: "users:legacy-score",
-                        handleSnapshot: "legacy-score",
-                        modelVersion: "publisher-abuse-pressure.v2",
-                        pressure: 1000,
-                        logPressure: 6,
-                        publishedSkills: 99,
-                        totalInstalls: 0,
-                        totalStars: 0,
-                        totalDownloads: 100,
-                        installsPerSkill: 0,
-                        starsPerSkill: 0,
-                        downloadsPerSkill: 1.01,
-                        reasonCodes: ["low_installs_per_skill"],
-                      },
-                    ],
-                    isDone: true,
-                    continueCursor: "",
-                  }),
-                }),
-              }),
-            };
+            return makeOrderedCompletePageQuery(() => [
+              {
+                _id: "publisherAbuseScores:legacy-score",
+                ownerKey: "publisher:publishers:legacy-score",
+                ownerPublisherId: "publishers:legacy-score",
+                ownerUserId: "users:legacy-score",
+                handleSnapshot: "legacy-score",
+                modelVersion: "publisher-abuse-pressure.v2",
+                pressure: 1000,
+                logPressure: 6,
+                publishedSkills: 99,
+                totalInstalls: 0,
+                totalStars: 0,
+                totalDownloads: 100,
+                installsPerSkill: 0,
+                starsPerSkill: 0,
+                downloadsPerSkill: 1.01,
+                reasonCodes: ["low_installs_per_skill"],
+              },
+            ]);
           }
           if (table === "publisherAbuseReviewNominations") {
             return {
@@ -4885,12 +4825,7 @@ describe("publisher abuse dry-run persistence", () => {
               ) => {
                 expect(indexName).toBe("by_publisher");
                 const constraints: Record<string, unknown> = {};
-                const q = {
-                  eq(field: string, value: unknown) {
-                    constraints[field] = value;
-                    return q;
-                  },
-                };
+                const q = chainEq(constraints);
                 build(q);
                 officialLookupIds.push(String(constraints.publisherId));
                 return {
@@ -4913,12 +4848,7 @@ describe("publisher abuse dry-run persistence", () => {
               ) => {
                 expect(indexName).toBe("by_publisher_and_role");
                 const constraints: Record<string, unknown> = {};
-                const q = {
-                  eq(field: string, value: unknown) {
-                    constraints[field] = value;
-                    return q;
-                  },
-                };
+                const q = chainEq(constraints);
                 build(q);
                 return {
                   take: async (numItems: number) => {
@@ -5691,36 +5621,26 @@ describe("publisher abuse dry-run persistence", () => {
         patch,
         query: vi.fn((table: string) => {
           if (table === "publisherAbuseScores") {
-            return {
-              withIndex: () => ({
-                order: () => ({
-                  paginate: async () => ({
-                    page: [
-                      {
-                        _id: "publisherAbuseScores:score",
-                        ownerKey: "publisher:publishers:gora050",
-                        ownerPublisherId: "publishers:gora050",
-                        ownerUserId: "users:gora050",
-                        handleSnapshot: "gora050",
-                        modelVersion: "publisher-abuse-pressure.v2",
-                        pressure: 1000,
-                        logPressure: 6,
-                        publishedSkills: 1200,
-                        totalInstalls: 8,
-                        totalStars: 0,
-                        totalDownloads: 120,
-                        installsPerSkill: 0.006,
-                        starsPerSkill: 0,
-                        downloadsPerSkill: 0.1,
-                        reasonCodes: ["high_catalog_volume"],
-                      },
-                    ],
-                    isDone: true,
-                    continueCursor: "",
-                  }),
-                }),
-              }),
-            };
+            return makeOrderedCompletePageQuery(() => [
+              {
+                _id: "publisherAbuseScores:score",
+                ownerKey: "publisher:publishers:gora050",
+                ownerPublisherId: "publishers:gora050",
+                ownerUserId: "users:gora050",
+                handleSnapshot: "gora050",
+                modelVersion: "publisher-abuse-pressure.v2",
+                pressure: 1000,
+                logPressure: 6,
+                publishedSkills: 1200,
+                totalInstalls: 8,
+                totalStars: 0,
+                totalDownloads: 120,
+                installsPerSkill: 0.006,
+                starsPerSkill: 0,
+                downloadsPerSkill: 0.1,
+                reasonCodes: ["high_catalog_volume"],
+              },
+            ]);
           }
           if (table === "publisherAbuseReviewNominations") {
             return {
@@ -5773,55 +5693,33 @@ describe("publisher abuse dry-run persistence", () => {
     const patch = vi.fn(async () => null);
     const ctx = {
       db: {
-        get: vi.fn(async () => ({
-          _id: "publisherAbuseScoreRuns:run",
-          status: "running",
-          phase: "finalizing",
-          modelVersion: modelConfig.modelVersion,
-          modelConfig,
-          scoredPublishers: 1,
-          finalizedScores: 0,
-          passCount: 0,
-          reviewCount: 0,
-          potentialBanCandidateCount: 0,
-          nominatedPublishers: 0,
-          sumLogPressure: 3,
-          sumSquaredLogPressure: 9,
-        })),
+        get: vi.fn(async () =>
+          makeFinalizingRun({ modelVersion: modelConfig.modelVersion, modelConfig }),
+        ),
         insert,
         patch,
         query: vi.fn((table: string) => {
           if (table === "publisherAbuseScores") {
-            return {
-              withIndex: () => ({
-                order: () => ({
-                  paginate: async () => ({
-                    page: [
-                      {
-                        _id: "publisherAbuseScores:spacesq-shape",
-                        ownerKey: "publisher:publishers:spacesq-shape",
-                        ownerPublisherId: "publishers:spacesq-shape",
-                        ownerUserId: "users:spacesq-shape",
-                        handleSnapshot: "spacesq-shape",
-                        modelVersion: modelConfig.modelVersion,
-                        pressure: 1000,
-                        logPressure: 6,
-                        publishedSkills: 62,
-                        totalInstalls: 0,
-                        totalStars: 0,
-                        totalDownloads: 29_906,
-                        installsPerSkill: 0,
-                        starsPerSkill: 0,
-                        downloadsPerSkill: 482.35,
-                        reasonCodes: ["low_installs_per_skill", "low_stars_per_skill"],
-                      },
-                    ],
-                    isDone: true,
-                    continueCursor: "",
-                  }),
-                }),
-              }),
-            };
+            return makeOrderedCompletePageQuery(() => [
+              {
+                _id: "publisherAbuseScores:spacesq-shape",
+                ownerKey: "publisher:publishers:spacesq-shape",
+                ownerPublisherId: "publishers:spacesq-shape",
+                ownerUserId: "users:spacesq-shape",
+                handleSnapshot: "spacesq-shape",
+                modelVersion: modelConfig.modelVersion,
+                pressure: 1000,
+                logPressure: 6,
+                publishedSkills: 62,
+                totalInstalls: 0,
+                totalStars: 0,
+                totalDownloads: 29_906,
+                installsPerSkill: 0,
+                starsPerSkill: 0,
+                downloadsPerSkill: 482.35,
+                reasonCodes: ["low_installs_per_skill", "low_stars_per_skill"],
+              },
+            ]);
           }
           if (table === "publisherAbuseReviewNominations") {
             return {
@@ -5831,12 +5729,7 @@ describe("publisher abuse dry-run persistence", () => {
               ) => {
                 expect(indexName).toBe("by_owner_key_and_model_version");
                 const constraints: Record<string, unknown> = {};
-                const q = {
-                  eq(field: string, value: unknown) {
-                    constraints[field] = value;
-                    return q;
-                  },
-                };
+                const q = chainEq(constraints);
                 build(q);
                 return {
                   take: async () =>
@@ -5916,55 +5809,33 @@ describe("publisher abuse dry-run persistence", () => {
     const patch = vi.fn(async () => null);
     const ctx = {
       db: {
-        get: vi.fn(async () => ({
-          _id: "publisherAbuseScoreRuns:run",
-          status: "running",
-          phase: "finalizing",
-          modelVersion: modelConfig.modelVersion,
-          modelConfig,
-          scoredPublishers: 1,
-          finalizedScores: 0,
-          passCount: 0,
-          reviewCount: 0,
-          potentialBanCandidateCount: 0,
-          nominatedPublishers: 0,
-          sumLogPressure: 3,
-          sumSquaredLogPressure: 9,
-        })),
+        get: vi.fn(async () =>
+          makeFinalizingRun({ modelVersion: modelConfig.modelVersion, modelConfig }),
+        ),
         insert,
         patch,
         query: vi.fn((table: string) => {
           if (table === "publisherAbuseScores") {
-            return {
-              withIndex: () => ({
-                order: () => ({
-                  paginate: async () => ({
-                    page: [
-                      {
-                        _id: "publisherAbuseScores:downgraded-v4",
-                        ownerKey: "publisher:publishers:downgraded",
-                        ownerPublisherId: "publishers:downgraded",
-                        ownerUserId: "users:downgraded",
-                        handleSnapshot: "downgraded",
-                        modelVersion: modelConfig.modelVersion,
-                        pressure: 100,
-                        logPressure: 5,
-                        publishedSkills: 220,
-                        totalInstalls: 80,
-                        totalStars: 2,
-                        totalDownloads: 2_000,
-                        installsPerSkill: 0.36,
-                        starsPerSkill: 0.009,
-                        downloadsPerSkill: 9.09,
-                        reasonCodes: ["high_catalog_volume"],
-                      },
-                    ],
-                    isDone: true,
-                    continueCursor: "",
-                  }),
-                }),
-              }),
-            };
+            return makeOrderedCompletePageQuery(() => [
+              {
+                _id: "publisherAbuseScores:downgraded-v4",
+                ownerKey: "publisher:publishers:downgraded",
+                ownerPublisherId: "publishers:downgraded",
+                ownerUserId: "users:downgraded",
+                handleSnapshot: "downgraded",
+                modelVersion: modelConfig.modelVersion,
+                pressure: 100,
+                logPressure: 5,
+                publishedSkills: 220,
+                totalInstalls: 80,
+                totalStars: 2,
+                totalDownloads: 2_000,
+                installsPerSkill: 0.36,
+                starsPerSkill: 0.009,
+                downloadsPerSkill: 9.09,
+                reasonCodes: ["high_catalog_volume"],
+              },
+            ]);
           }
           if (table === "publisherAbuseReviewNominations") {
             return {
@@ -5974,12 +5845,7 @@ describe("publisher abuse dry-run persistence", () => {
               ) => {
                 expect(indexName).toBe("by_owner_key_and_model_version");
                 const constraints: Record<string, unknown> = {};
-                const q = {
-                  eq(field: string, value: unknown) {
-                    constraints[field] = value;
-                    return q;
-                  },
-                };
+                const q = chainEq(constraints);
                 build(q);
                 return {
                   first: async () => null,
@@ -6055,55 +5921,39 @@ describe("publisher abuse dry-run persistence", () => {
     const patch = vi.fn(async () => null);
     const ctx = {
       db: {
-        get: vi.fn(async () => ({
-          _id: "publisherAbuseScoreRuns:late-v2",
-          status: "running",
-          phase: "finalizing",
-          modelVersion: modelConfig.modelVersion,
-          modelConfig,
-          scoredPublishers: 1,
-          finalizedScores: 0,
-          passCount: 0,
-          reviewCount: 0,
-          potentialBanCandidateCount: 0,
-          nominatedPublishers: 0,
-          sumLogPressure: 0,
-          sumSquaredLogPressure: 0,
-        })),
+        get: vi.fn(async () =>
+          makeFinalizingRun({
+            _id: "publisherAbuseScoreRuns:late-v2",
+            modelVersion: modelConfig.modelVersion,
+            modelConfig,
+            sumLogPressure: 0,
+            sumSquaredLogPressure: 0,
+          }),
+        ),
         insert,
         patch,
         query: vi.fn((table: string) => {
           if (table === "publisherAbuseScores") {
-            return {
-              withIndex: () => ({
-                order: () => ({
-                  paginate: async () => ({
-                    page: [
-                      {
-                        _id: "publisherAbuseScores:late-v2-score",
-                        ownerKey: "publisher:publishers:late-v2",
-                        ownerPublisherId: "publishers:late-v2",
-                        ownerUserId: "users:late-v2",
-                        handleSnapshot: "late-v2",
-                        modelVersion: modelConfig.modelVersion,
-                        pressure: 1,
-                        logPressure: 0,
-                        publishedSkills: 220,
-                        totalInstalls: 600,
-                        totalStars: 20,
-                        totalDownloads: 80_000,
-                        installsPerSkill: 2.72,
-                        starsPerSkill: 0.09,
-                        downloadsPerSkill: 363.64,
-                        reasonCodes: [],
-                      },
-                    ],
-                    isDone: true,
-                    continueCursor: "",
-                  }),
-                }),
-              }),
-            };
+            return makeOrderedCompletePageQuery(() => [
+              {
+                _id: "publisherAbuseScores:late-v2-score",
+                ownerKey: "publisher:publishers:late-v2",
+                ownerPublisherId: "publishers:late-v2",
+                ownerUserId: "users:late-v2",
+                handleSnapshot: "late-v2",
+                modelVersion: modelConfig.modelVersion,
+                pressure: 1,
+                logPressure: 0,
+                publishedSkills: 220,
+                totalInstalls: 600,
+                totalStars: 20,
+                totalDownloads: 80_000,
+                installsPerSkill: 2.72,
+                starsPerSkill: 0.09,
+                downloadsPerSkill: 363.64,
+                reasonCodes: [],
+              },
+            ]);
           }
           if (table === "publisherAbuseReviewNominations") {
             return {
@@ -6113,12 +5963,7 @@ describe("publisher abuse dry-run persistence", () => {
               ) => {
                 expect(indexName).toBe("by_owner_key_and_model_version");
                 const constraints: Record<string, unknown> = {};
-                const q = {
-                  eq(field: string, value: unknown) {
-                    constraints[field] = value;
-                    return q;
-                  },
-                };
+                const q = chainEq(constraints);
                 build(q);
                 return {
                   take: async () =>
@@ -6209,22 +6054,12 @@ describe("publisher abuse dry-run persistence", () => {
       db: {
         get: vi.fn(async (id: string) => {
           if (id === "publisherAbuseScoreRuns:run") {
-            return {
-              _id: "publisherAbuseScoreRuns:run",
-              status: "running",
-              phase: "finalizing",
-              modelVersion: "publisher-abuse-pressure.v2",
-              modelConfig: TEST_MODEL_CONFIG,
+            return makeFinalizingRun({
               scoredPublishers: 2,
-              finalizedScores: 0,
-              passCount: 0,
-              reviewCount: 0,
-              potentialBanCandidateCount: 0,
-              nominatedPublishers: 0,
               sumLogPressure: officialScore.logPressure + communityScore.logPressure,
               sumSquaredLogPressure:
                 officialScore.logPressure ** 2 + communityScore.logPressure ** 2,
-            };
+            });
           }
           if (id === officialPublisher._id) return officialPublisher;
           if (id === communityPublisher._id) return communityPublisher;
@@ -6278,12 +6113,7 @@ describe("publisher abuse dry-run persistence", () => {
                 }
                 if (indexName === "by_publisher") {
                   const constraints: Record<string, unknown> = {};
-                  const q = {
-                    eq(field: string, value: unknown) {
-                      constraints[field] = value;
-                      return q;
-                    },
-                  };
+                  const q = chainEq(constraints);
                   build?.(q);
                   return {
                     unique: async () =>
@@ -6457,21 +6287,7 @@ describe("publisher abuse dry-run persistence", () => {
       db: {
         get: vi.fn(async (id: string) => {
           if (id === "publisherAbuseScoreRuns:run") {
-            return {
-              _id: "publisherAbuseScoreRuns:run",
-              status: "running",
-              phase: "finalizing",
-              modelVersion: "publisher-abuse-pressure.v2",
-              modelConfig: TEST_MODEL_CONFIG,
-              scoredPublishers: 1,
-              finalizedScores: 0,
-              passCount: 0,
-              reviewCount: 0,
-              potentialBanCandidateCount: 0,
-              nominatedPublishers: 0,
-              sumLogPressure: 3,
-              sumSquaredLogPressure: 9,
-            };
+            return makeFinalizingRun();
           }
           if (id === "users:repeat") {
             return { _id: "users:repeat", role: "user" };
@@ -6540,36 +6356,26 @@ describe("publisher abuse dry-run persistence", () => {
         patch,
         query: vi.fn((table: string) => {
           if (table === "publisherAbuseScores") {
-            return {
-              withIndex: () => ({
-                order: () => ({
-                  paginate: async () => ({
-                    page: [
-                      {
-                        _id: "publisherAbuseScores:repeat-review",
-                        ownerKey: "publisher:publishers:repeat-review",
-                        ownerPublisherId: "publishers:repeat-review",
-                        ownerUserId: "users:repeat-review",
-                        handleSnapshot: "repeat-review",
-                        modelVersion: "publisher-abuse-pressure.v2",
-                        pressure: 100,
-                        logPressure: 4.6,
-                        publishedSkills: 120,
-                        totalInstalls: 12,
-                        totalStars: 1,
-                        totalDownloads: 120,
-                        installsPerSkill: 0.1,
-                        starsPerSkill: 0.008,
-                        downloadsPerSkill: 1,
-                        reasonCodes: ["high_catalog_volume"],
-                      },
-                    ],
-                    isDone: true,
-                    continueCursor: "",
-                  }),
-                }),
-              }),
-            };
+            return makeOrderedCompletePageQuery(() => [
+              {
+                _id: "publisherAbuseScores:repeat-review",
+                ownerKey: "publisher:publishers:repeat-review",
+                ownerPublisherId: "publishers:repeat-review",
+                ownerUserId: "users:repeat-review",
+                handleSnapshot: "repeat-review",
+                modelVersion: "publisher-abuse-pressure.v2",
+                pressure: 100,
+                logPressure: 4.6,
+                publishedSkills: 120,
+                totalInstalls: 12,
+                totalStars: 1,
+                totalDownloads: 120,
+                installsPerSkill: 0.1,
+                starsPerSkill: 0.008,
+                downloadsPerSkill: 1,
+                reasonCodes: ["high_catalog_volume"],
+              },
+            ]);
           }
           if (table === "publisherAbuseReviewNominations") {
             return {
@@ -6616,36 +6422,26 @@ describe("publisher abuse dry-run persistence", () => {
         patch,
         query: vi.fn((table: string) => {
           if (table === "publisherAbuseScores") {
-            return {
-              withIndex: () => ({
-                order: () => ({
-                  paginate: async () => ({
-                    page: [
-                      {
-                        _id: "publisherAbuseScores:pass-score",
-                        ownerKey: "publisher:publishers:recovered",
-                        ownerPublisherId: "publishers:recovered",
-                        ownerUserId: "users:recovered",
-                        handleSnapshot: "recovered",
-                        modelVersion: "publisher-abuse-pressure.v2",
-                        pressure: 20,
-                        logPressure: 3,
-                        publishedSkills: 40,
-                        totalInstalls: 120,
-                        totalStars: 8,
-                        totalDownloads: 2_000,
-                        installsPerSkill: 3,
-                        starsPerSkill: 0.2,
-                        downloadsPerSkill: 50,
-                        reasonCodes: [],
-                      },
-                    ],
-                    isDone: true,
-                    continueCursor: "",
-                  }),
-                }),
-              }),
-            };
+            return makeOrderedCompletePageQuery(() => [
+              {
+                _id: "publisherAbuseScores:pass-score",
+                ownerKey: "publisher:publishers:recovered",
+                ownerPublisherId: "publishers:recovered",
+                ownerUserId: "users:recovered",
+                handleSnapshot: "recovered",
+                modelVersion: "publisher-abuse-pressure.v2",
+                pressure: 20,
+                logPressure: 3,
+                publishedSkills: 40,
+                totalInstalls: 120,
+                totalStars: 8,
+                totalDownloads: 2_000,
+                installsPerSkill: 3,
+                starsPerSkill: 0.2,
+                downloadsPerSkill: 50,
+                reasonCodes: [],
+              },
+            ]);
           }
           if (table === "publisherAbuseReviewNominations") {
             const existingNomination = {
@@ -7881,12 +7677,7 @@ describe("publisher abuse dry-run persistence", () => {
               ) => {
                 expect(indexName).toBe("by_skill_signal_type_and_owner_key");
                 const constraints: Record<string, unknown> = {};
-                const q = {
-                  eq(field: string, value: unknown) {
-                    constraints[field] = value;
-                    return q;
-                  },
-                };
+                const q = chainEq(constraints);
                 build(q);
                 signalLookups.push(constraints);
                 return {
@@ -8061,12 +7852,7 @@ describe("publisher abuse dry-run persistence", () => {
             build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
           ) => {
             const constraints: Record<string, unknown> = {};
-            const q = {
-              eq(field: string, value: unknown) {
-                constraints[field] = value;
-                return q;
-              },
-            };
+            const q = chainEq(constraints);
             build(q);
             return {
               first: async () =>

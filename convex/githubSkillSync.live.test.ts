@@ -1,5 +1,6 @@
 /* @vitest-environment node */
 import { describe, expect, it } from "vitest";
+import { createTableStore, type TestDbRow as Row } from "../src/__tests__/helpers/convexDb";
 import { chainEq } from "../src/__tests__/helpers/convexQuery";
 import {
   applyGitHubSkillSourceSyncHandler,
@@ -15,28 +16,16 @@ import {
   prepareGitHubSkillScanRequestInternal,
 } from "./securityScan";
 
-type Row = Record<string, unknown> & { _id: string };
-
 function matches(doc: Row, constraints: Record<string, unknown>) {
   return Object.entries(constraints).every(([key, value]) => doc[key] === value);
 }
 
 function createDb(initial: Record<string, Row[]> = {}) {
-  const tables: Record<string, Row[]> = Object.fromEntries(
-    Object.entries(initial).map(([table, rows]) => [table, [...rows]]),
-  );
+  const { tables, list, get, patch, delete: deleteRow } = createTableStore(initial);
   const counters: Record<string, number> = {};
-  const list = (table: string) => {
-    tables[table] ??= [];
-    return tables[table];
-  };
 
   const db = {
-    get: async (idOrTable: string, maybeId?: string) => {
-      const id = maybeId ?? idOrTable;
-      const table = id.split(":")[0] ?? "";
-      return list(table).find((row) => row._id === id) ?? null;
-    },
+    get: async (idOrTable: string, maybeId?: string) => get(maybeId ?? idOrTable),
     normalizeId: (table: string, id: string) => (id.startsWith(`${table}:`) ? id : null),
     insert: async (table: string, doc: Record<string, unknown>) => {
       counters[table] = (counters[table] ?? 0) + 1;
@@ -48,27 +37,14 @@ function createDb(initial: Record<string, Row[]> = {}) {
       list(table).push(inserted);
       return inserted._id;
     },
-    patch: async (id: string, patch: Record<string, unknown>) => {
-      const table = id.split(":")[0] ?? "";
-      const row = list(table).find((candidate) => candidate._id === id);
-      if (!row) return;
-      for (const [key, value] of Object.entries(patch)) {
-        if (value === undefined) delete row[key];
-        else row[key] = value;
-      }
-    },
+    patch,
     replace: async (id: string, doc: Record<string, unknown>) => {
       const table = id.split(":")[0] ?? "";
       const rows = list(table);
       const index = rows.findIndex((candidate) => candidate._id === id);
       if (index >= 0) rows[index] = { _id: id, ...doc };
     },
-    delete: async (id: string) => {
-      const table = id.split(":")[0] ?? "";
-      const rows = list(table);
-      const index = rows.findIndex((candidate) => candidate._id === id);
-      if (index >= 0) rows.splice(index, 1);
-    },
+    delete: deleteRow,
     query: (table: string) => ({
       withIndex: (_indexName: string, build?: (q: ReturnType<typeof chainEq>) => unknown) => {
         const constraints: Record<string, unknown> = {};

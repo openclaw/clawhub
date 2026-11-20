@@ -1,4 +1,4 @@
-import { getClawHubRolloutCapabilities } from "clawhub-schema";
+import { getClawHubRolloutCapabilities } from "clawhub-schema/rolloutCapabilities";
 
 type SkillsShCatalogEnvironment = {
   CLAWHUB_DEPLOYMENT_NAME?: string;

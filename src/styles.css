@@ -2815,11 +2815,11 @@ code {
   height: 17px;
 }
 
-/* Preserve plugin artwork colors while keeping skill imagery subdued. */
+/* Preserve package artwork colors while keeping skill imagery subdued. */
 .browse-page
   .browse-results-grid
   .skill-card-header
-  .marketplace-icon:not(.marketplace-icon-plugin)
+  .marketplace-icon:not(.marketplace-icon-plugin, .marketplace-icon-template)
   .marketplace-icon-image {
   filter: grayscale(1) brightness(1.18);
 }
@@ -6059,7 +6059,7 @@ a.skills-sh-security-audit-row:focus-visible {
 
 .skill-install-command-card {
   display: grid;
-  gap: 18px;
+  gap: 12px;
   min-width: 0;
   padding: 0;
   border: 0;
@@ -6069,9 +6069,15 @@ a.skills-sh-security-audit-row:focus-visible {
 }
 
 .skill-install-command-header {
+  display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  border-bottom: 0;
 }
 
 [data-theme-resolved="light"] .skill-install-command-card {
@@ -6262,7 +6268,99 @@ a.skills-sh-security-audit-row:focus-visible {
   color: var(--status-error-fg);
 }
 
-/* Skill/plugin install card — flat CLI | Prompt text toggle */
+.openclaw-install {
+  --openclaw-install-primary: #d13c3c;
+  --openclaw-install-primary-hover: #c22e2e;
+  --openclaw-install-primary-foreground: #ffffff;
+  display: flex;
+  align-items: center;
+}
+
+/* Match the compact, accent-filled primary action on Control UI plugin details. */
+.openclaw-install-button[data-slot="button"] {
+  min-height: 32px;
+  padding: 8px 14px;
+  border-radius: var(--oc-radius-control, var(--r-btn));
+  border-color: var(--openclaw-install-primary);
+  background: var(--openclaw-install-primary);
+  color: var(--openclaw-install-primary-foreground);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: normal;
+}
+
+.openclaw-install-button[data-slot="button"]:hover {
+  border-color: var(--openclaw-install-primary-hover);
+  background: var(--openclaw-install-primary-hover);
+  color: var(--openclaw-install-primary-foreground);
+}
+
+.openclaw-install-button[data-slot="button"]:active {
+  transform: scale(0.98);
+}
+
+.plugin-detail-page .skill-hero-sidebar-stack,
+.skill-detail-page .skill-hero-sidebar-stack {
+  gap: 24px;
+}
+
+/* Separate install from the next metadata row within the existing 24px rail gap.
+   Keep the compact heading/panel spacing and the mobile card unchanged. */
+.skill-hero-sidebar-stack > .skill-install-command-card,
+.template-detail-metadata > .template-detail-install {
+  position: relative;
+}
+
+.skill-hero-sidebar-stack > .skill-install-command-card::after,
+.template-detail-metadata > .template-detail-install::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: -12px;
+  border-bottom: 1px solid var(--line);
+  pointer-events: none;
+}
+
+/* Keep the terminal preview to one line, including the mobile fallback.
+   Hover or keyboard focus exposes the full, unmodified command in a tooltip. */
+.skill-install-command-card .skill-install-command-shell-cli .skill-install-command,
+.skill-install-command-card .skill-install-command-shell-cli .skill-install-command code {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+  text-overflow: ellipsis;
+}
+
+.skill-install-command-tooltip {
+  max-width: min(36rem, calc(100vw - 32px));
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+}
+
+.skill-install-desktop-panel .openclaw-install-button {
+  width: 100%;
+}
+
+/* Desktop and CLI share one row height so switching tabs never moves the page. */
+.skill-install-command-card {
+  --skill-install-panel-height: 44px;
+}
+
+.skill-install-desktop-panel .openclaw-install-button[data-slot="button"] {
+  min-height: var(--skill-install-panel-height);
+}
+
+.skill-install-command-card .skill-install-command-wrap .skill-install-command-shell-cli {
+  min-height: var(--skill-install-panel-height);
+  padding-block: 8px;
+}
+
+/* Reuse the existing flat terminal tabs for CLI | Desktop and legacy sources. */
 .skill-install-command-card .skill-install-tab-toggle {
   display: inline-flex;
   align-items: center;
@@ -6445,19 +6543,6 @@ a.skills-sh-security-audit-row:focus-visible {
     z-index: 1;
   }
 
-  .detail-mobile-install .skill-install-command-header {
-    padding-bottom: 12px;
-    border-bottom-color: transparent;
-    background: linear-gradient(
-        90deg,
-        transparent,
-        color-mix(in srgb, var(--line) 62%, transparent) 12%,
-        color-mix(in srgb, var(--line) 62%, transparent) 88%,
-        transparent
-      )
-      bottom / 100% 1px no-repeat;
-  }
-
   .detail-mobile-install .skill-install-command-shell {
     border-color: color-mix(in srgb, var(--line) 72%, transparent);
     background: color-mix(in srgb, var(--surface-muted) 76%, var(--bg));
@@ -6470,6 +6555,14 @@ a.skills-sh-security-audit-row:focus-visible {
 
   .skills-sh-detail-page .detail-mobile-install .skill-install-command-shell-cli {
     align-items: flex-start;
+  }
+
+  /* External source commands wrap here, so they keep their roomier padding. */
+  .skills-sh-detail-page
+    .detail-mobile-install
+    .skill-install-command-wrap
+    .skill-install-command-shell-cli {
+    padding-block: 12px;
   }
 
   .skills-sh-detail-page .detail-mobile-install .skill-install-command-prompt {
@@ -6881,10 +6974,6 @@ a.skills-sh-security-audit-row:focus-visible {
     height: var(--detail-hero-summary-row-block-size);
     min-height: var(--detail-hero-summary-row-block-size);
   }
-
-  .skill-install-command-header.detail-hero-summary-row {
-    flex-wrap: nowrap;
-  }
 }
 
 .detail-skeleton-mobile-creator {
@@ -6907,7 +6996,18 @@ a.skills-sh-security-audit-row:focus-visible {
 .detail-skeleton-install-tabs {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
+}
+
+/* One action row, the shared height of the Desktop button and the CLI command. */
+.detail-skeleton-install-action {
+  width: 100%;
+  height: var(--skill-install-panel-height, 44px);
+}
+
+/* The card renders once: in the rail on wide screens, in the content column below 900px. */
+.detail-skeleton-install-mobile {
+  display: none;
 }
 
 .detail-skeleton-tabs {
@@ -6923,61 +7023,22 @@ a.skills-sh-security-audit-row:focus-visible {
   overflow: hidden;
 }
 
-.detail-skeleton .skill-install-command-inline-button {
-  width: auto;
-}
-
-.detail-skeleton-deferred-summary {
-  display: none;
-}
-
 @media (max-width: 900px) {
   .detail-skeleton-mobile-creator {
     display: inline-flex;
   }
 
-  .detail-skeleton-deferred[data-kind="skill"] {
-    display: none;
+  .detail-skeleton-install-mobile {
+    display: block;
   }
 
-  .detail-skeleton-deferred[data-kind="plugin"] {
-    border: var(--detail-mobile-surface-border);
-    border-radius: var(--detail-mobile-surface-radius);
-    background: var(--detail-mobile-surface-bg);
-  }
-
-  .detail-skeleton-deferred[data-kind="plugin"] .detail-skeleton-deferred-summary {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 12px var(--detail-mobile-surface-padding);
-  }
-
-  .detail-skeleton-deferred[data-kind="plugin"] .detail-skeleton-deferred-body {
-    display: none;
-  }
-
-  .detail-skeleton .skill-hero-lower.has-sidebar {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .detail-skeleton .skill-hero-main-extra,
+  /* Bookmark and stats live in the hero and the second section tab on narrow screens. */
   .detail-skeleton .skill-hero-sidebar {
-    display: contents;
+    display: none;
   }
 
   .detail-skeleton-tabs .tab-header {
     overflow-x: auto;
-  }
-
-  .detail-skeleton .skill-install-command-header {
-    align-items: flex-start;
-  }
-
-  .detail-skeleton .skill-install-command-shell {
-    padding-right: 58px;
   }
 }
 
@@ -6988,11 +7049,6 @@ a.skills-sh-security-audit-row:focus-visible {
 
   .detail-skeleton .skill-hero-title-row {
     gap: 10px;
-  }
-
-  .detail-skeleton-install-tabs {
-    width: 100%;
-    justify-content: flex-start;
   }
 
   .detail-skeleton-tabs .tab-header {
@@ -12678,6 +12734,20 @@ a.agentic-risk-finding-title:focus-visible {
   background: color-mix(in srgb, var(--surface) 72%, transparent);
   color: color-mix(in srgb, var(--ink-soft) 88%, transparent);
   box-shadow: none;
+}
+
+/* Template silhouettes sit directly on the row or card, not inside an icon tile. */
+.browse-page .plugin-summary-item .marketplace-icon.marketplace-icon-template {
+  border: 0 !important;
+  border-radius: 0;
+  background: transparent !important;
+  box-shadow: none;
+  overflow: visible;
+  transform: none;
+}
+
+.marketplace-icon-template .marketplace-icon-image {
+  object-fit: contain;
 }
 
 .browse-page .skill-list-item > .marketplace-icon .marketplace-icon-glyph {

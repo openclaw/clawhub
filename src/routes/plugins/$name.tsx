@@ -160,9 +160,10 @@ export type PluginDetailLoaderData = {
   rateLimited: PluginDetailRateLimitState;
 };
 
-export async function loadPluginDetail(requestedName: string): Promise<PluginDetailLoaderData> {
-  const candidateNames = getOpenClawPackageCandidateNames(requestedName);
-
+export async function loadPluginDetail(
+  requestedName: string,
+  candidateNames = getOpenClawPackageCandidateNames(requestedName),
+): Promise<PluginDetailLoaderData> {
   let resolvedName = requestedName;
   let detail: PackageDetailResponse = { package: null, owner: null };
 
@@ -1034,9 +1035,23 @@ export function PluginDetailPending() {
   );
 }
 
+export function PluginNotFound() {
+  return (
+    <main className="py-10">
+      <Container size="narrow">
+        <EmptyState
+          title="Plugin not found"
+          description="This plugin does not exist or has been removed."
+        />
+      </Container>
+    </main>
+  );
+}
+
 type PluginDetailPageProps = {
   name: string;
   loaderData: PluginDetailLoaderData;
+  pendingNotice?: ReactNode;
 };
 
 export function PluginDetailPage(props: PluginDetailPageProps) {
@@ -1045,7 +1060,7 @@ export function PluginDetailPage(props: PluginDetailPageProps) {
   );
 }
 
-function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
+function PluginDetailPageContent({ name, loaderData, pendingNotice }: PluginDetailPageProps) {
   const { detail, version, versions, readme, rateLimited } = loaderData;
   const router = useRouter();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
@@ -1166,16 +1181,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
   }
 
   if (!detail.package) {
-    return (
-      <main className="py-10">
-        <Container size="narrow">
-          <EmptyState
-            title="Plugin not found"
-            description="This plugin does not exist or has been removed."
-          />
-        </Container>
-      </main>
-    );
+    return <PluginNotFound />;
   }
 
   const pkg = detail.package;
@@ -1209,6 +1215,18 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
   const cliInstallTarget =
     isPlugin && !installTarget.includes("/") ? `${installTarget}@latest` : installTarget;
   const installCommand = `openclaw ${isPlugin ? "plugins" : "skills"} install ${isPlugin ? "clawhub:" : ""}${cliInstallTarget}`;
+  const installCommandCard = (
+    <InstallCommandCard
+      cliCommand={installCommand}
+      prompt={formatOpenClawPrompt(installTarget, isPlugin ? "package" : "skill")}
+      cliCopyAriaLabel={isPlugin ? "Copy plugin install command" : "Copy skill install command"}
+      desktopInstall={
+        isPlugin && pkg.latestVersion && !isDownloadBlocked
+          ? { family: "plugins", name: pkg.name }
+          : undefined
+      }
+    />
+  );
 
   const compatibility = latestRelease?.compatibility ?? pkg.compatibility;
   const pluginManifestSummary = latestRelease?.pluginManifestSummary ?? null;
@@ -1747,6 +1765,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                 </div>
               ) : null}
 
+              {pendingNotice}
               {rateLimited?.scope === "metadata" ? (
                 <div className="skill-hero-badges">
                   <Badge variant="compact">Some metadata is temporarily unavailable</Badge>
@@ -1756,6 +1775,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
           }
           sidebar={
             <div className="skill-hero-sidebar-stack">
+              {!isMobileDetailLayout ? installCommandCard : null}
               {pluginSidebarStatsContent && !isMobileDetailLayout ? (
                 <div className="detail-sidebar-stats">{pluginSidebarStatsContent}</div>
               ) : null}
@@ -1805,16 +1825,12 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
               hidden={mobileDetailPanel !== "content"}
             >
               {validationPanel}
-              <div className="plugin-install-stack detail-mobile-install">
-                {validationAvailabilityAlert}
-                <InstallCommandCard
-                  cliCommand={installCommand}
-                  prompt={formatOpenClawPrompt(installTarget, isPlugin ? "package" : "skill")}
-                  cliCopyAriaLabel={
-                    isPlugin ? "Copy plugin install command" : "Copy skill install command"
-                  }
-                />
-              </div>
+              {validationAvailabilityAlert}
+              {isMobileDetailLayout ? (
+                <div className="plugin-install-stack detail-mobile-install">
+                  {installCommandCard}
+                </div>
+              ) : null}
               <PluginDetailTabs
                 activeTab={activeTab}
                 setActiveTab={setActiveTab}

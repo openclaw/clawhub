@@ -1,4 +1,5 @@
 /* @vitest-environment node */
+import { readFileSync } from "node:fs";
 import { getFunctionName, type FunctionReference } from "convex/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../_generated/dataModel";
@@ -13,7 +14,7 @@ const { rate, token, stream } = vi.hoisted(() => ({
 vi.mock("./httpRateLimit", () => ({ applyRateLimit: rate }));
 vi.mock("./apiTokenAuth", () => ({ getOptionalApiTokenUserId: token }));
 vi.mock("./packageArchiveHttp", () => ({ streamClawPackRelease: stream }));
-import { readTemplatePackageHttp } from "./templatePackageHttpRead";
+import { readTemplatePackageHttp, UNSCOPED_ROUTER_SEGMENTS } from "./templatePackageHttpRead";
 function fixture(
   options: { family?: string; missing?: boolean; missingVersion?: boolean; legacy?: boolean } = {},
 ) {
@@ -60,7 +61,7 @@ beforeEach(() => {
   token.mockReset().mockResolvedValue(null);
   stream.mockReset().mockResolvedValue(new Response("archive"));
 });
-describe("anonymous scoped Template HTTP reads", () => {
+describe("Template HTTP reads", () => {
   it("returns the existing metadata projection and preserves response policy", async () => {
     const f = fixture();
     const response = await readTemplatePackageHttp(f.ctx, req());
@@ -119,12 +120,68 @@ describe("anonymous scoped Template HTTP reads", () => {
     expect(await readTemplatePackageHttp(f.ctx, req())).toBeNull();
     expect(f.runQuery).not.toHaveBeenCalled();
   });
-  it("leaves token identities and auth errors to the compatibility router", async () => {
+  it("leaves unresolved credentials and auth errors to the compatibility router", async () => {
     const f = fixture();
-    token.mockResolvedValueOnce("actor").mockRejectedValueOnce(new Error("auth failed"));
-    expect(await readTemplatePackageHttp(f.ctx, req())).toBeNull();
-    expect(await readTemplatePackageHttp(f.ctx, req())).toBeNull();
+    const bearer = { headers: { authorization: "Bearer not-a-current-token" } };
+    token.mockResolvedValueOnce(null).mockRejectedValueOnce(new Error("auth failed"));
+    expect(await readTemplatePackageHttp(f.ctx, req("", bearer))).toBeNull();
+    expect(await readTemplatePackageHttp(f.ctx, req("", bearer))).toBeNull();
     expect(f.runQuery).not.toHaveBeenCalled();
+    expect(f.getUserIdentity).not.toHaveBeenCalled();
+    expect(
+      await readTemplatePackageHttp(f.ctx, req("", { headers: { cookie: "s=1" } })),
+    ).toBeNull();
+    expect(token).toHaveBeenCalledTimes(2);
+  });
+  it("reads as the API-token user through every lookup and the archive stream", async () => {
+    const f = fixture();
+    const bearer = { headers: { authorization: "Bearer current-token" } };
+    token.mockResolvedValue("actor");
+    await readTemplatePackageHttp(f.ctx, req("", bearer));
+    await readTemplatePackageHttp(f.ctx, req("/versions/1.0.0", bearer));
+    const archive = req("/versions/1.0.0/artifact/download", bearer);
+    await readTemplatePackageHttp(f.ctx, archive);
+    // Session identity is never consulted once a token names the reader.
+    expect(f.getUserIdentity).not.toHaveBeenCalled();
+    for (const [, args] of f.runQuery.mock.calls as unknown as Array<
+      [unknown, { viewerUserId?: string }]
+    >)
+      expect(args.viewerUserId).toBe("actor");
+    expect(f.runQuery).toHaveBeenCalledTimes(6);
+    expect(stream).toHaveBeenCalledWith(
+      f.ctx,
+      archive,
+      { "X-Test-Rate": "kept" },
+      f.pkg,
+      f.release,
+      "actor",
+    );
+    // A compatibility fallback for the same reader joins this lookup.
+    const fallback = fixture({ family: "code-plugin" });
+    const request = req("", bearer);
+    expect(await readTemplatePackageHttp(fallback.ctx, request)).toBeNull();
+    await readPackageDetailForRequest(
+      fallback.ctx,
+      request,
+      "@maker/brief",
+      "actor" as Id<"users">,
+    );
+    expect(fallback.runQuery).toHaveBeenCalledTimes(1);
+  });
+  it("serves an unscoped Template and leaves other unscoped families to the router", async () => {
+    const f = fixture();
+    f.pkg.name = "brief";
+    const plain = (suffix = "") =>
+      new Request("https://example.invalid/api/v1/packages/brief" + suffix);
+    const metadata = await readTemplatePackageHttp(f.ctx, plain());
+    expect(metadata?.status).toBe(200);
+    expect(((await metadata!.json()) as { package: { name: string } }).package.name).toBe("brief");
+    expect((await readTemplatePackageHttp(f.ctx, plain("/versions/1.0.0")))?.status).toBe(200);
+    const skill = fixture({ missing: true });
+    const request = plain();
+    expect(await readTemplatePackageHttp(skill.ctx, request)).toBeNull();
+    await readPackageDetailForRequest(skill.ctx, request, "brief");
+    expect(skill.runQuery).toHaveBeenCalledTimes(1);
   });
   it.each([
     "/versions",
@@ -138,14 +195,17 @@ describe("anonymous scoped Template HTTP reads", () => {
     expect(f.runQuery).not.toHaveBeenCalled();
     expect(rate).not.toHaveBeenCalled();
   });
-  it("does not intercept reserved or unscoped package routes", async () => {
+  it("does not intercept router endpoints that share the unscoped namespace", async () => {
     const f = fixture();
     for (const path of [
       "search",
       "validation-report",
       "reports",
+      "appeals",
+      "migrations",
+      "publish",
       "moderation/queue",
-      "plain-package",
+      "-/managed-mcp",
     ])
       expect(
         await readTemplatePackageHttp(
@@ -154,6 +214,15 @@ describe("anonymous scoped Template HTTP reads", () => {
         ),
       ).toBeNull();
     expect(f.runQuery).not.toHaveBeenCalled();
+  });
+  it("lists every endpoint word the canonical GET router matches before package names", () => {
+    const router = readFileSync(new URL("../httpApiV1/packagesV1.ts", import.meta.url), "utf8");
+    const handler = router.slice(
+      router.indexOf("export async function packagesGetRouterV1Handler"),
+    );
+    const words = [...handler.matchAll(/\bsegments\[0\] === "([^"]+)"/g)].map((match) => match[1]!);
+    expect(words.length).toBeGreaterThan(3);
+    for (const word of words) expect(UNSCOPED_ROUTER_SEGMENTS, word).toContain(word);
   });
   it("retains quota denial before any package lookup", async () => {
     const f = fixture(),

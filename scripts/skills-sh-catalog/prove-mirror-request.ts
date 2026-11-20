@@ -1,10 +1,5 @@
+import { requireEnv } from "../lib/scriptConfig";
 export function createMirrorProofClient() {
-  function requireEnv(name: string) {
-    const value = process.env[name]?.trim();
-    if (!value) throw new Error(`${name} is required`);
-    return value;
-  }
-
   const targetUrl = requireEnv("CLAWHUB_TEST_MIRROR_GATE_URL");
   const operatorAuthorization = requireEnv("CLAWHUB_TEST_OPERATOR_TOKEN");
   const vercelAutomationBypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;

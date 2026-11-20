@@ -4,6 +4,7 @@ import { convexTest } from "convex-test";
 import { getFunctionName, type FunctionReference } from "convex/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { processPrePublicationAttempt } from "../scripts/security/run-prepublication-worker";
+import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
 import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
@@ -115,18 +116,14 @@ it("keeps a physical Template claim leased through native MCP and judge drain", 
   await t.run(async (ctx) => {
     const attempt = (await ctx.db.get(fixture.attemptId))!;
     const packageId = await ctx.db.insert("packages", {
+      ...createPackageSeedDefaults(),
       name: "@fixture/template-lease",
       normalizedName: "@fixture/template-lease",
       displayName: "Template lease fixture",
       ownerUserId: attempt.userId,
       family: "claw",
-      channel: "community",
-      isOfficial: false,
-      tags: {},
       scanStatus: "pending",
       stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
-      createdAt: 1,
-      updatedAt: 1,
     });
     await ctx.db.patch(fixture.attemptId, { packageId });
   });

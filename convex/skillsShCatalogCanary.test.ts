@@ -2,6 +2,7 @@
 /* @vitest-environment edge-runtime */
 import { convexTest } from "convex-test";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { sha256Hex } from "../src/__tests__/helpers/hash";
 import { useEnvironment } from "../src/__tests__/helpers/skillsShEnvironment";
 import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -65,6 +66,22 @@ async function configureCanary(t: CatalogTest) {
   return await t.mutation(internal.skillsShCatalog.configureFixtureControlInternal, CANARY_CONTROL);
 }
 
+function configureCanaryScan(t: CatalogTest, maxScanAdmissionsPerDay = 1) {
+  return t.mutation(internal.skillsShCatalog.configureFixtureControlInternal, {
+    ...CANARY_CONTROL,
+    mode: "staging-live",
+    scanAdmissionEnabled: true,
+    publicVisibilityEnabled: true,
+    maxWritesPerBatch: 7,
+    maxScanAdmissionsPerBatch: 1,
+    maxScanAdmissionsPerRun: 1,
+    maxScanAdmissionsPerDay,
+    maxCatalogQueued: 1,
+    maxCatalogInFlight: 1,
+    realScanAllowlist: [CANARY_EXTERNAL_ID],
+  });
+}
+
 async function runCanary(t: CatalogTest) {
   const started = await t.mutation(internal.skillsShCatalog.startFixtureRunInternal, {
     fixtureId: "patrick-html-canary-v1",
@@ -76,15 +93,6 @@ async function runCanary(t: CatalogTest) {
     runId: started.runId,
   });
   return { runId: started.runId, run };
-}
-
-async function sha256Hex(value: Blob | string) {
-  const bytes =
-    typeof value === "string"
-      ? new TextEncoder().encode(value)
-      : new Uint8Array(await value.arrayBuffer());
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 async function storeCanaryArtifact(t: CatalogTest, content = canarySkillMarkdown) {
@@ -109,19 +117,7 @@ async function storeCanaryArtifact(t: CatalogTest, content = canarySkillMarkdown
 async function prepareScannedCanary(t: CatalogTest) {
   await configureCanary(t);
   await runCanary(t);
-  await t.mutation(internal.skillsShCatalog.configureFixtureControlInternal, {
-    ...CANARY_CONTROL,
-    mode: "staging-live",
-    scanAdmissionEnabled: true,
-    publicVisibilityEnabled: true,
-    maxWritesPerBatch: 7,
-    maxScanAdmissionsPerBatch: 1,
-    maxScanAdmissionsPerRun: 1,
-    maxScanAdmissionsPerDay: 1,
-    maxCatalogQueued: 1,
-    maxCatalogInFlight: 1,
-    realScanAllowlist: [CANARY_EXTERNAL_ID],
-  });
+  await configureCanaryScan(t);
   const actorUserId = await t.run(
     async (ctx) =>
       await ctx.db.insert("users", {
@@ -724,19 +720,7 @@ describe("skills.sh controlled hidden metadata canary", () => {
         updatedAt: 1,
       });
     });
-    await t.mutation(internal.skillsShCatalog.configureFixtureControlInternal, {
-      ...CANARY_CONTROL,
-      mode: "staging-live",
-      scanAdmissionEnabled: true,
-      publicVisibilityEnabled: true,
-      maxWritesPerBatch: 7,
-      maxScanAdmissionsPerBatch: 1,
-      maxScanAdmissionsPerRun: 1,
-      maxScanAdmissionsPerDay: 1,
-      maxCatalogQueued: 1,
-      maxCatalogInFlight: 1,
-      realScanAllowlist: [CANARY_EXTERNAL_ID],
-    });
+    await configureCanaryScan(t);
     const actorUserId = await t.run(
       async (ctx) =>
         await ctx.db.insert("users", {
@@ -801,19 +785,7 @@ describe("skills.sh controlled hidden metadata canary", () => {
         updatedAt: 1,
       });
     });
-    await t.mutation(internal.skillsShCatalog.configureFixtureControlInternal, {
-      ...CANARY_CONTROL,
-      mode: "staging-live",
-      scanAdmissionEnabled: true,
-      publicVisibilityEnabled: true,
-      maxWritesPerBatch: 7,
-      maxScanAdmissionsPerBatch: 1,
-      maxScanAdmissionsPerRun: 1,
-      maxScanAdmissionsPerDay: 2,
-      maxCatalogQueued: 1,
-      maxCatalogInFlight: 1,
-      realScanAllowlist: [CANARY_EXTERNAL_ID],
-    });
+    await configureCanaryScan(t, 2);
     const actorUserId = await t.run(
       async (ctx) =>
         await ctx.db.insert("users", {
@@ -845,19 +817,7 @@ describe("skills.sh controlled hidden metadata canary", () => {
     const t = convexTest(schema, modules);
     await configureCanary(t);
     await runCanary(t);
-    await t.mutation(internal.skillsShCatalog.configureFixtureControlInternal, {
-      ...CANARY_CONTROL,
-      mode: "staging-live",
-      scanAdmissionEnabled: true,
-      publicVisibilityEnabled: true,
-      maxWritesPerBatch: 7,
-      maxScanAdmissionsPerBatch: 1,
-      maxScanAdmissionsPerRun: 1,
-      maxScanAdmissionsPerDay: 1,
-      maxCatalogQueued: 1,
-      maxCatalogInFlight: 1,
-      realScanAllowlist: [CANARY_EXTERNAL_ID],
-    });
+    await configureCanaryScan(t);
     const actorUserId = await t.run(
       async (ctx) =>
         await ctx.db.insert("users", {
@@ -918,19 +878,7 @@ describe("skills.sh controlled hidden metadata canary", () => {
       const t = convexTest(schema, modules);
       const blockedAttempt = await prepareScannedCanary(t);
       await completeScannedCanary(t, blockedAttempt, verdict);
-      await t.mutation(internal.skillsShCatalog.configureFixtureControlInternal, {
-        ...CANARY_CONTROL,
-        mode: "staging-live",
-        scanAdmissionEnabled: true,
-        publicVisibilityEnabled: true,
-        maxWritesPerBatch: 7,
-        maxScanAdmissionsPerBatch: 1,
-        maxScanAdmissionsPerRun: 1,
-        maxScanAdmissionsPerDay: 2,
-        maxCatalogQueued: 1,
-        maxCatalogInFlight: 1,
-        realScanAllowlist: [CANARY_EXTERNAL_ID],
-      });
+      await configureCanaryScan(t, 2);
       const retry = await t.mutation(
         internal.skillsShCatalog.startControlledCanaryScanRunInternal,
         {
@@ -1062,19 +1010,7 @@ describe("skills.sh controlled hidden metadata canary", () => {
         slug: "html",
       }),
     ).resolves.toBeNull();
-    await t.mutation(internal.skillsShCatalog.configureFixtureControlInternal, {
-      ...CANARY_CONTROL,
-      mode: "staging-live",
-      scanAdmissionEnabled: true,
-      publicVisibilityEnabled: true,
-      maxWritesPerBatch: 7,
-      maxScanAdmissionsPerBatch: 1,
-      maxScanAdmissionsPerRun: 1,
-      maxScanAdmissionsPerDay: 2,
-      maxCatalogQueued: 1,
-      maxCatalogInFlight: 1,
-      realScanAllowlist: [CANARY_EXTERNAL_ID],
-    });
+    await configureCanaryScan(t, 2);
     const replacementRun = await t.mutation(
       internal.skillsShCatalog.startControlledCanaryScanRunInternal,
       {

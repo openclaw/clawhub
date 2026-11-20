@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { copyFile, readFile, writeFile } from "node:fs/promises";
+import { copyFile, readFile, rm, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -14,13 +15,14 @@ const sharedSchemaModules = [
   "schemaShared",
   "templateAgent",
   "templateBundled",
+  "templateManifestSummary",
   "templatePackage",
   "templatePaths",
   "templates",
   "textFiles",
 ];
 
-export function buildSharedSchema(tscBin) {
+function buildSharedSchema(tscBin) {
   const result = spawnSync(process.execPath, [tscBin, "-p", "tsconfig.json"], {
     cwd: schemaRoot,
     stdio: "inherit",
@@ -28,7 +30,7 @@ export function buildSharedSchema(tscBin) {
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
-export async function copySharedSchemaArtifacts(destination) {
+async function copySharedSchemaArtifacts(destination) {
   // Ship implementations at the existing paths, never the workspace-only forwarders.
   for (const name of sharedSchemaModules) {
     for (const extension of [".js", ".d.ts"]) {
@@ -47,4 +49,23 @@ export async function copySharedSchemaArtifacts(destination) {
     sourceMap.sourcesContent = await Promise.all(sources.map((source) => readFile(source, "utf8")));
     await writeFile(targetMap, JSON.stringify(sourceMap) + "\n");
   }
+}
+
+export async function buildCliPackage(scriptUrl, schemaSubdirectory) {
+  const require = createRequire(scriptUrl);
+  const packageRoot = resolve(dirname(fileURLToPath(scriptUrl)), "..");
+  const distDir = resolve(packageRoot, "dist");
+
+  const tscBin = resolve(dirname(require.resolve("@typescript/native/package.json")), "bin/tsc");
+  buildSharedSchema(tscBin);
+  await rm(distDir, { recursive: true, force: true });
+
+  const result = spawnSync(process.execPath, [tscBin, "-p", "tsconfig.json"], {
+    cwd: packageRoot,
+    stdio: "inherit",
+  });
+
+  if (result.status !== 0) process.exit(result.status ?? 1);
+
+  await copySharedSchemaArtifacts(resolve(distDir, schemaSubdirectory));
 }

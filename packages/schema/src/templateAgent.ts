@@ -223,6 +223,7 @@ const OPENCLAW_STATIC_TOOL_GROUPS: Record<string, ReadonlySet<string>> = {
 
 const StrictStringArraySchema = type("string[]");
 export const nativeAgentSettingsFields = {
+  model: "string?",
   groupChat: type({
     "+": "reject",
     mentionPatterns: StrictStringArraySchema.optional(),
@@ -366,6 +367,13 @@ export function validateNativeAgentSettings(
     }
   };
 
+  if (
+    agent.model !== undefined &&
+    (agent.model.length > 200 ||
+      !/^[a-z0-9][a-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._:/-]*$/u.test(agent.model))
+  ) {
+    add("agent.model", "Model must be an exact provider/model reference.");
+  }
   requireNonEmpty("agent.groupChat.mentionPatterns", agent?.groupChat?.mentionPatterns);
   const tools = agent?.tools;
   const profile = tools?.profile;

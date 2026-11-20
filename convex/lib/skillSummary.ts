@@ -1,6 +1,7 @@
 import { applicationReasoning } from "./applicationModelPolicy";
 import { extractResponseText } from "./openaiResponse";
-import { getFrontmatterValue, parseFrontmatter } from "./skills";
+import { getFrontmatterValue } from "./skills/frontmatterValue";
+import { parseFrontmatter } from "./skills/skillMarkdown";
 
 const MAX_README_CHARS = 8_000;
 const MAX_SUMMARY_CHARS = 160;

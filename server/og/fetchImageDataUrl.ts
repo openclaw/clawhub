@@ -151,7 +151,7 @@ function isPrivateIpv6(hostname: string) {
   return false;
 }
 
-async function readLimitedImageBody(response: Response) {
+export async function readLimitedImageBody(response: Response) {
   const contentLength = response.headers.get("content-length");
   if (contentLength) {
     const expectedBytes = Number.parseInt(contentLength, 10);

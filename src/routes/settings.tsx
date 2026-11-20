@@ -40,7 +40,7 @@ import {
 } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
-import type { Id } from "../../convex/_generated/dataModel";
+import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { EmptyState } from "../components/EmptyState";
 import { copyText } from "../components/InstallCopyButton";
 import { MarketplaceIcon } from "../components/MarketplaceIcon";
@@ -204,15 +204,7 @@ type GitHubSkillSource = {
   displayManifestStatus?: "ok" | "missing" | "invalid" | "failed";
   displayManifestFetchedAt?: number;
   displayManifestCommit?: string;
-  lastSyncIssues?: Array<{
-    slug: string;
-    path: string;
-    displayName: string;
-    kind: "invalid_slug" | "slug_conflict";
-    severity: "error" | "warning";
-    message: string;
-    existingOwnerHandle?: string;
-  }>;
+  lastSyncIssues?: NonNullable<Doc<"githubSkillSources">["lastSyncIssues"]>;
   lastSyncInvalidSkills?: Array<{
     slug: string;
     path: string;

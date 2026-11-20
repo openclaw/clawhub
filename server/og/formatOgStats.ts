@@ -1,9 +1,5 @@
 import { formatCompactStat } from "../../src/lib/numberFormat";
-
-function cleanQueryString(value: unknown) {
-  if (typeof value !== "string") return "";
-  return value.trim();
-}
+import { cleanString as cleanQueryString } from "./ogRequest";
 
 export function readOgDownloadsQuery(query: { downloads?: unknown; installs?: unknown }) {
   const downloads = cleanQueryString(query.downloads);

@@ -1,19 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import {
   getPrePublicationQueueHealthInternal,
   logPrePublicationQueueHealthInternal,
 } from "./prepublicationObservability";
 
-const getQueueHealthHandler = (
-  getPrePublicationQueueHealthInternal as unknown as {
-    _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
-  }
-)._handler;
-const logQueueHealthHandler = (
-  logPrePublicationQueueHealthInternal as unknown as {
-    _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
-  }
-)._handler;
+const getQueueHealthHandler = getTestHandler<unknown>(getPrePublicationQueueHealthInternal);
+const logQueueHealthHandler = getTestHandler<unknown>(logPrePublicationQueueHealthInternal);
 
 function makeQueueHealthCtx(attempts: Array<Record<string, unknown>>) {
   return {

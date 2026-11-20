@@ -3,7 +3,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { resolvePackageReleaseScanStatus } from "./packageSecurity";
 import { assertCanManageOwnedResource, isPublisherActive } from "./publishers";
-import { buildPackageInventoryDigest } from "./skills";
+import { buildPackageInventoryDigest } from "./skills/skillMarkdown";
 import { matchesStorageSha256 } from "./storageDigests";
 
 type DbCtx = Pick<QueryCtx | MutationCtx, "db">;

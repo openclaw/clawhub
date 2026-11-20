@@ -16,6 +16,7 @@ set -eu
 #   docker run --rm --network bridge --cap-drop ALL \
 #     --cap-add NET_ADMIN --cap-add SETUID --cap-add SETGID --cap-add SETPCAP \
 #     --cap-add CHOWN --security-opt no-new-privileges:true --read-only \
+#     --memory 3g --memory-swap 3g \
 #     --tmpfs /tmp:rw,nosuid,nodev,exec --tmpfs /output:rw,mode=1777 \
 #     --mount type=bind,source="$PWD/scripts/security/endor/fixtures",target=/fixture,readonly \
 #     --mount type=bind,source="$PWD/scripts/security/endor/scan.sh",target=/scan.sh,readonly \

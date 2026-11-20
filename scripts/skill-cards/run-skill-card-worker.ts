@@ -10,6 +10,7 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { assertCodexWorkerExecutionAllowed, resolveCodexWorkerHome } from "../codex-worker-guard";
 import { materializeVerifiedArtifactFiles } from "../lib/artifactMaterialization";
+import { numberFrom, optionalNumberFrom, requireEnv } from "../lib/scriptConfig";
 import { createWorkerLogger } from "../lib/workerLogger";
 import {
   maskGitHubActionsSecret,
@@ -98,14 +99,6 @@ function parseArgs() {
     const index = args.indexOf(name);
     return index === -1 ? undefined : args[index + 1];
   };
-  const numberFrom = (value: string | undefined, fallback: number) => {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-  };
-  const optionalNumberFrom = (value: string | undefined) => {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
-  };
   return {
     batchLimit: numberFrom(
       get("--batch-limit") ?? process.env.SKILL_CARD_WORKER_LIMIT,
@@ -127,12 +120,6 @@ function parseArgs() {
       process.env.NVIDIA_TRUSTWORTHY_AI_DIR ??
       join(root, ".artifacts/nvidia-trustworthy-ai"),
   };
-}
-
-function requireEnv(name: string) {
-  const value = process.env[name]?.trim();
-  if (!value) throw new Error(`${name} is required`);
-  return value;
 }
 
 function workerToken() {

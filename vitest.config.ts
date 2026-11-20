@@ -19,6 +19,7 @@ export default defineConfig({
         replacement: testingLibraryRequire.resolve("react/jsx-runtime"),
       },
       { find: "react-dom/client", replacement: testingLibraryRequire.resolve("react-dom/client") },
+      { find: "react-dom/server", replacement: testingLibraryRequire.resolve("react-dom/server") },
       { find: "react-dom", replacement: testingLibraryRequire.resolve("react-dom") },
       { find: "react", replacement: testingLibraryRequire.resolve("react") },
     ],
