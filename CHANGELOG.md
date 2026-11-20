@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Skill reports: a missing skill, a blank reason, and the open-report limit return "Skill not found", "Report reason required.", or "Report limit reached. Please wait for moderation before reporting more." instead of a server failure.
+
 - Templates: the package security API now links a Template release to its Template security-audit page (`/<publisher>/templates/<name>/security-audit`). It used to return the plugin audit address, so OpenClaw opened a Template's audit under `/plugins/`. Plugin links are unchanged.
 
 - Templates: ClawHub now lists each Template under one of ten categories: Engineering, Operations, Household, Entertainment, Travel, Productivity, Research, Health, Sales, and Product. Household and Entertainment are new; Personal, Governance, Finance, and People are removed. A Template takes the first category its `CLAW.md` declares and ClawHub ignores the rest. If that category is missing or no longer exists, ClawHub classifies the Template instead of rejecting the publish, so every published Template still republishes unchanged. `categories` in API responses stays an array, and `category=personal`, `governance`, `finance`, and `people` still work as list and search filters for the Templates that store them.
