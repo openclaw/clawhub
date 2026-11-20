@@ -5,6 +5,7 @@
 - Skill reports: a missing skill, a blank reason, and the open-report limit return "Skill not found", "Report reason required.", or "Report limit reached. Please wait for moderation before reporting more." instead of a server failure.
 
 - Templates: the package security API now links a Template release to its Template security-audit page (`/<publisher>/templates/<name>/security-audit`). It used to return the plugin audit address, so OpenClaw opened a Template's audit under `/plugins/`. Plugin links are unchanged.
+- CLI: list skill files in stable path order before publish, so the uploaded file list no longer follows the local filesystem's directory order.
 
 - Agent Skills download: an archive with no SKILL.md returns "Skill archive is missing SKILL.md. Ask the publisher to publish a version containing SKILL.md." instead of a server failure.
 
