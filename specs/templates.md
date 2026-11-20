@@ -99,6 +99,12 @@ filtered view can be shared. Results show download counts and link to the existi
 publisher-scoped Template detail pages. Browse lists load more entries by cursor; text
 search returns up to 25 results without pagination.
 
+The directory and its filtered URLs share the same 1200×630 “OpenClaw Templates”
+card. Its versioned PNG is bundled, not fetched from the registry, and uses the
+official unadorned OpenClaw mascot instead of a specific Template or publisher.
+Regenerate it with `bun scripts/generate-template-directory-og.ts` when the copy or
+art changes, and bump the image path to invalidate cached unfurls.
+
 Where a Template row shows an icon, it displays the package’s verified artwork in color,
 uncropped and directly on the surface without a border, background tile, or shadow.
 If the artwork is absent, untrusted or fails to load, the row uses the shared Blobster
@@ -134,6 +140,14 @@ a remote avatar, and Templates never use the bundled-plugin GitHub recovery path
 The catalog, release and Official Template feed project a verified,
 content-addressed PNG through the existing `/api/v1/skill-icons/<sha256>` route. Artifact
 and security gates are unchanged: metadata becomes public only after publication.
+
+Public Template detail pages share a 1200×630 PNG with the agent name, publisher
+handle, short description and hosted catalog artwork. When the artwork is absent
+or unreadable the card uses the Template glyph, never the publisher's profile
+image. The image route independently checks the anonymous package projection,
+family and owner; query parameters cannot override the card's content. Both the
+directory and detail cards place their artwork directly on the dark background,
+without a tile or clipping mask.
 
 ## Launch contract
 
