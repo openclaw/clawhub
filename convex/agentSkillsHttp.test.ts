@@ -34,8 +34,10 @@ function hostedRunQuery({
   publicSkill = true,
   moderationInfo,
   llmAnalysis,
+  files,
 }: {
   publicSkill?: boolean;
+  files?: Array<{ path: string; size: number; sha256: string; storageId: string }>;
   moderationInfo?: {
     isPendingScan?: boolean;
     isMalwareBlocked?: boolean;
@@ -61,10 +63,17 @@ function hostedRunQuery({
             },
             latestVersion: {
               version: "1.0.0",
-              files: [
-                { path: "SKILL.md", size: 25, sha256: "skill-hash" },
-                { path: "references/proof.txt", size: 5, sha256: "proof-hash" },
-              ],
+              files: (
+                files ?? [
+                  { path: "SKILL.md", size: 25, sha256: "skill-hash", storageId: "_storage:skill" },
+                  {
+                    path: "references/proof.txt",
+                    size: 5,
+                    sha256: "proof-hash",
+                    storageId: "_storage:proof",
+                  },
+                ]
+              ).map(({ path, size, sha256 }) => ({ path, size, sha256 })),
             },
             moderationInfo,
           }
@@ -74,10 +83,17 @@ function hostedRunQuery({
       _id: "skillVersions:demo",
       skillId: "skills:demo",
       version: "1.0.0",
-      files: [
-        { path: "SKILL.md", storageId: "_storage:skill" },
-        { path: "references/proof.txt", storageId: "_storage:proof" },
-      ],
+      files: (
+        files ?? [
+          { path: "SKILL.md", size: 25, sha256: "skill-hash", storageId: "_storage:skill" },
+          {
+            path: "references/proof.txt",
+            size: 5,
+            sha256: "proof-hash",
+            storageId: "_storage:proof",
+          },
+        ]
+      ).map(({ path, storageId }) => ({ path, storageId })),
       llmAnalysis,
     });
 }
@@ -228,6 +244,26 @@ describe("Agent Skills discovery HTTP handler", () => {
     expect(response.status).toBe(410);
     expect(response.headers.get("Cache-Control")).toBeNull();
     expect(await response.text()).toBe("Skill archive file missing from storage");
+  });
+
+  it("returns a client error when a hosted archive has no SKILL.md", async () => {
+    const response = await agentSkillsHttpHandler(
+      makeCtx({
+        runQuery: hostedRunQuery({
+          files: [
+            { path: "README.md", size: 5, sha256: "readme-hash", storageId: "_storage:readme" },
+          ],
+        }),
+        storage: { get: vi.fn().mockResolvedValue(new Blob(["hello"])) },
+      }),
+      new Request("https://api.example/api/v1/agent-skills/openclaw/demo/archive?version=1.0.0"),
+    );
+
+    expect(response.status).toBe(422);
+    expect(response.headers.get("Cache-Control")).toBeNull();
+    expect(await response.text()).toBe(
+      "Skill archive is missing SKILL.md. Ask the publisher to publish a version containing SKILL.md.",
+    );
   });
 
   it("returns not found for malformed percent escapes", async () => {
