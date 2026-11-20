@@ -123,6 +123,7 @@ import {
 import { verifyPublishFileStorageMetadata } from "./lib/packageFileVerification";
 import { resolvePackageIcon, resolveTemplatePackageIcon } from "./lib/packageIcons";
 import {
+  filterPackageInspectorFindingsForFamily,
   packageInspectorIssueInputValidator,
   type PackageInspectorFinding,
   type PackageInspectorAuthorRemediation,
@@ -10831,6 +10832,10 @@ export const ingestPackageInspectorScanResultsInternal = internalMutation({
     ) {
       throw new ConvexError("Package release not found");
     }
+    // Inspector runs native-plugin package checks on every upload. Bundle
+    // plugins have no package.json by design, so drop those findings here,
+    // before they are stored or decide the scan outcome.
+    const findings = filterPackageInspectorFindingsForFamily(pkg.family, args.findings);
     const result = args.inspectionFailed
       ? { ok: true as const, inserted: 0, shouldEmailOwner: false }
       : await insertPackageInspectorFindings(ctx, {
@@ -10844,7 +10849,7 @@ export const ingestPackageInspectorScanResultsInternal = internalMutation({
           inspectorVersion: args.inspectorVersion,
           targetOpenClawVersion: args.targetOpenClawVersion,
           notifyOwners: args.notifyOwners,
-          findings: args.findings,
+          findings,
         });
     const { inspectorVersion, targetOpenClawVersion } = args;
     if (inspectorVersion && targetOpenClawVersion) {
@@ -10852,7 +10857,7 @@ export const ingestPackageInspectorScanResultsInternal = internalMutation({
         ? args.failure?.reason === "timeout"
           ? "timeout"
           : "tool_failure"
-        : args.findings.length > 0
+        : findings.length > 0
           ? "findings"
           : "clean";
       const sdkUsage = await recordPackageInspectorScan(ctx, {

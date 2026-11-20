@@ -23,6 +23,8 @@
 
 - Skill reads: a missing stored skill file is a client error for the readme, skill card, file text, and publish preview text. The message stays "File missing in storage".
 
+- Plugin Inspector: stop storing the `package-json-missing` and `package-openclaw-entry-missing` findings for bundle plugins. A configuration-only Codex, Claude or Cursor bundle has no native package metadata, so a scan no longer shows it a warning that cannot apply (#4754). Nightly findings already stored for a release clear when that release is next scanned; a finding stored at publish time stays.
+
 - Catalog: keep package search versions aligned with the current release when editing metadata on packages with stale version summaries. Package mutations now rely on the shared trigger to refresh search projections.
 
 - Skill publish: a bad upload ticket is a client error. The messages stay "Skill upload ticket is missing, used, or expired", "Uploaded file does not match its skill upload ticket", and "Skill upload ticket does not match this publish".
