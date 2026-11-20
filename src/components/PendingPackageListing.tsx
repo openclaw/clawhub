@@ -78,7 +78,7 @@ function ViewerPendingListing(props: Props) {
       result &&
       !(result instanceof Error) &&
       result.name === props.publishedName ? (
-      <ReviewNotice version={result.version} />
+      <ReviewNotice listing={result} routeKind={routeKind} />
     ) : null;
   }
   if (isLoading || reviewEnded || (isAuthenticated && result === undefined)) return props.loading;
@@ -99,15 +99,24 @@ function ViewerPendingListing(props: Props) {
   return <PreviewShell listing={result} routeKind={routeKind} />;
 }
 
-function ReviewNotice({ version }: { version: string }) {
+function ReviewNotice({
+  listing,
+  routeKind,
+}: {
+  listing: Listing;
+  routeKind: Target["routeKind"];
+}) {
   return (
     <Alert role="status" className="pending-package-notice" variant="warn">
       <Clock3 size={16} aria-hidden="true" />
       <div className="min-w-0 text-ink [overflow-wrap:anywhere]">
-        <p className="m-0 font-semibold">Version {version} is under review</p>
+        <p className="m-0 font-semibold">Version {listing.version} is under review</p>
         <AlertDescription className="mt-1 text-ink-soft leading-snug">
           Only the publisher and ClawHub staff can see this release. Once it’s published, anyone can
           view and install it.
+          {routeKind === "template" && listing.isAuditEmailRecipient
+            ? " We’ll email you the result when the audit is complete."
+            : null}
         </AlertDescription>
       </div>
     </Alert>
@@ -157,7 +166,7 @@ function PreviewShell({
                 />
               </div>
             </header>
-            <ReviewNotice version={listing.version} />
+            <ReviewNotice listing={listing} routeKind={routeKind} />
             {/* All panes stay locked: switching tabs must never mount a release file loader. */}
             <PackageContentTabs
               routeKind={routeKind}
