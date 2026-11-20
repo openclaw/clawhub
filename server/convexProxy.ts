@@ -29,6 +29,7 @@ import {
 } from "../convex/lib/skillZip";
 import { VERIFIED_CLIENT_IP_HEADER } from "../convex/lib/verifiedClientIp";
 import { convexDeploymentName, resolveConvexSiteUrl } from "../src/lib/convexDeploymentUrl";
+import { isHostedVercelRuntime, trustedVercelClientIp } from "./vercelIngress";
 
 const ARCHIVE_MANIFEST_REQUEST_HEADER = "x-clawhub-archive-manifest";
 const ARCHIVE_MANIFEST_MAX_AGE_MS = 60_000;
@@ -174,8 +175,7 @@ export async function proxyConvexRequest(
   }
   const isArchiveRequest = isArchivePath(new URL(target).pathname);
   let archiveRequestToken: string | undefined;
-  const isVercelRuntime = env.VERCEL_ENV === "production" || env.VERCEL_ENV === "preview";
-  if (isArchiveRequest || isVercelRuntime) {
+  if (isArchiveRequest || isHostedVercelRuntime(env.VERCEL_ENV)) {
     try {
       archiveRequestToken = await dependencies.getArchiveRequestToken();
     } catch {
@@ -185,13 +185,7 @@ export async function proxyConvexRequest(
       });
     }
   }
-  // Vercel overwrites this header at ingress. Never forward a visitor's chosen
-  // ClawHub IP/identity headers, including when running outside Vercel.
-  const clientIp = isVercelRuntime
-    ? (
-        event.req.headers.get("x-vercel-forwarded-for") ?? event.req.headers.get("x-forwarded-for")
-      )?.trim()
-    : undefined;
+  const clientIp = trustedVercelClientIp(event.req.headers, env.VERCEL_ENV);
   const proxied = await proxyRequest(event, target, {
     fetchOptions: {
       headers: {

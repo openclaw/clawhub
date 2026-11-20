@@ -6,14 +6,19 @@ import { applyRateLimit } from "./lib/httpRateLimit";
 export const get = httpAction(async (ctx, request) => {
   const rate = await applyRateLimit(ctx, request, "read");
   if (!rate.ok) return rate.response;
-  const rawLimit = new URL(request.url).searchParams.get("limit");
+  const params = new URL(request.url).searchParams;
+  const rawLimit = params.get("limit");
   const limit = rawLimit === null ? 8 : Number(rawLimit);
   if (!Number.isInteger(limit) || limit < 1 || limit > 8) {
     return json({ error: "limit must be an integer from 1 to 8" }, 400, rate.headers);
   }
   try {
+    const include = params.getAll("include");
     const result = await ctx.runQuery(makeFunctionReference<"query">("templateOverview:get"), {
       limit,
+      ...(include.length === 1 && include[0] === "categoryEntries"
+        ? { includeCategoryEntries: true }
+        : {}),
     });
     return json(result, 200, rate.headers);
   } catch (error) {

@@ -72,7 +72,12 @@ export function useDownloadsSidebarMetricBlock({
   if (!activityTrend) {
     return {
       label: <ActivityMetricLabel label="Downloads" />,
-      value: <span>{formatCompactStat(allTimeDownloads)}</span>,
+      value: (
+        <div className="metric-trend-value-row">
+          <strong>{formatCompactStat(allTimeDownloads)}</strong>
+          <span className="metric-trend-point-label">All time</span>
+        </div>
+      ),
       large: true,
     };
   }

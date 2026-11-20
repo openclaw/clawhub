@@ -96,6 +96,16 @@
   min-width: 0;
 }
 
+/* Keep the review notice in the content column, adjacent to its publisher. */
+.template-detail-hero:has(+ .template-detail-layout .pending-package-notice),
+.template-detail-main > .template-detail-hero:has(+ .pending-package-notice) {
+  margin-bottom: 18px;
+}
+
+.template-detail-main > .pending-package-notice {
+  margin-bottom: 20px;
+}
+
 .template-detail-install .skill-install-panel-title {
   margin: 0;
   font-family: inherit;

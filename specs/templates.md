@@ -99,9 +99,16 @@ filtered view can be shared. Results show download counts and link to the existi
 publisher-scoped Template detail pages. Browse lists load more entries by cursor; text
 search returns up to 25 results without pagination.
 
-Where catalog rows show an icon, they use the shared Blobster glyph to identify a Template,
-not the publisher’s profile picture. This is separate from the artwork exported for feed
-consumers.
+The directory and its filtered URLs share the same 1200×630 “OpenClaw Templates”
+card. Its versioned PNG is bundled, not fetched from the registry, and uses the
+official unadorned OpenClaw mascot instead of a specific Template or publisher.
+Regenerate it with `bun scripts/generate-template-directory-og.ts` when the copy or
+art changes, and bump the image path to invalidate cached unfurls.
+
+Where a Template row shows an icon, it displays the package’s verified artwork in color,
+uncropped and directly on the surface without a border, background tile, or shadow.
+If the artwork is absent, untrusted or fails to load, the row uses the shared Blobster
+glyph. A publisher profile picture is never a substitute for Template artwork.
 
 ## Publisher notifications
 
@@ -123,14 +130,24 @@ private submission. A missing email address does not affect publication.
 
 ## Catalog artwork
 
-A Template may package `assets/icon.png` for its catalog artwork, independently of
-its portable `agent.identity.avatar`. Publication validates the PNG bytes,
-decodability, size and uploaded digest through the shared package-icon path.
-Only the resulting content-addressed `/api/v1/skill-icons/<sha256>` asset is
-projected into the Official Template feed; arbitrary URLs are not accepted there.
-Missing or invalid artwork preserves the consumer's fallback. Templates do not use
-the bundled-plugin GitHub asset recovery path. Artifact and security gates are
-unchanged, and catalog metadata becomes visible only after publication.
+A valid `assets/icon.png` always wins. Otherwise publication resolves the parsed
+`agent.identity.avatar` from its declared `workspace.files[].path` destination to its
+packaged source, or decodes a bounded inline image. Only supported static artwork
+is accepted; SVG is validated and rasterized, never served as SVG. Missing or
+unusable artwork keeps the generic icon. Neither publication nor browsing fetches
+a remote avatar, and Templates never use the bundled-plugin GitHub recovery path.
+
+The catalog, release and Official Template feed project a verified,
+content-addressed PNG through the existing `/api/v1/skill-icons/<sha256>` route. Artifact
+and security gates are unchanged: metadata becomes public only after publication.
+
+Public Template detail pages share a 1200×630 PNG with the agent name, publisher
+handle, short description and hosted catalog artwork. When the artwork is absent
+or unreadable the card uses the Template glyph, never the publisher's profile
+image. The image route independently checks the anonymous package projection,
+family and owner; query parameters cannot override the card's content. Both the
+directory and detail cards place their artwork directly on the dark background,
+without a tile or clipping mask.
 
 ## Launch contract
 

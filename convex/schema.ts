@@ -1141,6 +1141,20 @@ const publishAttemptCheckStateValidator = v.object({
   redactedFindings: v.optional(v.array(v.string())),
 });
 
+const readyDiscoveryPosition = v.object({
+  createdAt: v.number(),
+  creationTime: v.number(),
+  id: v.id("publishAttempts"),
+});
+const publishFinalizationCursors = defineTable({
+  scope: v.string(),
+  after: readyDiscoveryPosition,
+  through: readyDiscoveryPosition,
+  expirationTime: v.number(),
+})
+  .index("by_scope", ["scope"])
+  .index("by_expiration_time", ["expirationTime"]);
+
 const publishAttempts = defineTable({
   kind: v.union(v.literal("skill"), v.literal("package")),
   status: publishAttemptStatusValidator,
@@ -4221,6 +4235,7 @@ export default defineSchema({
   skillVersions,
   skillPresentationAssets,
   publishAttempts,
+  publishFinalizationCursors,
   skillVersionFingerprints,
   skillBadges,
   skillEmbeddings,

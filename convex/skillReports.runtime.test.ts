@@ -1,8 +1,10 @@
 /// <reference types="vite/client" />
 /* @vitest-environment edge-runtime */
 import { convexTest } from "convex-test";
+import { ConvexError } from "convex/values";
 import { expect, it } from "vitest";
 import { api } from "./_generated/api";
+import { MAX_ACTIVE_REPORTS_PER_USER } from "./lib/reporting";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -69,3 +71,81 @@ it.each([false, true])(
     expect((await t.run((ctx) => ctx.db.get(skillId)))?.moderationStatus).toBe("hidden");
   },
 );
+
+it("returns the report message when the page report is rejected", async () => {
+  const t = convexTest(schema, modules);
+  const { reporterId, liveSkillId, removedSkillId, limitSkillId } = await t.run(async (ctx) => {
+    const now = 1;
+    const ownerId = await ctx.db.insert("users", { handle: "owner" });
+    const createdReporterId = await ctx.db.insert("users", { handle: "reporter" });
+    const createdLiveSkillId = await ctx.db.insert("skills", {
+      slug: "live",
+      displayName: "Live",
+      ownerUserId: ownerId,
+      tags: {},
+      moderationStatus: "active",
+      stats: { comments: 0, downloads: 0, stars: 0, versions: 0 },
+      createdAt: now,
+      updatedAt: now,
+    });
+    const createdRemovedSkillId = await ctx.db.insert("skills", {
+      slug: "removed",
+      displayName: "Removed",
+      ownerUserId: ownerId,
+      tags: {},
+      moderationStatus: "removed",
+      stats: { comments: 0, downloads: 0, stars: 0, versions: 0 },
+      createdAt: now,
+      updatedAt: now,
+    });
+    const createdLimitSkillId = await ctx.db.insert("skills", {
+      slug: "limit",
+      displayName: "Limit",
+      ownerUserId: ownerId,
+      tags: {},
+      moderationStatus: "active",
+      stats: { comments: 0, downloads: 0, stars: 0, versions: 0 },
+      createdAt: now,
+      updatedAt: now,
+    });
+    for (let index = 0; index < MAX_ACTIVE_REPORTS_PER_USER; index += 1) {
+      const skillId = await ctx.db.insert("skills", {
+        slug: `filled-${index}`,
+        displayName: "Filled",
+        ownerUserId: ownerId,
+        tags: {},
+        moderationStatus: "active",
+        stats: { comments: 0, downloads: 0, stars: 0, versions: 0 },
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.insert("skillReports", {
+        skillId,
+        userId: createdReporterId,
+        reason: "Existing report",
+        status: "open",
+        createdAt: now,
+      });
+    }
+    return {
+      reporterId: createdReporterId,
+      liveSkillId: createdLiveSkillId,
+      removedSkillId: createdRemovedSkillId,
+      limitSkillId: createdLimitSkillId,
+    };
+  });
+
+  const reporter = t.withIdentity({ subject: reporterId });
+  await expect(
+    reporter.mutation(api.skills.report, { skillId: liveSkillId, reason: "   " }),
+  ).rejects.toBeInstanceOf(ConvexError);
+  await expect(
+    reporter.mutation(api.skills.report, { skillId: liveSkillId, reason: "   " }),
+  ).rejects.toThrow("Report reason required.");
+  await expect(
+    reporter.mutation(api.skills.report, { skillId: removedSkillId, reason: "Hidden skill" }),
+  ).rejects.toThrow("Skill not found");
+  await expect(
+    reporter.mutation(api.skills.report, { skillId: limitSkillId, reason: "One more" }),
+  ).rejects.toThrow("Report limit reached. Please wait for moderation before reporting more.");
+});

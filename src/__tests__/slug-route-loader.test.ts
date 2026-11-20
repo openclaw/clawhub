@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const resolveTopLevelSlugRouteMock = vi.fn();
+const fetchMock = vi.fn();
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (config: unknown) => ({ __config: config }),
@@ -15,7 +16,10 @@ vi.mock("../lib/slugRoute", () => ({
 async function loadRoute() {
   return (await import("../routes/$slug")).Route as unknown as {
     __config: {
-      loader: (args: { params: { slug: string } }) => Promise<unknown>;
+      loader: (args: {
+        params: { slug: string };
+        abortController: AbortController;
+      }) => Promise<unknown>;
       head: (args: { params: { slug: string }; loaderData?: unknown }) => {
         meta?: Array<{ property?: string; name?: string; content: string }>;
       };
@@ -26,7 +30,10 @@ async function loadRoute() {
 async function runLoader(slug: string) {
   const route = await loadRoute();
   try {
-    return await route.__config.loader({ params: { slug } });
+    return await route.__config.loader({
+      params: { slug },
+      abortController: new AbortController(),
+    });
   } catch (error) {
     return error;
   }
@@ -35,6 +42,12 @@ async function runLoader(slug: string) {
 describe("top-level slug route loader", () => {
   beforeEach(() => {
     resolveTopLevelSlugRouteMock.mockReset();
+    vi.stubEnv("VITE_CONVEX_URL", "https://example.convex.cloud");
+    vi.stubGlobal("fetch", fetchMock.mockReset());
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 
   it("returns not found for plugin aliases without matching publishers", async () => {
@@ -53,11 +66,28 @@ describe("top-level slug route loader", () => {
     resolveTopLevelSlugRouteMock.mockResolvedValue({
       kind: "publisher",
       handle: "steipete",
-      publisher: { _id: "publishers:steipete", handle: "steipete" },
+      publisher: { _id: "publishers:steipete", handle: "steipete", stats: { skills: 1 } },
     });
-
+    fetchMock.mockResolvedValueOnce(
+      Response.json({ status: "success", value: { page: [{ _id: "skills:one" }], isDone: true } }),
+    );
     expect(await runLoader("steipete")).toEqual({
-      publisher: { _id: "publishers:steipete", handle: "steipete" },
+      publisher: { _id: "publishers:steipete", handle: "steipete", stats: { skills: 1 } },
+      initialCatalog: { tab: "skills", items: [{ _id: "skills:one" }] },
+    });
+    const request = fetchMock.mock.calls[0]?.[1];
+    expect(request.credentials).toBe("omit");
+    expect(new Headers(request.headers).has("authorization")).toBe(false);
+    expect(JSON.parse(request.body)).toMatchObject({
+      path: "publishers:listPublishedPage",
+      args: [
+        {
+          handle: "steipete",
+          kind: "skill",
+          sort: "downloads",
+          paginationOpts: { numItems: 12, cursor: null },
+        },
+      ],
     });
   });
 

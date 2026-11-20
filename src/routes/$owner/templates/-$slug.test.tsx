@@ -390,6 +390,30 @@ describe("publisher Template route invariants", () => {
     );
   });
 
+  it("advertises the same absolute full-size image to Open Graph and Twitter", async () => {
+    const detail = packageDetail();
+    detail.package!.displayName = detail.package!.name;
+    const head = Route.options.head!;
+    const result = await head({ loaderData: { detail } } as Parameters<typeof head>[0]);
+    const image =
+      "https://clawhub.ai/og/template.png?v=2&name=%40maker%2Frelease-brief&owner=maker&version=0.1.0";
+    expect(result?.meta).toEqual(
+      expect.arrayContaining([
+        { title: "Release Brief — ClawHub Templates" },
+        { property: "og:image", content: image },
+        { property: "og:image:width", content: "1200" },
+        { property: "og:image:height", content: "630" },
+        { name: "twitter:card", content: "summary_large_image" },
+        { name: "twitter:image", content: image },
+      ]),
+    );
+    expect(result?.links).toEqual([
+      { rel: "canonical", href: "https://clawhub.ai/maker/templates/release-brief" },
+    ]);
+    detail.package!.channel = "private";
+    expect(await head({ loaderData: { detail } } as Parameters<typeof head>[0])).toEqual({});
+  });
+
   it("redirects aliases to the actual package's canonical publisher URL", async () => {
     const detail = packageDetail();
     detail.package!.name = "@maker/canonical-brief";

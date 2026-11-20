@@ -2815,11 +2815,11 @@ code {
   height: 17px;
 }
 
-/* Preserve plugin artwork colors while keeping skill imagery subdued. */
+/* Preserve package artwork colors while keeping skill imagery subdued. */
 .browse-page
   .browse-results-grid
   .skill-card-header
-  .marketplace-icon:not(.marketplace-icon-plugin)
+  .marketplace-icon:not(.marketplace-icon-plugin, .marketplace-icon-template)
   .marketplace-icon-image {
   filter: grayscale(1) brightness(1.18);
 }
@@ -10514,31 +10514,6 @@ a.skills-sh-security-audit-row:focus-visible {
   border-color: color-mix(in srgb, var(--oc-status-error-fg) 45%, var(--oc-border-subtle));
 }
 
-.fade-up {
-  animation: fadeUp 0.6s ease forwards;
-  opacity: 0;
-  transform: translateY(12px);
-}
-
-.fade-up[data-delay="1"] {
-  animation-delay: 0.1s;
-}
-
-.fade-up[data-delay="2"] {
-  animation-delay: 0.2s;
-}
-
-.fade-up[data-delay="3"] {
-  animation-delay: 0.3s;
-}
-
-@keyframes fadeUp {
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -12736,6 +12711,54 @@ a.agentic-risk-finding-title:focus-visible {
   box-shadow: none;
 }
 
+/* Template silhouettes sit directly on the row or card, not inside an icon tile. */
+.browse-page .plugin-summary-item .marketplace-icon.marketplace-icon-template {
+  border: 0 !important;
+  border-radius: 0;
+  background: transparent !important;
+  box-shadow: none;
+  overflow: visible;
+  transform: none;
+}
+
+.marketplace-icon-template {
+  position: relative;
+}
+
+.marketplace-icon-template .marketplace-icon-image {
+  position: relative;
+  object-fit: contain;
+}
+
+.template-artwork-skeleton {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--oc-radius-inset);
+}
+
+.templates-browse-page .browse-results-skeleton-icon,
+.template-artwork-skeleton {
+  background: color-mix(in srgb, var(--ink) 10%, var(--surface));
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .template-artwork-skeleton {
+    animation: var(--animate-pulse);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .templates-browse-page .browse-results-skeleton-row .animate-pulse {
+    animation: none;
+  }
+}
+
+/* Both placeholder and populated rows reserve two lines. Wrapped content can still grow. */
+.templates-browse-page .skill-list-item-body {
+  min-height: 44px;
+  align-content: center;
+}
+
 .browse-page .skill-list-item > .marketplace-icon .marketplace-icon-glyph {
   width: 14px;
   height: 14px;
@@ -14730,6 +14753,27 @@ body:has(.browse-page-borderless-header) .navbar {
 
   .browse-page .browse-results-skeleton-updated {
     display: none;
+  }
+
+  .templates-browse-page .skill-list-item,
+  .templates-browse-page .browse-list-head {
+    grid-template-columns: 27px minmax(0, 1fr) auto;
+  }
+
+  .templates-browse-page .skill-list-item > .marketplace-icon,
+  .templates-browse-page .browse-results-skeleton-icon,
+  .templates-browse-page .browse-list-head-icon-spacer {
+    display: inline-flex;
+  }
+
+  .templates-browse-page .skill-list-item-body,
+  .templates-browse-page .browse-list-head-label:nth-of-type(2) {
+    grid-column: 2;
+  }
+
+  .templates-browse-page .skill-list-item-meta,
+  .templates-browse-page .browse-list-head-stat {
+    grid-column: 3;
   }
 
   .skill-list-item-summary {

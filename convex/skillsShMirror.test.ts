@@ -3,6 +3,7 @@
 import { convexTest } from "convex-test";
 import type { FunctionArgs } from "convex/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { sha256Hex } from "../src/__tests__/helpers/hash";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import schema from "./schema";
@@ -26,11 +27,6 @@ function useProductionEnvironment() {
   vi.stubEnv("CLAWHUB_SKILLS_SH_ROLLOUT_MODE", "production");
   vi.stubEnv("CONVEX_CLOUD_URL", "https://wry-manatee-359.convex.cloud");
   vi.stubEnv("CONVEX_SITE_URL", "https://wry-manatee-359.convex.site");
-}
-
-async function sha256Hex(value: string) {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 const githubRow = {

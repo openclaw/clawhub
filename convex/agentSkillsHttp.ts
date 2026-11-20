@@ -334,10 +334,7 @@ async function buildArchive(ctx: AgentSkillsCtx, resolved: ResolvedSkill) {
       }
       entries[file.path] = new Uint8Array(await blob.arrayBuffer());
     }
-    return {
-      ok: true as const,
-      archive: buildNormalizedAgentSkillArchive(entries),
-    };
+    return skillArchiveResult(entries);
   }
 
   const github = resolved.resolution.github;
@@ -364,10 +361,28 @@ async function buildArchive(ctx: AgentSkillsCtx, resolved: ResolvedSkill) {
       message: "GitHub skill archive no longer matches its pinned content hash",
     };
   }
-  return {
-    ok: true as const,
-    archive: buildNormalizedAgentSkillArchive(entries, github.path),
-  };
+  return skillArchiveResult(entries, github.path);
+}
+
+function skillArchiveResult(entries: Record<string, Uint8Array>, rootPath?: string) {
+  try {
+    return {
+      ok: true as const,
+      archive: rootPath
+        ? buildNormalizedAgentSkillArchive(entries, rootPath)
+        : buildNormalizedAgentSkillArchive(entries),
+    };
+  } catch (error) {
+    if (error instanceof Error && error.message === "Skill archive is missing SKILL.md") {
+      return {
+        ok: false as const,
+        status: 422,
+        message:
+          "Skill archive is missing SKILL.md. Ask the publisher to publish a version containing SKILL.md.",
+      };
+    }
+    throw error;
+  }
 }
 
 type ArchivePin =

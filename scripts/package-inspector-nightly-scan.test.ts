@@ -5,6 +5,7 @@ import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { filterPackageInspectorFindingsForFamily } from "../convex/lib/packageInspectorFinding";
 import {
   acknowledgeBatch,
   downloadPackageArtifactForScan,
@@ -551,6 +552,51 @@ describe("package-inspector-nightly-scan", () => {
       }),
     ).toBe("manual-run");
   });
+
+  it("keeps native package findings off a configuration-only bundle that the real Inspector flags", async () => {
+    const bundleRoot = await mkdtemp(path.join(tmpdir(), "clawhub-inspector-bundle-"));
+    temporaryRoots.push(bundleRoot);
+    await mkdir(path.join(bundleRoot, ".codex-plugin"), { recursive: true });
+    await mkdir(path.join(bundleRoot, "skills", "demo"), { recursive: true });
+    await writeFile(
+      path.join(bundleRoot, ".codex-plugin", "plugin.json"),
+      '{"name":"totem","version":"0.3.2","skills":"./skills"}\n',
+    );
+    await writeFile(path.join(bundleRoot, ".mcp.json"), '{"mcpServers":{}}\n');
+    await writeFile(
+      path.join(bundleRoot, "skills", "demo", "SKILL.md"),
+      "---\nname: demo\ndescription: demo\n---\nDemo skill.\n",
+    );
+    const scanRoot = await prepareExtractedPluginRoot(bundleRoot, "legacy-zip", "totem");
+    const inspector = (await import("@openclaw/plugin-inspector")) as unknown as {
+      pluginRoot: {
+        runCheck: (
+          options: Record<string, unknown>,
+        ) => Promise<{ report: Record<string, unknown> }>;
+      };
+    };
+
+    const { report } = await inspector.pluginRoot.runCheck({
+      allowExecution: false,
+      authorFacing: true,
+      capture: false,
+      configPath: path.join(scanRoot, ".plugin-inspector.json"),
+      mockSdk: true,
+      outDir: path.join(bundleRoot, "report"),
+      pluginRoot: scanRoot,
+    });
+    const findings = normalizeFindings(report);
+
+    // The pinned Inspector treats every upload as a native plugin. Drop the
+    // filter once Inspector accepts the package family itself.
+    expect(findings.map((finding) => finding.code)).toContain("package-json-missing");
+    expect(
+      filterPackageInspectorFindingsForFamily("bundle-plugin", findings).map(
+        (finding) => finding.code,
+      ),
+    ).not.toContain("package-json-missing");
+    expect(filterPackageInspectorFindingsForFamily("code-plugin", findings)).toEqual(findings);
+  }, 60_000);
 
   it("acknowledges a processed batch before the runner advances its cursor", async () => {
     const fetchMock = vi.fn().mockResolvedValue(

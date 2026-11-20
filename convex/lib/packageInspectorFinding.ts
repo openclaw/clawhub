@@ -27,3 +27,23 @@ export type PackageInspectorFinding = Infer<typeof packageInspectorIssueInputVal
 export type PackageInspectorAuthorRemediation = NonNullable<
   PackageInspectorFinding["authorRemediation"]
 >;
+
+// Plugin Inspector checks every upload as a native code plugin. These two
+// checks ask for npm package metadata, which a configuration-only bundle
+// (Codex, Claude or Cursor marker plus MCP config and skills) does not ship.
+const NATIVE_ONLY_PACKAGE_FINDING_CODES = new Set([
+  "package-json-missing",
+  "package-openclaw-entry-missing",
+]);
+
+/**
+ * Drops findings that only apply to native code plugins when the package is a
+ * bundle plugin. Code plugins and every other finding code pass through.
+ */
+export function filterPackageInspectorFindingsForFamily<T extends { code: string }>(
+  family: string,
+  findings: T[],
+): T[] {
+  if (family !== "bundle-plugin") return findings;
+  return findings.filter((finding) => !NATIVE_ONLY_PACKAGE_FINDING_CODES.has(finding.code));
+}

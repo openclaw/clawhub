@@ -7,6 +7,7 @@ import { createGitHubAppInstallationToken, isGitHubAppConfigured } from "./lib/g
 import {
   dispatchGitHubRepositoryEvent,
   getGitHubRepositoryDispatchPermission,
+  isGitHubRepositoryDispatchConfigured,
 } from "./lib/githubRepositoryDispatch";
 import {
   isRetiredAutomaticPluginScan,
@@ -31,13 +32,7 @@ const internalRefs = internal as unknown as {
 
 export function isSecurityScanEventDispatchEnabled(env: NodeJS.ProcessEnv = process.env) {
   return (
-    env.SECURITY_SCAN_EVENT_DISPATCH_ENABLED === "1" &&
-    env.CLAWHUB_PREVIEW !== "1" &&
-    Boolean(
-      env.GITHUB_APP_ID?.trim() &&
-      env.GITHUB_APP_INSTALLATION_ID?.trim() &&
-      env.GITHUB_APP_PRIVATE_KEY?.trim(),
-    )
+    env.SECURITY_SCAN_EVENT_DISPATCH_ENABLED === "1" && isGitHubRepositoryDispatchConfigured(env)
   );
 }
 

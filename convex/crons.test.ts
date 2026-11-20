@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => {
   const pluginSearchObservationPruneRef = Symbol("plugin-search-observation-prune");
   const authSessionsPruneRef = Symbol("auth-sessions-prune");
   const authRefreshTokensPruneRef = Symbol("auth-refresh-tokens-prune");
+  const finalizationCursorsPruneRef = Symbol("publish-finalization-cursors-prune");
   const publisherInvitesPruneRef = Symbol("publisher-invites-prune");
   const promotionsFeedPublishRef = Symbol("promotions-feed-publish");
   const canonicalTrendingMaterializeRef = Symbol("canonical-trending-materialize");
@@ -45,6 +46,7 @@ const mocks = vi.hoisted(() => {
     pluginSearchObservationPruneRef,
     authSessionsPruneRef,
     authRefreshTokensPruneRef,
+    finalizationCursorsPruneRef,
     publisherInvitesPruneRef,
     promotionsFeedPublishRef,
     canonicalTrendingMaterializeRef,
@@ -147,6 +149,7 @@ vi.mock("./_generated/api", () => ({
     retention: {
       pruneExpiredAuthSessionsInternal: mocks.authSessionsPruneRef,
       pruneExpiredAuthRefreshTokensInternal: mocks.authRefreshTokensPruneRef,
+      pruneExpiredPublishFinalizationCursorsInternal: mocks.finalizationCursorsPruneRef,
       pruneExpiredPublisherInvitesInternal: mocks.publisherInvitesPruneRef,
     },
   },
@@ -378,9 +381,15 @@ describe("crons", () => {
     );
   });
 
-  it("prunes expired publisher invites with the standard batch size", async () => {
+  it("prunes expired finalization cursors and publisher invites with the standard batch size", async () => {
     await import("./crons");
 
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "publish-finalization-cursor-retention-prune",
+      { hours: 1 },
+      mocks.finalizationCursorsPruneRef,
+      { batchSize: 500 },
+    );
     expect(mocks.interval).toHaveBeenCalledWith(
       "publisher-invite-retention-prune",
       { hours: 6 },

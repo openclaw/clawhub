@@ -1,16 +1,14 @@
 import { createFileRoute, notFound } from "@tanstack/react-router";
 import { buildPublisherMeta, buildSocialMetaHead } from "../lib/og";
 import { resolveTopLevelSlugRoute } from "../lib/slugRoute";
-import { PublisherProfilePage } from "./user/$handle";
+import { loadPublisherProfileData, PublisherProfilePage } from "./user/$handle";
 
 export const Route = createFileRoute("/$slug")({
-  loader: async ({ params }) => {
+  loader: async ({ params, abortController }) => {
     const target = await resolveTopLevelSlugRoute(params.slug);
     if (!target) throw notFound();
 
-    return {
-      publisher: target.publisher,
-    };
+    return loadPublisherProfileData(target.publisher, abortController.signal);
   },
   head: ({ params, loaderData }) => {
     if (!loaderData || !("publisher" in loaderData)) return {};
@@ -31,14 +29,12 @@ export const Route = createFileRoute("/$slug")({
 });
 
 function TopLevelPublisherProfile() {
-  const { slug } = Route.useParams();
-  const { publisher } = Route.useLoaderData() as {
-    publisher: NonNullable<Awaited<ReturnType<typeof resolveTopLevelSlugRoute>>> extends infer T
-      ? T extends { kind: "publisher"; publisher: infer P }
-        ? P
-        : never
-      : never;
-  };
-
-  return <PublisherProfilePage handle={publisher.handle ?? slug} loaderPublisher={publisher} />;
+  const { publisher, initialCatalog } = Route.useLoaderData();
+  return (
+    <PublisherProfilePage
+      key={publisher._id}
+      loaderPublisher={publisher}
+      initialCatalog={initialCatalog}
+    />
+  );
 }

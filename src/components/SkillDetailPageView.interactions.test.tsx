@@ -226,16 +226,16 @@ describe("SkillDetailPageView", () => {
     ).toBeTruthy();
   });
 
-  it("reserves graph space while activity metrics are loading", () => {
-    const { container } = renderHeader({ activityTrendLoading: true });
+  it("shows the labeled all-time count before the trend is available", () => {
+    const { container } = renderHeader({});
 
     const sidebar = within(sidebarStatsRoot(container));
 
     expect(sidebar.getByText("Downloads")).toBeTruthy();
     expect(screen.queryByText("30-day Installs")).toBeNull();
-    expect(
-      container.querySelectorAll(".detail-sidebar-stats .metric-trend-card-skeleton"),
-    ).toHaveLength(1);
+    expect(sidebar.getByText("All time")).toBeTruthy();
+    expect(sidebar.getByText("2")).toBeTruthy();
+    expect(container.querySelector(".detail-sidebar-stats .metric-trend-card-skeleton")).toBeNull();
     expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
   });
 
