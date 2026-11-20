@@ -65,6 +65,8 @@ export type PackageListItem<
 export type PackageDetailResponse = ApiV1PackageResponse & {
   /** Optional wire field. A present but invalid display projection must fail closed. */
   templateInventory?: unknown;
+  /** The verified release contains retired v1 grammar: original-file display only. */
+  templateDisplayOnly?: true;
   /** Opt-in exact-release projection. Older registries return ordinary metadata. */
   templateRelease?: {
     version: string;
@@ -641,7 +643,7 @@ export async function fetchPackageDetail(
 ): Promise<PackageDetailResponse> {
   const url = await packageApiUrl(`${ApiRoutes.packages}/${encodeURIComponent(name)}`);
   if (view === "template-inventory") {
-    url.searchParams.set("inventoryFallback", "metadata");
+    url.searchParams.set("inventoryFallback", "website");
     if (typeof window === "undefined") {
       // SSR knows whether this request is carrying viewer credentials. Never probe a denied
       // public inventory and then retry the same release using a more privileged read.

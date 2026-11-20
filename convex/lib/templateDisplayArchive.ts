@@ -4,16 +4,23 @@ import {
   TEMPLATE_BOOTSTRAP_FILE_NAMES,
 } from "clawhub-schema/templatePackage";
 import type { ActionCtx } from "../_generated/server";
-import { ClawPackTarLimitError, parseClawPack } from "./clawpack";
+import { ClawPackTarLimitError, parseClawPack, sha256Hex } from "./clawpack";
 import {
   MAX_TEMPLATE_DISPLAY_ARCHIVE_BYTES,
   MAX_TEMPLATE_DISPLAY_DATA_BYTES,
   type TemplateDisplayBinding,
   type TemplateDisplayData,
 } from "./templateDisplayData";
+import { retiredTemplateDisplayInput } from "./templateRetiredDisplay";
 class InventorySizeLimitError extends Error {}
+class RetiredTemplateGrammarError extends Error {}
+type LegacyPreview = { profileCount: number; size: number; sha256: string };
 const tooLarge = { ok: false, status: 413, message: "Template inventory too large" } as const;
-async function verifiedInventory(bytes: Uint8Array, binding: TemplateDisplayBinding) {
+async function verifiedInventory(
+  bytes: Uint8Array,
+  binding: TemplateDisplayBinding,
+  legacyPreview?: LegacyPreview,
+) {
   const { packageName, version } = binding;
   const pack = await parseClawPack(bytes, { maxTarBytes: 8 * 1024 * 1024, expected: binding });
   if (pack.packageName !== packageName || pack.packageVersion !== version)
@@ -31,29 +38,48 @@ async function verifiedInventory(bytes: Uint8Array, binding: TemplateDisplayBind
   if (!manifestEntry || manifestEntry.bytes.length > 1024 * 1024) throw Error("Invalid manifest");
   const utf8 = new TextDecoder("utf-8", { fatal: true });
   const manifestText = utf8.decode(manifestEntry.bytes);
-  const markers = new Set([
-    "BOOTSTRAP.md",
-    ...templateBundledMetadataPaths(
-      manifestText,
-      manifestPath,
-      pack.entries.map((e) => e.path),
-    ),
-  ]);
-  const checked = validateTemplatePackageContents({
-    packageName,
-    version,
-    packageJson: pack.packageJson,
-    files: pack.entries.map(({ path, bytes: entry }) => ({
-      path,
-      size: entry.length,
-      ...(path === manifestPath
-        ? { text: manifestText }
-        : markers.has(path)
-          ? { text: utf8.decode(entry) }
-          : {}),
-    })),
-  });
-  if (!checked.ok) throw Error("Invalid Template");
+  const paths = pack.entries.map((entry) => entry.path);
+  function validate(text: string, ignored?: ReadonlySet<string>) {
+    const markers = new Set([
+      "BOOTSTRAP.md",
+      ...templateBundledMetadataPaths(text, manifestPath, paths),
+    ]);
+    return validateTemplatePackageContents({
+      packageName,
+      version,
+      packageJson: pack.packageJson,
+      files: pack.entries
+        .filter((entry) => !ignored?.has(entry.path))
+        .map(({ path, bytes: entry }) => ({
+          path,
+          size: entry.length,
+          ...(path === manifestPath
+            ? { text }
+            : markers.has(path)
+              ? { text: utf8.decode(entry) }
+              : {}),
+        })),
+    });
+  }
+  const checked = validate(manifestText);
+  if (!checked.ok) {
+    // Only the website's unpinned latest request can ask for this read-only diagnosis.
+    // Recheck the rest of the package; a retired key must not mask unrelated errors.
+    if (
+      legacyPreview &&
+      legacyPreview.size === manifestEntry.bytes.length &&
+      legacyPreview.sha256 === (await sha256Hex(manifestEntry.bytes))
+    ) {
+      const old = retiredTemplateDisplayInput(manifestText, manifestPath, paths);
+      if (
+        old &&
+        old.profiles.size === legacyPreview.profileCount &&
+        validate(old.text, old.profiles).ok
+      )
+        throw new RetiredTemplateGrammarError();
+    }
+    throw Error("Invalid Template");
+  }
   const {
     manifest,
     summary: templateManifestSummary,
@@ -109,8 +135,10 @@ async function verifiedInventory(bytes: Uint8Array, binding: TemplateDisplayBind
 export async function readVerifiedTemplateDisplayArchive(
   storage: Pick<ActionCtx["storage"], "get">,
   binding: TemplateDisplayBinding,
+  legacyPreview?: LegacyPreview,
 ): Promise<
-  { ok: true; data: TemplateDisplayData } | { ok: false; status: 413 | 422; message: string }
+  | { ok: true; data: TemplateDisplayData }
+  | { ok: false; status: 413 | 422; message: string; retiredV1?: true }
 > {
   if (binding.size > MAX_TEMPLATE_DISPLAY_ARCHIVE_BYTES) return tooLarge;
   const blob = await storage.get(binding.storageId);
@@ -118,11 +146,16 @@ export async function readVerifiedTemplateDisplayArchive(
     return { ok: false, status: 422, message: "Template inventory integrity mismatch" };
   const bytes = new Uint8Array(await blob.arrayBuffer());
   try {
-    const data = await verifiedInventory(bytes, binding);
+    const data = await verifiedInventory(bytes, binding, legacyPreview);
     return { ok: true, data };
   } catch (error) {
     if (error instanceof ClawPackTarLimitError || error instanceof InventorySizeLimitError)
       return tooLarge;
-    return { ok: false, status: 422, message: "Template inventory could not be verified" };
+    return {
+      ok: false,
+      status: 422,
+      message: "Template inventory could not be verified",
+      ...(error instanceof RetiredTemplateGrammarError ? { retiredV1: true as const } : {}),
+    };
   }
 }

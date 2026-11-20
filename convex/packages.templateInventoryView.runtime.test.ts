@@ -19,7 +19,12 @@ const view = base + "?view=template-inventory";
 const manifestPath = "nested/CLAW.md";
 const marker = "body-not-on-the-wire";
 async function fixture(
-  options: { declaredName?: string; schemaVersion?: number; capacity?: "tar" | "archive" } = {},
+  options: {
+    declaredName?: string;
+    schemaVersion?: number;
+    capacity?: "tar" | "archive";
+    legacy?: "field" | "sidecar" | "missing-workspace" | "invalid-list";
+  } = {},
 ) {
   const t = convexTest(schema, modules);
   registerRateLimiter(t, "rateLimiterV2");
@@ -52,6 +57,7 @@ async function fixture(
               ),
             }
           : {}),
+        ...(options.legacy === "sidecar" ? { "package/profiles/old.yml": "historical" } : {}),
         "package/package.json": JSON.stringify({
           name: options.declaredName ?? name,
           version,
@@ -61,10 +67,21 @@ async function fixture(
           "---",
           JSON.stringify({
             schemaVersion: options.schemaVersion ?? 1,
+            ...(options.legacy && options.legacy !== "sidecar"
+              ? { packages: options.legacy === "invalid-list" ? "not a dependency list" : [] }
+              : {}),
             agent: { id: "display", name: "Display " + version },
             workspace: {
               bootstrapFiles: { "AGENTS.md": { source: "workspace/system.md" } },
-              files: [{ path: "skills/notes/SKILL.md", source: "workspace/file.md" }],
+              files: [
+                {
+                  path: "skills/notes/SKILL.md",
+                  source:
+                    options.legacy === "missing-workspace"
+                      ? "workspace/not-published.md"
+                      : "workspace/file.md",
+                },
+              ],
             },
             skills: [{ path: "skills/real" }],
             plugins: [{ ref: "@display-owner/notes", version: "1.0.0" }],
@@ -95,7 +112,7 @@ async function fixture(
       const pack = capacity === "archive" ? gzipSync(gunzipSync(packed), { level: 0 }) : packed;
       const artifact = await parseClawPack(pack);
       const files = await Promise.all(
-        (capacity ? artifact.entries : []).map(async ({ path, bytes }) => ({
+        (capacity || options.legacy ? artifact.entries : []).map(async ({ path, bytes }) => ({
           path,
           size: bytes.byteLength,
           sha256: await sha256Hex(bytes),
@@ -107,7 +124,7 @@ async function fixture(
         packageId: pkg,
         version,
         files,
-        ...(capacity
+        ...(capacity || options.legacy
           ? {
               extractedPackageJson: artifact.packageJson,
               clawManifestSummary: {
@@ -115,6 +132,11 @@ async function fixture(
                 agent: { id: "display", name: "Display " + version },
                 workspace: { bootstrapFiles: ["AGENTS.md"], fileCount: 1 },
                 packages: { skillCount: 1, pluginCount: 1 },
+                ...(options.legacy
+                  ? {
+                      profiles: { count: options.legacy === "sidecar" ? 1 : 0, hasOpenClaw: false },
+                    }
+                  : {}),
                 mcpServerCount: 1,
                 cronJobCount: 1,
               },
@@ -352,13 +374,72 @@ describe("public Template inventory HTTP view", () => {
       expect((await t.fetch(view + suffix)).status).toBe(400);
   });
 
+  it.each(["field", "sidecar"] as const)(
+    "displays verified retired %s only on the public latest website surface",
+    async (legacy) => {
+      const { t, latest } = await fixture({ legacy });
+      const website = view + "&inventoryFallback=website";
+      for (const strict of [
+        view,
+        view + "&inventoryFallback=metadata",
+        website + "&version=1.0.0",
+        website + "&version=2.0.0",
+      ]) {
+        expect((await t.fetch(strict)).status).toBe(422);
+      }
+      const response = await t.fetch(website);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({
+        ...(await (await t.fetch(base)).json()),
+        templateDisplayOnly: true,
+      });
+      const preview = await t.fetch(base + "/file?path=nested%2FCLAW.md&preview=1&version=2.0.0");
+      expect(preview.status).toBe(200);
+      expect(await preview.text()).toContain(marker);
+      const originalFiles = await t.run(async (ctx) => (await ctx.db.get(latest.release))!.files);
+      await t.run((ctx) =>
+        ctx.db.patch(latest.release, {
+          files: originalFiles.map((file) =>
+            file.path === manifestPath ? { ...file, sha256: "c".repeat(64) } : file,
+          ),
+        }),
+      );
+      expect((await t.fetch(website)).status).toBe(422);
+      await t.run((ctx) => ctx.db.patch(latest.release, { files: originalFiles }));
+      const savedSummary = await t.run(
+        async (ctx) => (await ctx.db.get(latest.release))!.clawManifestSummary!,
+      );
+      await t.run((ctx) => ctx.db.patch(latest.release, { clawManifestSummary: undefined }));
+      expect((await t.fetch(website)).status).toBe(422);
+      await t.run((ctx) =>
+        ctx.db.patch(latest.release, {
+          clawManifestSummary: savedSummary,
+          clawpackSha256: "b".repeat(64),
+        }),
+      );
+      expect((await t.fetch(website)).status).toBe(422);
+      await t.run((ctx) => ctx.db.patch(latest.release, { ownerDeletedAt: 1 }));
+      expect((await t.fetch(website)).status).toBe(404);
+    },
+  );
+
+  it.each(["missing-workspace", "invalid-list"] as const)(
+    "does not treat a retired key as permission to display other invalid contents (%s)",
+    async (legacy) => {
+      const { t } = await fixture({ legacy });
+      expect((await t.fetch(view + "&inventoryFallback=website")).status).toBe(422);
+    },
+  );
+
   it.each([{ declaredName: "different-name" }, { schemaVersion: 2 }])(
     "refuses unsupported data or wrong archive identity without leaking parser diagnostics (%j)",
     async (opts) => {
       const { t } = await fixture(opts);
-      const res = await t.fetch(view + "&inventoryFallback=metadata");
-      expect(res.status).toBe(422);
-      expect(await res.text()).toBe("Template inventory could not be verified");
+      for (const mode of ["metadata", "website"]) {
+        const res = await t.fetch(view + "&inventoryFallback=" + mode);
+        expect(res.status).toBe(422);
+        expect(await res.text()).toBe("Template inventory could not be verified");
+      }
     },
   );
 

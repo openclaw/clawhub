@@ -2871,14 +2871,25 @@ export const getPublicTemplateInventoryInternal = internalQuery({
       staticScan,
       manualModeration,
     } = release;
+    const unpinnedPreview =
+      !projection && args.version === undefined && release.clawManifestSummary?.schemaVersion === 1
+        ? selectTemplateDetailRelease(publicPackage, release)
+        : null;
     return {
       projection,
       // For an unprojected release, the trusted publication summary and exact manifest
       // envelope are the evidence of supported grammar when bounded inflation cannot finish.
+      legacyPreview: unpinnedPreview?.file
+        ? {
+            profileCount: release.clawManifestSummary?.profiles?.count ?? 0,
+            size: unpinnedPreview.file.size,
+            sha256: unpinnedPreview.file.sha256,
+          }
+        : null,
       capacityMetadataEligible:
         args.version === undefined &&
         release.clawManifestSummary?.schemaVersion === 1 &&
-        (projection !== null || selectTemplateDetailRelease(publicPackage, release) !== null),
+        (projection !== null || unpinnedPreview !== null),
       package: publicPackage,
       owner,
       tags: await readPublishedPackageTags(ctx, pkg, latestRelease),
