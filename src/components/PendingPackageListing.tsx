@@ -18,7 +18,7 @@ type Target = FunctionArgs<typeof query>;
 type Listing = NonNullable<FunctionReturnType<typeof query>>;
 type Props = { target: Target } & (
   | { publishedName: string }
-  | { notFound: ReactNode; loading: ReactNode }
+  | { notFound: ReactNode; signedOut?: ReactNode; loading: ReactNode }
 );
 
 export function isPublisherListingPath(pathname: string) {
@@ -82,7 +82,8 @@ function ViewerPendingListing(props: Props) {
     ) : null;
   }
   if (isLoading || reviewEnded || (isAuthenticated && result === undefined)) return props.loading;
-  if (!isAuthenticated || !result) return props.notFound;
+  if (!isAuthenticated) return props.signedOut ?? props.notFound;
+  if (!result) return props.notFound;
   if (result instanceof Error) {
     return (
       <main className="py-10">

@@ -2,6 +2,7 @@ import { createFileRoute, isNotFound, notFound, redirect, useRouter } from "@tan
 import { GenericNotFoundPage } from "../../../components/GenericNotFoundPage";
 import { Container } from "../../../components/layout/Container";
 import { PendingPackageListing } from "../../../components/PendingPackageListing";
+import { SignInPrompt } from "../../../components/SignInPrompt";
 import { TemplateDetailSkeleton } from "../../../components/skeletons/TemplateDetailSkeleton";
 import { TemplateDetailPage } from "../../../components/TemplateDetailPage";
 import { buildSocialMetaHead } from "../../../lib/og";
@@ -83,6 +84,8 @@ export async function loadPublisherTemplate(params: {
 }
 
 export const Route = createFileRoute("/$owner/templates/$slug")({
+  validateSearch: (search): { view?: "submission" } =>
+    search.view === "submission" ? { view: "submission" } : {},
   beforeLoad: ({ params }) => {
     packageNameFromParams(params);
   },
@@ -158,10 +161,22 @@ function TemplateDetailError() {
 
 function PublisherTemplateNotFound({ data }: { data?: unknown }) {
   const params = Route.useParams();
+  const { view } = Route.useSearch();
   if (data !== "listing") return <GenericNotFoundPage />;
+  const returnPath =
+    view === "submission" ? buildTemplateDetailHref(packageNameFromParams(params)) : null;
   return (
     <PendingPackageListing
       target={{ ...params, routeKind: "template" }}
+      signedOut={
+        returnPath ? (
+          <SignInPrompt
+            title="Sign in to view a Template submission"
+            description="Use the GitHub account you published with. After signing in, you’ll return to this listing."
+            redirectTo={returnPath}
+          />
+        ) : null
+      }
       notFound={<GenericNotFoundPage />}
       loading={<TemplateDetailSkeleton />}
     />
