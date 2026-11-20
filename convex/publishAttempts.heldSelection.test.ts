@@ -4,7 +4,7 @@
 import { convexTest } from "convex-test";
 import { expect, it, vi } from "vitest";
 import { api, internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -15,8 +15,8 @@ const cleanCheck = { status: "clean" as const, checkedAt: 1 };
 // untargeted selection: finalization throws for it and the retryable release
 // makes it immediately claimable again, so oldest-first selection would return
 // it forever and never reach the healthy attempt behind it.
-async function stageHeldAheadOfHealthy(olderReason = "manual.review") {
-  const t = convexTest(schema, modules);
+async function stageHeldAheadOfHealthy(olderReason = "manual.review", heldCount = 1) {
+  const t = convexTest({ schema, modules, transactionLimits: true });
   const ids = await t.run(async (ctx) => {
     const userId = await ctx.db.insert("users", { handle: "publisher" });
     const bytes = new TextEncoder().encode("# Fixture\n");
@@ -93,6 +93,14 @@ async function stageHeldAheadOfHealthy(olderReason = "manual.review") {
       moderationReason: olderReason,
       createdAt: 1,
     });
+    for (let i = 1; i < heldCount; i++) {
+      await stage({
+        slug: `held-${i}`,
+        moderationStatus: "hidden",
+        moderationReason: olderReason,
+        createdAt: 1,
+      });
+    }
     const healthyAttemptId = await stage({
       slug: "healthy-skill",
       moderationStatus: "active",
@@ -112,6 +120,97 @@ it("skips a moderation-held attempt and selects the newer healthy attempt", asyn
   expect(claimed).toMatchObject({ attemptId: ids.healthyAttemptId, status: "ready_to_finalize" });
 });
 
+it("advances past tied, full windows of holds, then revisits a newly lifted hold", async () => {
+  const { t, ids } = await stageHeldAheadOfHealthy("manual.review", 50);
+  const claim = (
+    claimId: string,
+    filters: { slug?: string; attemptId?: Id<"publishAttempts"> } = {},
+  ) =>
+    t.mutation(internal.publishAttempts.claimReadyPublishAttemptFinalizationRetryInternal, {
+      claimId,
+      ...filters,
+    });
+  expect(await claim("first")).toBeNull();
+  // Filtered and exact-ID probes must neither consume nor reset background progress.
+  expect(await claim("filtered", { slug: "healthy-skill" })).toBeNull();
+  expect(await claim("targeted", { attemptId: ids.heldAttemptId })).toMatchObject({
+    attemptId: ids.heldAttemptId,
+  });
+  expect(await claim("second")).toBeNull();
+  const claims = await Promise.all([claim("worker-a"), claim("worker-b")]);
+  expect(claims.filter(Boolean)).toEqual([
+    expect.objectContaining({ attemptId: ids.healthyAttemptId }),
+  ]);
+  await t.run(async (ctx) => {
+    const held = await ctx.db.get(ids.heldAttemptId);
+    expect(held).toMatchObject({ status: "ready_to_finalize", checkClaimId: "targeted" });
+    // A moderator lifts the hold; the original targeted lease expires independently.
+    await ctx.db.patch(held!.skillId!, { moderationStatus: "active", moderationReason: undefined });
+    await ctx.db.patch(ids.heldAttemptId, { checkClaimExpiresAt: 0 });
+  });
+  // The losing worker may already have passed the still-leased attempt on wrap.
+  const nextSweep = [await claim("wrap-1"), await claim("wrap-2"), await claim("wrap-3")];
+  expect(nextSweep.filter(Boolean)).toEqual([
+    expect.objectContaining({ attemptId: ids.heldAttemptId }),
+  ]);
+});
+
+it("checkpoints before exhausting a small read budget and resets when the sweep tail departs", async () => {
+  const { t, ids } = await stageHeldAheadOfHealthy("manual.review", 2);
+  const ref = internal.publishAttempts.claimReadyPublishAttemptFinalizationRetryInternal;
+  const claim = () =>
+    t.run((ctx) =>
+      ctx.runMutation(
+        ref,
+        { claimId: "small-budget" },
+        {
+          transactionLimits: { bytesRead: 64 * 1024, documentsRead: 12, documentsWritten: 2 },
+        },
+      ),
+    );
+  expect(await claim()).toBeNull();
+  const progress = () => t.run((ctx) => ctx.db.query("publishFinalizationCursors").unique());
+  expect(await progress()).toMatchObject({
+    after: { id: ids.heldAttemptId },
+    through: { id: ids.healthyAttemptId },
+  });
+  expect(await claim()).toBeNull();
+  expect((await progress())!.after.id).not.toBe(ids.heldAttemptId);
+  await t.run((ctx) => ctx.db.patch(ids.healthyAttemptId, { status: "expired" }));
+  expect(await claim()).toBeNull();
+  expect(await progress()).toBeNull();
+});
+
+it("prunes abandoned filter bookmarks in bounded batches without dropping live progress", async () => {
+  const { t, ids } = await stageHeldAheadOfHealthy();
+  const cursors = await t.run(async (ctx) => {
+    const point = (a: Doc<"publishAttempts">) => ({
+      createdAt: a.createdAt,
+      creationTime: a._creationTime,
+      id: a._id,
+    });
+    const after = point((await ctx.db.get(ids.heldAttemptId))!);
+    const through = point((await ctx.db.get(ids.healthyAttemptId))!);
+    const save = (scope: string, expirationTime: number) =>
+      ctx.db.insert("publishFinalizationCursors", { scope, after, through, expirationTime });
+    return [
+      await save("old-a", 1),
+      await save("old-b", 2),
+      await save("live", Date.now() + 86400000),
+    ];
+  });
+  await t.mutation(internal.retention.pruneExpiredPublishFinalizationCursorsInternal, {
+    batchSize: 1,
+  });
+  expect(await t.run((ctx) => ctx.db.get(cursors[0]))).toBeNull();
+  expect(await t.run((ctx) => ctx.db.get(cursors[1]))).not.toBeNull();
+  await t.mutation(internal.retention.pruneExpiredPublishFinalizationCursorsInternal, {
+    batchSize: 4,
+  });
+  expect(await t.run((ctx) => ctx.db.get(cursors[1]))).toBeNull();
+  expect(await t.run((ctx) => ctx.db.get(cursors[2]))).not.toBeNull();
+});
+
 it.each(["scanner.llm.malicious", "quality.low", "user.moderation", "manual.version_revoked"])(
   "selects a clean corrected version when the parent hide is replaceable: %s",
   async (reason) => {
@@ -127,10 +226,15 @@ it.each(["scanner.llm.malicious", "quality.low", "user.moderation", "manual.vers
 it.each(["manual.review", "quality.low"])(
   "worker publishes the eligible version with %s first in queue",
   async (reason) => {
-    const { t, ids } = await stageHeldAheadOfHealthy(reason);
+    const { t, ids } = await stageHeldAheadOfHealthy(reason, reason === "manual.review" ? 25 : 1);
     const token = "test-only-worker";
     vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", token);
     try {
+      if (reason === "manual.review") {
+        await expect(
+          t.action(api.publishAttempts.claimPrePublicationChecks, { token }),
+        ).resolves.toBeNull();
+      }
       const claim = (await t.action(api.publishAttempts.claimPrePublicationChecks, { token })) as {
         attemptId: Id<"publishAttempts">;
         claimId: string;

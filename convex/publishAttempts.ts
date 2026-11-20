@@ -1,3 +1,4 @@
+import { streamQuery } from "convex-helpers/server/pagination";
 import { ConvexError, type Infer, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -5,6 +6,7 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { action, internalAction, internalMutation, internalQuery } from "./functions";
 import { reusableAigAnalysis } from "./lib/aigAnalysis";
 import { storedFilesValidator } from "./lib/fileValidators";
+import { sha256Hex } from "./lib/hash";
 import { isPendingSkillFinalizationBlocked } from "./lib/moderation";
 import { getPackageByNormalizedName } from "./lib/packageCatalogRead";
 import { manualPackageRecovery } from "./lib/packagePublishRecovery";
@@ -22,7 +24,7 @@ import { publicationCheckLeaseMs } from "./lib/securityWorkerBudgets";
 import { isPublishedSkillVersion } from "./lib/skillFileAccess";
 import { finalizeSkillPublishAttempt } from "./lib/skillPublish";
 import { requestPublishAttemptDispatch } from "./publishAttemptDispatch";
-import { llmAnalysisValidator } from "./schema";
+import schema, { llmAnalysisValidator } from "./schema";
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const CHECK_RETRY_BACKOFF_MS = 5 * 60 * 1000;
@@ -1130,6 +1132,109 @@ export const claimPendingPublishAttemptChecksInternal = internalMutation({
   },
 });
 
+type ReadyClaimArgs = {
+  claimId: string;
+  attemptId?: Id<"publishAttempts">;
+  kind?: "skill" | "package";
+  slug?: string;
+  version?: string;
+};
+
+async function claimReadyCandidate(
+  ctx: MutationCtx,
+  args: ReadyClaimArgs,
+  attempt: Doc<"publishAttempts">,
+  now: number,
+) {
+  const recoveringFinalization = Boolean(args.attemptId) && attempt.status === "finalizing";
+  if (attempt.status !== "ready_to_finalize" && !recoveringFinalization) {
+    return null;
+  }
+  if (args.kind && attempt.kind !== args.kind) {
+    if (args.attemptId) {
+      throw new ConvexError("Publish attempt kind does not match worker claim.");
+    }
+    return null;
+  }
+  if (args.slug && attempt.slug !== args.slug) {
+    if (args.attemptId) {
+      throw new ConvexError("Publish attempt slug does not match worker claim.");
+    }
+    return null;
+  }
+  if (args.version && attempt.version !== args.version) {
+    if (args.attemptId) {
+      throw new ConvexError("Publish attempt version does not match worker claim.");
+    }
+    return null;
+  }
+  if ((attempt.checkClaimExpiresAt ?? 0) > now && attempt.checkClaimId !== args.claimId) {
+    if (args.attemptId) return ACTIVE_CLAIM_OUTCOME;
+    return null;
+  }
+  if (recoveringFinalization) {
+    if ((attempt.finalizationClaimExpiresAt ?? 0) > now) return ACTIVE_CLAIM_OUTCOME;
+    await bindExpiredFinalizationRecovery(ctx, attempt);
+  } else if (await terminalizeUnavailableStagedTarget(ctx, attempt, now)) return null;
+
+  // Untargeted discovery must not keep reselecting a target moderation
+  // blocks. Finalization throws for it, the retryable release clears both
+  // reservations by contract so the attempt is instantly claimable again,
+  // and oldest-first selection then returns that same attempt forever while
+  // every newer attempt starves. Skipping it here leaves retry timing for
+  // genuine transient failures untouched. Explicit targeted recovery still
+  // selects the attempt so an operator can act once a hold is lifted.
+  if (!args.attemptId && (await stagedTargetPromotionHeld(ctx, attempt))) return null;
+
+  await ctx.db.patch(attempt._id, {
+    status: "ready_to_finalize",
+    checkClaimId: args.claimId,
+    checkClaimedAt: now,
+    checkClaimExpiresAt: now + publicationCheckLeaseMs(attempt.kind, undefined),
+    ...(!recoveringFinalization ? { checkClaimLastError: undefined } : {}),
+    updatedAt: now,
+  });
+
+  return {
+    attemptId: attempt._id,
+    status: "ready_to_finalize" as const,
+    claimId: args.claimId,
+    kind: attempt.kind,
+    userId: attempt.userId,
+    ownerUserId: attempt.ownerUserId,
+    ownerPublisherId: attempt.ownerPublisherId,
+    sourceOwnerPublisherId: attempt.sourceOwnerPublisherId,
+    skillId: attempt.skillId,
+    versionId: attempt.skillVersionId,
+    packageId: attempt.packageId,
+    releaseId: attempt.packageReleaseId,
+    slug: attempt.slug,
+    displayName: attempt.displayName,
+    version: attempt.version,
+    artifactFingerprint: attempt.artifactFingerprint,
+    files: [],
+    checkClaimExpiresAt: now + publicationCheckLeaseMs(attempt.kind, undefined),
+    previousCheckClaimLastError: attempt.checkClaimLastError,
+    createdAt: attempt.createdAt,
+  };
+}
+
+const READY_DISCOVERY_ROWS = 25;
+// Leave room for the next full attempt, its staged version and parent, the claim
+// or terminal patch, and the small checkpoint. Convex documents are <= 1 MiB.
+const READY_DISCOVERY_RESERVE = 5 * 1024 * 1024;
+const positionOf = (attempt: Doc<"publishAttempts">) => ({
+  createdAt: attempt.createdAt,
+  creationTime: attempt._creationTime,
+  id: attempt._id,
+});
+const positionKey = (p: Doc<"publishFinalizationCursors">["after"]) => [
+  "ready_to_finalize",
+  p.createdAt,
+  p.creationTime,
+  p.id,
+];
+
 export const claimReadyPublishAttemptFinalizationRetryInternal = internalMutation({
   args: {
     claimId: v.string(),
@@ -1140,91 +1245,66 @@ export const claimReadyPublishAttemptFinalizationRetryInternal = internalMutatio
   },
   handler: async (ctx, args) => {
     const now = Date.now();
-    const targetedAttempt = args.attemptId ? await ctx.db.get(args.attemptId) : null;
-    const candidates = args.attemptId
-      ? targetedAttempt
-        ? [targetedAttempt]
-        : []
-      : await ctx.db
-          .query("publishAttempts")
-          .withIndex("by_status_and_created", (q) => q.eq("status", "ready_to_finalize"))
-          .order("asc")
-          .take(25);
-
-    for (const attempt of candidates) {
-      const recoveringFinalization = Boolean(args.attemptId) && attempt.status === "finalizing";
-      if (attempt.status !== "ready_to_finalize" && !recoveringFinalization) {
-        if (args.attemptId) return null;
-        continue;
-      }
-      if (args.kind && attempt.kind !== args.kind) {
-        if (args.attemptId) {
-          throw new ConvexError("Publish attempt kind does not match worker claim.");
-        }
-        continue;
-      }
-      if (args.slug && attempt.slug !== args.slug) {
-        if (args.attemptId) {
-          throw new ConvexError("Publish attempt slug does not match worker claim.");
-        }
-        continue;
-      }
-      if (args.version && attempt.version !== args.version) {
-        if (args.attemptId) {
-          throw new ConvexError("Publish attempt version does not match worker claim.");
-        }
-        continue;
-      }
-      if ((attempt.checkClaimExpiresAt ?? 0) > now && attempt.checkClaimId !== args.claimId) {
-        if (args.attemptId) return ACTIVE_CLAIM_OUTCOME;
-        continue;
-      }
-      if (recoveringFinalization) {
-        if ((attempt.finalizationClaimExpiresAt ?? 0) > now) return ACTIVE_CLAIM_OUTCOME;
-        await bindExpiredFinalizationRecovery(ctx, attempt);
-      } else if (await terminalizeUnavailableStagedTarget(ctx, attempt, now)) continue;
-
-      // Untargeted discovery must not keep reselecting a target moderation
-      // blocks. Finalization throws for it, the retryable release clears both
-      // reservations by contract so the attempt is instantly claimable again,
-      // and oldest-first selection then returns that same attempt forever while
-      // every newer attempt starves. Skipping it here leaves retry timing for
-      // genuine transient failures untouched. Explicit targeted recovery still
-      // selects the attempt so an operator can act once a hold is lifted.
-      if (!args.attemptId && (await stagedTargetPromotionHeld(ctx, attempt))) continue;
-
-      await ctx.db.patch(attempt._id, {
-        status: "ready_to_finalize",
-        checkClaimId: args.claimId,
-        checkClaimedAt: now,
-        checkClaimExpiresAt: now + publicationCheckLeaseMs(attempt.kind, undefined),
-        ...(!recoveringFinalization ? { checkClaimLastError: undefined } : {}),
-        updatedAt: now,
-      });
-
-      return {
-        attemptId: attempt._id,
-        status: "ready_to_finalize" as const,
-        claimId: args.claimId,
-        kind: attempt.kind,
-        userId: attempt.userId,
-        ownerUserId: attempt.ownerUserId,
-        ownerPublisherId: attempt.ownerPublisherId,
-        sourceOwnerPublisherId: attempt.sourceOwnerPublisherId,
-        skillId: attempt.skillId,
-        versionId: attempt.skillVersionId,
-        packageId: attempt.packageId,
-        releaseId: attempt.packageReleaseId,
-        slug: attempt.slug,
-        displayName: attempt.displayName,
-        version: attempt.version,
-        artifactFingerprint: attempt.artifactFingerprint,
-        files: [],
-        checkClaimExpiresAt: now + publicationCheckLeaseMs(attempt.kind, undefined),
-        previousCheckClaimLastError: attempt.checkClaimLastError,
-        createdAt: attempt.createdAt,
-      };
+    if (args.attemptId) {
+      const attempt = await ctx.db.get(args.attemptId);
+      return attempt ? claimReadyCandidate(ctx, args, attempt, now) : null;
     }
+    // Never let a one-off filtered worker move the background worker's bookmark.
+    // Store only a fixed-width digest so free-form worker filters cannot enlarge
+    // indexed cleanup batches. The claim itself still checks the original filters.
+    const scope = await sha256Hex(
+      new TextEncoder().encode(
+        JSON.stringify([args.kind ?? null, args.slug ?? null, args.version ?? null]),
+      ),
+    );
+    const cursor = await ctx.db
+      .query("publishFinalizationCursors")
+      .withIndex("by_scope", (q) => q.eq("scope", scope))
+      .unique();
+    let through = cursor?.through;
+    if (!through) {
+      const last = await ctx.db
+        .query("publishAttempts")
+        .withIndex("by_status_and_created", (q) => q.eq("status", "ready_to_finalize"))
+        .order("desc")
+        .first();
+      if (!last) return null;
+      // Freeze the sweep end so incoming attempts cannot postpone a lifted hold forever.
+      through = positionOf(last);
+    }
+    let rows = 0;
+    for await (const [attempt] of streamQuery(ctx, {
+      table: "publishAttempts",
+      schema,
+      index: "by_status_and_created",
+      startIndexKey: cursor ? positionKey(cursor.after) : ["ready_to_finalize"],
+      startInclusive: !cursor,
+      endIndexKey: positionKey(through),
+    })) {
+      const claim = await claimReadyCandidate(ctx, args, attempt, now);
+      if (attempt._id === through.id) {
+        if (cursor) await ctx.db.delete(cursor._id);
+        return claim;
+      }
+      rows++;
+      if (
+        claim ||
+        rows >= READY_DISCOVERY_ROWS ||
+        (await ctx.meta.getTransactionMetrics()).bytesRead.remaining < READY_DISCOVERY_RESERVE
+      ) {
+        const checkpoint = {
+          scope,
+          after: positionOf(attempt),
+          through,
+          expirationTime: now + 24 * 60 * 60 * 1000,
+        };
+        if (cursor) await ctx.db.replace(cursor._id, checkpoint);
+        else await ctx.db.insert("publishFinalizationCursors", checkpoint);
+        return claim;
+      }
+    }
+    // The final index entry can leave ready_to_finalize while the sweep is in flight.
+    if (cursor) await ctx.db.delete(cursor._id);
     return null;
   },
 });

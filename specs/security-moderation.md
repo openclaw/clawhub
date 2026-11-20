@@ -560,6 +560,12 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   capture limits of 32 MiB stdout and 1 MiB stderr. Output overflow and timeout
   failures keep the attempt unpublished; scanner verdict exit codes remain
   scanner-specific.
+- Untargeted ready-finalization workers inspect at most 25 candidates per claim,
+  yielding earlier near the transaction budget. They advance a transactional
+  bookmark for their exact filters through a fixed end-of-sweep key, even when
+  no candidate was claimable. The next poll resumes; wrap rechecks lifted holds
+  and expired leases. A null result is not proof the entire queue is empty.
+  Exact attempt-ID claims do not use or move this bookmark.
 - For pending-check and ready-finalization attempts, duplicate targeted recovery
   against a live foreign lease returns no work. It preserves the existing claim
   ID and expiry without falling through to another claim path; the same claim

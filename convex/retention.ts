@@ -75,6 +75,25 @@ export const pruneExpiredAuthRefreshTokensInternal = internalMutation({
   },
 });
 
+export const pruneExpiredPublishFinalizationCursorsInternal = internalMutation({
+  args: { batchSize: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const batchSize = normalizeRetentionBatchSize(args.batchSize);
+    const stale = await ctx.db
+      .query("publishFinalizationCursors")
+      .withIndex("by_expiration_time", (q) => q.lt("expirationTime", Date.now()))
+      .take(batchSize);
+    for (const cursor of stale) await ctx.db.delete(cursor._id);
+    if (stale.length === batchSize) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.retention.pruneExpiredPublishFinalizationCursorsInternal,
+        { batchSize },
+      );
+    }
+  },
+});
+
 export const pruneExpiredPublisherInvitesInternal = internalMutation({
   args: {
     batchSize: v.optional(v.number()),

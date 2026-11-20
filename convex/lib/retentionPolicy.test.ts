@@ -23,6 +23,15 @@ describe("retention policies", () => {
     });
   });
 
+  it("classifies ready-queue bookmarks as bounded, expiring progress", () => {
+    expect(getRetentionPolicy("publishFinalizationCursors")).toMatchObject({
+      classification: "ephemeral",
+      expirationField: "expirationTime",
+      expirationIndex: "by_expiration_time",
+      prune: "retention.pruneExpiredPublishFinalizationCursorsInternal",
+    });
+  });
+
   it("uses one standard batch size for retention jobs", () => {
     expect(RETENTION_STANDARD_BATCH_SIZE).toBe(500);
     const batchSizes = Object.values(RETENTION_POLICIES)
