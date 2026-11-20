@@ -1778,6 +1778,48 @@ attempts `404`, and conflicting or ineligible recovery state `409`. A `409` with
 `Retry-After` means the sealed attempt is still active and may be retried after
 the indicated delay; other `409` responses are terminal for that request.
 
+### `POST /api/v1/publish/submissions/recover`
+
+Recover an interrupted OpenClaw plugin submission only when the original archive
+is retained and no release or attempt (including orphan audit history) exists.
+Requires a current package publisher's user Bearer token; administrator status
+alone does not authorize recovery. Accepts exactly:
+
+```json
+{
+  "name": "@openclaw/example",
+  "version": "2026.11.5",
+  "sourcePath": "extensions/example",
+  "inventoryDigest": "<original sealed inventory SHA-256>",
+  "artifactSha256": "<original tarball SHA-256>",
+  "artifactSize": 12345,
+  "originalRunId": "100",
+  "originalRunAttempt": "1",
+  "originalToolingSha": "<original 40-character tooling commit SHA>",
+  "manualOverrideReason": "Recover retained original bytes after interrupted submission"
+}
+```
+
+The original publish grant must be expired, unconsumed and nonrevoked. Its used
+upload ticket, exact retained tarball and expanded sealed inventory must match.
+`sourcePath` is a relative package directory from the original candidate source;
+it must match the retained manifest's repository directory when specified.
+No upload, archive rebuild or replacement bytes are accepted. Original grants
+are not refreshed or consumed by recovery.
+
+Returns `202` for atomic staging and `200` for replay, with `ok`, `attemptId`,
+`recoveredFromSubmissionId` (a record ID, not a credential), `packageId`,
+`releaseId`, `name`, `version`, `status`, `publicationStatus`, and `reused`.
+Follow the returned attempt ID using the existing attempt-status API. Pending is
+not published: fresh scans, current authority and normal moderation still apply.
+Terminal replays return the recorded outcome, even if cleanup removed the release.
+
+Invalid requests return `400`, invalid credentials `401`, an unmatched original
+submission `404`, and conflicting/ineligible state `409`. A transient `503` can
+have an unknown outcome: retry the exact same request to recover its receipt,
+never submit replacement bytes or infer absence from the public catalog. Existing
+attempts must instead be reconciled through their recorded attempt recovery path.
+
 ### `DELETE /api/v1/skills/{slug}` / `POST /api/v1/skills/{slug}/undelete`
 
 Soft-delete / restore a skill (owner, moderator, or admin).

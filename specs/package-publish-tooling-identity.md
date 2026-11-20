@@ -301,3 +301,36 @@ Recovery retains the failed attempt and consumed v2 token unchanged. The old tok
 The successor reuses the staged release and immutable bytes, starts fresh checks, and bypasses cached prior scan results. Only its current claimed clean checks and live finalization claim can publish. Current API-token revocation, lost publisher membership, ownership changes, blocked scans, or moderation prevent publication. The failed automated parent is never represented as successful. No new package version, deleted history, or reset of an active attempt is involved.
 
 A fresh successor returns HTTP 202. An exact replay by the same API token and actor with the same reason returns HTTP 200 and the current successor status; it does not create another attempt. Both responses include `attemptId`, `recoveredFromAttemptId`, `packageId`, `releaseId`, `name`, `version`, `status`, `publicationStatus`, and `reused`. Follow the successor with the existing publish-attempt status endpoint. An independently failed successor may itself be recovered through a fresh explicit request subject to the same checks.
+
+## Interrupted submission before attempt insertion
+
+`POST /api/v1/publish/submissions/recover` covers a distinct failure: the original
+v2 GitHub Actions upload committed, but publication never inserted a release or
+attempt. A current package publisher API token supplies fresh manual authority;
+the expired, unconsumed, nonrevoked original grant is provenance only. It is never
+consumed, reset, renewed, or represented as a fresh OIDC authorization.
+
+Admission resolves the exact package/version, original run and attempt, tooling
+SHA and sealed inventory to one original publish grant. Its consumed upload grant
+and used ticket must share the original authorization transaction and retained
+archive. Immutable archive hash/size and canonically expanded inventory must match
+the request and original grant. Candidate repository/commit/ref come from that
+grant, not the caller. The selected package source path is provided by the
+freshly authorized caller and compared with `repository.directory` when present.
+The retained manifest must still match the original name and version.
+
+Any existing release or original attempt prevents admission, including orphan and
+terminal attempt audit records in all seven states. Public catalog absence is not
+evidence of a recoverable submission. The insertion mutation rechecks this exact
+outcome, live manual authority and unchanged ownership after archive preparation,
+and atomically creates both pending release and bound attempt through the normal
+attempt owner. The original archive is reused; no upload or package rebuild is
+accepted. Only extracted request-owned blobs are eligible for failed-preparation
+cleanup.
+
+The existing scanner and finalizer own all subsequent work. Fresh clean checks,
+current claim, current publisher/API-token authority, unchanged original identity,
+owner and retained storage, and ordinary moderation gates remain required. A replay
+returns the recorded attempt receipt even after blocking cleanup removed its
+release or bytes; it never creates a replacement attempt. Terminal outcomes need
+explicit operator reconciliation rather than a blind submission retry.

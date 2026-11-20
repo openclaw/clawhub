@@ -54,6 +54,7 @@ import type * as httpApiV1_docsSessionV1 from "../httpApiV1/docsSessionV1.js";
 import type * as httpApiV1_featuredV1 from "../httpApiV1/featuredV1.js";
 import type * as httpApiV1_managedMcpV1 from "../httpApiV1/managedMcpV1.js";
 import type * as httpApiV1_packagePublishRecoveryV1 from "../httpApiV1/packagePublishRecoveryV1.js";
+import type * as httpApiV1_packageSubmissionRecoveryV1 from "../httpApiV1/packageSubmissionRecoveryV1.js";
 import type * as httpApiV1_packagesV1 from "../httpApiV1/packagesV1.js";
 import type * as httpApiV1_promotionsV1 from "../httpApiV1/promotionsV1.js";
 import type * as httpApiV1_publishersV1 from "../httpApiV1/publishersV1.js";
@@ -174,6 +175,7 @@ import type * as lib_packageSdkUsageStorage from "../lib/packageSdkUsageStorage.
 import type * as lib_packageSearchDigest from "../lib/packageSearchDigest.js";
 import type * as lib_packageSecurity from "../lib/packageSecurity.js";
 import type * as lib_packageStatEvents from "../lib/packageStatEvents.js";
+import type * as lib_packageSubmissionRecovery from "../lib/packageSubmissionRecovery.js";
 import type * as lib_pluginApiRetirements from "../lib/pluginApiRetirements.js";
 import type * as lib_pluginBrowseRead from "../lib/pluginBrowseRead.js";
 import type * as lib_pluginBrowseSnapshot from "../lib/pluginBrowseSnapshot.js";
@@ -304,6 +306,7 @@ import type * as packagePublishTokens from "../packagePublishTokens.js";
 import type * as packageReadHttp from "../packageReadHttp.js";
 import type * as packageSdkUsage from "../packageSdkUsage.js";
 import type * as packageSdkUsageHttp from "../packageSdkUsageHttp.js";
+import type * as packageSubmissionRecovery from "../packageSubmissionRecovery.js";
 import type * as packages from "../packages.js";
 import type * as pluginCategoryRefresh from "../pluginCategoryRefresh.js";
 import type * as pluginInspectorDispatch from "../pluginInspectorDispatch.js";
@@ -425,6 +428,7 @@ declare const fullApi: ApiFromModules<{
   "httpApiV1/featuredV1": typeof httpApiV1_featuredV1;
   "httpApiV1/managedMcpV1": typeof httpApiV1_managedMcpV1;
   "httpApiV1/packagePublishRecoveryV1": typeof httpApiV1_packagePublishRecoveryV1;
+  "httpApiV1/packageSubmissionRecoveryV1": typeof httpApiV1_packageSubmissionRecoveryV1;
   "httpApiV1/packagesV1": typeof httpApiV1_packagesV1;
   "httpApiV1/promotionsV1": typeof httpApiV1_promotionsV1;
   "httpApiV1/publishersV1": typeof httpApiV1_publishersV1;
@@ -545,6 +549,7 @@ declare const fullApi: ApiFromModules<{
   "lib/packageSearchDigest": typeof lib_packageSearchDigest;
   "lib/packageSecurity": typeof lib_packageSecurity;
   "lib/packageStatEvents": typeof lib_packageStatEvents;
+  "lib/packageSubmissionRecovery": typeof lib_packageSubmissionRecovery;
   "lib/pluginApiRetirements": typeof lib_pluginApiRetirements;
   "lib/pluginBrowseRead": typeof lib_pluginBrowseRead;
   "lib/pluginBrowseSnapshot": typeof lib_pluginBrowseSnapshot;
@@ -675,6 +680,7 @@ declare const fullApi: ApiFromModules<{
   packageReadHttp: typeof packageReadHttp;
   packageSdkUsage: typeof packageSdkUsage;
   packageSdkUsageHttp: typeof packageSdkUsageHttp;
+  packageSubmissionRecovery: typeof packageSubmissionRecovery;
   packages: typeof packages;
   pluginCategoryRefresh: typeof pluginCategoryRefresh;
   pluginInspectorDispatch: typeof pluginInspectorDispatch;
