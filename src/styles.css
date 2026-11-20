@@ -2815,11 +2815,11 @@ code {
   height: 17px;
 }
 
-/* Preserve plugin artwork colors while keeping skill imagery subdued. */
+/* Preserve package artwork colors while keeping skill imagery subdued. */
 .browse-page
   .browse-results-grid
   .skill-card-header
-  .marketplace-icon:not(.marketplace-icon-plugin)
+  .marketplace-icon:not(.marketplace-icon-plugin, .marketplace-icon-template)
   .marketplace-icon-image {
   filter: grayscale(1) brightness(1.18);
 }
@@ -12734,6 +12734,20 @@ a.agentic-risk-finding-title:focus-visible {
   background: color-mix(in srgb, var(--surface) 72%, transparent);
   color: color-mix(in srgb, var(--ink-soft) 88%, transparent);
   box-shadow: none;
+}
+
+/* Template silhouettes sit directly on the row or card, not inside an icon tile. */
+.browse-page .plugin-summary-item .marketplace-icon.marketplace-icon-template {
+  border: 0 !important;
+  border-radius: 0;
+  background: transparent !important;
+  box-shadow: none;
+  overflow: visible;
+  transform: none;
+}
+
+.marketplace-icon-template .marketplace-icon-image {
+  object-fit: contain;
 }
 
 .browse-page .skill-list-item > .marketplace-icon .marketplace-icon-glyph {
