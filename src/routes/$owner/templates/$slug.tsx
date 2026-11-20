@@ -1,6 +1,9 @@
-import { createFileRoute, notFound, redirect, useRouter } from "@tanstack/react-router";
+import { createFileRoute, isNotFound, notFound, redirect, useRouter } from "@tanstack/react-router";
+import { GenericNotFoundPage } from "../../../components/GenericNotFoundPage";
 import { Container } from "../../../components/layout/Container";
+import { PendingPackageListing } from "../../../components/PendingPackageListing";
 import { TemplateDetailPage } from "../../../components/TemplateDetailPage";
+import { buildSocialMetaHead } from "../../../lib/og";
 import {
   fetchPackageFile,
   fetchPackageVersion,
@@ -14,6 +17,7 @@ import {
   buildTemplateDetailHref,
   packageNameFromPublisherTemplateRoute,
 } from "../../../lib/templateRoutes";
+import { getTemplateShareCopy } from "../../../lib/templateShare";
 
 type TemplateDetailData = {
   detail: PackageDetailResponse;
@@ -57,7 +61,10 @@ export const Route = createFileRoute("/$owner/templates/$slug")({
     packageNameFromParams(params);
   },
   loader: async ({ params }) => {
-    const data = await loadPublisherTemplate(params);
+    const data = await loadPublisherTemplate(params).catch((error: unknown) => {
+      if (isNotFound(error)) throw notFound({ data: "listing" });
+      throw error;
+    });
     const pkg = data.detail.package!;
     const canonicalHref = buildTemplateDetailHref(pkg.name, data.detail.owner?.handle);
     const requestedHref = buildTemplateDetailHref(packageNameFromParams(params), params.owner);
@@ -66,35 +73,34 @@ export const Route = createFileRoute("/$owner/templates/$slug")({
     }
     return data;
   },
-  head: ({ params, loaderData }) => {
+  head: ({ loaderData }) => {
     const pkg = loaderData?.detail.package;
-    const owner = loaderData?.detail.owner?.handle ?? params.owner;
-    const canonicalPath = buildTemplateDetailHref(
-      pkg?.name ?? packageNameFromParams(params),
-      owner,
-    );
-    const canonicalUrl = canonicalPath
-      ? `${getClawHubSiteUrl()}${canonicalPath}`
-      : getClawHubSiteUrl();
-    const title = `${pkg?.displayName ?? params.slug} — ClawHub Templates`;
-    const description =
-      pkg?.summary ?? pkg?.templateManifestSummary?.agent.description ?? "OpenClaw Template";
+    const owner = loaderData?.detail.owner?.handle;
+    if (!pkg || !owner || pkg.channel === "private") return {};
+    const path = buildTemplateDetailHref(pkg.name, owner);
+    if (!path) return {};
+    const site = getClawHubSiteUrl();
+    const copy = getTemplateShareCopy(pkg);
+    const title = copy.title + " — ClawHub Templates";
+    const params = new URLSearchParams({ v: "2", name: pkg.name, owner });
+    if (pkg.latestVersion) params.set("version", pkg.latestVersion);
+    const head = buildSocialMetaHead({
+      title,
+      description: copy.description,
+      url: site + path,
+      image: site + "/og/template.png?" + params,
+    });
     return {
-      links: [{ rel: "canonical", href: canonicalUrl }],
+      ...head,
       meta: [
-        { title },
-        { name: "description", content: description },
-        { property: "og:title", content: title },
-        { property: "og:description", content: description },
+        ...head.meta,
         { property: "og:type", content: "website" },
-        { property: "og:url", content: canonicalUrl },
-        { name: "twitter:card", content: "summary" },
-        { name: "twitter:title", content: title },
-        { name: "twitter:description", content: description },
+        { name: "twitter:image:alt", content: title },
       ],
     };
   },
   pendingComponent: TemplateDetailPending,
+  notFoundComponent: PublisherTemplateNotFound,
   errorComponent: TemplateDetailError,
   component: PublisherTemplatePage,
 });
@@ -134,6 +140,18 @@ function TemplateDetailError() {
   );
 }
 
+function PublisherTemplateNotFound({ data }: { data?: unknown }) {
+  const params = Route.useParams();
+  if (data !== "listing") return <GenericNotFoundPage />;
+  return (
+    <PendingPackageListing
+      target={{ ...params, routeKind: "template" }}
+      notFound={<GenericNotFoundPage />}
+      loading={<TemplateDetailPending />}
+    />
+  );
+}
+
 function PublisherTemplatePage() {
   const params = Route.useParams();
   const { detail, contents, llmAnalysis } = Route.useLoaderData() as TemplateDetailData;
@@ -144,6 +162,12 @@ function PublisherTemplatePage() {
       contents={contents}
       llmAnalysis={llmAnalysis}
       fallbackOwner={params.owner}
+      pendingNotice={
+        <PendingPackageListing
+          target={{ ...params, routeKind: "template" }}
+          publishedName={detail.package!.name}
+        />
+      }
     />
   );
 }

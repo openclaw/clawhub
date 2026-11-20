@@ -22,7 +22,13 @@ function parseInsightParam(value: unknown): string | undefined {
   return INSIGHT_PATTERN.test(trimmed) ? trimmed : undefined;
 }
 
-const KIND_FILTERS = new Set<DashboardKindFilter>(["all", "skill", "plugin", "attention"]);
+const KIND_FILTERS = new Set<DashboardKindFilter>([
+  "all",
+  "skill",
+  "plugin",
+  "template",
+  "attention",
+]);
 const SORT_KEYS = new Set<DashboardSortKey>(["name", "downloads", "updated"]);
 const VIEWS = new Set<DashboardView>(["list", "grid"]);
 

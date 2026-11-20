@@ -1,3 +1,4 @@
+import { isTemplateCategorySlug } from "clawhub-schema/catalogMetadata";
 import { ConvexError, type Infer, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -12,12 +13,14 @@ import {
 import { assertRole, requireUserFromAction } from "./lib/access";
 import { assertFeaturedCapacity } from "./lib/featuredPolicy";
 import { resolvePackageIcon } from "./lib/packageIcons";
+import { hasNoPublishedPackageVersions } from "./lib/packageReleaseVisibility";
 import { extractPackageDigestFields } from "./lib/packageSearchDigest";
 import { retryFailedPublishAttemptChecks } from "./lib/publishAttemptOperationalRecovery";
 import { ACTIVE_PUBLISH_ATTEMPT_STATUSES } from "./lib/publishAttemptState";
 import {
   derivePersonalPublisherHandle,
   ensurePersonalPublisherForUser,
+  getOwnerPublisher,
   getPersonalPublisherForUser,
   getPublisherByHandle,
   getUserByHandleOrPersonalPublisher,
@@ -42,6 +45,22 @@ import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
 import { computeIsSuspicious } from "./lib/skillSafety";
 import { getFirstSearchToken, getMirrorFirstSearchToken } from "./lib/skillSearchDigest";
 import { generateSkillSummary } from "./lib/skillSummary";
+import {
+  applyArtwork,
+  artworkApproval,
+  checkArtworkFile,
+  lastArtworkReceipt,
+  listArtworkPackages,
+  readArtworkPage,
+  repairArtwork,
+  rollbackArtwork,
+} from "./lib/templateArtworkBackfill";
+import {
+  planTemplateCategoryBackfill,
+  TEMPLATE_CATEGORY_BACKFILL,
+  TEMPLATE_CATEGORY_BACKFILL_VERSION,
+  type TemplateCategoryBackfillEntry,
+} from "./lib/templateCategoryBackfill";
 import { requestSkillEvaluationDispatch } from "./skillEvaluationDispatch";
 
 const DEFAULT_BATCH_SIZE = 50;
@@ -275,6 +294,46 @@ export const retryFailedSkillEvaluationInternal = internalMutation({
     await requestSkillEvaluationDispatch(ctx);
     return { eligible: true, requeued: true, attempts: run.attempts };
   },
+});
+
+export const checkTemplateArtworkFileInternal = internalQuery({
+  args: { storageId: v.id("_storage"), size: v.number(), sha256: v.string() },
+  handler: checkArtworkFile,
+});
+const artworkCursor = v.optional(v.union(v.string(), v.null()));
+export const listTemplateArtworkPackagesInternal = internalQuery({
+  args: { cursor: artworkCursor },
+  handler: listArtworkPackages,
+});
+export const readTemplateArtworkPageInternal = internalQuery({
+  args: { packageId: v.id("packages"), cursor: artworkCursor },
+  handler: readArtworkPage,
+});
+export const applyTemplateArtworkInternal = internalMutation({
+  args: { packageId: v.id("packages"), approval: artworkApproval },
+  handler: applyArtwork,
+});
+export const repairTemplateArtworkInternal = internalAction({
+  args: {
+    packageId: v.id("packages"),
+    cursor: artworkCursor,
+    dryRun: v.optional(v.boolean()),
+    confirm: v.optional(v.string()),
+    approval: v.optional(artworkApproval),
+  },
+  handler: repairArtwork,
+});
+export const rollbackTemplateArtworkInternal = internalMutation({
+  args: {
+    receiptId: v.id("auditLogs"),
+    dryRun: v.optional(v.boolean()),
+    confirm: v.optional(v.string()),
+  },
+  handler: rollbackArtwork,
+});
+export const getTemplateArtworkReceiptInternal = internalQuery({
+  args: { releaseId: v.id("packageReleases") },
+  handler: lastArtworkReceipt,
 });
 
 type PluginIconCandidate = {
@@ -1786,6 +1845,225 @@ export const resyncPluginCatalogMetadataDigests: ReturnType<typeof action> = act
     const { user } = await requireUserFromAction(ctx);
     assertRole(user, ["admin"]);
     return ctx.runAction(internal.maintenance.resyncPluginCatalogMetadataDigestsInternal, args);
+  },
+});
+
+const TEMPLATE_CATEGORY_BACKFILL_CONFIRM = "backfill-template-categories";
+// The unmapped-listing report reads the Template packages in one bounded page. Production had
+// about 190 when this was written; a catalog past either bound is reported as incomplete.
+const TEMPLATE_CATEGORY_REPORT_MAX_PACKAGES = 500;
+const TEMPLATE_CATEGORY_REPORT_MAX_BYTES = 8_000_000;
+
+type TemplateCategoryBackfillResult = {
+  name: string;
+  status: "would-change" | "changed" | "would-resync" | "resynced" | "unchanged" | "skipped";
+  /** Why a listing was skipped. Skipped listings are never written. */
+  reason?:
+    | "not-found"
+    | "not-a-template"
+    | "first-party"
+    | "owner-unavailable"
+    | "owner-changed"
+    | "categories-drifted";
+  stored?: string[] | null;
+  next: string[];
+  /** Rewritten all the same, so a later restore returns it under the right category. */
+  softDeleted?: true;
+};
+
+type TemplateCategoryUnmappedListing = {
+  name: string;
+  /** Null when the owner is missing, deleted or deactivated. */
+  owner: string | null;
+  stored: string[] | null;
+  state: "listed" | "unpublished" | "soft-deleted";
+};
+
+type TemplateListingOwner = { firstParty: boolean; handle: string | null };
+
+async function readTemplateListingOwner(
+  ctx: Pick<MutationCtx, "db">,
+  pkg: Doc<"packages">,
+): Promise<TemplateListingOwner> {
+  const storedPublisher = pkg.ownerPublisherId ? await ctx.db.get(pkg.ownerPublisherId) : null;
+  // A deactivated openclaw publisher still marks its listings as first-party.
+  if (storedPublisher?.handle === "openclaw") return { firstParty: true, handle: "openclaw" };
+  // Legacy user-owned Templates have no publisher row; this resolves their personal publisher.
+  const owner = await getOwnerPublisher(ctx, {
+    ownerPublisherId: pkg.ownerPublisherId,
+    ownerUserId: pkg.ownerUserId,
+  });
+  return { firstParty: owner?.handle === "openclaw", handle: owner?.handle ?? null };
+}
+
+// Template category reads use the package digest, and topic facet rows carry a copy.
+async function templateCategoryProjectionsMatch(
+  ctx: Pick<MutationCtx, "db">,
+  pkg: Doc<"packages">,
+) {
+  const expected = JSON.stringify(extractPackageDigestFields(pkg).categories);
+  const digest = await ctx.db
+    .query("packageSearchDigest")
+    .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
+    .unique();
+  if (!digest || JSON.stringify(digest.categories) !== expected) return false;
+  const topicDigests = await ctx.db
+    .query("packageTopicSearchDigest")
+    .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
+    .collect();
+  return topicDigests.every((row) => JSON.stringify(row.categories) === expected);
+}
+
+async function backfillTemplateCategory(
+  ctx: Pick<MutationCtx, "db">,
+  entry: TemplateCategoryBackfillEntry,
+  dryRun: boolean,
+  now: number,
+): Promise<TemplateCategoryBackfillResult> {
+  const next = [...entry.next];
+  const skipped = (
+    reason: NonNullable<TemplateCategoryBackfillResult["reason"]>,
+    stored?: string[] | null,
+  ) => ({ name: entry.name, status: "skipped" as const, reason, stored, next });
+  const pkg = await ctx.db
+    .query("packages")
+    .withIndex("by_name", (q) => q.eq("normalizedName", entry.name))
+    .unique();
+  if (!pkg) return skipped("not-found");
+  const stored = pkg.categories ?? null;
+  if (pkg.family !== "claw") return skipped("not-a-template", stored);
+  const owner = await readTemplateListingOwner(ctx, pkg);
+  // First-party listings keep their stored categories, whatever name they hold.
+  if (owner.firstParty) return skipped("first-party", stored);
+  // Without a current owner there is nobody to compare with the reviewed publisher.
+  if (owner.handle === null) return skipped("owner-unavailable", stored);
+  if (owner.handle !== entry.owner) return skipped("owner-changed", stored);
+
+  const plan = planTemplateCategoryBackfill(pkg.categories, entry);
+  if (plan === "drifted") return skipped("categories-drifted", stored);
+  const listing = {
+    name: entry.name,
+    stored,
+    next,
+    ...(pkg.softDeletedAt === undefined ? {} : { softDeleted: true as const }),
+  };
+  if (plan === "applied") {
+    if (await templateCategoryProjectionsMatch(ctx, pkg)) {
+      return { ...listing, status: "unchanged" };
+    }
+    if (!dryRun) await syncPackageSearchDigestForPackageId(ctx, pkg._id);
+    return { ...listing, status: dryRun ? "would-resync" : "resynced" };
+  }
+  if (!dryRun) {
+    // The package trigger rewrites the search digest and topic facet rows in this transaction.
+    // updatedAt stays put: the listing did not change, and it orders "recently updated" lists.
+    await ctx.db.patch(pkg._id, { categories: next });
+    // Not "package.catalog_metadata.set": that action records a publisher's own choice.
+    await ctx.db.insert("auditLogs", {
+      action: "package.template_categories.backfill",
+      targetType: "package",
+      targetId: pkg._id,
+      metadata: {
+        repairVersion: TEMPLATE_CATEGORY_BACKFILL_VERSION,
+        name: pkg.name,
+        previous: { categories: pkg.categories },
+        next: { categories: next },
+      },
+      createdAt: now,
+    });
+  }
+  return { ...listing, status: dryRun ? "would-change" : "changed" };
+}
+
+function isAssignedTemplateCategoryList(stored: readonly string[] | undefined) {
+  const only = stored?.length === 1 ? stored[0] : undefined;
+  return only !== undefined && (only === "other" || isTemplateCategorySlug(only));
+}
+
+// What the backfill cannot fix: Template listings outside the mapping, not first-party, whose
+// stored categories are not exactly one current slug or ["other"]. A community Template
+// published after the mapping was reviewed, or a release staged before the taxonomy deployed
+// and promoted with a removed first category, shows up here. Read-only.
+async function reportUnmappedTemplateCategories(ctx: Pick<MutationCtx, "db">) {
+  const mapped = new Set(TEMPLATE_CATEGORY_BACKFILL.map(({ name }) => name));
+  const page = await ctx.db
+    .query("packages")
+    .withIndex("by_family_updated", (q) => q.eq("family", "claw"))
+    .paginate({
+      cursor: null,
+      numItems: TEMPLATE_CATEGORY_REPORT_MAX_PACKAGES,
+      maximumBytesRead: TEMPLATE_CATEGORY_REPORT_MAX_BYTES,
+    });
+  const owners = new Map<string, Promise<TemplateListingOwner>>();
+  const listings: TemplateCategoryUnmappedListing[] = [];
+  for (const pkg of page.page) {
+    if (isAssignedTemplateCategoryList(pkg.categories) || mapped.has(pkg.normalizedName)) continue;
+    // Most listings in an old shape are first-party; resolve each owner once.
+    const ownerKey = `${pkg.ownerPublisherId ?? ""}/${pkg.ownerUserId}`;
+    let owner = owners.get(ownerKey);
+    if (!owner) {
+      owner = readTemplateListingOwner(ctx, pkg);
+      owners.set(ownerKey, owner);
+    }
+    const { firstParty, handle } = await owner;
+    if (firstParty) continue;
+    listings.push({
+      name: pkg.name,
+      owner: handle,
+      stored: pkg.categories ?? null,
+      state:
+        pkg.softDeletedAt !== undefined
+          ? "soft-deleted"
+          : hasNoPublishedPackageVersions(pkg)
+            ? "unpublished"
+            : "listed",
+    });
+  }
+  listings.sort((left, right) => left.name.localeCompare(right.name));
+  return {
+    // False when the catalog outgrew the bounded page; the list is then partial.
+    complete: page.isDone,
+    scanned: page.page.length,
+    listings,
+  };
+}
+
+// Operator-only, run once after the 2026-11-18 Template taxonomy deploys. Writes only to the
+// listings named in TEMPLATE_CATEGORY_BACKFILL, in one transaction, and is safe to repeat.
+export const backfillTemplateCategoriesInternal = internalMutation({
+  args: {
+    dryRun: v.optional(v.boolean()),
+    confirm: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const dryRun = args.dryRun !== false;
+    if (!dryRun && args.confirm !== TEMPLATE_CATEGORY_BACKFILL_CONFIRM) {
+      throw new ConvexError(`Pass confirm="${TEMPLATE_CATEGORY_BACKFILL_CONFIRM}" to apply.`);
+    }
+    const now = Date.now();
+    const results: TemplateCategoryBackfillResult[] = [];
+    for (const entry of TEMPLATE_CATEGORY_BACKFILL) {
+      results.push(await backfillTemplateCategory(ctx, entry, dryRun, now));
+    }
+    const totals: Record<TemplateCategoryBackfillResult["status"], number> = {
+      "would-change": 0,
+      changed: 0,
+      "would-resync": 0,
+      resynced: 0,
+      unchanged: 0,
+      skipped: 0,
+    };
+    for (const result of results) totals[result.status] += 1;
+    return {
+      ok: true as const,
+      dryRun,
+      confirmRequired: dryRun ? TEMPLATE_CATEGORY_BACKFILL_CONFIRM : undefined,
+      version: TEMPLATE_CATEGORY_BACKFILL_VERSION,
+      listings: results.length,
+      totals,
+      results,
+      unmapped: await reportUnmappedTemplateCategories(ctx),
+    };
   },
 });
 

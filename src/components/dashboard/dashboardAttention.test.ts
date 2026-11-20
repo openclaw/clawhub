@@ -6,6 +6,22 @@ import {
 import { collectAttentionItems } from "./dashboardAttention";
 
 describe("collectAttentionItems", () => {
+  it("does not reopen a release with a resolved clean scan for attention", () => {
+    const pkg = createPackage({
+      scanStatus: "clean",
+      latestRelease: { version: "0.1.0-beta.3", createdAt: 1, llmStatus: "suspicious" },
+    });
+    expect(collectAttentionItems([], [pkg], "local")).toEqual([]);
+  });
+
+  it("routes template security review to the template audit page", () => {
+    const items = collectAttentionItems(
+      [],
+      [createPackage({ family: "template", name: "@local/hopper", scanStatus: "malicious" })],
+      "local",
+    );
+    expect(items[0]?.href).toBe("/local/templates/hopper/security-audit?version=1.0.0");
+  });
   it("offers a separate informational API nudge without warning counts", () => {
     const apiRetirements = [
       { deprecatedApi: "oldApi", replacement: "newApi", removeAfter: "2026-12-31" },
@@ -83,14 +99,14 @@ describe("collectAttentionItems", () => {
     });
   });
 
-  it("links blocked plugins to the security audit page", () => {
+  it("links blocked prereleases to their exact security audit", () => {
     const items = collectAttentionItems(
       [],
       [
         createPackage({
           scanStatus: "malicious",
           latestRelease: {
-            version: "1.0.0",
+            version: "0.1.0-beta.3",
             createdAt: 1,
             llmStatus: "malicious",
           },
@@ -101,7 +117,8 @@ describe("collectAttentionItems", () => {
 
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({
-      href: "/local/plugins/beta-plugin/security-audit",
+      version: "0.1.0-beta.3",
+      href: "/local/plugins/beta-plugin/security-audit?version=0.1.0-beta.3",
       actionLabel: "Review security →",
       issueType: "security",
       reason: "Blocked by security checks",
@@ -141,7 +158,7 @@ describe("collectAttentionItems", () => {
       {
         issueType: "security",
         actionLabel: "Review security →",
-        href: "/local/plugins/beta-plugin/security-audit",
+        href: "/local/plugins/beta-plugin/security-audit?version=1.0.0",
       },
     ]);
   });

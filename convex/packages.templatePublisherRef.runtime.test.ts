@@ -92,6 +92,28 @@ describe("publisher-qualified Template references", () => {
     expect(detail?.package.name).toBe("solo-brief");
   });
 
+  it("links Template security audits to the publisher's Template page", async () => {
+    const { t, owner, insertPackage } = await fixture();
+    await insertPackage({ name: "@maker/scoped-brief", family: "claw", ...owner });
+    const auditUrl = async (name: string) => {
+      const response = await t.fetch(`/api/v1/packages/${name}/versions/1.0.0/security`);
+      expect(response.status, name).toBe(200);
+      return (await response.json()).securityAuditUrl;
+    };
+    const origin = "https://some.convex.site";
+
+    // An unscoped Template has no publisher in its name; the link needs its owner.
+    expect(await auditUrl("solo-brief")).toBe(
+      `${origin}/maker/templates/solo-brief/security-audit?version=1.0.0`,
+    );
+    expect(await auditUrl("@maker/scoped-brief")).toBe(
+      `${origin}/maker/templates/scoped-brief/security-audit?version=1.0.0`,
+    );
+    expect(await auditUrl("solo-plugin")).toBe(
+      `${origin}/plugins/solo-plugin/security-audit?version=1.0.0`,
+    );
+  });
+
   it("does not resolve another publisher's handle or a non-Template package", async () => {
     const { t } = await fixture();
 

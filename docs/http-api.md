@@ -748,7 +748,8 @@ Query params:
   `/api/v1/code-plugins`, `/api/v1/bundle-plugins`, or package endpoints with
   `family=code-plugin`/`family=bundle-plugin`). Controlled categories and
   legacy v1 filter aliases are documented under `GET /api/v1/plugins`. With
-  `family=template`, use a [Template category](./templates.md) or `other`;
+  `family=template`, use a [Template category](./templates.md), `other`, or a
+  removed Template category (`personal`, `governance`, `finance`, `people`);
   unrecognized categories are rejected.
 
 Notes:
@@ -781,7 +782,8 @@ Query params:
 - `category` (optional): plugin or Template category filter. For plugins, scope
   the request to plugin packages. Controlled categories and legacy v1
   filter aliases are documented under `GET /api/v1/plugins`. With
-  `family=template`, use a [Template category](./templates.md) or `other`;
+  `family=template`, use a [Template category](./templates.md), `other`, or a
+  removed Template category (`personal`, `governance`, `finance`, `people`);
   unrecognized categories are rejected.
 
 Notes:
@@ -1182,6 +1184,8 @@ Response fields:
   audit text from scanner fields.
 - `verdict` is the display verdict used by the package security-audit page, derived from ClawScan including visible agentic-risk findings. It can differ from the download-policy `trust.scanStatus`. Older registries may omit it; clients should treat that as unavailable display metadata.
 - `securityAuditUrl` links to the exact release's package security-audit page.
+  A Template release links to `/<publisher>/templates/<name>/security-audit`;
+  plugin releases link to their plugin security-audit page.
 - `package.name`, `package.displayName`, and `package.family` identify the
   resolved registry package.
 - `release.releaseId`, `release.version`, and `release.createdAt` identify the

@@ -127,6 +127,16 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   quarantined/revoked package downloads remain blocked. A pending package scan is
   not an unpublished release. Authorized owner/staff submission previews retain
   their separate access path.
+- Normal publisher-qualified plugin and Template listings may show the authenticated
+  personal publisher, current organization members with publish authority, or active
+  moderators/admins a **metadata-only** pending notice. Resolve the actual owner
+  even for an unscoped package; an organization uploader's historical user ID is
+  not membership. Only the newest submitted release can qualify: it must still be
+  pending, bound to its own active publication attempt, and newer than the published
+  latest when one exists. Do not fall back to older pending submissions after a
+  block, removal or publication. Private, blocked, removed or otherwise ineligible
+  records have no notice. This response never grants artifact, file, install,
+  version-history, search, public detail or shared-cache visibility.
 - Pending skill finalization must not lift `softDeletedAt`, `moderationStatus`
   `removed`, or a hidden staff hold such as security redaction, a ban, publisher
   deletion, or manual review. A first publish hidden only for
@@ -633,6 +643,19 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   `verification.scanStatus` that only mirrors a stored static result, so old
   static-derived statuses cannot start acting as trust verdicts. The fields stay
   optional in the schema until a migration clears historical rows.
+- A stored scan-report download for a skill version whose publication checks
+  stopped before a verdict returns a failed report instead of "Scan results not
+  found". The report is not a verdict: it has status `failed`, no scanner
+  analysis, and wording that the failure is not a finding against the submitted
+  files. It runs after the existing owner, publisher-member, or staff
+  authorization and is bound to the exact retained attempt by skill, version,
+  and artifact fingerprint. It carries only the publication stage, the two
+  check states, whether a retry is waiting, and a guidance code chosen by the
+  server (`scanner_incomplete` or `remove_python_bytecode`). Check summaries
+  and claim errors can contain runner paths and scanner output, so they,
+  attempt ids, and storage ids never leave the query. Returning this report
+  does not retry checks, change publication state, or grant recovery; plugin
+  versions do not have it yet.
 - Skill Card generation waits only for a settled ClawScan verdict; it no longer
   waits for a static scan.
 - Public artifact pages present SkillSpector findings, A.I.G findings for skills,

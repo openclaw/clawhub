@@ -158,9 +158,7 @@ export function DashboardNeedsAttention({ items }: DashboardNeedsAttentionProps)
               >
                 <div className="skill-list-item-body">
                   <div className="skill-list-item-main">
-                    <span className="dashboard-attention-kind">
-                      {primary.kind === "plugin" ? "Plugin" : "Skill"}
-                    </span>
+                    <span className="dashboard-attention-kind">{attentionKindLabel(primary)}</span>
                     <span className="skill-list-item-name">{group.title}</span>
                   </div>
                   {groupVisibilityLabel(group) ? (
@@ -252,7 +250,7 @@ function DashboardReviewSheetContent({
   const pluginFindings = useQuery(
     api.packages.listPackageInspectorWarningsForManager,
     hasPluginValidation && group.primary.packageName
-      ? { name: group.primary.packageName, limit: 100 }
+      ? { name: group.primary.packageName, version: group.primary.version, limit: 100 }
       : "skip",
   ) as PluginInspectorFinding[] | undefined;
 
@@ -675,11 +673,19 @@ function issueTypeLabel(issueType: DashboardAttentionItem["issueType"]) {
 function reviewHeaderMeta(group: DashboardAttentionGroup) {
   const { primary } = group;
   return [
-    { key: "kind", label: primary.kind === "plugin" ? "Plugin" : "Skill" },
+    { key: "kind", label: attentionKindLabel(primary) },
     primary.ownerHandle ? { key: "owner", label: `@${primary.ownerHandle}` } : null,
     primary.version ? { key: "version", label: `v${primary.version}` } : null,
     primary.updatedAt ? { key: "updated", label: `Updated ${timeAgo(primary.updatedAt)}` } : null,
   ].filter((item): item is { key: string; label: string } => item !== null);
+}
+
+function attentionKindLabel(item: DashboardAttentionItem) {
+  return item.packageFamily === "template"
+    ? "Template"
+    : item.kind === "plugin"
+      ? "Plugin"
+      : "Skill";
 }
 
 function groupVisibilityLabel(group: DashboardAttentionGroup) {

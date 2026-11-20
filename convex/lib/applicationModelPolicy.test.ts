@@ -53,7 +53,7 @@ const cases = [
     name: "Template category",
     effort: "none",
     override: "OPENAI_TEMPLATE_CATEGORY_MODEL",
-    output: '{"categories":["travel"]}',
+    output: '{"category":"travel"}',
     run: () =>
       classifyTemplateCategories({
         name: "trip-planner",

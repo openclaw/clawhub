@@ -27,6 +27,7 @@ import {
   fetchPackageVersion,
   fetchPackageVersions,
   fetchPluginCatalog,
+  fetchTemplateCatalog,
   fetchPackages,
   getPackageDownloadPath,
   PackageApiError,
@@ -910,6 +911,44 @@ describe("fetchPackages", () => {
     expect(getPackageDownloadPath("private-plugin")).toBe(
       "/api/v1/packages/private-plugin/download",
     );
+  });
+});
+
+describe("fetchTemplateCatalog", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it.each([
+    { q: undefined, path: "/api/v1/packages", cursor: "pkgpage:next" },
+    { q: "  release  ", path: "/api/v1/packages/search", cursor: null },
+  ])("uses anonymous Template-only reads at $path", async ({ q, path, cursor }) => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    vi.stubEnv("VITE_CONVEX_SITE_URL", "");
+    const item = { name: "@maker/release", family: "template" };
+    const body = q ? { results: [{ package: item }] } : { items: [item], nextCursor: "next" };
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json(body));
+    const signal = new AbortController().signal;
+
+    const result = await fetchTemplateCatalog({
+      q,
+      category: "engineering",
+      cursor: "pkgpage:next",
+      limit: 25,
+      signal,
+    });
+
+    const requestUrl = fetchMock.mock.calls[0]?.[0];
+    if (typeof requestUrl !== "string") throw new Error("Expected a string request URL");
+    const url = new URL(requestUrl);
+    expect(url.pathname).toBe(path);
+    expect(url.searchParams.get("family")).toBe("template");
+    expect(url.searchParams.get("category")).toBe("engineering");
+    expect(url.searchParams.get("q")).toBe(q?.trim() ?? null);
+    expect(url.searchParams.get("cursor")).toBe(cursor);
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ signal, credentials: "omit" });
+    expect(result).toEqual({ items: [item], nextCursor: q ? null : "next" });
   });
 });
 

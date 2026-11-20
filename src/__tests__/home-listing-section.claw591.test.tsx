@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "../components/ui/tooltip";
 import type { CanonicalTrendingItem } from "../lib/trendingApi";
+import { makeCanonicalTrendingPage } from "./helpers/trending";
 
 const navigateMock = vi.fn();
 const convexQueryMock = vi.fn();
@@ -78,7 +79,7 @@ describe("HomeListingSection", () => {
     convexQueryMock.mockResolvedValue({ page: [], hasMore: false, nextCursor: null });
     convexActionMock.mockResolvedValue([]);
     fetchPluginCatalogMock.mockResolvedValue({ items: [], nextCursor: null });
-    fetchCanonicalTrendingPageMock.mockResolvedValue(canonicalPage([]));
+    fetchCanonicalTrendingPageMock.mockResolvedValue(makeCanonicalTrendingPage([]));
   });
 
   it("shows canonical Trending download totals without changing order", () => {
@@ -225,8 +226,8 @@ describe("HomeListingSection", () => {
     };
     const native = makeTrending("calendar-native", "Calendar Native", 3, 80, 3);
     fetchCanonicalTrendingPageMock
-      .mockResolvedValueOnce(canonicalPage([unrelated], "trending-page-2"))
-      .mockResolvedValueOnce(canonicalPage([external, native]));
+      .mockResolvedValueOnce(makeCanonicalTrendingPage([unrelated], "trending-page-2"))
+      .mockResolvedValueOnce(makeCanonicalTrendingPage([external, native]));
 
     render(
       <TooltipProvider>
@@ -401,7 +402,7 @@ describe("HomeListingSection", () => {
   it("preserves the explicit Load more interaction", async () => {
     const first = makeTrending("first", "First Skill", 17, 9000);
     const second = makeTrending("second", "Second Skill", 3, 8000);
-    fetchCanonicalTrendingPageMock.mockResolvedValue(canonicalPage([first, second]));
+    fetchCanonicalTrendingPageMock.mockResolvedValue(makeCanonicalTrendingPage([first, second]));
     render(<HomeListingSection initialListing={initialTrending([first], true)} />);
 
     expect(screen.getByRole("button", { name: "Load more" })).toBeTruthy();
@@ -416,7 +417,7 @@ describe("HomeListingSection", () => {
   it("keeps loaded Trending rows when a later Load more page fails", async () => {
     const first = makeTrending("first", "First Skill", 17, 9000);
     fetchCanonicalTrendingPageMock
-      .mockResolvedValueOnce(canonicalPage([first], "opaque cursor 2"))
+      .mockResolvedValueOnce(makeCanonicalTrendingPage([first], "opaque cursor 2"))
       .mockRejectedValueOnce(new Error("second page unavailable"));
     render(<HomeListingSection initialListing={initialTrending([first], true)} />);
 
@@ -443,20 +444,6 @@ function initialTrending(
     items: items.map((trending) => ({ trending })),
     hasMore,
     trendingState,
-  };
-}
-
-function canonicalPage(items: CanonicalTrendingItem[], nextCursor: string | null = null) {
-  return {
-    kind: "skills" as const,
-    snapshotId: "snapshot-1",
-    snapshotCursor: "snapshot-cursor",
-    generatedAt: "2026-07-26T00:00:00.000Z",
-    windowHours: 24 as const,
-    rankingVersion: "skills-trending-v1",
-    totalItems: items.length,
-    items,
-    nextCursor,
   };
 }
 

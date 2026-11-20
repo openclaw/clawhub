@@ -55,9 +55,7 @@ const listBundlePluginsV1Http = lazyHttpAction(
 const listCodePluginsV1Http = lazyHttpAction(
   async () => (await import("./httpApiV1")).listCodePluginsV1Http,
 );
-const listPackagesV1Http = lazyHttpAction(
-  async () => (await import("./httpApiV1")).listPackagesV1Http,
-);
+const listPackagesV1Http = lazyHttpAction(async () => (await import("./packageListHttp")).get);
 const listPluginsV1Http = lazyHttpAction(
   async () => (await import("./httpApiV1")).listPluginsV1Http,
 );

@@ -8,7 +8,7 @@ import {
 } from "./_components/clawhub";
 
 export type SecretBlockedPublishEmailProps = {
-  artifactKind: "skill" | "plugin";
+  artifactKind: "skill" | "plugin" | "template";
   artifactName: string;
   version: string;
   preheader: string;
@@ -21,7 +21,8 @@ export default function SecretBlockedPublishEmail({
   preheader,
 }: SecretBlockedPublishEmailProps) {
   const title = `ClawHub blocked a ${artifactKind} publish`;
-  const railLabel = artifactKind === "plugin" ? "Plugin Review" : "Skill Review";
+  const kindLabel = artifactKind[0].toUpperCase() + artifactKind.slice(1);
+  const railLabel = `${kindLabel} Review`;
   return (
     <ClawHubEmailLayout preview={preheader} railLabel={railLabel}>
       <Badge>Secret found</Badge>
@@ -31,7 +32,7 @@ export default function SecretBlockedPublishEmail({
       </Paragraph>
       <DetailTable
         rows={[
-          [artifactKind === "plugin" ? "Plugin" : "Skill", `${artifactName}@${version}`],
+          [kindLabel, `${artifactName}@${version}`],
           [
             "Status",
             <span key="status" style={{ color: "#e8443a" }}>

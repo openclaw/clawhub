@@ -943,6 +943,68 @@ describe("httpApiV1 handlers", () => {
     expect(Object.keys(entries)).not.toContain("static-analysis.json");
   });
 
+  it("downloads a no-verdict report when publication checks failed", async () => {
+    mockApiTokenUser("users:owner", "user");
+    const failed = (guidance: string, retrying: boolean) => ({
+      ok: true,
+      scanId: "skill:held-skill:1.0.0",
+      status: "failed",
+      sourceKind: "published",
+      update: false,
+      writtenBack: false,
+      artifact: { kind: "skill", slug: "held-skill", version: "1.0.0" },
+      report: { aig: null, clawscan: null, endor: null, skillspector: null },
+      publication: {
+        stage: "checks_failed",
+        retrying,
+        checks: { trufflehog: "clean", clawscan: "failed" },
+        guidance,
+      },
+      createdAt: 1,
+      updatedAt: 2,
+    });
+    const download = async (guidance: string, retrying: boolean) => {
+      const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) =>
+        isRateLimitArgs(args) ? okRate() : failed(guidance, retrying),
+      );
+      const response = await __handlers.skillScanGetRouterV1Handler(
+        makeCtx({ runQuery }),
+        new Request("https://example.com/api/v1/skills/-/scan/download/held-skill?version=1.0.0"),
+      );
+      expect(response.status).toBe(200);
+      return unzipSync(new Uint8Array(await response.arrayBuffer()));
+    };
+
+    const entries = await download("scanner_incomplete", false);
+    expect(Object.keys(entries).sort()).toEqual(["README.md", "manifest.json", "publication.json"]);
+    const readme = strFromU8(entries["README.md"]);
+    expect(readme).toContain("Status: failed (no safety verdict)");
+    expect(readme).toContain("This is not a finding against the submitted files.");
+    expect(readme).toContain("Secret check: clean");
+    expect(readme).toContain("Security check: failed");
+    expect(readme).toContain("ClawHub will not retry this version on its own.");
+    expect(readme).not.toContain("ClawScan is the primary security verdict");
+    expect(JSON.parse(strFromU8(entries["manifest.json"]))).toMatchObject({
+      status: "failed",
+      writtenBack: false,
+    });
+    expect(JSON.parse(strFromU8(entries["publication.json"]))).toEqual({
+      stage: "checks_failed",
+      retrying: false,
+      checks: { trufflehog: "clean", clawscan: "failed" },
+      guidance: "scanner_incomplete",
+    });
+
+    const retrying = strFromU8((await download("scanner_incomplete", true))["README.md"]);
+    expect(retrying).toContain("Another check attempt is already waiting.");
+    expect(retrying).not.toContain("ClawHub will not retry");
+
+    // A retry cannot pass while the bytecode is still packaged.
+    const bytecode = strFromU8((await download("remove_python_bytecode", true))["README.md"]);
+    expect(bytecode).toContain("Remove `.pyc`, `.pyo`, and `.pyd` files");
+    expect(bytecode).not.toContain("Another check attempt");
+  });
+
   it("includes the bounded Endor summary in stored plugin report downloads", async () => {
     mockApiTokenUser("users:owner", "user");
     const endor = {
