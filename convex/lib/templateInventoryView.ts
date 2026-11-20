@@ -30,8 +30,9 @@ export async function templateInventoryViewResponse(
   if (selected.projection === "invalid")
     return text("Template inventory integrity mismatch", 422, headers);
   const metadata = toPackageMetadataResponse(pkg, owner, tags);
+  const fallback = params.get("inventoryFallback");
   const allowMetadata =
-    selected.capacityMetadataEligible && params.get("inventoryFallback") === "metadata";
+    selected.capacityMetadataEligible && (fallback === "metadata" || fallback === "website");
   function capacityResponse() {
     // Only a website opening latest may use ordinary metadata in place of the optional
     // inventory. The version-one summary comes from trusted publication, not the request.
@@ -42,11 +43,22 @@ export async function templateInventoryViewResponse(
   if (!data) {
     // Read-only compatibility for old and unsupported releases. Never populate a row from a GET.
     const { readVerifiedTemplateDisplayArchive } = await import("./templateDisplayArchive");
-    const parsed = await readVerifiedTemplateDisplayArchive(ctx.storage, binding);
-    if (!parsed.ok)
+    const recognizeLegacy =
+      allowMetadata && fallback === "website" && pkg.latestVersion === release.version;
+    const parsed = await readVerifiedTemplateDisplayArchive(
+      ctx.storage,
+      binding,
+      recognizeLegacy ? (selected.legacyPreview ?? undefined) : undefined,
+    );
+    if (!parsed.ok) {
+      // The original document remains inspectable, never installable. This outcome is
+      // possible only after verifying the archive digests, envelope and release identity.
+      if (recognizeLegacy && parsed.retiredV1)
+        return json({ ...metadata, templateDisplayOnly: true }, 200, headers);
       return parsed.status === 413
         ? capacityResponse()
         : text(parsed.message, parsed.status, headers);
+    }
     data = parsed.data;
   }
   const { version, sha256, npmIntegrity, npmShasum } = binding;

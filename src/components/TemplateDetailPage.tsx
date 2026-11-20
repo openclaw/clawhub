@@ -112,7 +112,7 @@ export function TemplateDetailPage({
   const scanStatus = pkg.scanStatus ?? "pending";
   // Historical summaries retain profile counts even when CLAW.md alone still parses.
   const retiredProfile = (summary?.profiles?.count ?? 0) > 0;
-  const supportedManifest = Boolean(manifest) && !retiredProfile;
+  const supportedManifest = Boolean(manifest) && !retiredProfile && !detail.templateDisplayOnly;
   const ready =
     supportedManifest &&
     isTemplateReadyToAdd(scanStatus) &&

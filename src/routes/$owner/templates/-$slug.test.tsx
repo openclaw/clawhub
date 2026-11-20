@@ -528,7 +528,7 @@ describe("Template detail composition and interactions", () => {
     const transport = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       if (typeof input !== "string") throw new Error("Expected a registry URL string");
       const u = new URL(input);
-      if (u.searchParams.get("inventoryFallback") !== "metadata")
+      if (u.searchParams.get("inventoryFallback") !== "website")
         return new Response("Template inventory too large", { status: 413 });
       return Response.json(ordinary);
     });
@@ -564,6 +564,40 @@ describe("Template detail composition and interactions", () => {
       transport.mockRestore();
     }
   });
+  it("shows the original document and migration link but never offers Add for a verified display-only release", async () => {
+    const ordinary = packageDetail();
+    ordinary.package!.scanStatus = "clean";
+    const api =
+      await vi.importActual<typeof import("../../../lib/packageApi")>("../../../lib/packageApi");
+    const transport = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      if (typeof input !== "string") throw new Error("Expected a string registry URL");
+      return new URL(input).searchParams.get("inventoryFallback") === "website"
+        ? Response.json({ ...ordinary, templateDisplayOnly: true })
+        : new Response("Template inventory could not be verified", { status: 422 });
+    });
+    try {
+      mocks.fetchPackageDetail.mockImplementation(api.fetchPackageDetail);
+      // A retired profile sidecar can accompany an otherwise valid, addable CLAW.md.
+      mocks.fetchPackageFile.mockImplementation((_name, path) =>
+        Promise.resolve(path === "package.json" ? "{}" : templateContents),
+      );
+      const data = await loadPublisherTemplate({ owner: "maker", slug: "release-brief" });
+      render(<TemplateDetailPage {...data} fallbackOwner="maker" />);
+      expect(screen.getByRole("heading", { level: 1, name: "Release Brief" })).toBeTruthy();
+      expect(screen.getByText("View original CLAW.md").closest("details")?.textContent).toContain(
+        templateContents,
+      );
+      expect(screen.getByRole("link", { name: "Template migration guide" })).toBeTruthy();
+      expect(screen.queryByRole("link", { name: "Install in OpenClaw" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Copy template install command" })).toBeNull();
+      expect(mocks.fetchPackageFile.mock.calls.every(([, , version]) => version === "0.1.0")).toBe(
+        true,
+      );
+    } finally {
+      transport.mockRestore();
+    }
+  });
+
   it("paints named release metadata and navigates workspace mappings while the opened CLAW.md is pending", async () => {
     const detail = packageDetail();
     detail.package!.scanStatus = "clean";
