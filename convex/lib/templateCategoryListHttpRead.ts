@@ -7,25 +7,30 @@ import { json } from "./httpHeaders";
 import { applyRateLimit } from "./httpRateLimit";
 
 // The catalog router owns every other parameter, including sort, channel and featured.
-const NARROW_PARAMETERS = new Set(["family", "category", "limit", "cursor"]);
+const LIST_PARAMETERS = new Set(["family", "category", "limit", "cursor"]);
+const SEARCH_PARAMETERS = new Set(["family", "category", "limit", "q"]);
 
 /**
- * One Template category for anonymous and API-token readers, as OpenClaw's Templates
- * page requests it. Reads the catalog router's own query with the router's arguments;
- * every other request shape and credential keeps the canonical router.
+ * Public Template listings and ranked searches need neither the publishing nor the
+ * compatibility router. Reuse its exact read queries, response projection and access
+ * rules; all other parameters and credentials still belong to the canonical router.
  */
-export async function readTemplateCategoryListHttp(
+export async function readTemplateCatalogHttp(
   ctx: ActionCtx,
   request: Request,
 ): Promise<Response | null> {
-  const params = new URL(request.url).searchParams;
+  const { pathname, searchParams: params } = new URL(request.url);
+  const isSearch = pathname === "/api/v1/packages/search";
+  if (!isSearch && pathname !== "/api/v1/packages") return null;
+  const allowed = isSearch ? SEARCH_PARAMETERS : LIST_PARAMETERS;
   const names = [...params.keys()];
   if (names.length !== new Set(names).size) return null;
-  if (names.some((name) => !NARROW_PARAMETERS.has(name))) return null;
+  if (names.some((name) => !allowed.has(name))) return null;
   if (params.get("family") !== "template") return null;
   const category = params.get("category")?.trim();
-  // The router answers a missing or unknown category, including its 400.
-  if (!category || !isTemplateCategoryFilterSlug(category)) return null;
+  if (category !== undefined && !isTemplateCategoryFilterSlug(category)) return null;
+  const query = params.get("q")?.trim();
+  if (isSearch && !query) return null;
   // Never reinterpret cookie-backed reads as anonymous.
   if (request.headers.has("cookie")) return null;
   let viewerUserId: Id<"users"> | undefined;
@@ -46,7 +51,25 @@ export async function readTemplateCategoryListHttp(
   if (!rate.ok) return rate.response;
   const rawLimit = params.get("limit");
   const parsedLimit = rawLimit ? Number.parseInt(rawLimit, 10) : Number.NaN;
-  const limit = Math.max(1, Math.min(Number.isFinite(parsedLimit) ? parsedLimit : 25, 100));
+  const defaultLimit = isSearch ? 20 : 25;
+  const limit = Math.max(
+    1,
+    Math.min(Number.isFinite(parsedLimit) ? parsedLimit : defaultLimit, 100),
+  );
+  if (query) {
+    const results = await ctx.runQuery(internal.packages.searchForViewerInternal, {
+      family: "template",
+      query,
+      category,
+      limit,
+      viewerUserId,
+    });
+    return json(
+      { results: results.map(({ score, package: pkg }) => ({ score, package: pkg })) },
+      200,
+      rate.headers,
+    );
+  }
   const result = await ctx.runQuery(internal.packages.listPageForViewerInternal, {
     family: "template",
     category,

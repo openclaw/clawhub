@@ -31,6 +31,7 @@ export type ValidatedTemplatePackage = {
   summary: TemplateManifestSummary;
   inventory: TemplateDependencyInventory;
   hasTemplateMarkdownBody: boolean;
+  bundledSources: ReturnType<typeof validateTemplateBundledSources>;
 };
 const EXACT_VERSION_PATTERN =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
@@ -418,9 +419,12 @@ export function validateTemplatePackageContents(input: {
       summary,
       inventory,
       hasTemplateMarkdownBody,
+      bundledSources,
     },
   };
 }
+
+export { TEMPLATE_BOOTSTRAP_FILE_NAMES } from "./templates.js";
 
 export {
   findTemplatePackagePathHierarchyCollision,

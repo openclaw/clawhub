@@ -1,5 +1,6 @@
 import { toHex } from "./hash";
 export { sha256Hex } from "./hash";
+export { ClawPackTarLimitError } from "../../packages/clawhub/src/clawpack";
 import { parseClawPack as parseClawPackContents } from "../../packages/clawhub/src/clawpack";
 
 type ParsedClawPack = ReturnType<typeof parseClawPackContents> & {
@@ -33,20 +34,38 @@ export async function sha256Base64(bytes: Uint8Array) {
   return toBase64(await digestBytes("SHA-256", bytes));
 }
 
-export async function parseClawPack(bytes: Uint8Array): Promise<ParsedClawPack> {
+export async function parseClawPack(
+  bytes: Uint8Array,
+  options?: {
+    maxTarBytes: number;
+    expected?: { sha256: string; npmIntegrity: string; npmShasum?: string };
+  },
+): Promise<ParsedClawPack> {
   const [sha256, sha1, sha512] = await Promise.all([
     digestBytes("SHA-256", bytes),
     digestBytes("SHA-1", bytes),
     digestBytes("SHA-512", bytes),
   ]);
 
-  const { packageName, packageVersion, entries, packageJson, pluginManifest } =
-    parseClawPackContents(bytes);
-
-  return {
+  const digests = {
     artifactSha256: toHex(sha256),
     npmIntegrity: `sha512-${toBase64(sha512)}`,
     npmShasum: toHex(sha1),
+  };
+  // Match the artifact before bounded inflation: a corrupt binding must not look like a size limit.
+  const expected = options?.expected;
+  if (
+    expected &&
+    (digests.artifactSha256 !== expected.sha256 ||
+      digests.npmIntegrity !== expected.npmIntegrity ||
+      (expected.npmShasum !== undefined && digests.npmShasum !== expected.npmShasum))
+  )
+    throw Error("Invalid artifact");
+  const { packageName, packageVersion, entries, packageJson, pluginManifest } =
+    parseClawPackContents(bytes, options);
+
+  return {
+    ...digests,
     npmTarballName: npmTarballName(packageName, packageVersion),
     packageName,
     packageVersion,

@@ -67,12 +67,19 @@ function normalizeTarPath(path: string) {
   return segments.join("/");
 }
 
-function gunzipBounded(bytes: Uint8Array): Uint8Array {
+export class ClawPackTarLimitError extends Error {}
+
+function gunzipBounded(bytes: Uint8Array, maxTarBytes: number): Uint8Array {
   const chunks: Uint8Array[] = [];
   let total = 0;
   const gunzip = new Gunzip((chunk) => {
     total += chunk.byteLength;
-    if (total > MAX_TAR_BYTES) throw new Error("ClawPack unpacked archive exceeds 64MB limit");
+    if (total > maxTarBytes)
+      throw new ClawPackTarLimitError(
+        maxTarBytes === MAX_TAR_BYTES
+          ? "ClawPack unpacked archive exceeds 64MB limit"
+          : "ClawPack unpacked archive exceeds the requested byte limit",
+      );
     chunks.push(Uint8Array.from(chunk));
   });
   for (let offset = 0; offset < bytes.byteLength; offset += GZIP_INPUT_CHUNK_BYTES) {
@@ -154,10 +161,13 @@ function parseTarEntries(bytes: Uint8Array): ClawPackEntry[] {
   return entries;
 }
 
-export function parseClawPack(bytes: Uint8Array): ParsedClawPack {
+export function parseClawPack(
+  bytes: Uint8Array,
+  options?: { maxTarBytes: number },
+): ParsedClawPack {
   let tarBytes: Uint8Array;
   try {
-    tarBytes = gunzipBounded(bytes);
+    tarBytes = gunzipBounded(bytes, Math.min(MAX_TAR_BYTES, options?.maxTarBytes ?? MAX_TAR_BYTES));
   } catch (error) {
     if (error instanceof Error && error.message.startsWith("ClawPack ")) throw error;
     throw new Error("ClawPack must be a gzip-compressed npm pack tarball", { cause: error });

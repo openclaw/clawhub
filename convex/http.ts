@@ -3,6 +3,7 @@ import { httpRouter } from "convex/server";
 import { auth } from "./auth";
 import { installRateLimitedRoutes } from "./lib/httpRouteRateLimit";
 import { lazyHttpAction } from "./lib/lazyHttpAction";
+import { get as templateCatalogPageHttp } from "./templateCatalogPageHttp";
 import { get as templateOverviewHttp } from "./templateOverviewHttp";
 
 const agentSkillsHttp = lazyHttpAction(
@@ -219,6 +220,11 @@ const skillPresentationAssetHttp = lazyHttpAction(
 
 const http = installRateLimitedRoutes(httpRouter());
 
+http.route({
+  path: "/api/v1/templates/catalog-page",
+  method: "GET",
+  handler: templateCatalogPageHttp,
+});
 http.route({ path: "/api/v1/templates/overview", method: "GET", handler: templateOverviewHttp });
 
 http.route({

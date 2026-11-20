@@ -1,7 +1,7 @@
 export { contentDispositionAttachment } from "../lib/contentDisposition";
 import type { ArkValidator } from "clawhub-schema";
 import { CliPublishRequestSchema, parseArk } from "clawhub-schema";
-import { getClawHubRuntimeEnvironment } from "clawhub-schema/rolloutCapabilities";
+export { publicApiOrigin } from "../lib/publicApiOrigin";
 import { decodeUtf8Text, normalizeContentType } from "clawhub-schema/textFiles";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
@@ -17,7 +17,6 @@ import type { PublicSkillVersionSelection } from "../lib/skills/publicVersions";
 export { getPathSegments, parsePackagePathSegments } from "../lib/httpPathSegments";
 
 export { MAX_RAW_FILE_BYTES } from "../lib/storageText";
-const DEFAULT_PUBLIC_SITE_URL = "https://clawhub.ai";
 
 const SAFE_TEXT_FILE_CSP =
   "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
@@ -172,68 +171,6 @@ export async function moderationDecisionResponse(
   } catch (error) {
     return text(error instanceof Error ? error.message : fallback, 400, headers);
   }
-}
-
-function normalizeOrigin(value: string | null | undefined) {
-  const trimmed = value?.trim();
-  if (!trimmed) return null;
-  try {
-    return new URL(trimmed).origin;
-  } catch {
-    return null;
-  }
-}
-
-function firstForwardedValue(value: string | null) {
-  return value?.split(",")[0]?.trim() || null;
-}
-
-function isProductionDeployment() {
-  const deployment = process.env.CONVEX_DEPLOYMENT?.trim() ?? "";
-  return (
-    (deployment.startsWith("prod:") || deployment.includes("production")) &&
-    getClawHubRuntimeEnvironment(process.env) === "production"
-  );
-}
-
-function isTrustedForwardedHost(value: string) {
-  try {
-    const hostname = new URL(`https://${value}`).hostname.toLowerCase();
-    return (
-      hostname === "clawhub.ai" ||
-      hostname === "www.clawhub.ai" ||
-      hostname === "localhost" ||
-      hostname === "127.0.0.1" ||
-      hostname === "0.0.0.0"
-    );
-  } catch {
-    return false;
-  }
-}
-
-export function publicApiOrigin(request: Request) {
-  const configured = normalizeOrigin(process.env.SITE_URL ?? process.env.VITE_SITE_URL);
-  if (configured) return configured;
-
-  const forwardedHost = firstForwardedValue(request.headers.get("x-forwarded-host"));
-  if (
-    forwardedHost &&
-    !forwardedHost.endsWith(".convex.site") &&
-    isTrustedForwardedHost(forwardedHost)
-  ) {
-    const forwardedProto =
-      firstForwardedValue(request.headers.get("x-forwarded-proto")) ??
-      firstForwardedValue(request.headers.get("x-forwarded-protocol")) ??
-      "https";
-    const proto = forwardedProto === "http" ? "http" : "https";
-    return `${proto}://${forwardedHost}`;
-  }
-
-  const requestUrl = new URL(request.url);
-  if (isProductionDeployment() && requestUrl.hostname.endsWith(".convex.site")) {
-    return DEFAULT_PUBLIC_SITE_URL;
-  }
-  return requestUrl.origin;
 }
 
 export async function requireApiTokenUserOrResponse(

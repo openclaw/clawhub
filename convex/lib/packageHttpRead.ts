@@ -3,10 +3,12 @@ import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import type { PublicPackageDocLike, ReleaseLike } from "./packageReadProjection";
 import type { PublicPublisher } from "./public";
+import type { TemplateDetailSelection } from "./templateDetailView";
 
 export type PackageHttpDetail = {
   package: PublicPackageDocLike | null;
   latestRelease: ReleaseLike | null;
+  templateDetail?: TemplateDetailSelection;
   owner: PublicPublisher | null;
 };
 export type PackageHttpVersion = { package: PublicPackageDocLike; version: ReleaseLike };
@@ -36,12 +38,18 @@ export function readPackageDetailForRequest(
   request: Request,
   name: string,
   viewerUserId?: Id<"users">,
+  includeTemplateDetail = false,
 ): Promise<PackageHttpDetail | null> {
   const cache = reads(ctx, request).details;
-  const key = JSON.stringify([name.trim().toLowerCase(), viewerUserId ?? null]);
+  const key = JSON.stringify([
+    name.trim().toLowerCase(),
+    viewerUserId ?? null,
+    includeTemplateDetail,
+  ]);
   let result = cache.get(key);
   if (!result) {
     result = ctx.runQuery(internal.packages.getByNameForViewerInternal, {
+      ...(includeTemplateDetail ? { includeTemplateDetail: true } : {}),
       name,
       viewerUserId,
     }) as Promise<PackageHttpDetail | null>;

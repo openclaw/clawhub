@@ -5,6 +5,7 @@ import type {
   ApiV1PackageResponse,
   ApiV1PackageVersionListResponse,
   PackageCompatibility,
+  PackageFamily,
   PackageEndorAnalysis,
   PluginManifestSummary,
   PackageVerificationSummary,
@@ -12,7 +13,9 @@ import type {
   TemplateManifestSummary,
 } from "clawhub-schema";
 import { ApiRoutes } from "clawhub-schema/routes";
+import { ConvexHttpClient } from "convex/browser";
 import type { Infer } from "convex/values";
+import { api } from "../../convex/_generated/api";
 import type { PublicPackageDocLike } from "../../convex/lib/packageReadProjection";
 import { getPluginBrowseSnapshotKind } from "../../convex/lib/pluginBrowseSnapshot";
 import type { llmAnalysisValidator } from "../../convex/schema";
@@ -22,7 +25,7 @@ import {
   fetchInitialPublicPluginCatalog,
   fetchInitialPublicPluginCategory,
 } from "./publicPluginBrowse";
-import { getRuntimeEnv } from "./runtimeEnv";
+import { getRequiredRuntimeEnv, getRuntimeEnv } from "./runtimeEnv";
 import { getPublicClawHubSiteUrl } from "./site";
 
 export type PackageListItem<
@@ -59,7 +62,18 @@ export type PackageListItem<
   };
 };
 
-export type PackageDetailResponse = ApiV1PackageResponse;
+export type PackageDetailResponse = ApiV1PackageResponse & {
+  /** Optional wire field. A present but invalid display projection must fail closed. */
+  templateInventory?: unknown;
+  /** The verified release contains retired v1 grammar: original-file display only. */
+  templateDisplayOnly?: true;
+  /** Opt-in exact-release projection. Older registries return ordinary metadata. */
+  templateRelease?: {
+    version: string;
+    contents: string | null;
+    llmAnalysis: NonNullable<PackageVersionDetail["version"]>["llmAnalysis"] | null;
+  };
+};
 
 export type PackageVersionDetail = {
   package: {
@@ -372,34 +386,123 @@ export async function fetchPackages(params: {
   );
 }
 
+const TEMPLATE_PAGE_SIZE = 20;
+
+// A newly started Convex deployment can accept reads before its ranked search
+// index is ready. Repeat only this idempotent query, never a mutation or a 429.
+const SEARCH_RETRY_DELAYS_MS = [100, 300, 700];
+
+function waitForSearchRetry(ms: number, signal: AbortSignal) {
+  signal.throwIfAborted();
+  return new Promise<void>((resolve, reject) => {
+    const cancel = () => {
+      clearTimeout(timer);
+      reject(signal.reason);
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", cancel);
+      resolve();
+    }, ms);
+    signal.addEventListener("abort", cancel, { once: true });
+  });
+}
+
+async function readRankedTemplates<T>(read: () => Promise<T>, signal: AbortSignal): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    signal.throwIfAborted();
+    try {
+      return await read();
+    } catch (error) {
+      const delay = SEARCH_RETRY_DELAYS_MS[attempt];
+      if (!(error instanceof PackageApiError) || error.status !== 503 || delay === undefined)
+        throw error;
+      const retryAfterMs = (error.retryAfterSeconds ?? 0) * 1000;
+      // Leave longer outages visible rather than holding navigation for a server-directed delay.
+      if (retryAfterMs > 2000) throw error;
+      await waitForSearchRetry(Math.max(delay, retryAfterMs), signal);
+    }
+  }
+}
+
+function requireTemplateSummary(item: PackageListItem<PackageFamily>): PackageListItem<"template"> {
+  if (item.family !== "template") throw new Error("Unexpected family in Template catalog");
+  return { ...item, family: item.family };
+}
+
 export async function fetchTemplateCatalog(params: {
   q?: string;
   category?: string;
   cursor?: string;
-  limit: number;
   signal: AbortSignal;
 }): Promise<{ items: PackageListItem<"template">[]; nextCursor: string | null }> {
+  params.signal.throwIfAborted();
+  // These public queries use the same catalog implementations as the package HTTP
+  // router, without loading the compatibility router or making another service hop.
+  const client = new ConvexHttpClient(getRequiredRuntimeEnv("VITE_CONVEX_URL"), {
+    fetch: async (input, init) => {
+      const response = await fetch(input, { ...init, signal: params.signal, credentials: "omit" });
+      if (response.status === 429 || response.status === 503)
+        throw await createPackageApiError(response);
+      return response;
+    },
+  });
+  const filters = { family: "template" as const, category: params.category };
   const query = params.q?.trim();
-  const url = await packageApiUrl(query ? `${ApiRoutes.packages}/search` : ApiRoutes.packages);
-  url.searchParams.set("family", "template");
-  url.searchParams.set("limit", String(params.limit));
-  if (params.category) url.searchParams.set("category", params.category);
-  if (query) {
-    url.searchParams.set("q", query);
-    const result = await fetchJson<{ results: Array<{ package: PackageListItem<"template"> }> }>(
-      url,
-      params.signal,
-      "anonymous",
-    );
-    return { items: result?.results.map((entry) => entry.package) ?? [], nextCursor: null };
+  const legacyPrefix = "legacy-template-category:" + params.category + ":";
+  const legacyCategoryPage = !query && params.category && params.cursor?.startsWith(legacyPrefix);
+  if ((query || params.category) && !legacyCategoryPage) {
+    try {
+      const page = await readRankedTemplates(
+        () =>
+          client.query(api.templateCatalogPage.get, {
+            q: query || undefined,
+            category: params.category,
+            cursor: params.cursor,
+            limit: TEMPLATE_PAGE_SIZE,
+          }),
+        params.signal,
+      );
+      return { items: page.items.map(requireTemplateSummary), nextCursor: page.nextCursor };
+    } catch (error) {
+      // Only a positively absent capability can use the older registry. Never
+      // reinterpret an invalid ranked cursor as a new first page.
+      if (
+        params.cursor ||
+        !(error instanceof Error) ||
+        !error.message.includes("Could not find public function for 'templateCatalogPage:get'")
+      )
+        throw error;
+    }
   }
-  if (!params.category) url.searchParams.set("sort", "downloads");
-  if (params.cursor) url.searchParams.set("cursor", params.cursor);
-  const result = await fetchJson<{
-    items: PackageListItem<"template">[];
-    nextCursor: string | null;
-  }>(url, params.signal, "anonymous");
-  return result ?? { items: [], nextCursor: null };
+  if (query) {
+    const results = await readRankedTemplates(
+      () =>
+        client.query(api.packages.searchPublic, {
+          ...filters,
+          query,
+          limit: TEMPLATE_PAGE_SIZE,
+        }),
+      params.signal,
+    );
+    return {
+      items: results.map((entry) => requireTemplateSummary(entry.package)),
+      nextCursor: null,
+    };
+  }
+  const page = await client.query(api.packages.listPublicPage, {
+    ...filters,
+    sort: params.category ? undefined : "downloads",
+    paginationOpts: {
+      cursor: legacyCategoryPage
+        ? params.cursor!.slice(legacyPrefix.length)
+        : (params.cursor ?? null),
+      numItems: TEMPLATE_PAGE_SIZE,
+    },
+  });
+  return {
+    items: page.page.map(requireTemplateSummary),
+    nextCursor: page.isDone ? null : (params.category ? legacyPrefix : "") + page.continueCursor,
+  };
 }
 
 export async function fetchPluginCatalog(params: {
@@ -534,8 +637,30 @@ export async function fetchPluginCatalog(params: {
   };
 }
 
-export async function fetchPackageDetail(name: string): Promise<PackageDetailResponse> {
+export async function fetchPackageDetail(
+  name: string,
+  view?: "template-detail" | "template-inventory",
+): Promise<PackageDetailResponse> {
   const url = await packageApiUrl(`${ApiRoutes.packages}/${encodeURIComponent(name)}`);
+  if (view === "template-inventory") {
+    url.searchParams.set("inventoryFallback", "website");
+    if (typeof window === "undefined") {
+      // SSR knows whether this request is carrying viewer credentials. Never probe a denied
+      // public inventory and then retry the same release using a more privileged read.
+      const headers = await getForwardedHeaders("request");
+      url.searchParams.set(
+        "view",
+        headers.authorization || headers.cookie ? "template-detail" : view,
+      );
+    } else {
+      // Same-origin visits let the web proxy inspect HttpOnly cookies. Direct cross-origin dev
+      // reads are always anonymous (packageFetch uses credentials:omit for those).
+      url.searchParams.set(
+        "view",
+        url.origin === window.location.origin ? "website-template" : view,
+      );
+    }
+  } else if (view) url.searchParams.set("view", view);
   const response = await packageFetch(url, "application/json");
   if (response.status === 404) {
     return { package: null, owner: null };

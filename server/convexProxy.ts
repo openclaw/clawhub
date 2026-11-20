@@ -141,6 +141,21 @@ export async function proxyConvexRequest(
   }
 
   const requestUrl = getRequestURL(event);
+  // The website cannot see HttpOnly cookies. Choose its read before contacting the registry:
+  // public discovery uses the byte-free inventory; credentialed viewers retain their authorized
+  // detail read. Explicit API requests for the public inventory are never rewritten.
+  if (
+    event.req.method === "GET" &&
+    requestUrl.pathname.startsWith("/api/v1/packages/") &&
+    requestUrl.searchParams.get("view") === "website-template"
+  ) {
+    requestUrl.searchParams.set(
+      "view",
+      event.req.headers.has("authorization") || event.req.headers.has("cookie")
+        ? "template-detail"
+        : "template-inventory",
+    );
+  }
   const target = buildConvexProxyTarget(`${requestUrl.pathname}${requestUrl.search}`, env);
   const stagingFrontend = isFrontendEnvironment(env, "staging");
   const stagingTarget = new URL(target).origin === STAGING_CONVEX_SITE_ORIGIN;

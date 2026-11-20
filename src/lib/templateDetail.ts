@@ -42,12 +42,18 @@ export function templateWorkspaceContents(manifest: TemplateManifest): TemplateW
     ...Object.keys(manifest.workspace?.bootstrapFiles ?? {}),
     ...(manifest.workspace?.files ?? []).map((file) => file.path.replaceAll("\\", "/")),
   ];
+  return workspaceContentsFromDestinations(destinations, manifest.agent.heartbeat?.every);
+}
+
+export function workspaceContentsFromDestinations(
+  destinations: string[],
+  every?: string,
+): TemplateWorkspaceContents {
   const collect = (pattern: RegExp) =>
     destinations.flatMap((path): TemplateWorkspaceEntry[] => {
       const name = pattern.exec(path)?.[1];
       return name ? [{ name, path }] : [];
     });
-  const every = manifest.agent.heartbeat?.every;
   const skillFiles = collect(WORKSPACE_SKILL_FILE);
   const skillDirs = skillFiles.map((entry) => entry.path.slice(0, -"SKILL.md".length));
   return {

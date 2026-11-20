@@ -52,6 +52,46 @@ describe("Convex HTTP proxy", () => {
     );
   });
 
+  it.each([
+    { view: "website-template", headers: {}, expected: "template-inventory" },
+    {
+      view: "website-template",
+      headers: { cookie: "session=example" },
+      expected: "template-detail",
+    },
+    {
+      view: "website-template",
+      headers: { authorization: "Bearer example" },
+      expected: "template-detail",
+    },
+    {
+      view: "template-inventory",
+      headers: { cookie: "session=example" },
+      expected: "template-inventory",
+    },
+  ])(
+    "selects a viewer-compatible website read before forwarding, without changing the public view: $expected",
+    async ({ view, headers, expected }) => {
+      const fetchMock = vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(Response.json({ package: null, owner: null }));
+      vi.stubGlobal("fetch", fetchMock);
+      await proxyConvexRequest(
+        mockEvent("https://app.example/api/v1/packages/%40maker%2Fexample?view=" + view, {
+          headers: new Headers(headers as Record<string, string>),
+        }),
+        { VITE_CONVEX_SITE_URL: "https://test.convex.site" },
+        TEST_ARCHIVE_DEPENDENCIES,
+      );
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [url, init] = fetchMock.mock.calls[0]!;
+      expect(new URL(String(url)).searchParams.get("view")).toBe(expected);
+      if (headers.cookie) expect(new Headers(init?.headers).get("cookie")).toBe(headers.cookie);
+      if (headers.authorization)
+        expect(new Headers(init?.headers).get("authorization")).toBe(headers.authorization);
+    },
+  );
+
   it("allows only read methods when the frontend is a preview", () => {
     const previewEnv = { VERCEL_ENV: "preview" };
     expect(isConvexProxyMethodAllowed("GET", previewEnv)).toBe(true);

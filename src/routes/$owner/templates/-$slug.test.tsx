@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   fetchPackageVersion: vi.fn(),
 }));
 
+vi.mock("nitro/app", () => ({ serverFetch: (url: string, init: RequestInit) => fetch(url, init) }));
 vi.mock("../../../lib/packageApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../lib/packageApi")>()),
   ...mocks,
@@ -55,11 +56,189 @@ function packageDetail(family: "template" | "code-plugin" = "template"): Package
   } as PackageDetailResponse;
 }
 
+function publicInventory() {
+  const sha256 = "a".repeat(64),
+    npmIntegrity = "sha512-" + "A".repeat(86) + "==";
+  return {
+    schemaVersion: 1 as const,
+    packageName: "@maker/release-brief",
+    version: "0.1.0",
+    artifact: { kind: "npm-pack" as const, sha256, npmIntegrity },
+    templateManifestSummary: packageDetail().package!.templateManifestSummary!,
+    manifestPath: "template/CLAW.md",
+    icon: null,
+    contents: {
+      instructions: [
+        { name: "skills/review-notes/SKILL.md", source: "workspace/skills/review-notes/SKILL.md" },
+      ],
+      skills: [
+        { name: "release-triage", source: "bundled" as const, path: "skills/release-triage" },
+      ],
+      integrations: [
+        {
+          kind: "plugin" as const,
+          name: "release-watcher",
+          source: "bundled" as const,
+          path: "plugins/release-watcher",
+        },
+      ],
+      automations: [
+        { name: "Weekly report", enabled: false, schedule: "0 17 * * 5", timezone: "UTC" },
+      ],
+    },
+    security: {
+      package: { name: "@maker/release-brief", family: "template" as const },
+      release: {
+        version: "0.1.0",
+        artifactKind: "npm-pack" as const,
+        artifactSha256: sha256,
+        npmIntegrity,
+      },
+      verdict: "benign",
+      overview: "Published audit",
+      securityAuditUrl: "https://example.invalid/audit",
+      trust: {
+        blockedFromDownload: false,
+        pending: false,
+        stale: false,
+        reasons: [],
+        scanStatus: "clean" as const,
+      },
+    },
+  };
+}
+
 describe("publisher Template detail route loader", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.fetchPackageVersion.mockResolvedValue(null);
     mocks.fetchPackageFile.mockResolvedValue("# Release Brief");
+  });
+
+  it("returns exact, digest-bound inventory without reading preview bytes", async () => {
+    const detail = packageDetail();
+    const templateInventory = publicInventory();
+    mocks.fetchPackageDetail.mockResolvedValue({ ...detail, templateInventory });
+    const loaded = await loadPublisherTemplate({ owner: "maker", slug: "release-brief" });
+    expect(loaded.inventory?.contents.skills[0]?.name).toBe("release-triage");
+    expect(loaded.contents).toBeNull();
+    expect(mocks.fetchPackageFile).not.toHaveBeenCalled();
+    expect(mocks.fetchPackageVersion).not.toHaveBeenCalled();
+  });
+
+  it.each(["digest", "version", "owner", "hold", "path", "partial", "channel"])(
+    "does not use or refetch an invalid %s projection",
+    async (problem) => {
+      const detail = packageDetail();
+      const value = publicInventory();
+      if (problem === "channel") Object.assign(detail.package!, { channel: "unsupported" });
+      if (problem === "digest") value.security.release.artifactSha256 = "b".repeat(64);
+      if (problem === "version") value.version = "0.0.1";
+      if (problem === "owner") value.packageName = "@unrelated/release-brief";
+      if (problem === "hold") value.security.trust.blockedFromDownload = true;
+      if (problem === "path") value.manifestPath = "../not-mine/CLAW.md";
+      if (problem === "partial") Object.assign(value.contents, { instructions: undefined });
+      mocks.fetchPackageDetail.mockResolvedValue({ ...detail, templateInventory: value });
+      await expect(
+        loadPublisherTemplate({ owner: "maker", slug: "release-brief" }),
+      ).rejects.toThrow(/inventory/i);
+      expect(mocks.fetchPackageFile).not.toHaveBeenCalled();
+      expect(mocks.fetchPackageVersion).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects a present but invalid inventory without falling back to file or audit reads", async () => {
+    mocks.fetchPackageDetail.mockResolvedValue({ ...packageDetail(), templateInventory: null });
+    await expect(loadPublisherTemplate({ owner: "maker", slug: "release-brief" })).rejects.toThrow(
+      /inventory/i,
+    );
+    expect(mocks.fetchPackageDetail).toHaveBeenCalledWith(
+      "@maker/release-brief",
+      "template-inventory",
+    );
+    expect(mocks.fetchPackageFile).not.toHaveBeenCalled();
+    expect(mocks.fetchPackageVersion).not.toHaveBeenCalled();
+  });
+
+  it("uses a single authorized package snapshot without fetching unrelated file bodies", async () => {
+    const llmAnalysis = { status: "suspicious", checkedAt: 1, summary: "Review permissions." };
+    mocks.fetchPackageDetail.mockResolvedValue({
+      ...packageDetail(),
+      templateRelease: { version: "0.1.0", contents: "# From this release", llmAnalysis },
+    });
+    const loaded = await loadPublisherTemplate({ owner: "maker", slug: "release-brief" });
+    expect(loaded.contents).toBe("# From this release");
+    expect(loaded.llmAnalysis).toEqual(llmAnalysis);
+    expect(mocks.fetchPackageDetail).toHaveBeenCalledWith(
+      "@maker/release-brief",
+      "template-inventory",
+    );
+    expect(mocks.fetchPackageFile).not.toHaveBeenCalled();
+    expect(mocks.fetchPackageVersion).not.toHaveBeenCalled();
+  });
+
+  it("never substitutes stale or blocked snapshot content for the pinned release", async () => {
+    mocks.fetchPackageDetail.mockResolvedValue({
+      ...packageDetail(),
+      templateRelease: { version: "0.0.9", contents: "wrong version", llmAnalysis: null },
+    });
+    expect((await loadPublisherTemplate({ owner: "maker", slug: "release-brief" })).contents).toBe(
+      "# Release Brief",
+    );
+    mocks.fetchPackageFile.mockClear();
+    mocks.fetchPackageDetail.mockResolvedValue({
+      ...packageDetail(),
+      templateRelease: { version: "0.1.0", contents: null, llmAnalysis: null },
+    });
+    expect(
+      (await loadPublisherTemplate({ owner: "maker", slug: "release-brief" })).contents,
+    ).toBeNull();
+    expect(mocks.fetchPackageFile).not.toHaveBeenCalled();
+  });
+
+  it.each(["private", "malicious"] as const)(
+    "preserves the viewer-authorized file and audit path for %s releases",
+    async (state) => {
+      const detail = packageDetail();
+      if (state === "private") detail.package!.channel = "private";
+      else detail.package!.scanStatus = "malicious";
+      const audit = { status: state === "private" ? "benign" : "malicious", checkedAt: 1 };
+      // The public snapshot deliberately does not embed private or held release data.
+      mocks.fetchPackageDetail.mockResolvedValue({
+        ...detail,
+        templateRelease: { version: "0.1.0", contents: null, llmAnalysis: null },
+      });
+      mocks.fetchPackageVersion.mockResolvedValue({
+        version: { version: "0.1.0", llmAnalysis: audit },
+      });
+      const authorizedPreview = state === "private" ? "# Private owner preview" : null;
+      mocks.fetchPackageFile.mockResolvedValue(authorizedPreview);
+      const loaded = await loadPublisherTemplate({ owner: "maker", slug: "release-brief" });
+      expect(loaded.contents).toBe(authorizedPreview);
+      expect(loaded.llmAnalysis).toEqual(audit);
+      expect(mocks.fetchPackageFile).toHaveBeenCalledWith(
+        "@maker/release-brief",
+        "CLAW.md",
+        "0.1.0",
+      );
+    },
+  );
+
+  it("exposes a single live announcement and noninteractive detail placeholders while pending", () => {
+    const Pending = Route.options.pendingComponent;
+    if (!Pending) throw new Error("Missing pending route");
+    const { container } = render(<Pending />);
+    expect(screen.getByRole("status").textContent).toBe("Loading Template details…");
+    expect(screen.getByRole("status").classList.contains("sr-only")).toBe(true);
+    expect(screen.getByRole("status").closest('[aria-busy="true"]')).toBeNull();
+    expect(screen.getByRole("main").getAttribute("aria-busy")).toBe("true");
+    expect(container.querySelector('[aria-hidden="true"] .template-detail-hero')).not.toBeNull();
+    expect(container.querySelector('[aria-hidden="true"] .template-detail-layout')).not.toBeNull();
+    expect(container.querySelector("button, a, [tabindex]")).toBeNull();
+    expect(
+      container.querySelector('[aria-hidden="true"] .template-release-inventory'),
+    ).not.toBeNull();
+    expect(screen.queryByRole("region", { name: "Included in this release" })).toBeNull();
   });
 
   it("loads only a public Template owned by the requested publisher", async () => {
@@ -98,7 +277,10 @@ describe("publisher Template detail route loader", () => {
     const loaded = await loadPublisherTemplate({ owner: "@Maker", slug: "release-brief" });
 
     expect(loaded.detail.package?.family).toBe("template");
-    expect(mocks.fetchPackageDetail).toHaveBeenCalledWith("@maker/release-brief");
+    expect(mocks.fetchPackageDetail).toHaveBeenCalledWith(
+      "@maker/release-brief",
+      "template-inventory",
+    );
   });
 
   it("does not expose a plugin at a Template URL", async () => {
@@ -155,8 +337,8 @@ describe("publisher Template route invariants", () => {
     const loaded = await loadPublisherTemplate({ owner: "maker", slug: "release-brief" });
     expect(loaded.detail.package?.name).toBe("release-brief");
     expect(mocks.fetchPackageDetail.mock.calls).toEqual([
-      ["@maker/release-brief"],
-      ["release-brief"],
+      ["@maker/release-brief", "template-inventory"],
+      ["release-brief", "template-inventory"],
     ]);
     expect(mocks.fetchPackageFile).toHaveBeenCalledWith("release-brief", "CLAW.md", "0.1.0");
   });
@@ -336,6 +518,129 @@ describe("Template detail composition and interactions", () => {
     vi.resetAllMocks();
     mocks.fetchPackageVersion.mockResolvedValue(null);
     mocks.fetchPackageFile.mockResolvedValue("# Workspace instructions\n\nActual file contents.");
+  });
+
+  it("renders the title, summary and explicit pinned preview when the published archive exceeds inventory capacity", async () => {
+    const ordinary = packageDetail();
+    ordinary.package!.scanStatus = "clean";
+    const api =
+      await vi.importActual<typeof import("../../../lib/packageApi")>("../../../lib/packageApi");
+    const transport = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      if (typeof input !== "string") throw new Error("Expected a registry URL string");
+      const u = new URL(input);
+      if (u.searchParams.get("inventoryFallback") !== "website")
+        return new Response("Template inventory too large", { status: 413 });
+      return Response.json(ordinary);
+    });
+    try {
+      mocks.fetchPackageDetail.mockImplementation(api.fetchPackageDetail);
+      mocks.fetchPackageFile.mockImplementation((_name, path) =>
+        Promise.resolve(
+          path === "CLAW.md"
+            ? templateContents
+            : path === "package.json"
+              ? "{}"
+              : "# Pinned workspace preview",
+        ),
+      );
+      const loaded = await loadPublisherTemplate({ owner: "maker", slug: "release-brief" });
+      render(<TemplateDetailPage {...loaded} fallbackOwner="maker" />);
+      expect(screen.getByRole("heading", { level: 1, name: "Release Brief" })).toBeTruthy();
+      expect(screen.getByText("Summarizes releases for a new user.")).toBeTruthy();
+      expect(transport).toHaveBeenCalledTimes(1);
+      expect(mocks.fetchPackageFile.mock.calls.map((x) => x[1])).toEqual([
+        "CLAW.md",
+        "package.json",
+      ]);
+      fireEvent.click(screen.getByRole("tab", { name: "Workspace files" }));
+      fireEvent.click(screen.getByRole("button", { name: "AGENTS.md" }));
+      expect(await screen.findByRole("heading", { name: "Pinned workspace preview" })).toBeTruthy();
+      expect(mocks.fetchPackageFile).toHaveBeenLastCalledWith(
+        "@maker/release-brief",
+        "workspace/AGENTS.md",
+        "0.1.0",
+      );
+    } finally {
+      transport.mockRestore();
+    }
+  });
+  it("shows the original document and migration link but never offers Add for a verified display-only release", async () => {
+    const ordinary = packageDetail();
+    ordinary.package!.scanStatus = "clean";
+    const api =
+      await vi.importActual<typeof import("../../../lib/packageApi")>("../../../lib/packageApi");
+    const transport = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      if (typeof input !== "string") throw new Error("Expected a string registry URL");
+      return new URL(input).searchParams.get("inventoryFallback") === "website"
+        ? Response.json({ ...ordinary, templateDisplayOnly: true })
+        : new Response("Template inventory could not be verified", { status: 422 });
+    });
+    try {
+      mocks.fetchPackageDetail.mockImplementation(api.fetchPackageDetail);
+      // A retired profile sidecar can accompany an otherwise valid, addable CLAW.md.
+      mocks.fetchPackageFile.mockImplementation((_name, path) =>
+        Promise.resolve(path === "package.json" ? "{}" : templateContents),
+      );
+      const data = await loadPublisherTemplate({ owner: "maker", slug: "release-brief" });
+      render(<TemplateDetailPage {...data} fallbackOwner="maker" />);
+      expect(screen.getByRole("heading", { level: 1, name: "Release Brief" })).toBeTruthy();
+      expect(screen.getByText("View original CLAW.md").closest("details")?.textContent).toContain(
+        templateContents,
+      );
+      expect(screen.getByRole("link", { name: "Template migration guide" })).toBeTruthy();
+      expect(screen.queryByRole("link", { name: "Install in OpenClaw" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Copy template install command" })).toBeNull();
+      expect(mocks.fetchPackageFile.mock.calls.every(([, , version]) => version === "0.1.0")).toBe(
+        true,
+      );
+    } finally {
+      transport.mockRestore();
+    }
+  });
+
+  it("paints named release metadata and navigates workspace mappings while the opened CLAW.md is pending", async () => {
+    const detail = packageDetail();
+    detail.package!.scanStatus = "clean";
+    let finish!: (value: string) => void;
+    const pending = new Promise<string>((resolve) => {
+      finish = resolve;
+    });
+    mocks.fetchPackageFile.mockImplementation((_name, path) =>
+      path === "template/CLAW.md" ? pending : Promise.resolve("# Actual workspace preview"),
+    );
+    mocks.fetchPackageDetail.mockResolvedValue({ ...detail, templateInventory: publicInventory() });
+    const loaded = await loadPublisherTemplate({ owner: "maker", slug: "release-brief" });
+    render(<TemplateDetailPage {...loaded} fallbackOwner="maker" />);
+    const included = screen.getByRole("region", { name: "Included in this release" });
+    for (const name of ["release-triage", "review-notes", "release-watcher", "Weekly report"])
+      expect(included.textContent).toContain(name);
+    expect(included.textContent).toContain("0 17 * * 5");
+    expect(included.textContent).toContain("UTC");
+    expect(mocks.fetchPackageFile.mock.calls).toEqual([
+      ["@maker/release-brief", "template/CLAW.md", "0.1.0"],
+    ]);
+    expect(
+      screen
+        .queryByRole("button", { name: "Copy template install command" })
+        ?.hasAttribute("disabled") ?? true,
+    ).toBe(true);
+    fireEvent.click(screen.getByRole("tab", { name: "Workspace files" }));
+    const row = screen.getByRole("button", { name: "skills/review-notes/SKILL.md" });
+    expect(mocks.fetchPackageFile).toHaveBeenCalledTimes(1);
+    fireEvent.click(row);
+    expect(await screen.findByRole("heading", { name: "Actual workspace preview" })).toBeTruthy();
+    expect(mocks.fetchPackageFile).toHaveBeenLastCalledWith(
+      "@maker/release-brief",
+      "workspace/skills/review-notes/SKILL.md",
+      "0.1.0",
+    );
+    await act(async () => finish(templateContents));
+    fireEvent.click(screen.getByRole("tab", { name: "CLAW.md" }));
+    expect(
+      screen
+        .getByRole("button", { name: "Copy template install command" })
+        .hasAttribute("disabled"),
+    ).toBe(false);
   });
 
   it("uses one mobile command fallback without duplicating the rail card", () => {

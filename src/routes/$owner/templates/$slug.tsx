@@ -2,6 +2,7 @@ import { createFileRoute, isNotFound, notFound, redirect, useRouter } from "@tan
 import { GenericNotFoundPage } from "../../../components/GenericNotFoundPage";
 import { Container } from "../../../components/layout/Container";
 import { PendingPackageListing } from "../../../components/PendingPackageListing";
+import { TemplateDetailSkeleton } from "../../../components/skeletons/TemplateDetailSkeleton";
 import { TemplateDetailPage } from "../../../components/TemplateDetailPage";
 import { buildSocialMetaHead } from "../../../lib/og";
 import {
@@ -12,6 +13,10 @@ import {
 } from "../../../lib/packageApi";
 import { getClawHubSiteUrl } from "../../../lib/site";
 import { getTemplateManifestPath } from "../../../lib/templateDetail";
+import {
+  requireCurrentTemplateInventory,
+  type TemplateDisplayInventory,
+} from "../../../lib/templateDisplayInventory";
 import { loadTemplatePackage } from "../../../lib/templatePackage";
 import {
   buildTemplateDetailHref,
@@ -21,6 +26,7 @@ import { getTemplateShareCopy } from "../../../lib/templateShare";
 
 type TemplateDetailData = {
   detail: PackageDetailResponse;
+  inventory?: TemplateDisplayInventory;
   contents: string | null;
   llmAnalysis: NonNullable<PackageVersionDetail["version"]>["llmAnalysis"] | null;
 };
@@ -35,7 +41,27 @@ export async function loadPublisherTemplate(params: {
   owner: string;
   slug: string;
 }): Promise<TemplateDetailData> {
-  const detail = await loadTemplatePackage(params);
+  const response = await loadTemplatePackage(params, "template-inventory");
+  const { templateInventory, templateRelease, ...detail } = response;
+  if ("templateInventory" in response) {
+    const inventory = requireCurrentTemplateInventory(templateInventory, detail, params);
+    return { detail, inventory, contents: null, llmAnalysis: null };
+  }
+  // Treat an authoritative null preview as unavailable, not a trigger to read other files.
+  if (
+    templateRelease &&
+    templateRelease.version === detail.package.latestVersion &&
+    detail.package.channel !== "private" &&
+    detail.package.scanStatus !== "malicious"
+  ) {
+    return {
+      detail,
+      contents: templateRelease.contents,
+      llmAnalysis: templateRelease.llmAnalysis ?? null,
+    };
+  }
+  // Private/held releases retain their original viewer-authorized file and audit reads,
+  // as do older registries which return only ordinary package metadata.
   let contents: string | null = null;
   let llmAnalysis: TemplateDetailData["llmAnalysis"] = null;
   if (detail.package.latestVersion) {
@@ -99,23 +125,13 @@ export const Route = createFileRoute("/$owner/templates/$slug")({
       ],
     };
   },
-  pendingComponent: TemplateDetailPending,
+  pendingMs: 100,
+  pendingMinMs: 0,
+  pendingComponent: TemplateDetailSkeleton,
   notFoundComponent: PublisherTemplateNotFound,
   errorComponent: TemplateDetailError,
   component: PublisherTemplatePage,
 });
-
-function TemplateDetailPending() {
-  return (
-    <main className="section detail-page-section" aria-busy="true">
-      <Container size="narrow">
-        <div role="status" className="py-12 text-center text-ink-soft">
-          Loading Template details…
-        </div>
-      </Container>
-    </main>
-  );
-}
 
 function TemplateDetailError() {
   const router = useRouter();
@@ -147,18 +163,21 @@ function PublisherTemplateNotFound({ data }: { data?: unknown }) {
     <PendingPackageListing
       target={{ ...params, routeKind: "template" }}
       notFound={<GenericNotFoundPage />}
-      loading={<TemplateDetailPending />}
+      loading={<TemplateDetailSkeleton />}
     />
   );
 }
 
 function PublisherTemplatePage() {
   const params = Route.useParams();
-  const { detail, contents, llmAnalysis } = Route.useLoaderData() as TemplateDetailData;
+  const { detail, contents, llmAnalysis, inventory } = Route.useLoaderData() as TemplateDetailData;
   return (
     <TemplateDetailPage
-      key={detail.package!.name + ":" + detail.package!.latestVersion}
+      key={[detail.package!.name, detail.package!.latestVersion, inventory?.artifact.sha256].join(
+        ":",
+      )}
       detail={detail}
+      inventory={inventory}
       contents={contents}
       llmAnalysis={llmAnalysis}
       fallbackOwner={params.owner}

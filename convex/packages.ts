@@ -189,6 +189,7 @@ import {
   isPackageBlockedFromPublic,
   normalizePackageScanStatus,
   resolvePackageReleaseScanStatus,
+  getPackageDownloadSecurityBlock,
 } from "./lib/packageSecurity";
 import { insertPackageInstallStatEvent } from "./lib/packageStatEvents";
 import {
@@ -257,7 +258,19 @@ import {
 import { hashSkillFiles } from "./lib/skills/fileHash";
 import { buildPackageInventoryDigest } from "./lib/skills/skillMarkdown";
 import { buildDeterministicPackageZip } from "./lib/skillZip";
+import { matchesStorageSha256 } from "./lib/storageDigests";
 import { classifyTemplateCategories } from "./lib/templateCategoryClassification";
+import { selectTemplateDetailRelease } from "./lib/templateDetailView";
+import {
+  MAX_TEMPLATE_DISPLAY_ARCHIVE_BYTES,
+  templateDisplayBindingValidator,
+  templateDisplayDataValidator,
+} from "./lib/templateDisplayData";
+import {
+  sameTemplateDisplayBinding,
+  templateDisplayBinding,
+  writeTemplateDisplaySnapshot,
+} from "./lib/templateDisplaySnapshot";
 import {
   toStoredPackageFamily,
   toPublicPackageFamily,
@@ -1439,7 +1452,7 @@ function packageSearchMatch(
       displayName: digest.displayName,
       runtimeId: digest.runtimeId,
       ownerHandle: digest.ownerHandle,
-      categories: digest.pluginCategoryTags,
+      categories: digest.family === "claw" ? digest.categories : digest.pluginCategoryTags,
       topics: digest.topics,
       summary: digest.summary,
     },
@@ -2167,13 +2180,18 @@ async function selectPublishedPackageRelease(
   return isPublishedPackageRelease(release, pkg._id) ? release : null;
 }
 
-async function readPublishedPackageTags(ctx: DbReaderCtx, pkg: Doc<"packages">) {
+async function readPublishedPackageTags(
+  ctx: DbReaderCtx,
+  pkg: Doc<"packages">,
+  knownLatest?: Doc<"packageReleases"> | null,
+) {
   // Convex objects have at most 1024 fields; aliases share one read per release.
   const releases = await Promise.all(
-    [...new Set(Object.values(pkg.tags))].map((releaseId) =>
-      selectPublishedPackageRelease(ctx, pkg, { releaseId }),
-    ),
+    [...new Set(Object.values(pkg.tags))]
+      .filter((id) => id !== knownLatest?._id)
+      .map((releaseId) => selectPublishedPackageRelease(ctx, pkg, { releaseId })),
   );
+  if (isPublishedPackageRelease(knownLatest, pkg._id)) releases.push(knownLatest);
   const versions = new Map(
     releases.flatMap((release) => (release ? [[release._id, release.version] as const] : [])),
   );
@@ -2780,21 +2798,151 @@ export const getByNameForStaff = query({
   },
 });
 
+/** Display-only public read. Never inherit manager access from the request. Resolve
+ * the effective latest scan, exact release, moderation and tags in one snapshot. */
+export const getPublicTemplateInventoryInternal = internalQuery({
+  args: { name: v.string(), version: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const snapshot = await readPackageSnapshotForViewer(ctx, { name: args.name });
+    if (
+      !snapshot ||
+      snapshot.pkg.family !== "claw" ||
+      snapshot.pkg.channel === "private" ||
+      !snapshot.owner?.handle ||
+      isPackageBlockedFromPublic(snapshot.publicPackage.scanStatus)
+    )
+      return null;
+    const { pkg, latestRelease, publicPackage, owner } = snapshot;
+    const release =
+      args.version === undefined || args.version === latestRelease?.version
+        ? latestRelease
+        : await selectPublishedPackageRelease(ctx, pkg, { version: args.version });
+    if (
+      !isPublishedPackageRelease(release, pkg._id) ||
+      (args.version !== undefined && release.version !== args.version)
+    )
+      return null;
+    if (getPackageDownloadSecurityBlock(release)) return { blocked: true as const };
+    // Authority, exact release selection and immutable display data share the same DB snapshot.
+    // A stale row is a binding error, not permission to try alternate bytes.
+    const stored = await ctx.db
+      .query("templateDisplaySnapshots")
+      .withIndex("by_release", (q) => q.eq("releaseId", release._id))
+      .unique();
+    let projection = !stored
+      ? null
+      : stored.packageId === pkg._id &&
+          stored.schemaVersion === 1 &&
+          sameTemplateDisplayBinding(templateDisplayBinding(pkg.name, release), stored.binding)
+        ? stored.data
+        : ("invalid" as const);
+    // A large legacy archive cannot be opened for display. Check its immutable storage
+    // size and SHA-256 without retrieving the bytes; mismatches are never capacity fallbacks.
+    if (
+      !stored &&
+      release.clawpackSize &&
+      release.clawpackSize > MAX_TEMPLATE_DISPLAY_ARCHIVE_BYTES &&
+      release.clawpackStorageId
+    ) {
+      const file = await ctx.db.system.get("_storage", release.clawpackStorageId);
+      if (
+        !file ||
+        file.size !== release.clawpackSize ||
+        !release.clawpackSha256 ||
+        !matchesStorageSha256(file.sha256, release.clawpackSha256)
+      )
+        projection = "invalid";
+    }
+    const {
+      _id,
+      version,
+      createdAt,
+      icon,
+      artifactKind,
+      clawpackStorageId,
+      clawpackSize,
+      clawpackSha256,
+      npmIntegrity,
+      npmShasum,
+      npmTarballName,
+      sha256hash,
+      llmAnalysis,
+      verification,
+      staticScan,
+      manualModeration,
+    } = release;
+    const unpinnedPreview =
+      !projection && args.version === undefined && release.clawManifestSummary?.schemaVersion === 1
+        ? selectTemplateDetailRelease(publicPackage, release)
+        : null;
+    return {
+      projection,
+      // For an unprojected release, the trusted publication summary and exact manifest
+      // envelope are the evidence of supported grammar when bounded inflation cannot finish.
+      legacyPreview: unpinnedPreview?.file
+        ? {
+            profileCount: release.clawManifestSummary?.profiles?.count ?? 0,
+            size: unpinnedPreview.file.size,
+            sha256: unpinnedPreview.file.sha256,
+          }
+        : null,
+      capacityMetadataEligible:
+        args.version === undefined &&
+        release.clawManifestSummary?.schemaVersion === 1 &&
+        (projection !== null || unpinnedPreview !== null),
+      package: publicPackage,
+      owner,
+      tags: await readPublishedPackageTags(ctx, pkg, latestRelease),
+      release: {
+        _id,
+        version,
+        createdAt,
+        icon,
+        artifactKind,
+        clawpackStorageId,
+        clawpackSize,
+        clawpackSha256,
+        npmIntegrity,
+        npmShasum,
+        npmTarballName,
+        sha256hash,
+        llmAnalysis,
+        verification,
+        staticScan,
+        manualModeration,
+      },
+    };
+  },
+});
+
 export const getByNameForViewerInternal = internalQuery({
   args: {
     name: v.string(),
     viewerUserId: v.optional(v.id("users")),
+    includeTemplateDetail: v.optional(v.boolean()),
   },
   handler: readPackageForViewer,
 });
 
 export async function readPackageForViewer(
   ctx: QueryCtx,
-  args: { name: string; viewerUserId?: Id<"users"> },
+  args: { name: string; viewerUserId?: Id<"users">; includeTemplateDetail?: boolean },
 ) {
   const snapshot = await readPackageSnapshotForViewer(ctx, args);
   if (!snapshot) return null;
   const { publicPackage, latestRelease, owner, pkg } = snapshot;
+  if (args.includeTemplateDetail && pkg.family === "claw") {
+    // Authority, the published latest pointer, scan and file descriptor share one DB snapshot.
+    return {
+      package: publicPackage,
+      owner,
+      latestRelease: null,
+      templateDetail: {
+        tags: await readPublishedPackageTags(ctx, pkg, latestRelease),
+        release: selectTemplateDetailRelease(publicPackage, latestRelease),
+      },
+    };
+  }
   return {
     package: publicPackage,
     latestRelease: isPublishedPackageRelease(latestRelease)
@@ -8814,7 +8962,7 @@ async function publishPackageImpl(
     files,
     integritySha256,
     sha256hash: legacyZipSha256,
-    artifactKind: payload.artifact?.kind ?? "legacy-zip",
+    artifactKind: payload.artifact?.kind ?? ("legacy-zip" as const),
     clawpackStorageId: payload.artifact?.storageId as Id<"_storage"> | undefined,
     clawpackSha256: payload.artifact?.sha256 ?? legacyZipSha256,
     clawpackSize: payload.artifact?.size ?? legacyZipBytes.byteLength,
@@ -8838,6 +8986,14 @@ async function publishPackageImpl(
     trustedPublishTokenId: auth.kind === "github-actions" ? auth.publishToken._id : undefined,
     trustedPublishInventoryDigest: auth.kind === "github-actions" ? inventoryDigest : undefined,
   };
+  // Staged marker files support the publish pipeline, but the display view must describe
+  // the exact stored tarball. Unsupported archives retain the existing read-time behavior.
+  const displayBinding = family === "claw" ? templateDisplayBinding(name, packageInsertArgs) : null;
+  const verifiedDisplay = displayBinding
+    ? await (
+        await import("./lib/templateDisplayArchive")
+      ).readVerifiedTemplateDisplayArchive(ctx.storage, displayBinding)
+    : null;
   // This action owns only ZIPs it generates; caller uploads and adopted release archives survive.
   const storeLegacyZipIfNeeded = async () => {
     if (payload.artifact?.kind === "npm-pack" || packageInsertArgs.clawpackStorageId) {
@@ -8893,6 +9049,9 @@ async function publishPackageImpl(
       createdNewParent?: boolean;
     }>(ctx, internalRefs.packages.insertReleaseInternal, {
       ...packageInsertArgs,
+      ...(displayBinding && verifiedDisplay?.ok
+        ? { verifiedTemplateDisplay: { binding: displayBinding, data: verifiedDisplay.data } }
+        : {}),
       publicationStatus: "pending",
     }),
   );
@@ -11576,6 +11735,9 @@ export const insertReleaseInternal = internalMutation({
     categoryClassification: v.optional(pluginCategoryClassificationValidator),
     clawManifestSummary: v.optional(v.any()),
     templateInventory: packageTemplateInventoryValidator,
+    verifiedTemplateDisplay: v.optional(
+      v.object({ binding: templateDisplayBindingValidator, data: templateDisplayDataValidator }),
+    ),
     source: v.optional(v.any()),
     trustedPublishTokenId: v.optional(v.id("packagePublishTokens")),
     trustedPublishInventoryDigest: v.optional(v.string()),
@@ -11922,6 +12084,11 @@ export const insertReleaseInternal = internalMutation({
       createdAt: now,
     });
 
+    // Write once when adopting the release, not on retries or when its visibility changes.
+    if (args.family === "claw" && args.verifiedTemplateDisplay) {
+      const { binding, data } = args.verifiedTemplateDisplay;
+      await writeTemplateDisplaySnapshot(ctx, releaseId, binding, data);
+    }
     const pkg = existing ?? (await ctx.db.get(pkgId));
     if (!pkg) throw new ConvexError("Package insert failed");
     if (pendingPublication) {

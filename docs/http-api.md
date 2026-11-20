@@ -1015,6 +1015,15 @@ Notes:
 - Template package metadata may include bounded `templateManifestSummary` and
   `templateProfilePolicyVersion: 1`. The summary exposes identity and resource
   counts, never the full manifest, prompt body, bootstrap, or profile contents.
+- The website can request `?view=template-detail`. A matching published latest
+  Template may add `templateRelease: { version, contents, llmAnalysis }` alongside
+  the unchanged `package` and `owner`. `contents` is the bounded UTF-8 preview
+  of the exact `CLAW.md` declared by that release’s validated `package.json`;
+  `llmAnalysis` is the same analysis returned by its exact-version endpoint.
+  Either may be null. Private or download-blocked content is not embedded.
+  Older servers and releases without a validated entry point omit the expansion;
+  clients can use the existing exact-version and file endpoints instead. Other
+  files are fetched explicitly, never inlined by this view.
 - Eligible community and official Templates are discoverable with `family=template`;
   their current publisher must be active and match the package scope. The separate
   Official feed has the narrower publisher policy described below.

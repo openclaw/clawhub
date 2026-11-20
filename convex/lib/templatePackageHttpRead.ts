@@ -12,6 +12,7 @@ import {
 } from "./packageHttpRead";
 import { tryNormalizePackageName } from "./packageReadName";
 import { toPackageMetadataResponse, toPackageVersionResponse } from "./packageReadProjection";
+import { isTemplateDetailRequest, templateDetailViewResponse } from "./templateDetailView";
 import { toPublicPackageFamily } from "./templateStorage";
 
 // Unscoped first segments that the canonical router treats as endpoints, not package names.
@@ -72,12 +73,31 @@ export async function readTemplatePackageHttp(
   if (!rate.ok) return rate.response;
   const name = tryNormalizePackageName(route.packageName);
   if (!name) return text("Package not found", 404, rate.headers);
-  const snapshot = await readPackageDetailForRequest(ctx, request, name, viewerUserId);
+  if (metadata && new URL(request.url).searchParams.get("view") === "template-inventory") {
+    const { templateInventoryViewResponse } = await import("./templateInventoryView");
+    return templateInventoryViewResponse(ctx, request, name, rate.headers);
+  }
+  const snapshot = await readPackageDetailForRequest(
+    ctx,
+    request,
+    name,
+    viewerUserId,
+    metadata && isTemplateDetailRequest(request),
+  );
   const pkg = snapshot?.package;
   // The request-local snapshot is reused if a plugin or skill compatibility
   // request falls back, preserving the old router without duplicate DB reads.
   if (!pkg || pkg.family !== "template") return null;
   if (metadata) {
+    if (snapshot.templateDetail) {
+      return templateDetailViewResponse(
+        ctx,
+        pkg,
+        snapshot.owner,
+        snapshot.templateDetail,
+        rate.headers,
+      );
+    }
     const tags = await resolvePackageTags(ctx, pkg, viewerUserId);
     return json(toPackageMetadataResponse(pkg, snapshot.owner, tags), 200, rate.headers);
   }
