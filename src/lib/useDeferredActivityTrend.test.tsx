@@ -7,11 +7,13 @@ import {
   useDeferredSkillActivityTrend,
 } from "./useDeferredActivityTrend";
 
-const { query, client } = vi.hoisted(() => {
+const { socketQuery, client } = vi.hoisted(() => {
   const mockQuery = vi.fn();
-  return { query: mockQuery, client: { query: mockQuery } };
+  return { socketQuery: mockQuery, client: { query: mockQuery } };
 });
 vi.mock("convex/react", () => ({ useConvex: () => client }));
+const { httpQuery } = vi.hoisted(() => ({ httpQuery: vi.fn() }));
+vi.mock("../convex/client", () => ({ convexHttp: { query: httpQuery } }));
 
 const trend = {
   downloads: { range: "daily", days: 1, total: 2, points: [{ day: 20_000, value: 2 }] },
@@ -26,7 +28,8 @@ async function advance(ms: number) {
 }
 beforeEach(() => {
   vi.useFakeTimers();
-  query.mockReset().mockResolvedValue(trend);
+  socketQuery.mockReset().mockResolvedValue(trend);
+  httpQuery.mockReset().mockResolvedValue(trend);
 });
 afterEach(() => {
   cleanup();
@@ -36,6 +39,7 @@ afterEach(() => {
 describe.each([
   {
     kind: "skill",
+    query: httpQuery,
     reference: getSkillActivityTrendForSlug,
     args: { slug: "weather", endDay: 20_000, ownerHandle: "publisher" },
     useTrend: (p: Params) =>
@@ -45,12 +49,13 @@ describe.each([
   },
   {
     kind: "package",
+    query: socketQuery,
     reference: getPackageActivityTrendForName,
     args: { name: "weather", endDay: 20_000 },
     useTrend: (p: Params) =>
       useDeferredPackageActivityTrend(p.name === null ? null : { name: p.name, endDay: p.endDay }),
   },
-])("$kind activity trend", ({ useTrend, reference, args }) => {
+])("$kind activity trend", ({ useTrend, reference, args, query }) => {
   it("defers exactly 750ms across equal renders and resets on a new day", async () => {
     const { result, rerender } = renderHook(useTrend, { initialProps: initial });
     expect(result.current).toEqual({ loading: true, trend: null });
@@ -117,22 +122,38 @@ describe.each([
   });
 });
 
+it("loads public skill downloads over HTTP without a connected realtime client", async () => {
+  socketQuery.mockReturnValue(new Promise(() => {}));
+  httpQuery.mockResolvedValue(trend);
+  const { result } = renderHook(useDeferredSkillActivityTrend, {
+    initialProps: { slug: "weather", ownerHandle: "publisher", endDay: 20_000 },
+  });
+  await advance(750);
+  expect(result.current).toEqual({ loading: false, trend });
+  expect(socketQuery).not.toHaveBeenCalled();
+  expect(httpQuery).toHaveBeenCalledExactlyOnceWith(getSkillActivityTrendForSlug, {
+    slug: "weather",
+    ownerHandle: "publisher",
+    endDay: 20_000,
+  });
+});
+
 it("rekeys skill requests when the owner changes and omits an empty owner", async () => {
   const { result, rerender } = renderHook(useDeferredSkillActivityTrend, {
     initialProps: { slug: "weather", endDay: 20_000, ownerHandle: "" },
   });
   await advance(750);
-  expect(query).toHaveBeenLastCalledWith(getSkillActivityTrendForSlug, {
+  expect(httpQuery).toHaveBeenLastCalledWith(getSkillActivityTrendForSlug, {
     slug: "weather",
     endDay: 20_000,
   });
   rerender({ slug: "weather", endDay: 20_000, ownerHandle: "publisher" });
   expect(result.current).toEqual({ loading: true, trend: null });
   await advance(750);
-  expect(query).toHaveBeenLastCalledWith(getSkillActivityTrendForSlug, {
+  expect(httpQuery).toHaveBeenLastCalledWith(getSkillActivityTrendForSlug, {
     slug: "weather",
     endDay: 20_000,
     ownerHandle: "publisher",
   });
-  expect(query).toHaveBeenCalledTimes(2);
+  expect(httpQuery).toHaveBeenCalledTimes(2);
 });
