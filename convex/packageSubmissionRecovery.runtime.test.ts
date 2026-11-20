@@ -294,61 +294,77 @@ it.each([
   ).toBeNull();
 });
 
-it.each(["none", "token", "membership", "archive", "extracted", "moderation"] as const)(
-  "uses normal claimed scan/finalization and live authority: %s",
-  async (change) => {
-    const { t, ids, recover } = await fixture();
-    const receipt = await (await recover()).json();
-    const attemptId = receipt.attemptId as Id<"publishAttempts">,
-      releaseId = receipt.releaseId as Id<"packageReleases">;
-    const attempt = await t.run((ctx) => ctx.db.get(attemptId));
-    await t.mutation(internal.publishAttempts.claimPendingPublishAttemptChecksInternal, {
-      attemptId,
-      claimId: "scanner",
-    });
-    await t.mutation(internal.publishAttempts.completePendingPublishAttemptChecksInternal, {
-      attemptId,
-      claimId: "scanner",
-      artifactFingerprint: attempt!.artifactFingerprint,
-      clawscanAnalysis: { status: "clean", verdict: "benign", checkedAt: Date.now() },
-      aigAnalysis: { status: "clean", issueCount: 0, findings: [], checkedAt: Date.now() },
-      trufflehog: { status: "clean", summary: "fresh secrets scan" },
-      clawscan: { status: "clean", summary: "fresh policy scan" },
-    });
-    await t.mutation(internal.publishAttempts.claimPackagePublishAttemptForFinalizationInternal, {
-      attemptId,
-      claimId: "finalizer",
-    });
-    await t.run(async (ctx) => {
-      if (change === "moderation")
-        await ctx.db.patch(releaseId, {
-          manualModeration: {
-            state: "quarantined",
-            reason: "fixture hold",
-            updatedAt: Date.now(),
-            reviewerUserId: ids.actor,
-          },
-        });
-      if (change === "token") await ctx.db.patch(ids.apiToken, { revokedAt: Date.now() });
-      if (change === "membership") await ctx.db.delete(ids.membership);
-      if (change === "archive") await ctx.storage.delete(ids.archiveId);
-      if (change === "extracted") await ctx.storage.delete(attempt!.files[0].storageId);
-    });
-    const commit = t.mutation(internal.packages.publishPendingReleaseInternal, {
-      releaseId,
-      manualRecoveryAttemptId: attemptId,
-      manualRecoveryClaimId: "finalizer",
-    });
-    if (change === "none") {
-      await expect(commit).resolves.toMatchObject({ ok: true, releaseId });
-      expect(await t.run((ctx) => ctx.db.get(releaseId))).toMatchObject({
-        publicationStatus: "published",
-        publishActor: { kind: "user", userId: ids.actor },
+it.each([
+  "none",
+  "original-grant",
+  "owner",
+  "token",
+  "membership",
+  "archive",
+  "extracted",
+  "moderation",
+] as const)("uses normal claimed scan/finalization and live authority: %s", async (change) => {
+  const { t, ids, recover } = await fixture();
+  const receipt = await (await recover()).json();
+  const attemptId = receipt.attemptId as Id<"publishAttempts">,
+    releaseId = receipt.releaseId as Id<"packageReleases">;
+  const attempt = await t.run((ctx) => ctx.db.get(attemptId));
+  await t.mutation(internal.publishAttempts.claimPendingPublishAttemptChecksInternal, {
+    attemptId,
+    claimId: "scanner",
+  });
+  await t.mutation(internal.publishAttempts.completePendingPublishAttemptChecksInternal, {
+    attemptId,
+    claimId: "scanner",
+    artifactFingerprint: attempt!.artifactFingerprint,
+    clawscanAnalysis: { status: "clean", verdict: "benign", checkedAt: Date.now() },
+    aigAnalysis: { status: "clean", issueCount: 0, findings: [], checkedAt: Date.now() },
+    trufflehog: { status: "clean", summary: "fresh secrets scan" },
+    clawscan: { status: "clean", summary: "fresh policy scan" },
+  });
+  await t.run(async (ctx) => {
+    if (change === "original-grant")
+      await ctx.db.patch(ids.originalToken, { revokedAt: Date.now() });
+    if (change === "owner") await ctx.db.patch(ids.packageId, { ownerUserId: ids.actor });
+    if (change === "moderation")
+      await ctx.db.patch(releaseId, {
+        manualModeration: {
+          state: "quarantined",
+          reason: "fixture hold",
+          updatedAt: Date.now(),
+          reviewerUserId: ids.actor,
+        },
       });
-    } else await expect(commit).rejects.toThrow();
-    expect(await t.run((ctx) => ctx.db.get(ids.originalToken))).not.toHaveProperty("consumedAt");
-  },
-);
+    if (change === "token") await ctx.db.patch(ids.apiToken, { revokedAt: Date.now() });
+    if (change === "membership") await ctx.db.delete(ids.membership);
+    if (change === "archive") await ctx.storage.delete(ids.archiveId);
+    if (change === "extracted") await ctx.storage.delete(attempt!.files[0].storageId);
+  });
+  const commit = t.action(internal.packages.finalizePackagePublishAttemptInternal, { attemptId });
+  if (change === "none") {
+    await expect(commit).resolves.toMatchObject({ ok: true, releaseId });
+    expect(await t.run((ctx) => ctx.db.get(releaseId))).toMatchObject({
+      publicationStatus: "published",
+      publishActor: { kind: "user", userId: ids.actor },
+    });
+    expect(await (await recover()).json()).toMatchObject({
+      status: "finalized",
+      publicationStatus: "published",
+      reused: true,
+    });
+  } else {
+    await expect(commit).rejects.toThrow();
+    expect(await t.run((ctx) => ctx.db.get(attemptId))).toMatchObject({ status: "failed" });
+    if (change === "original-grant" || change === "owner") {
+      expect(await (await recover()).json()).toMatchObject({
+        status: "failed",
+        publicationStatus: "failed",
+        reused: true,
+      });
+    }
+  }
+  expect(await t.run((ctx) => ctx.db.get(ids.originalToken))).not.toHaveProperty("consumedAt");
+});
 
 it("returns a terminal receipt after block cleanup instead of staging again", async () => {
   const { t, ids, recover } = await fixture();

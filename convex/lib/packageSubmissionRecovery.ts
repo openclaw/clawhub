@@ -260,14 +260,17 @@ export async function assertSubmissionRecoveryFinalization(
   const attempt = attemptId ? await ctx.db.get(attemptId) : null;
   const token = binding ? await ctx.db.get(binding.originalTokenId) : null;
   if (
-    !binding ||
     !attempt ||
-    !token ||
     !claimId ||
-    release.publishAttemptId !== attempt._id ||
     attempt.status !== "finalizing" ||
     attempt.finalizationClaimId !== claimId ||
-    (attempt.finalizationClaimExpiresAt ?? 0) <= Date.now() ||
+    (attempt.finalizationClaimExpiresAt ?? 0) <= Date.now()
+  )
+    throw new ConvexError("Publish attempt finalization claim is not active.");
+  if (
+    !binding ||
+    !token ||
+    release.publishAttemptId !== attempt._id ||
     attempt.checks.trufflehog.status !== "clean" ||
     attempt.checks.clawscan.status !== "clean" ||
     JSON.stringify(submissionRecovery(attempt.packageFollowup)) !== JSON.stringify(binding) ||
@@ -294,7 +297,7 @@ export async function assertSubmissionRecoveryFinalization(
     (await buildPackageInventoryDigest(release.files)) !== binding.request.inventoryDigest
   )
     throw new ConvexError(
-      "Submission recovery finalization binding, checks, or original outcome changed",
+      "Recovered package publication authorization binding, checks, or original submission outcome changed",
     );
   await assertManualPackagePublisher(ctx, pkg, binding.actorUserId, binding.apiTokenId);
   assertRecoveryModeration(release, attempt);
