@@ -193,7 +193,16 @@ export function recommendFeatured(params: {
     });
   }
   const byId = new Map(recommendations.map((entry) => [entry.id, entry]));
-  const telemetry = recommendations.filter((entry) => (entry.adoption?.installs30d ?? 0) > 0);
+  // Editorial hydration may permit a reserved channel. Rank only artifacts that
+  // qualified for automatic discovery when the adoption evidence was read.
+  const adoptionEligible = new Set(
+    params.adoption
+      .filter(({ artifact }) => artifact.eligibleForFeatured)
+      .map(({ artifact }) => artifact.id),
+  );
+  const telemetry = recommendations.filter(
+    (entry) => adoptionEligible.has(entry.id) && (entry.adoption?.installs30d ?? 0) > 0,
+  );
   telemetry.sort(
     (a, b) =>
       b.adoption!.installs30d - a.adoption!.installs30d ||

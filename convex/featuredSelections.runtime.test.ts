@@ -92,7 +92,8 @@ it.each(["plugin", "skill"] as const)(
       const storageId = await ctx.storage.store(new Blob(["fixture"]));
       const files = [{ path: "SKILL.md", size: 7, storageId, sha256: "a".repeat(64) }];
       for (let i = 0; i < 17; i++) {
-        const name = `workflow-${i}`;
+        const name =
+          artifactKind === "plugin" && i === 1 ? "@agentmail/agentmail" : `workflow-${i}`;
         let id: string;
         if (artifactKind === "plugin") {
           const packageId = await ctx.db.insert("packages", {
@@ -101,7 +102,7 @@ it.each(["plugin", "skill"] as const)(
             normalizedName: name,
             displayName: name,
             ownerUserId: actorUserId,
-            categories: ["developer-tools"],
+            categories: [i === 1 || i === 16 ? "channels" : "developer-tools"],
             scanStatus: "clean",
             stats: { downloads: 1, installs: 1, stars: 0, versions: 1 },
           });
@@ -201,6 +202,14 @@ it.each(["plugin", "skill"] as const)(
           reason: item.reason,
         })),
       });
+    if (artifactKind === "plugin") {
+      const state = await staff.query(api.featuredSelections.get, { artifactKind });
+      expect(state.reservations[1]).toMatchObject({
+        id: "plugin:@agentmail/agentmail",
+        pendingReasons: [],
+        currentArtifact: { eligibleForFeatured: true },
+      });
+    }
     const queued = await staff.mutation(api.searchReports.start, {
       view: "recommendations",
       artifactKind,
@@ -210,6 +219,20 @@ it.each(["plugin", "skill"] as const)(
     const ready = await staff.action(api.searchReports.get, { reportId: queued.reportId });
     if (ready.status !== "ready" || ready.view !== "recommendations")
       throw new Error(`Expected generated recommendation report: ${JSON.stringify(ready)}`);
+    if (artifactKind === "plugin") {
+      const { candidates, lineup } = ready.report.recommendations;
+      expect(lineup.reservations[1]).toMatchObject({
+        id: "plugin:@agentmail/agentmail",
+        status: "ready",
+      });
+      expect(lineup.proposed[1]).toMatchObject({
+        id: "plugin:@agentmail/agentmail",
+        selectionBasis: "editorial",
+      });
+      // Neither the reservation nor an existing badge turns a channel into an install-ranked candidate.
+      expect(candidates.map(({ id }) => id)).not.toContain("plugin:@agentmail/agentmail");
+      expect(candidates.map(({ id }) => id)).not.toContain(items[16].id);
+    }
     const payload = {
       reportId: queued.reportId,
       artifactKind,
@@ -236,6 +259,27 @@ it.each(["plugin", "skill"] as const)(
         scheduled: await ctx.db.system.query("_scheduled_functions").collect(),
       }));
     const before = await snapshot();
+    if (artifactKind === "plugin") {
+      // Recheck the basis against live categories, not just the saved proposal.
+      for (const [index, category] of [
+        [1, "models"],
+        [15, "channels"],
+      ] as const) {
+        const name = payload.items[index].id.slice(7);
+        const pkg = await t.run((ctx) =>
+          ctx.db
+            .query("packages")
+            .withIndex("by_name", (q) => q.eq("normalizedName", name))
+            .unique(),
+        );
+        if (!pkg) throw new Error("Missing fixture: " + name);
+        await t.run((ctx) => ctx.db.patch(pkg._id, { categories: [category] }));
+        await expect(
+          staff.mutation(api.featuredSelections.publish, { ...payload, dryRun: true }),
+        ).rejects.toThrow("discovery-excluded:" + category);
+        await t.run((ctx) => ctx.db.patch(pkg._id, { categories: pkg.categories }));
+      }
+    }
     await expect(
       staff.mutation(api.featuredSelections.publish, {
         ...payload,

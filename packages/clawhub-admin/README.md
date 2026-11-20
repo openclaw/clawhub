@@ -273,8 +273,9 @@ Trending includes a partial current UTC day; native skill Trending uses complete
 hours. Unknown source periods and unavailable metrics remain null. Both views expose
 coverage limits and current metadata freshness. Candidate eligibility uses current
 public releases and security status. Channels, model providers and agent runtimes
-are excluded from plugin discovery using their canonical category; official and
-community workflow tools remain eligible. Current Featured entries are reassessed;
+are excluded from automatic Featured recommendations using their primary category.
+Staff may explicitly Feature a channel or reserve it for an editorial slot, but
+not a model provider or agent runtime. Official and community workflow tools remain eligible. Current Featured entries are reassessed;
 external skills without a ClawHub Featured owner remain explicit exclusions.
 
 Every iteration proposes the complete set of up to eight plugins and eight skills,

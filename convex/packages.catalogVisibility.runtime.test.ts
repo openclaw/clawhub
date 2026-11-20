@@ -470,18 +470,17 @@ describe("normal plugin catalog visibility", () => {
         const names = body.results
           ? body.results.map((entry: { package: { name: string } }) => entry.package.name)
           : body.items.map((entry: { name: string }) => entry.name);
-        const expected =
-          route.includes("highlightedOnly=true") || route.includes("sort=trending")
-            ? []
-            : route.includes("channel=private")
-              ? viewer === "anonymous"
-                ? []
-                : ["whatsapp-private"]
-              : route.includes("/code-plugins")
-                ? ["@openclaw/whatsapp"]
-                : route.includes("/bundle-plugins")
-                  ? ["whatsapp-bundle"]
-                  : expectedNames;
+        const expected = route.includes("sort=trending")
+          ? []
+          : route.includes("channel=private")
+            ? viewer === "anonymous"
+              ? []
+              : ["whatsapp-private"]
+            : route.includes("/code-plugins")
+              ? ["@openclaw/whatsapp"]
+              : route.includes("/bundle-plugins")
+                ? ["whatsapp-bundle"]
+                : expectedNames;
         expect(names.sort(), route).toEqual(expected);
       }
       const browser = viewer === "anonymous" ? t : t.withIdentity({ subject: ownerUserId });
