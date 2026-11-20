@@ -20,7 +20,7 @@ vi.mock("../components/UserBadge", () => ({
 
 vi.mock("../convex/client", () => ({
   convex: {},
-  convexHttp: { query: vi.fn() },
+  convexHttp: { query: (...args: unknown[]) => convexQueryMock(...args) },
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -680,7 +680,8 @@ describe("SkillDetailPage", () => {
     expect(screen.queryByText("30-day Installs")).toBeNull();
     expect(
       container.querySelectorAll(".detail-sidebar-stats .metric-trend-card-skeleton"),
-    ).toHaveLength(1);
+    ).toHaveLength(0);
+    expect(screen.getAllByText("All time").length).toBeGreaterThan(0);
     expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
     expect(
       useQueryMock.mock.calls.some(

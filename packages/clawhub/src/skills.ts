@@ -101,6 +101,10 @@ export async function listSkillFiles(root: string, limits?: SkillFileLimits): Pr
     },
   );
 
+  // Directory entry order follows the filesystem, so keep the returned list
+  // in stable code-unit path order before limits or callers see it.
+  sortSkillFilesByPath(entries);
+
   if (limits) {
     const oversized = entries.find((entry) => entry.size > limits.maxFileBytes);
     if (oversized) {
@@ -223,6 +227,15 @@ export async function writeSkillOrigin(skillFolder: string, origin: SkillOrigin)
   const path = join(skillFolder, DOT_DIR, "origin.json");
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, `${JSON.stringify(origin, null, 2)}\n`, "utf8");
+}
+
+export function sortSkillFilesByPath<T extends { relPath: string }>(files: T[]): T[] {
+  files.sort((left, right) => {
+    if (left.relPath < right.relPath) return -1;
+    if (left.relPath > right.relPath) return 1;
+    return 0;
+  });
+  return files;
 }
 
 function formatByteLimit(bytes: number) {

@@ -783,14 +783,6 @@
   overflow: hidden;
 }
 
-.publisher-profile-group-description {
-  margin: 0;
-  padding: 0 4px;
-  color: var(--ink-soft);
-  font-size: var(--fs-sm);
-  line-height: 1.45;
-}
-
 .publisher-profile-load-more {
   display: flex;
   justify-content: center;
@@ -801,11 +793,6 @@
   color: var(--ink-soft);
   font-size: var(--fs-sm);
   text-align: center;
-}
-
-.publisher-profile-source-catalog {
-  display: grid;
-  gap: var(--space-5);
 }
 
 .publisher-profile-catalog-sections {
@@ -852,13 +839,6 @@
 .publisher-profile-grouped-catalog {
   display: grid;
   gap: var(--space-4);
-}
-
-.publisher-profile-group-description {
-  margin: 0;
-  color: var(--ink-soft);
-  font-size: var(--fs-sm);
-  line-height: 1.45;
 }
 
 @media (max-width: 860px) {

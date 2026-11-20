@@ -127,6 +127,16 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   quarantined/revoked package downloads remain blocked. A pending package scan is
   not an unpublished release. Authorized owner/staff submission previews retain
   their separate access path.
+- Normal publisher-qualified plugin and Template listings may show the authenticated
+  personal publisher, current organization members with publish authority, or active
+  moderators/admins a **metadata-only** pending notice. Resolve the actual owner
+  even for an unscoped package; an organization uploader's historical user ID is
+  not membership. Only the newest submitted release can qualify: it must still be
+  pending, bound to its own active publication attempt, and newer than the published
+  latest when one exists. Do not fall back to older pending submissions after a
+  block, removal or publication. Private, blocked, removed or otherwise ineligible
+  records have no notice. This response never grants artifact, file, install,
+  version-history, search, public detail or shared-cache visibility.
 - Pending skill finalization must not lift `softDeletedAt`, `moderationStatus`
   `removed`, or a hidden staff hold such as security redaction, a ban, publisher
   deletion, or manual review. A first publish hidden only for
@@ -550,6 +560,12 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   capture limits of 32 MiB stdout and 1 MiB stderr. Output overflow and timeout
   failures keep the attempt unpublished; scanner verdict exit codes remain
   scanner-specific.
+- Untargeted ready-finalization workers inspect at most 25 candidates per claim,
+  yielding earlier near the transaction budget. They advance a transactional
+  bookmark for their exact filters through a fixed end-of-sweep key, even when
+  no candidate was claimable. The next poll resumes; wrap rechecks lifted holds
+  and expired leases. A null result is not proof the entire queue is empty.
+  Exact attempt-ID claims do not use or move this bookmark.
 - For pending-check and ready-finalization attempts, duplicate targeted recovery
   against a live foreign lease returns no work. It preserves the existing claim
   ID and expiry without falling through to another claim path; the same claim

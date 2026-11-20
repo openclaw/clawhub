@@ -3350,6 +3350,23 @@ async function getReleaseForRequest(
   return snapshot?.release ?? null;
 }
 
+function streamPackageZip(zip: Uint8Array) {
+  // A BufferSource body is snapshotted; Convex also copies each stream chunk
+  // into its HTTP transport. Hand it bounded views of the already-hashed ZIP.
+  const chunkBytes = 64 * 1024;
+  let offset = 0;
+  return new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (offset < zip.byteLength) {
+        const chunk = zip.subarray(offset, offset + chunkBytes);
+        controller.enqueue(chunk);
+        offset += chunk.byteLength;
+      }
+      if (offset === zip.byteLength) controller.close();
+    },
+  });
+}
+
 async function packageFileResponse(
   ctx: ActionCtx,
   release: ReleaseLike,
@@ -4372,16 +4389,13 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     } catch {
       // Best-effort metric path; never fail package downloads.
     }
-    const zipBody = zip.buffer.slice(
-      zip.byteOffset,
-      zip.byteOffset + zip.byteLength,
-    ) as ArrayBuffer;
-    return new Response(new Blob([zipBody], { type: "application/zip" }), {
+    return new Response(streamPackageZip(zip), {
       status: 200,
       headers: mergeHeaders(
         rate.headers,
         {
           "Content-Type": "application/zip",
+          "Content-Length": String(zip.byteLength),
           "Content-Disposition": contentDispositionAttachment(
             `${publicPackage!.name.replaceAll("/", "-")}-${release.version}.zip`,
           ),

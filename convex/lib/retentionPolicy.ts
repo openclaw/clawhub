@@ -2,6 +2,15 @@ import type { TableNames } from "../_generated/dataModel";
 
 export const RETENTION_STANDARD_BATCH_SIZE = 500;
 
+const RETENTION_MAX_BATCH_SIZE = 1_000;
+
+export function normalizeRetentionBatchSize(batchSize: number | undefined) {
+  const requested = Number.isFinite(batchSize)
+    ? Math.floor(batchSize ?? RETENTION_STANDARD_BATCH_SIZE)
+    : RETENTION_STANDARD_BATCH_SIZE;
+  return Math.max(1, Math.min(requested, RETENTION_MAX_BATCH_SIZE));
+}
+
 type BaseRetentionPolicy = {
   reason: string;
 };
@@ -179,6 +188,12 @@ export const RETENTION_POLICIES = {
   skillSlugAliases: permanent("Historical slug routing aliases."),
   packages: permanent("Canonical package records."),
   packageReleases: permanent("Canonical package release records."),
+  publishFinalizationCursors: ephemeral("Discardable progress for bounded ready-queue discovery.", {
+    expirationField: "expirationTime",
+    expirationIndex: "by_expiration_time",
+    prune: "retention.pruneExpiredPublishFinalizationCursorsInternal",
+    retention: "Removed when the sweep wraps, or after 24 hours without progress.",
+  }),
   publishAttempts: ephemeral(
     "Private staged publish workflow state expires unless later retained by moderation policy.",
     {

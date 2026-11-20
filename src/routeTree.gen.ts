@@ -23,6 +23,7 @@ import { Route as PublishSkillRouteImport } from './routes/publish-skill'
 import { Route as SearchRouteImport } from './routes/search'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as StarsRouteImport } from './routes/stars'
+import { Route as TemplatesRouteRouteImport } from './routes/templates/route'
 import { Route as UploadRouteImport } from './routes/upload'
 import { Route as OwnerSlugRouteImport } from './routes/$owner/$slug'
 import { Route as AuthDocsRouteImport } from './routes/auth/docs'
@@ -136,6 +137,11 @@ const StarsRoute = StarsRouteImport.update({
   path: '/stars',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TemplatesRouteRoute = TemplatesRouteRouteImport.update({
+  id: '/templates',
+  path: '/templates',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const UploadRoute = UploadRouteImport.update({
   id: '/upload',
   path: '/upload',
@@ -227,9 +233,9 @@ const SkillsPublishRoute = SkillsPublishRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 const TemplatesIndexRoute = TemplatesIndexRouteImport.update({
-  id: '/templates/',
-  path: '/templates/',
-  getParentRoute: () => rootRouteImport,
+  id: '/',
+  path: '/',
+  getParentRoute: () => TemplatesRouteRoute,
 } as any)
 const UHandleRoute = UHandleRouteImport.update({
   id: '/u/$handle',
@@ -360,6 +366,7 @@ const OwnerSkillsSlugDotwellKnownAgentSkillsIndexDotjsonRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/templates': typeof TemplatesRouteRouteWithChildren
   '/$slug': typeof SlugRoute
   '/account-banned': typeof AccountBannedRoute
   '/add': typeof AddRoute
@@ -477,6 +484,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/templates': typeof TemplatesRouteRouteWithChildren
   '/$slug': typeof SlugRoute
   '/account-banned': typeof AccountBannedRoute
   '/add': typeof AddRoute
@@ -537,6 +545,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/templates'
     | '/$slug'
     | '/account-banned'
     | '/add'
@@ -653,6 +662,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/templates'
     | '/$slug'
     | '/account-banned'
     | '/add'
@@ -712,6 +722,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  TemplatesRouteRoute: typeof TemplatesRouteRouteWithChildren
   SlugRoute: typeof SlugRoute
   AccountBannedRoute: typeof AccountBannedRoute
   AddRoute: typeof AddRoute
@@ -745,7 +756,6 @@ export interface RootRouteChildren {
   PluginsIndexRoute: typeof PluginsIndexRoute
   PublishersIndexRoute: typeof PublishersIndexRoute
   SkillsIndexRoute: typeof SkillsIndexRoute
-  TemplatesIndexRoute: typeof TemplatesIndexRoute
   UsersIndexRoute: typeof UsersIndexRoute
   OwnerPluginsSlugRoute: typeof OwnerPluginsSlugRouteWithChildren
   OwnerSkillsSlugRoute: typeof OwnerSkillsSlugRouteWithChildren
@@ -854,6 +864,13 @@ declare module '@tanstack/react-router' {
       path: '/stars'
       fullPath: '/stars'
       preLoaderRoute: typeof StarsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/templates': {
+      id: '/templates'
+      path: '/templates'
+      fullPath: '/templates'
+      preLoaderRoute: typeof TemplatesRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/upload': {
@@ -984,10 +1001,10 @@ declare module '@tanstack/react-router' {
     }
     '/templates/': {
       id: '/templates/'
-      path: '/templates'
+      path: '/'
       fullPath: '/templates/'
       preLoaderRoute: typeof TemplatesIndexRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof TemplatesRouteRoute
     }
     '/u/$handle': {
       id: '/u/$handle'
@@ -1153,6 +1170,18 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface TemplatesRouteRouteChildren {
+  TemplatesIndexRoute: typeof TemplatesIndexRoute
+}
+
+const TemplatesRouteRouteChildren: TemplatesRouteRouteChildren = {
+  TemplatesIndexRoute: TemplatesIndexRoute,
+}
+
+const TemplatesRouteRouteWithChildren = TemplatesRouteRoute._addFileChildren(
+  TemplatesRouteRouteChildren,
+)
+
 interface OwnerSlugRouteChildren {
   OwnerSlugSecurityAuditRoute: typeof OwnerSlugSecurityAuditRoute
   OwnerSlugSettingsRoute: typeof OwnerSlugSettingsRoute
@@ -1230,6 +1259,7 @@ const PluginsScopeNameRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  TemplatesRouteRoute: TemplatesRouteRouteWithChildren,
   SlugRoute: SlugRoute,
   AccountBannedRoute: AccountBannedRoute,
   AddRoute: AddRoute,
@@ -1263,7 +1293,6 @@ const rootRouteChildren: RootRouteChildren = {
   PluginsIndexRoute: PluginsIndexRoute,
   PublishersIndexRoute: PublishersIndexRoute,
   SkillsIndexRoute: SkillsIndexRoute,
-  TemplatesIndexRoute: TemplatesIndexRoute,
   UsersIndexRoute: UsersIndexRoute,
   OwnerPluginsSlugRoute: OwnerPluginsSlugRouteWithChildren,
   OwnerSkillsSlugRoute: OwnerSkillsSlugRouteWithChildren,

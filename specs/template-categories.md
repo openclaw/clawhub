@@ -28,7 +28,7 @@ comes last. The definitions live in `TEMPLATE_CATEGORY_DEFINITIONS` in
 Each definition's `description` is the classifier's entire guidance for that category. Keep the
 ten distinguishable from each other when editing one. `icon` names the Lucide glyph used
 alongside the category label in the `/templates` browse filters. It identifies the filter,
-not the Template: catalog rows use the shared Blobster glyph instead.
+not the Template: catalog rows show package artwork, or the shared Blobster glyph as a fallback.
 
 ## One category per Template
 

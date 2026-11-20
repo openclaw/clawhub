@@ -498,6 +498,98 @@ describe("user profile route", () => {
     ).toBeTruthy();
   });
 
+  it("renders the loader's public page until the matching live page arrives", async () => {
+    loaderDataMock.mockReturnValue({
+      publisher,
+      initialCatalog: {
+        tab: "skills",
+        items: [
+          {
+            ...createPublishedItemDefaults(),
+            _id: "skills:gpu",
+            kind: "skill",
+            displayName: "GPU Helper",
+            href: "/nvidia/gpu-helper",
+          },
+        ],
+      },
+    });
+    queryMock.mockReturnValue(undefined);
+    paginatedQueryMock.mockReturnValue({
+      results: [],
+      status: "LoadingFirstPage",
+      loadMore: vi.fn(),
+    });
+    const Component = (await loadRoute()).__config.component as ComponentType;
+    const { rerender } = render(<Component />);
+    const catalog = within(screen.getByLabelText("Publisher catalog"));
+    expect(catalog.getByText("GPU Helper")).toBeTruthy();
+    expect(catalog.queryByRole("status", { name: "Loading results" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /plugins 0/i }));
+    expect(catalog.queryByText("GPU Helper")).toBeNull();
+    expect(catalog.getByRole("status", { name: "Loading results" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /skills 136/i }));
+    fireEvent.click(screen.getByRole("combobox", { name: "Sort" }));
+    fireEvent.click(screen.getByRole("option", { name: "Recent" }));
+    expect(catalog.queryByText("GPU Helper")).toBeNull();
+    expect(catalog.getByRole("status", { name: "Loading results" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("combobox", { name: "Sort" }));
+    fireEvent.click(screen.getByRole("option", { name: "Most downloaded" }));
+    expect(catalog.getByText("GPU Helper")).toBeTruthy();
+
+    paginatedQueryMock.mockReturnValue({ results: [], status: "Exhausted", loadMore: vi.fn() });
+    rerender(<Component />);
+    expect(catalog.queryByText("GPU Helper")).toBeNull();
+    expect(catalog.getByText("No published skills yet")).toBeTruthy();
+  });
+
+  it("resets the catalog selection to the new publisher's first page on handle navigation", async () => {
+    queryMock.mockReturnValue(undefined);
+    paginatedQueryMock.mockReturnValue({
+      results: [],
+      status: "LoadingFirstPage",
+      loadMore: vi.fn(),
+    });
+    const Component = (await loadRoute()).__config.component as ComponentType;
+    const { rerender } = render(<Component />);
+    fireEvent.click(screen.getByRole("combobox", { name: "Sort" }));
+    fireEvent.click(screen.getByRole("option", { name: "Recent" }));
+
+    loaderDataMock.mockReturnValue({
+      publisher: { ...publisher, _id: "publishers:e2e", handle: "e2e", displayName: "E2E" },
+      initialCatalog: {
+        tab: "skills",
+        items: [
+          {
+            ...createPublishedItemDefaults(),
+            _id: "skills:verify",
+            kind: "skill",
+            displayName: "Verify Apps",
+            href: "/e2e/verify",
+          },
+        ],
+      },
+    });
+    rerender(<Component />);
+    expect(screen.getByRole("heading", { name: "E2E" })).toBeTruthy();
+    expect(screen.getByText("Verify Apps")).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "Sort" }).textContent).toBe("Sort");
+  });
+
+  it("does not announce an empty catalog while both public and live pages are unavailable", async () => {
+    loaderDataMock.mockReturnValue({ publisher, initialCatalog: null });
+    paginatedQueryMock.mockReturnValue({
+      results: [],
+      status: "LoadingFirstPage",
+      loadMore: vi.fn(),
+    });
+    const Component = (await loadRoute()).__config.component as ComponentType;
+    render(<Component />);
+    expect(screen.getByRole("status", { name: "Loading results" })).toBeTruthy();
+    expect(screen.queryByText("No published skills yet")).toBeNull();
+  });
+
   it("uses downloads sort for published catalog pages by default", async () => {
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;

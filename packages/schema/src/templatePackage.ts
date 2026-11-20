@@ -35,7 +35,7 @@ export type ValidatedTemplatePackage = {
 };
 const EXACT_VERSION_PATTERN =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
-const MAX_TEMPLATE_MANIFEST_BYTES = 1024 * 1024;
+export const MAX_TEMPLATE_MANIFEST_BYTES = 1024 * 1024;
 const MAX_PACKAGE_BOOTSTRAP_BYTES = 2 * 1024 * 1024;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -70,7 +70,8 @@ function findUnsupportedYamlFeature(document: ReturnType<typeof parseDocument>) 
   return unsupportedFeature;
 }
 
-function parseManifestDocument(
+/** Read the same alias/tag-free YAML used at publication (also for already-admitted artwork). */
+export function parseTemplateMarkdownDocument(
   raw: string,
   manifestPath: string,
 ):
@@ -133,7 +134,7 @@ export function templateBundledMetadataPaths(
   manifestPath: string,
   packagePaths: readonly string[],
 ): string[] {
-  const parsed = parseManifestDocument(raw, manifestPath);
+  const parsed = parseTemplateMarkdownDocument(raw, manifestPath);
   if ("issues" in parsed) return [];
   const validated = validateTemplateManifest(parsed.value);
   if (!validated.ok) return [];
@@ -271,7 +272,7 @@ export function validateTemplatePackageContents(input: {
       ],
     };
   }
-  const parsed = parseManifestDocument(manifestFile.text, manifestPath);
+  const parsed = parseTemplateMarkdownDocument(manifestFile.text, manifestPath);
   if ("issues" in parsed) return { ok: false, issues: parsed.issues };
   const validated = validateTemplateManifest(parsed.value);
   if (!validated.ok) {

@@ -1,3 +1,4 @@
+import type { TemplateManifest } from "clawhub-schema";
 import { ConvexError } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
@@ -11,8 +12,10 @@ import {
   MAX_SKILL_PRESENTATION_ICON_BYTES,
   validateSkillPresentationIcon,
 } from "./skillPresentation";
+import { resolveTemplateAvatarArtwork } from "./templateAvatarArtwork";
 
 const PORTABLE_PACKAGE_ICON = "assets/icon.png";
+type IconFiles = Array<{ path: string; size: number; sha256: string; storageId: string }>;
 type IconContext = Pick<ActionCtx, "storage" | "runAction" | "runQuery" | "runMutation">;
 type IconSource = Pick<
   NonNullable<Doc<"packageReleases">["verification"]>,
@@ -30,23 +33,45 @@ export function bundledPluginIconSourceUrl(source: IconSource | undefined) {
 }
 
 /** Use the same fixed asset convention as OpenClaw; never interpret a manifest path as a URL. */
-export async function resolvePackageIcon(
+export function resolvePackageIcon(
   ctx: IconContext,
-  args: {
-    files: Array<{ path: string; size: number; sha256: string; storageId: string }>;
-    trustedSource?: IconSource;
-    dryRun?: boolean;
-  },
+  args: { files: IconFiles; trustedSource?: IconSource; dryRun?: boolean },
+): Promise<string | undefined> {
+  return resolvePortablePackageIcon(ctx, args, "require-readable");
+}
+
+export async function resolveTemplatePackageIcon(
+  ctx: IconContext,
+  args: { files: IconFiles; manifest?: TemplateManifest; dryRun?: boolean },
+): Promise<string | undefined> {
+  // No network recovery for Templates. Only attempt the avatar when the fixed PNG is unusable.
+  const fixed = await resolvePortablePackageIcon(
+    ctx,
+    { files: args.files, dryRun: args.dryRun },
+    "optional",
+  );
+  if (fixed || !args.manifest) return fixed;
+  return resolveTemplateAvatarArtwork(ctx, { ...args, manifest: args.manifest });
+}
+
+async function resolvePortablePackageIcon(
+  ctx: IconContext,
+  args: { files: IconFiles; trustedSource?: IconSource; dryRun?: boolean },
+  filePolicy: "require-readable" | "optional",
 ): Promise<string | undefined> {
   const file = args.files.find((entry) => entry.path === PORTABLE_PACKAGE_ICON);
   let bytes: Uint8Array;
   if (file) {
     if (file.size > MAX_SKILL_PRESENTATION_ICON_BYTES) return undefined;
     const blob = await ctx.storage.get(file.storageId as Id<"_storage">);
-    if (!blob) throw new ConvexError("Package icon could not be read. Please retry.");
+    if (!blob) {
+      if (filePolicy === "optional") return undefined;
+      throw new ConvexError("Package icon could not be read. Please retry.");
+    }
     if (blob.size > MAX_SKILL_PRESENTATION_ICON_BYTES) return undefined;
     bytes = new Uint8Array(await blob.arrayBuffer());
     if ((await sha256Hex(bytes)) !== file.sha256.toLowerCase()) {
+      if (filePolicy === "optional") return undefined;
       throw new ConvexError("Package icon changed during upload. Please retry.");
     }
   } else {

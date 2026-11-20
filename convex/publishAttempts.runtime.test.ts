@@ -580,7 +580,7 @@ describe("publish attempt runtime recovery", () => {
     { checkStatus: "pending", status: "pending_checks" },
     { checkStatus: "clean", status: "ready_to_finalize" },
   ] as const)(
-    "returns null without mutating a targeted $status foreign lease",
+    "returns null without mutating a $status foreign lease",
     async ({ checkStatus, status }) => {
       vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "runtime-worker-token");
       const t = convexTest(schema, modules);
@@ -619,6 +619,11 @@ describe("publish attempt runtime recovery", () => {
         }),
       ).resolves.toBeNull();
 
+      await expect(
+        t.action(api.publishAttempts.claimPrePublicationChecks, {
+          token: "runtime-worker-token",
+        }),
+      ).resolves.toBeNull();
       const after = await t.run(async (ctx) => await ctx.db.get(attemptId));
       expect(after).toEqual(before);
       expect(after).toMatchObject({
@@ -739,73 +744,106 @@ describe("publish attempt runtime recovery", () => {
     });
   });
 
-  it("terminalizes a ready attempt after its staged release is soft-deleted", async () => {
-    const t = convexTest(schema, modules);
-    const ids = await t.run(async (ctx) => {
-      const userId = await ctx.db.insert("users", {});
-      const packageId = await ctx.db.insert("packages", {
-        ...createPackageSeedDefaults(),
-        name: "@demo/orphan-runtime",
-        normalizedName: "@demo/orphan-runtime",
-        displayName: "Orphan Runtime",
-        ownerUserId: userId,
-        compatibility: {},
-        verification: { tier: "structural", scope: "artifact-only", scanStatus: "pending" },
-        scanStatus: "pending",
-        stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
+  it.each([true, false])(
+    "terminalizes a soft-deleted staged release (targeted: %s)",
+    async (targeted) => {
+      const t = convexTest(schema, modules);
+      const ids = await t.run(async (ctx) => {
+        const userId = await ctx.db.insert("users", {});
+        const packageId = await ctx.db.insert("packages", {
+          ...createPackageSeedDefaults(),
+          name: "@demo/orphan-runtime",
+          normalizedName: "@demo/orphan-runtime",
+          displayName: "Orphan Runtime",
+          ownerUserId: userId,
+          compatibility: {},
+          verification: { tier: "structural", scope: "artifact-only", scanStatus: "pending" },
+          scanStatus: "pending",
+          stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
+        });
+        const releaseId = await ctx.db.insert("packageReleases", {
+          packageId,
+          version: "1.0.0",
+          publicationStatus: "pending",
+          changelog: "",
+          distTags: [],
+          files: [],
+          integritySha256: "fingerprint",
+          compatibility: {},
+          verification: { tier: "structural", scope: "artifact-only", scanStatus: "pending" },
+          createdBy: userId,
+          publishActor: { kind: "user", userId },
+          createdAt: 1,
+          softDeletedAt: 2,
+        });
+        const attemptId = await ctx.db.insert("publishAttempts", {
+          kind: "package",
+          status: "ready_to_finalize",
+          userId,
+          packageId,
+          packageReleaseId: releaseId,
+          slug: "@demo/orphan-runtime",
+          displayName: "Orphan Runtime",
+          version: "1.0.0",
+          idempotencyKey: "runtime-orphan-package",
+          artifactFingerprint: "fingerprint",
+          files: [],
+          checks: {
+            trufflehog: { status: "clean" },
+            clawscan: { status: "clean" },
+          },
+          createdAt: 1,
+          updatedAt: 1,
+          expiresAt: Date.now() + 60_000,
+        });
+        const {
+          _id: _releaseId,
+          _creationTime: _releaseTime,
+          ...release
+        } = (await ctx.db.get(releaseId))!;
+        const healthyReleaseId = await ctx.db.insert("packageReleases", {
+          ...release,
+          softDeletedAt: undefined,
+          version: "2.0.0",
+        });
+        const {
+          _id: _attemptId,
+          _creationTime: _attemptTime,
+          ...attempt
+        } = (await ctx.db.get(attemptId))!;
+        const healthyId = await ctx.db.insert("publishAttempts", {
+          ...attempt,
+          packageReleaseId: healthyReleaseId,
+          idempotencyKey: "runtime-healthy-package",
+          version: "2.0.0",
+          createdAt: 2,
+        });
+        return { attemptId, healthyId };
       });
-      const releaseId = await ctx.db.insert("packageReleases", {
-        packageId,
-        version: "1.0.0",
-        publicationStatus: "pending",
-        changelog: "",
-        distTags: [],
-        files: [],
-        integritySha256: "fingerprint",
-        compatibility: {},
-        verification: { tier: "structural", scope: "artifact-only", scanStatus: "pending" },
-        createdBy: userId,
-        publishActor: { kind: "user", userId },
-        createdAt: 1,
-        softDeletedAt: 2,
-      });
-      const attemptId = await ctx.db.insert("publishAttempts", {
-        kind: "package",
-        status: "ready_to_finalize",
-        userId,
-        packageId,
-        packageReleaseId: releaseId,
-        slug: "@demo/orphan-runtime",
-        displayName: "Orphan Runtime",
-        version: "1.0.0",
-        idempotencyKey: "runtime-orphan-package",
-        artifactFingerprint: "fingerprint",
-        files: [],
-        checks: {
-          trufflehog: { status: "clean" },
-          clawscan: { status: "clean" },
+
+      const claimed = await t.mutation(
+        internal.publishAttempts.claimReadyPublishAttemptFinalizationRetryInternal,
+        {
+          ...(targeted ? { attemptId: ids.attemptId } : {}),
+          claimId: "runtime-finalize",
         },
-        createdAt: 1,
-        updatedAt: 1,
-        expiresAt: Date.now() + 60_000,
+      );
+      if (targeted) expect(claimed).toBeNull();
+      else {
+        expect(claimed).toMatchObject({ attemptId: ids.healthyId, claimId: "runtime-finalize" });
+        expect(await t.run((ctx) => ctx.db.get(ids.healthyId))).toMatchObject({
+          checkClaimId: "runtime-finalize",
+        });
+      }
+
+      const attempt = await t.run(async (ctx) => ctx.db.get(ids.attemptId));
+      expect(attempt).toMatchObject({
+        status: "failed",
+        finalizationLastError: "Pending package release not found",
+        failedAt: expect.any(Number),
       });
-      return { attemptId };
-    });
-
-    await expect(
-      t.mutation(internal.publishAttempts.claimReadyPublishAttemptFinalizationRetryInternal, {
-        attemptId: ids.attemptId,
-        claimId: "runtime-finalize",
-      }),
-    ).resolves.toBeNull();
-
-    const attempt = await t.run(async (ctx) => ctx.db.get(ids.attemptId));
-    expect(attempt).toMatchObject({
-      status: "failed",
-      finalizationLastError: "Pending package release not found",
-      failedAt: expect.any(Number),
-    });
-  });
+    },
+  );
 });
 
 describe("targeted prepublication worker redelivery", () => {

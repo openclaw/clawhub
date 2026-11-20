@@ -1,16 +1,7 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalMutation } from "./functions";
-import { RETENTION_STANDARD_BATCH_SIZE } from "./lib/retentionPolicy";
-
-const RETENTION_MAX_BATCH_SIZE = 1_000;
-
-function normalizeRetentionBatchSize(batchSize: number | undefined) {
-  const requested = Number.isFinite(batchSize)
-    ? Math.floor(batchSize ?? RETENTION_STANDARD_BATCH_SIZE)
-    : RETENTION_STANDARD_BATCH_SIZE;
-  return Math.max(1, Math.min(requested, RETENTION_MAX_BATCH_SIZE));
-}
+import { normalizeRetentionBatchSize } from "./lib/retentionPolicy";
 
 export const pruneExpiredAuthSessionsInternal = internalMutation({
   args: {
@@ -81,6 +72,25 @@ export const pruneExpiredAuthRefreshTokensInternal = internalMutation({
     }
 
     return { deleted: stale.length, hasMore };
+  },
+});
+
+export const pruneExpiredPublishFinalizationCursorsInternal = internalMutation({
+  args: { batchSize: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const batchSize = normalizeRetentionBatchSize(args.batchSize);
+    const stale = await ctx.db
+      .query("publishFinalizationCursors")
+      .withIndex("by_expiration_time", (q) => q.lt("expirationTime", Date.now()))
+      .take(batchSize);
+    for (const cursor of stale) await ctx.db.delete(cursor._id);
+    if (stale.length === batchSize) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.retention.pruneExpiredPublishFinalizationCursorsInternal,
+        { batchSize },
+      );
+    }
   },
 });
 

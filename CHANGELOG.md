@@ -2,9 +2,16 @@
 
 ## Unreleased
 
+- Skill reports: a missing skill, a blank reason, and the open-report limit return "Skill not found", "Report reason required.", or "Report limit reached. Please wait for moderation before reporting more." instead of a server failure.
+
 - Templates: the package security API now links a Template release to its Template security-audit page (`/<publisher>/templates/<name>/security-audit`). It used to return the plugin audit address, so OpenClaw opened a Template's audit under `/plugins/`. Plugin links are unchanged.
+- CLI: list skill files in stable path order before publish, so the uploaded file list no longer follows the local filesystem's directory order.
+
+- Agent Skills download: an archive with no SKILL.md returns "Skill archive is missing SKILL.md. Ask the publisher to publish a version containing SKILL.md." instead of a server failure.
 
 - Templates: ClawHub now lists each Template under one of ten categories: Engineering, Operations, Household, Entertainment, Travel, Productivity, Research, Health, Sales, and Product. Household and Entertainment are new; Personal, Governance, Finance, and People are removed. A Template takes the first category its `CLAW.md` declares and ClawHub ignores the rest. If that category is missing or no longer exists, ClawHub classifies the Template instead of rejecting the publish, so every published Template still republishes unchanged. `categories` in API responses stays an array, and `category=personal`, `governance`, `finance`, and `people` still work as list and search filters for the Templates that store them.
+
+- Skill reads: invalid UTF-8 in a skill file is a client error for the readme, skill card, and file text. The message stays "File is not valid UTF-8 text".
 
 ## 0.27.0 - 2026-11-17
 
@@ -16,11 +23,15 @@
 
 - Skill reads: a missing stored skill file is a client error for the readme, skill card, file text, and publish preview text. The message stays "File missing in storage".
 
+- Plugin Inspector: stop storing the `package-json-missing` and `package-openclaw-entry-missing` findings for bundle plugins. A configuration-only Codex, Claude or Cursor bundle has no native package metadata, so a scan no longer shows it a warning that cannot apply (#4754). Nightly findings already stored for a release clear when that release is next scanned; a finding stored at publish time stays.
+
 - Catalog: keep package search versions aligned with the current release when editing metadata on packages with stale version summaries. Package mutations now rely on the shared trigger to refresh search projections.
 
 - Skill publish: a bad upload ticket is a client error. The messages stay "Skill upload ticket is missing, used, or expired", "Uploaded file does not match its skill upload ticket", and "Skill upload ticket does not match this publish".
 
 - Scanning: reuse the shared subprocess runner for legacy pre-publication scanners, bounding captured output to 32 MiB stdout and 1 MiB stderr while preserving scanner verdict exit codes.
+
+- CLI: add `clawhub package audit <name> --version <version>`. It prints the stored A.I.G, SkillSpector, and LLM findings for that exact version, including an A.I.G message that also has a title and the stored LLM explanation. Code plugins also show stored Endor dependency reachability. A missing report is not a clean scan. Source snippets are not printed. It does not change publication or download checks.
 
 ## 0.26.0 - 2026-11-12
 

@@ -1,6 +1,7 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { createFileRoute, Link, notFound, redirect } from "@tanstack/react-router";
 import { normalizeCatalogTopic } from "clawhub-schema/catalogMetadata";
+import { ConvexHttpClient } from "convex/browser";
 import { usePaginatedQuery, useQuery } from "convex/react";
 import {
   ArrowRight,
@@ -63,6 +64,7 @@ import type {
 } from "../../lib/publicUser";
 import { readPublicDownloadCount } from "../../lib/publicUser";
 import { isAdmin } from "../../lib/roles";
+import { getRequiredRuntimeEnv } from "../../lib/runtimeEnv";
 import { useAuthStatus } from "../../lib/useAuthStatus";
 
 export const Route = createFileRoute("/user/$handle")({
@@ -74,13 +76,13 @@ export const Route = createFileRoute("/user/$handle")({
       replace: true,
     });
   },
-  loader: async ({ params }) => {
+  loader: async ({ params, abortController }) => {
     const { convexHttp } = await import("../../convex/client");
     const publisher = (await convexHttp.query(api.publishers.getProfileByHandle, {
       handle: params.handle,
     })) as PublicPublisherProfileItem | null;
     if (!publisher) throw notFound();
-    return { publisher };
+    return loadPublisherProfileData(publisher, abortController.signal);
   },
   head: ({ params, loaderData }) => {
     const publisher = loaderData?.publisher;
@@ -128,7 +130,42 @@ const PROFILE_CATALOG_SORT_OPTIONS = [
   { value: "stars", label: "Bookmarks" },
 ] as const;
 
-const DEFAULT_PROFILE_CATALOG_SORT: ProfileCatalogSort = "downloads";
+const DEFAULT_PROFILE_CATALOG_SORT = "downloads";
+const CATALOG_PAGE_SIZE = 12;
+const CATALOG_SEED_TIMEOUT_MS = 750;
+const PUBLISHED_KIND = { skills: "skill", plugins: "plugin", templates: "template" } as const;
+
+type InitialCatalog = { tab: keyof typeof PUBLISHED_KIND; items: PublicPublisherCatalogItem[] };
+
+export async function loadPublisherProfileData(
+  publisher: PublicPublisherProfileItem,
+  navigationSignal: AbortSignal,
+) {
+  const tab = resolveDefaultCatalogTab(publisher);
+  let initialCatalog: InitialCatalog | null = null;
+  try {
+    // Render only the public first page in HTML. Viewer-specific queries stay on the client.
+    const signal = AbortSignal.any([
+      navigationSignal,
+      AbortSignal.timeout(CATALOG_SEED_TIMEOUT_MS),
+    ]);
+    const client = new ConvexHttpClient(getRequiredRuntimeEnv("VITE_CONVEX_URL"), {
+      fetch: (input, init) => fetch(input, { ...init, signal, credentials: "omit" }),
+    });
+    const { page, isDone } = await client.query(api.publishers.listPublishedPage, {
+      handle: publisher.handle,
+      kind: PUBLISHED_KIND[tab],
+      sort: DEFAULT_PROFILE_CATALOG_SORT,
+      paginationOpts: { cursor: null, numItems: CATALOG_PAGE_SIZE },
+    });
+    // An indexed page can be empty after visibility filtering even when more rows remain.
+    if (page.length || isDone) initialCatalog = { tab, items: page };
+  } catch {
+    navigationSignal.throwIfAborted();
+    // A failed or slow optional read must not prevent the profile from rendering.
+  }
+  return { publisher, initialCatalog };
+}
 
 function formatCatalogTabCount(value: number) {
   return formatBrowseCount(value) ?? formatCompactStat(value);
@@ -381,11 +418,14 @@ function PublisherProfileMembers({
 }
 
 function PublisherProfile() {
-  const { handle } = Route.useParams();
-  const { publisher: loaderPublisher } = Route.useLoaderData() as {
-    publisher: PublicPublisherProfileItem;
-  };
-  return <PublisherProfilePage handle={handle} loaderPublisher={loaderPublisher} />;
+  const { publisher, initialCatalog } = Route.useLoaderData();
+  return (
+    <PublisherProfilePage
+      key={publisher._id}
+      loaderPublisher={publisher}
+      initialCatalog={initialCatalog}
+    />
+  );
 }
 
 function PublisherProfileChromeActions({
@@ -481,12 +521,13 @@ function PublisherProfileChromeIdentity({ publisher }: { publisher: PublicPublis
 }
 
 export function PublisherProfilePage({
-  handle,
   loaderPublisher,
+  initialCatalog,
 }: {
-  handle: string;
   loaderPublisher: PublicPublisherProfileItem;
+  initialCatalog: InitialCatalog | null;
 }) {
+  const handle = loaderPublisher.handle;
   const { isAuthenticated, me } = useAuthStatus();
   const { signIn } = useAuthActions();
   const [catalogTab, setCatalogTab] = useState<ProfileCatalogTab>(() =>
@@ -535,18 +576,20 @@ export function PublisherProfilePage({
 
   const apiSort = catalogSort === "stars" ? "downloads" : catalogSort;
 
-  const publishedQueryArgs = useMemo(() => {
-    const base = { handle, sort: apiSort as "downloads" | "recent" };
-    if (catalogTab === "plugins") return { ...base, kind: "plugin" as const };
-    if (catalogTab === "templates") return { ...base, kind: "template" as const };
-    return { ...base, kind: "skill" as const };
-  }, [handle, catalogTab, apiSort]);
+  const publishedQueryArgs = useMemo(
+    () => ({
+      handle,
+      sort: apiSort,
+      kind: catalogTab === "stars" ? ("skill" as const) : PUBLISHED_KIND[catalogTab],
+    }),
+    [handle, catalogTab, apiSort],
+  );
 
   const githubHandle = publisher?.kind === "org" ? publisher.githubHandle : publisher?.handle;
 
   const publishedDisplay = useQuery(
     api.publishers.getPublishedDisplayManifest,
-    catalogTab === "skills" && publishedQueryArgs.kind === "skill" ? publishedQueryArgs : "skip",
+    catalogTab === "skills" ? { handle, sort: apiSort, kind: "skill" } : "skip",
   ) as PublicPublisherCatalogDisplay | null | undefined;
 
   const members = useQuery(api.publishers.listMembers, { publisherHandle: handle }) as
@@ -582,7 +625,7 @@ export function PublisherProfilePage({
     status: publishedStatus,
     loadMore,
   } = usePaginatedQuery(api.publishers.listPublishedPage, publishedQueryArgs, {
-    initialNumItems: 12,
+    initialNumItems: CATALOG_PAGE_SIZE,
   });
 
   const {
@@ -595,7 +638,15 @@ export function PublisherProfilePage({
     { initialNumItems: 12 },
   );
 
-  const publishedItems = (publishedResults ?? []) as PublicPublisherCatalogItem[];
+  const matchingInitialCatalog =
+    publishedStatus === "LoadingFirstPage" &&
+    initialCatalog?.tab === catalogTab &&
+    catalogSort === DEFAULT_PROFILE_CATALOG_SORT
+      ? initialCatalog
+      : null;
+  const publishedItems = (matchingInitialCatalog?.items ??
+    publishedResults ??
+    []) as PublicPublisherCatalogItem[];
   const starredItems = (starredResults ?? []) as PublicPublisherCatalogItem[];
   const activeItems = catalogTab === "stars" ? starredItems : publishedItems;
 
@@ -715,7 +766,7 @@ export function PublisherProfilePage({
   const memberEntries = members?.members ?? [];
   const activeStatus = catalogTab === "stars" ? starredStatus : publishedStatus;
   const activeLoadMore = catalogTab === "stars" ? loadMoreStarred : loadMore;
-  const isLoadingCatalog = activeStatus === "LoadingFirstPage";
+  const isLoadingCatalog = activeStatus === "LoadingFirstPage" && !matchingInitialCatalog;
   const catalogCount =
     catalogTab === "stars"
       ? (publisher.starredCount ?? starredItems.length)

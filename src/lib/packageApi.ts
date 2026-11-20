@@ -489,6 +489,7 @@ export async function fetchTemplateCatalog(params: {
   }
   const page = await client.query(api.packages.listPublicPage, {
     ...filters,
+    sort: params.category ? undefined : "downloads",
     paginationOpts: {
       cursor: legacyCategoryPage
         ? params.cursor!.slice(legacyPrefix.length)

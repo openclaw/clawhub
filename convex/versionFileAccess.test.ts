@@ -302,6 +302,33 @@ describe("version file access actions", () => {
     ).resolves.toMatchObject({ path: "SKILL.md", text: "# skill" });
   });
 
+  it("rejects invalid UTF-8 skill text as a client error", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const invalid = new Blob([Uint8Array.from([0xc3, 0x28])]);
+    const ctx = makeActionCtx({
+      actor: { _id: "users:owner", role: "user" },
+      version: makeSkillVersion(),
+      storedBlob: invalid,
+      skill: {
+        _id: "skills:1",
+        ownerUserId: "users:owner",
+        softDeletedAt: undefined,
+        moderationStatus: "active",
+        moderationFlags: [],
+      },
+    });
+
+    await expect(
+      getSkillReadmeHandler._handler(ctx, { versionId: "skillVersions:1" } as never),
+    ).rejects.toBeInstanceOf(ConvexError);
+    await expect(
+      getSkillFileTextHandler._handler(ctx, {
+        versionId: "skillVersions:1",
+        path: "SKILL.md",
+      } as never),
+    ).rejects.toThrow("File is not valid UTF-8 text");
+  });
+
   it("rejects a missing skill file as a client error", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
     const ctx = makeActionCtx({

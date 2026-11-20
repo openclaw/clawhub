@@ -1,28 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
-import {
-  isTemplateCategorySlug,
-  TEMPLATE_CATEGORY_DEFINITIONS,
-} from "clawhub-schema/catalogMetadata";
+import type { TemplateCategorySlug } from "clawhub-schema/catalogMetadata";
 import { PackageSearch } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  BrowseCategorySelect,
-  BrowseCategorySidebar,
-  BrowseControls,
-  BrowseSearchInput,
-} from "../../components/BrowseControls";
 import { PluginListItem } from "../../components/PluginListItem";
 import { BrowseResultsSkeleton } from "../../components/skeletons/BrowseResultsSkeleton";
 import { Button } from "../../components/ui/button";
 import { formatRetryDelay } from "../../lib/formatRetryDelay";
+import { buildSocialMetaHead } from "../../lib/og";
 import { fetchTemplateCatalog, isRateLimitedPackageApiError } from "../../lib/packageApi";
+import { getClawHubSiteUrl } from "../../lib/site";
 import { buildTemplateDetailHref } from "../../lib/templateRoutes";
+import { TEMPLATE_DIRECTORY_SHARE } from "../../lib/templateShare";
 
-function parseCategory(value: unknown) {
-  return typeof value === "string" && isTemplateCategorySlug(value) ? value : undefined;
-}
-
-type CatalogSearch = { q?: string; category?: ReturnType<typeof parseCategory> };
+type CatalogSearch = { q?: string; category?: TemplateCategorySlug };
 type CatalogPage = Awaited<ReturnType<typeof fetchTemplateCatalog>>;
 type CatalogResult = CatalogPage | { error: string };
 
@@ -48,105 +38,46 @@ async function loadCatalogPage(
 }
 
 export const Route = createFileRoute("/templates/")({
-  validateSearch: (search): CatalogSearch => ({
-    q: typeof search.q === "string" ? search.q.trim() || undefined : undefined,
-    category: parseCategory(search.category),
-  }),
   loaderDeps: ({ search }) => ({ q: search.q, category: search.category }),
   loader: ({ deps, abortController }) => loadCatalogPage(deps, abortController.signal),
-  head: () => ({ meta: [{ title: "Templates - ClawHub" }] }),
+  head: () => {
+    const site = getClawHubSiteUrl();
+    const { title, description, imagePath } = TEMPLATE_DIRECTORY_SHARE;
+    const head = buildSocialMetaHead({
+      title,
+      description,
+      image: site + imagePath,
+      url: site + "/templates",
+    });
+    return { ...head, meta: [...head.meta, { name: "twitter:image:alt", content: title }] };
+  },
   pendingComponent: TemplatesPending,
   component: TemplatesIndex,
 });
 
 function TemplatesPending() {
   return (
-    <main className="browse-page browse-page-borderless-header plugins-browse-page catalog-browse-page">
-      <div className="browse-page-header">
-        <h1 className="browse-title">Templates</h1>
-      </div>
-      <BrowseResultsSkeleton label="Template" showCategoryColumn={false} />
-    </main>
+    <BrowseResultsSkeleton label="Template" showCategoryColumn={false} downloadsOnly count={12} />
   );
 }
 
 function TemplatesIndex() {
   const search = Route.useSearch();
-  const navigate = Route.useNavigate();
-  const initialPage = Route.useLoaderData() as CatalogResult | undefined;
-  const [query, setQuery] = useState(search.q ?? "");
-  const timer = useRef<number>(0);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => setQuery(search.q ?? ""), [search.q]);
-  useEffect(() => () => window.clearTimeout(timer.current), []);
-
-  const submit = (value: string, replace: boolean) => {
-    window.clearTimeout(timer.current);
-    void navigate({ search: (prev) => ({ ...prev, q: value.trim() || undefined }), replace });
-  };
-  const changeCategory = (value: string | undefined) => {
-    window.clearTimeout(timer.current);
-    void navigate({ search: { category: parseCategory(value), q: query.trim() || undefined } });
-  };
-
+  const initialPage = Route.useLoaderData();
+  if ("error" in initialPage)
+    return (
+      <div className="empty-state">
+        <PackageSearch size={22} className="empty-state-icon" aria-hidden="true" />
+        <p className="empty-state-title">Unable to load templates</p>
+        <p className="empty-state-body">{initialPage.error}</p>
+      </div>
+    );
   return (
-    <main className="browse-page browse-page-borderless-header plugins-browse-page catalog-browse-page">
-      <div className="browse-page-header">
-        <h1 className="browse-title">Templates</h1>
-      </div>
-      <BrowseControls>
-        <BrowseSearchInput
-          inputRef={inputRef}
-          focusShortcut
-          label="Template search"
-          placeholder="Search templates..."
-          value={query}
-          onChange={(value) => {
-            setQuery(value);
-            window.clearTimeout(timer.current);
-            timer.current = window.setTimeout(() => submit(value, true), 250);
-          }}
-          onClear={() => {
-            setQuery("");
-            inputRef.current?.focus();
-            submit("", true);
-          }}
-          onSubmit={() => submit(query, false)}
-        />
-        <BrowseCategorySelect
-          categories={TEMPLATE_CATEGORY_DEFINITIONS}
-          value={search.category}
-          onChange={changeCategory}
-          responsive
-        />
-      </BrowseControls>
-      <div className="browse-layout browse-layout-with-sidebar">
-        <BrowseCategorySidebar
-          ariaLabel="Template categories"
-          categories={TEMPLATE_CATEGORY_DEFINITIONS}
-          value={search.category}
-          onChange={changeCategory}
-        />
-        <div className="browse-results">
-          {!initialPage ? (
-            <BrowseResultsSkeleton label="Template" showCategoryColumn={false} />
-          ) : "error" in initialPage ? (
-            <div className="empty-state">
-              <PackageSearch size={22} className="empty-state-icon" aria-hidden="true" />
-              <p className="empty-state-title">Unable to load templates</p>
-              <p className="empty-state-body">{initialPage.error}</p>
-            </div>
-          ) : (
-            <TemplateResults
-              key={JSON.stringify([search.q, search.category])}
-              initialPage={initialPage}
-              search={search}
-            />
-          )}
-        </div>
-      </div>
-    </main>
+    <TemplateResults
+      key={JSON.stringify([search.q, search.category])}
+      initialPage={initialPage}
+      search={search}
+    />
   );
 }
 
