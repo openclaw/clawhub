@@ -12746,8 +12746,42 @@ a.agentic-risk-finding-title:focus-visible {
   transform: none;
 }
 
+.marketplace-icon-template {
+  position: relative;
+}
+
 .marketplace-icon-template .marketplace-icon-image {
+  position: relative;
   object-fit: contain;
+}
+
+.template-artwork-skeleton {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--oc-radius-inset);
+}
+
+.templates-browse-page .browse-results-skeleton-icon,
+.template-artwork-skeleton {
+  background: color-mix(in srgb, var(--ink) 10%, var(--surface));
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .template-artwork-skeleton {
+    animation: var(--animate-pulse);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .templates-browse-page .browse-results-skeleton-row .animate-pulse {
+    animation: none;
+  }
+}
+
+/* Both placeholder and populated rows reserve two lines. Wrapped content can still grow. */
+.templates-browse-page .skill-list-item-body {
+  min-height: 44px;
+  align-content: center;
 }
 
 .browse-page .skill-list-item > .marketplace-icon .marketplace-icon-glyph {
@@ -14744,6 +14778,27 @@ body:has(.browse-page-borderless-header) .navbar {
 
   .browse-page .browse-results-skeleton-updated {
     display: none;
+  }
+
+  .templates-browse-page .skill-list-item,
+  .templates-browse-page .browse-list-head {
+    grid-template-columns: 27px minmax(0, 1fr) auto;
+  }
+
+  .templates-browse-page .skill-list-item > .marketplace-icon,
+  .templates-browse-page .browse-results-skeleton-icon,
+  .templates-browse-page .browse-list-head-icon-spacer {
+    display: inline-flex;
+  }
+
+  .templates-browse-page .skill-list-item-body,
+  .templates-browse-page .browse-list-head-label:nth-of-type(2) {
+    grid-column: 2;
+  }
+
+  .templates-browse-page .skill-list-item-meta,
+  .templates-browse-page .browse-list-head-stat {
+    grid-column: 3;
   }
 
   .skill-list-item-summary {

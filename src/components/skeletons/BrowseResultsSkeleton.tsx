@@ -7,6 +7,7 @@ type BrowseResultsSkeletonProps = {
   variant?: "list" | "grid";
   showColumnHead?: boolean;
   showCategoryColumn?: boolean;
+  downloadsOnly?: boolean;
 };
 
 export function BrowseResultsSkeleton({
@@ -16,6 +17,7 @@ export function BrowseResultsSkeleton({
   variant = "list",
   showColumnHead = true,
   showCategoryColumn = true,
+  downloadsOnly = false,
 }: BrowseResultsSkeletonProps) {
   if (variant === "grid") {
     return (
@@ -99,9 +101,15 @@ export function BrowseResultsSkeleton({
               </div>
             ) : null}
             <div className="skill-list-item-meta">
-              <Skeleton className="h-4 w-24 browse-results-skeleton-updated" />
-              <Skeleton className="h-4 w-14" />
-              <Skeleton className="h-4 w-14" />
+              {downloadsOnly ? (
+                <Skeleton className="h-4 w-8" />
+              ) : (
+                <>
+                  <Skeleton className="h-4 w-24 browse-results-skeleton-updated" />
+                  <Skeleton className="h-4 w-14" />
+                  <Skeleton className="h-4 w-14" />
+                </>
+              )}
             </div>
           </div>
         ))}

@@ -132,6 +132,59 @@ describe("MarketplaceIcon", () => {
     });
   });
 
+  it("keeps a placeholder for just the active Template artwork until load or fallback", () => {
+    const url = "/api/v1/skill-icons/" + "b".repeat(64);
+    const other = "/api/v1/skill-icons/" + "c".repeat(64);
+    const icon = (src?: string) => (
+      <MarketplaceIcon kind="template" label="Template" imageUrl={src} />
+    );
+    const { container, rerender } = render(icon(url));
+    const placeholder = () => container.querySelector(".template-artwork-skeleton");
+    expect(placeholder()).not.toBeNull();
+    fireEvent.load(container.querySelector("img")!);
+    expect(placeholder()).toBeNull();
+    rerender(icon(other));
+    expect(placeholder()).not.toBeNull();
+    fireEvent.error(container.querySelector("img")!);
+    expect(placeholder()).toBeNull();
+    expect(container.querySelector(".marketplace-icon-glyph")).not.toBeNull();
+    rerender(icon());
+    expect(placeholder()).toBeNull();
+    expect(container.querySelector(".marketplace-icon-glyph")).not.toBeNull();
+  });
+
+  it.each([0, 32])(
+    "settles Template artwork completed before hydration (width %i)",
+    async (width) => {
+      const { renderToString } = createRequire(`${process.cwd()}/package.json`)(
+        "react-dom/server",
+      ) as { renderToString: (node: ReactNode) => string };
+      const element = <MarketplaceIcon kind="template" label="Template" imageUrl={openclawIcon} />;
+      const container = document.createElement("div");
+      container.innerHTML = renderToString(element);
+      expect(container.querySelector(".template-artwork-skeleton")).not.toBeNull();
+      const complete = vi
+        .spyOn(HTMLImageElement.prototype, "complete", "get")
+        .mockReturnValue(true);
+      const naturalWidth = vi
+        .spyOn(HTMLImageElement.prototype, "naturalWidth", "get")
+        .mockReturnValue(width);
+      let root: Root | undefined;
+      try {
+        await act(async () => {
+          root = hydrateRoot(container, element);
+        });
+        expect(container.querySelector(".template-artwork-skeleton")).toBeNull();
+        expect(!!container.querySelector(".marketplace-icon-glyph")).toBe(!width);
+        expect(!!container.querySelector("img")).toBe(!!width);
+      } finally {
+        await act(async () => root?.unmount());
+        complete.mockRestore();
+        naturalWidth.mockRestore();
+      }
+    },
+  );
+
   it.each(["xs", "sm", "md"] as const)(
     "insets the shared OpenClaw plugin artwork at %s size",
     (size) => {
