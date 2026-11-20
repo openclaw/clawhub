@@ -142,12 +142,23 @@ function HomeListingResults({
   );
 }
 
-function HomeListingPluginRow({ plugin }: { plugin: PackageListItem }) {
+function HomeListingPluginRow({
+  plugin,
+  showDownloads,
+}: {
+  plugin: PackageListItem;
+  showDownloads: boolean;
+}) {
   const name = presentationTitle(plugin.displayName, plugin.name);
   const pluginHref = buildPluginDetailHref(plugin.name, { ownerHandle: plugin.ownerHandle });
 
   return (
-    <Link to={pluginHref} className="home-v2-listing-row home-v2-listing-row-with-icon">
+    <Link
+      to={pluginHref}
+      className={`home-v2-listing-row home-v2-listing-row-with-icon${
+        showDownloads ? "" : " has-no-stats"
+      }`}
+    >
       <span className="home-v2-listing-row-icon" aria-hidden="true">
         <MarketplaceIcon
           kind="plugin"
@@ -172,11 +183,13 @@ function HomeListingPluginRow({ plugin }: { plugin: PackageListItem }) {
           {truncateText(plugin.summary || "Gateway plugin for OpenClaw workflows.", 80)}
         </p>
       </div>
-      <div className="home-v2-listing-row-stats" aria-label="Downloads">
-        <span>
-          {formatCompactStat(plugin.trending24h?.downloads ?? plugin.stats?.downloads ?? 0)}
-        </span>
-      </div>
+      {showDownloads ? (
+        <div className="home-v2-listing-row-stats" aria-label="Downloads">
+          <span>
+            {formatCompactStat(plugin.trending24h?.downloads ?? plugin.stats?.downloads ?? 0)}
+          </span>
+        </div>
+      ) : null}
     </Link>
   );
 }
@@ -289,6 +302,8 @@ export function HomeListingSection({
     [categorySlug],
   );
   const listingCategories = kind === "skills" ? SKILL_CATEGORIES : PLUGIN_CATEGORIES;
+  // Featured is a curated order, so download counts would read as a ranking it does not use.
+  const showDownloads = tab !== "featured";
 
   const visibleTabs =
     kind === "skills"
@@ -673,7 +688,7 @@ export function HomeListingSection({
 
       {activeStatus === "idle" && activeItems.length > 0 ? (
         kind === "skills" ? (
-          <SkillListingHead />
+          <SkillListingHead showDownloads={showDownloads} />
         ) : (
           <div
             className={`home-v2-listing-head${
@@ -683,16 +698,21 @@ export function HomeListingSection({
           >
             {kind === "plugins" ? <span className="home-v2-listing-head-icon-spacer" /> : null}
             <span className="home-v2-listing-head-label">Plugin</span>
-            <span className="home-v2-listing-head-stat">Downloads</span>
+            {showDownloads ? <span className="home-v2-listing-head-stat">Downloads</span> : null}
           </div>
         )
       ) : null}
 
       {activeStatus === "loading" ? (
         kind === "skills" ? (
-          <SkillListingSkeleton />
+          <SkillListingSkeleton showDownloads={showDownloads} />
         ) : (
-          <BrowseResultsSkeleton label="Plugin" showIcon={kind === "plugins"} variant="list" />
+          <BrowseResultsSkeleton
+            label="Plugin"
+            showIcon={kind === "plugins"}
+            variant="list"
+            showStats={showDownloads}
+          />
         )
       ) : null}
 
@@ -740,6 +760,7 @@ export function HomeListingSection({
                       : String(entry.skill._id)
                 }
                 entry={entry}
+                showDownloads={showDownloads}
               />
             ))}
           </div>
@@ -754,7 +775,11 @@ export function HomeListingSection({
         >
           <div className="home-v2-listing-list">
             {visiblePlugins.map((plugin) => (
-              <HomeListingPluginRow key={plugin.name} plugin={plugin} />
+              <HomeListingPluginRow
+                key={plugin.name}
+                plugin={plugin}
+                showDownloads={showDownloads}
+              />
             ))}
           </div>
         </HomeListingResults>

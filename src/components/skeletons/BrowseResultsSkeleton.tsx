@@ -8,6 +8,8 @@ type BrowseResultsSkeletonProps = {
   showColumnHead?: boolean;
   showCategoryColumn?: boolean;
   downloadsOnly?: boolean;
+  /** Set false where the loaded rows show no download count, so loading matches them. */
+  showStats?: boolean;
 };
 
 export function BrowseResultsSkeleton({
@@ -18,6 +20,7 @@ export function BrowseResultsSkeleton({
   showColumnHead = true,
   showCategoryColumn = true,
   downloadsOnly = false,
+  showStats = true,
 }: BrowseResultsSkeletonProps) {
   if (variant === "grid") {
     return (
@@ -73,7 +76,9 @@ export function BrowseResultsSkeleton({
           {showCategoryColumn ? (
             <span className="browse-list-head-label browse-list-head-category">Category</span>
           ) : null}
-          <span className="browse-list-head-label browse-list-head-stat">Downloads</span>
+          {showStats ? (
+            <span className="browse-list-head-label browse-list-head-stat">Downloads</span>
+          ) : null}
         </div>
       ) : null}
       <div className="results-list">
@@ -100,17 +105,19 @@ export function BrowseResultsSkeleton({
                 <Skeleton className="h-4 w-24" />
               </div>
             ) : null}
-            <div className="skill-list-item-meta">
-              {downloadsOnly ? (
-                <Skeleton className="h-4 w-8" />
-              ) : (
-                <>
-                  <Skeleton className="h-4 w-24 browse-results-skeleton-updated" />
-                  <Skeleton className="h-4 w-14" />
-                  <Skeleton className="h-4 w-14" />
-                </>
-              )}
-            </div>
+            {showStats ? (
+              <div className="skill-list-item-meta">
+                {downloadsOnly ? (
+                  <Skeleton className="h-4 w-8" />
+                ) : (
+                  <>
+                    <Skeleton className="h-4 w-24 browse-results-skeleton-updated" />
+                    <Skeleton className="h-4 w-14" />
+                    <Skeleton className="h-4 w-14" />
+                  </>
+                )}
+              </div>
+            ) : null}
           </div>
         ))}
       </div>

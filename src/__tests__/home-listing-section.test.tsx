@@ -191,7 +191,6 @@ describe("HomeListingSection", () => {
     expect(screen.queryByRole("button", { name: "Grid view" })).toBeNull();
     expect(screen.getByText("Demo Plugin")).toBeTruthy();
     expect(document.querySelector(".home-v2-listing-list")).toBeTruthy();
-    expect(screen.getByText("Downloads")).toBeTruthy();
     expect(document.querySelectorAll(".home-v2-listing-row-icon")).toHaveLength(1);
     expect(
       document
@@ -578,6 +577,69 @@ describe("HomeListingSection", () => {
     );
     expect(screen.getByText("Demo Plugin")).toBeTruthy();
     expect(screen.queryByText("Listings took a coffee break")).toBeNull();
+  });
+
+  it("hides plugin download counts on Featured and shows them on the other tabs", async () => {
+    render(<HomeListingSection initialListing={initialPluginListing()} />);
+
+    const featuredRow = document.querySelector(".home-v2-listing-row");
+    expect(featuredRow?.textContent).toContain("Demo Plugin");
+    expect(featuredRow?.textContent).not.toContain("120");
+    expect(featuredRow?.classList.contains("has-no-stats")).toBe(true);
+    expect(document.querySelector(".home-v2-listing-row-stats")).toBeNull();
+    expect(document.querySelector(".home-v2-listing-head")?.textContent).toBe("Plugin");
+    expect(screen.queryByText("Downloads")).toBeNull();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Official" }));
+    await waitFor(() =>
+      expect(document.querySelector(".home-v2-listing-row-stats")?.textContent).toBe("120"),
+    );
+    expect(document.querySelector(".home-v2-listing-head")?.textContent).toBe("PluginDownloads");
+    expect(document.querySelector(".home-v2-listing-row")?.classList.contains("has-no-stats")).toBe(
+      false,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Featured" }));
+    await waitFor(() => expect(document.querySelector(".home-v2-listing-row-stats")).toBeNull());
+    expect(screen.getByText("Demo Plugin")).toBeTruthy();
+    expect(screen.queryByText("Downloads")).toBeNull();
+  });
+
+  it("hides skill download counts on Featured and shows them on the other tabs", async () => {
+    render(<HomeListingSection requestedView={{ kind: "skills", tab: "featured" }} />);
+
+    await screen.findByText("Demo Skill");
+    expect(convexQueryMock).toHaveBeenCalledWith("featuredSkills:listPublic", expect.anything());
+    expect(document.querySelector(".skill-listing-row")?.textContent).not.toContain("340");
+    expect(document.querySelector(".home-v2-listing-row-stats")).toBeNull();
+    expect(document.querySelector(".skill-listing-head")?.textContent).toBe("Skill");
+    expect(screen.queryByLabelText("Downloads")).toBeNull();
+
+    fireEvent.click(screen.getByRole("tab", { name: "New" }));
+    await waitFor(() => expect(screen.getByLabelText("Downloads").textContent).toBe("340"));
+    expect(document.querySelector(".skill-listing-head")?.textContent).toBe("SkillDownloads");
+  });
+
+  it("keeps the Featured loading placeholders free of a Downloads column", () => {
+    fetchPluginCatalogMock.mockReturnValue(new Promise(() => {}));
+    convexQueryMock.mockReturnValue(new Promise(() => {}));
+
+    render(<HomeListingSection />);
+    const pluginLoading = screen.getByRole("status", { name: "Loading results" });
+    expect(pluginLoading.querySelector(".browse-list-head-stat")).toBeNull();
+    expect(pluginLoading.querySelector(".skill-list-item-meta")).toBeNull();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Official" }));
+    expect(
+      screen
+        .getByRole("status", { name: "Loading results" })
+        .querySelector(".browse-list-head-stat")?.textContent,
+    ).toBe("Downloads");
+
+    fireEvent.click(screen.getByRole("button", { name: "Skills" }));
+    const skillLoading = screen.getByRole("status", { name: "Loading results" });
+    expect(skillLoading.querySelector(".skill-listing-head")?.textContent).toBe("Skill");
+    expect(skillLoading.querySelector(".skill-listing-row")?.children).toHaveLength(1);
   });
 
   it("shows 24-hour downloads for plugin Trending instead of lifetime totals", () => {
