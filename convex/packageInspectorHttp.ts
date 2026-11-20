@@ -2,8 +2,8 @@ import { validate } from "convex-helpers/validators";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { httpAction } from "./_generated/server";
-import type { ActionCtx } from "./_generated/server";
 import { json, parseJsonPayload, text } from "./httpApiV1/shared";
+import { runActionRef, runMutationRef, runQueryRef } from "./lib/functionRefs";
 import { packageInspectorFailureValidator } from "./lib/packageInspectorOutcome";
 import { sdkUsageReport } from "./lib/packageSdkUsageContract";
 import { buildLegacyPackageScanZip } from "./lib/skillZip";
@@ -47,18 +47,6 @@ export function absolutePackageArtifactUrl(request: Request, releaseId: string) 
 function isTruthyParam(value: string | null) {
   if (!value) return false;
   return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
-}
-
-async function runMutationRef<T>(ctx: Pick<ActionCtx, "runMutation">, ref: unknown, args: unknown) {
-  return (await ctx.runMutation(ref as never, args as never)) as T;
-}
-
-async function runQueryRef<T>(ctx: Pick<ActionCtx, "runQuery">, ref: unknown, args: unknown) {
-  return (await ctx.runQuery(ref as never, args as never)) as T;
-}
-
-async function runActionRef<T>(ctx: Pick<ActionCtx, "runAction">, ref: unknown, args: unknown) {
-  return (await ctx.runAction(ref as never, args as never)) as T;
 }
 
 export const packageInspectorClaimHttp = httpAction(async (ctx, request) => {

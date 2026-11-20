@@ -2,7 +2,35 @@
 
 ## Unreleased
 
+- Templates: the package security API now links a Template release to its Template security-audit page (`/<publisher>/templates/<name>/security-audit`). It used to return the plugin audit address, so OpenClaw opened a Template's audit under `/plugins/`. Plugin links are unchanged.
+
+- Templates: ClawHub now lists each Template under one of ten categories: Engineering, Operations, Household, Entertainment, Travel, Productivity, Research, Health, Sales, and Product. Household and Entertainment are new; Personal, Governance, Finance, and People are removed. A Template takes the first category its `CLAW.md` declares and ClawHub ignores the rest. If that category is missing or no longer exists, ClawHub classifies the Template instead of rejecting the publish, so every published Template still republishes unchanged. `categories` in API responses stays an array, and `category=personal`, `governance`, `finance`, and `people` still work as list and search filters for the Templates that store them.
+
+## 0.27.0 - 2026-11-17
+
+- Scan reports: `clawhub scan download <skill> --version <version>` now returns a report when a skill version's publication checks failed before a verdict. It used to answer "Scan results not found". The archive says the scan failed with no safety verdict, lists the check states and whether a retry is waiting, and says to remove Python bytecode when that stopped the scan. Worker errors are not included. Plugin versions are unchanged.
+
+- CLI: add `clawhub skill publication <skill> --version <version>`. It prints the owner-only publication stage for that exact skill version, including whether a retry is already waiting and how to download a stored scan report. A completed publication does not claim the skill is currently visible.
+
+- Package publish: a missing uploaded package tarball is a client error. The message stays "Package tarball upload no longer exists".
+
+- Skill reads: a missing stored skill file is a client error for the readme, skill card, file text, and publish preview text. The message stays "File missing in storage".
+
+- Catalog: keep package search versions aligned with the current release when editing metadata on packages with stale version summaries. Package mutations now rely on the shared trigger to refresh search projections.
+
+- Skill publish: a bad upload ticket is a client error. The messages stay "Skill upload ticket is missing, used, or expired", "Uploaded file does not match its skill upload ticket", and "Skill upload ticket does not match this publish".
+
+- Scanning: reuse the shared subprocess runner for legacy pre-publication scanners, bounding captured output to 32 MiB stdout and 1 MiB stderr while preserving scanner verdict exit codes.
+
+## 0.26.0 - 2026-11-12
+
+- Templates: accept native agent settings, including `agent.tools`, and top-level `skills` and `plugins` dependencies in `CLAW.md`. Dependencies can reference exact ClawHub versions or bundled package directories. This fixes the stable CLI rejecting the supported Template format before upload (#4551). Publish an already-built `.tgz`; successful publication does not establish compatibility with a particular OpenClaw consumer release.
+
+- CLI: add `clawhub package publication <name> --version <version>`. It prints whether that exact version is published, still pending, failed, or was never accepted. The public version list hides a pending release, and `package readiness` remains the official-migration check. Older registries that answer the publication URL with a version document or 404 are checked through the version endpoint. A failed attempt says an authorized publisher may recover it with `package recover` and a reason.
+
 - Publishing: run reusable package-publish plugin validation with Node.js 24. The CLI refuses `package validate` under Bun, so the workflow builds the pinned CLI and runs `node packages/clawhub/bin/clawdhub.js package validate`.
+
+- CLI login: denying an expired device code is rejected, the same way approval is. The page then says to run `clawhub login` again and type the new code, including when the browser clock is behind the server. After Authorize or Deny starts, the code field stays on that code and keeps its label. A rejected attempt unlocks the field.
 
 - CLI login: the device page no longer fills the approval code from the link. Type the code from the terminal. The page shows the token label and that approval creates a full API token. A scope other than `read write` is rejected. Authorize and Deny turn off when the code's expiry time passes, including when the page was already open before the code was typed, and the pending query does not read the clock. Expired, used, and mistyped codes say how to continue, and a finished approval no longer shows the code as already used.
 

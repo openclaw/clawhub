@@ -20,6 +20,14 @@ function createPackage(overrides?: Partial<DashboardPackage>): DashboardPackage 
 }
 
 describe("dashboardCatalog", () => {
+  it("filters templates separately from plugins without changing package identity", () => {
+    const template = createPackage({ _id: "hopper", family: "template" });
+    const plugin = createPackage();
+    const items = mergeDashboardItems([createSkill()], [template, plugin]);
+    expect(filterByKind(items, "template").map((item) => item.id)).toEqual(["hopper"]);
+    expect(filterByKind(items, "plugin").map((item) => item.id)).toEqual([plugin._id]);
+    expect(filterByKind(items, "all")).toHaveLength(3);
+  });
   it("merges skills and plugins", () => {
     const skills = [createSkill()];
     const packages = [createPackage()];

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   buildTemplateDetailHref,
+  buildTemplateInstallRef,
+  buildTemplateSecurityAuditHref,
   isTemplateReadyToAdd,
   packageNameFromPublisherTemplateRoute,
 } from "./templateRoutes";
@@ -13,6 +15,23 @@ describe("Template detail routes", () => {
     expect(buildTemplateDetailHref("release-brief", "maker")).toBe(
       "/maker/templates/release-brief",
     );
+  });
+
+  it("builds a publisher-qualified install reference from scoped and unscoped package names", () => {
+    expect(buildTemplateInstallRef("@maker/release-brief", "maker")).toBe("@maker/release-brief");
+    expect(buildTemplateInstallRef("release-brief", "@Maker")).toBe("@maker/release-brief");
+  });
+
+  it("builds canonical scoped/unscoped audit links and safely encodes exact versions", () => {
+    expect(buildTemplateSecurityAuditHref("@maker/music-manager", "maker")).toBe(
+      "/maker/templates/music-manager/security-audit",
+    );
+    expect(
+      buildTemplateSecurityAuditHref("openclaw-music-manager", "ameliomansour", "1.0.0+audit/1"),
+    ).toBe(
+      "/ameliomansour/templates/openclaw-music-manager/security-audit?version=1.0.0%2Baudit%2F1",
+    );
+    expect(buildTemplateSecurityAuditHref("missing-owner")).toBeNull();
   });
 
   it("parses only a publisher and single package slug", () => {

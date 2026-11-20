@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "nod
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
+import { parseLastJsonObject } from "../helpers/convexOutput";
 import { localConvexDeployment } from "../helpers/localConvex";
 import { completeMockPrePublicationChecks } from "./helpers";
 
@@ -13,20 +14,6 @@ test.skip(
   process.env.VITE_ENABLE_DEV_AUTH !== "1",
   "exact Template artifact proof requires the local dev auth runner",
 );
-
-function extractLastJsonObject(output: string) {
-  const trimmed = output.trim();
-  for (let index = 0; index < trimmed.length; index += 1) {
-    if (trimmed[index] !== "{") continue;
-    const candidate = trimmed.slice(index);
-    try {
-      return JSON.parse(candidate) as Record<string, unknown>;
-    } catch {
-      // Convex and the CLI may print status lines before their JSON payload.
-    }
-  }
-  throw new Error(`No JSON object in output:\n${output}`);
-}
 
 function runDevSeed<T>(functionName: string, args: Record<string, unknown>) {
   const result = spawnSync(
@@ -52,7 +39,7 @@ function runDevSeed<T>(functionName: string, args: Record<string, unknown>) {
       [`Failed to run ${functionName}.`, result.stdout.trim(), result.stderr.trim()].join("\n"),
     );
   }
-  return extractLastJsonObject(result.stdout) as T;
+  return parseLastJsonObject<Record<string, unknown>>(result.stdout, "output") as T;
 }
 
 function sha256(bytes: Uint8Array) {
@@ -119,6 +106,18 @@ test("publishes, polls, retries, and downloads the exact Template tarball", asyn
           name: "Exact Template Proof",
           tools: { profile: "minimal", allow: ["session_status"] },
           humanDelay: { mode: "natural" },
+          heartbeat: { every: "1h" },
+        },
+        // Workspace destinations OpenClaw discovers natively; they stay out of the inventory.
+        workspace: {
+          bootstrapFiles: { "HEARTBEAT.md": { source: "workspace/HEARTBEAT.md" } },
+          files: [
+            { source: "workspace/skills/intake/SKILL.md", path: "skills/intake/SKILL.md" },
+            {
+              source: "workspace/extensions/notifier/openclaw.plugin.json",
+              path: ".openclaw/extensions/notifier/openclaw.plugin.json",
+            },
+          ],
         },
         skills: [{ ref: "@acme/research", version: "1.2.3" }, { path: "skills/research" }],
         plugins: [{ ref: "@acme/alerts", version: "2.0.0" }, { path: "plugins/alerts" }],
@@ -156,6 +155,18 @@ test("publishes, polls, retries, and downloads the exact Template tarball", asyn
     writeFileSync(
       path.join(sourceDir, "plugins/alerts/plugin.json"),
       JSON.stringify({ name: "build-support", purpose: "data" }),
+    );
+
+    mkdirSync(path.join(sourceDir, "workspace/skills/intake"), { recursive: true });
+    mkdirSync(path.join(sourceDir, "workspace/extensions/notifier"), { recursive: true });
+    writeFileSync(path.join(sourceDir, "workspace/HEARTBEAT.md"), "- Check the release queue.\n");
+    writeFileSync(
+      path.join(sourceDir, "workspace/skills/intake/SKILL.md"),
+      "---\nname: intake\ndescription: Triage incoming release requests.\n---\nSort requests.\n",
+    );
+    writeFileSync(
+      path.join(sourceDir, "workspace/extensions/notifier/openclaw.plugin.json"),
+      JSON.stringify({ id: "notifier", configSchema: { type: "object" } }),
     );
 
     const pack = spawnSync("npm", ["pack", "--json", "--pack-destination", root], {
@@ -216,7 +227,10 @@ test("publishes, polls, retries, and downloads the exact Template tarball", asyn
       version,
     });
     expect(claim.claim.artifactFingerprint).toBe(artifactSha256);
-    const published = extractLastJsonObject((await publication).stdout);
+    const published = parseLastJsonObject<Record<string, unknown>>(
+      (await publication).stdout,
+      "output",
+    );
     expect(published).toMatchObject({
       publicationStatus: "published",
       artifactSha256,
@@ -231,7 +245,10 @@ test("publishes, polls, retries, and downloads the exact Template tarball", asyn
     const downloadedSha256 = sha256(downloadedBytes);
     expect(downloadedSha256).toBe(artifactSha256);
 
-    const retried = extractLastJsonObject((await runCli(publishArgs, cliEnv)).stdout);
+    const retried = parseLastJsonObject<Record<string, unknown>>(
+      (await runCli(publishArgs, cliEnv)).stdout,
+      "output",
+    );
     expect(retried).toMatchObject({
       publicationStatus: "published",
       artifactSha256,
@@ -283,6 +300,14 @@ test("publishes, polls, retries, and downloads the exact Template tarball", asyn
           );
           await expect(page.getByRole("tabpanel")).toContainText("Bundled");
         }
+        // Workspace-file contents appear in the matching tab without joining the inventory.
+        await expect(page.getByRole("tabpanel")).toContainText(
+          tab === "Skills"
+            ? "intakeWorkspace file · skills/intake/SKILL.md"
+            : tab === "Plugins"
+              ? "notifierWorkspace file · .openclaw/extensions/notifier/openclaw.plugin.json"
+              : "Heartbeat checklistWorkspace file · HEARTBEAT.md · Every 1h",
+        );
         expect(
           await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
         ).toBe(true);

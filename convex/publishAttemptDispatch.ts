@@ -4,7 +4,10 @@ import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { internalAction } from "./functions";
 import { createGitHubAppInstallationToken } from "./lib/githubAuth";
-import { dispatchGitHubRepositoryEvent } from "./lib/githubRepositoryDispatch";
+import {
+  dispatchGitHubRepositoryEvent,
+  isGitHubRepositoryDispatchConfigured,
+} from "./lib/githubRepositoryDispatch";
 
 const RETRY_DELAYS_MS = [60_000, 5 * 60_000, 15 * 60_000] as const;
 
@@ -22,15 +25,7 @@ export function isPublishAttemptEventDispatchEnabled(env: NodeJS.ProcessEnv = pr
     env.CLAWHUB_ENV === "test"
       ? env.PREPUBLICATION_PUBLISH_EVENT_DISPATCH_ENABLED === "1"
       : env.SECURITY_SCAN_EVENT_DISPATCH_ENABLED === "1";
-  return (
-    dispatchEnabled &&
-    env.CLAWHUB_PREVIEW !== "1" &&
-    Boolean(
-      env.GITHUB_APP_ID?.trim() &&
-      env.GITHUB_APP_INSTALLATION_ID?.trim() &&
-      env.GITHUB_APP_PRIVATE_KEY?.trim(),
-    )
-  );
+  return dispatchEnabled && isGitHubRepositoryDispatchConfigured(env);
 }
 
 export async function requestPublishAttemptDispatch(

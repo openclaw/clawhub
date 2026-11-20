@@ -153,6 +153,23 @@ guidance; it does not retry checks or release the upload. JSON places the status
 in `publication` and recovery guidance in `nextSteps`. Held content is not returned
 by `--file` or `--files`; these requests exit unsuccessfully after showing status.
 
+### `skill publication <skill>`
+
+- Shows the publication stage of one exact skill version to its owner.
+- Calls `GET /api/v1/skills/{slug}/versions/{version}/publication`.
+- `--version` is required. The public latest version is a different question: a held upload is omitted from the public version list.
+- Prints the stage, whether a retry is already waiting, and the `clawhub scan download` command when a stored report may exist.
+- `published` means publication of that version is complete. It does not mean the skill is currently visible. A moderation hold can still restrict public reads.
+- The text does not include worker errors, findings, attempt ids, or storage ids.
+- `--json` prints the response object unchanged.
+- Log in first. Anonymous and unauthorized callers get the same refusal as the HTTP route.
+
+Example:
+
+```bash
+clawhub skill publication @owner/slug --version 1.2.3
+```
+
 ### `install @owner/slug`
 
 - Resolves latest version for the named owner and skill.
@@ -303,6 +320,7 @@ clawhub scan --slug gifgrep --update --output report.zip
 - Plugin downloads use the package name and require `--kind plugin`.
 - `--version` is required so authors inspect the exact submitted version that ClawHub blocked.
 - `--output <file.zip>` chooses the destination path.
+- When the publication checks of a skill version stopped before a verdict, the archive holds `manifest.json`, `publication.json`, and a `README.md` that says the scan failed with no safety verdict. It gives the check states, whether a retry is waiting, and what to do next. It does not include worker errors.
 
 ```bash
 clawhub scan download gifgrep --version 1.2.3
@@ -672,9 +690,40 @@ Example:
 clawhub package moderation-status @openclaw/example-plugin
 ```
 
+### `package publication <name>`
+
+- Shows the publication state of one exact package version.
+- Calls `GET /api/v1/packages/{name}/versions/{version}/publication`.
+- `--version` is required. The public latest version is a different question:
+  a pending release is omitted from the public version list.
+- Prints `published`, `absent`, `pending` (`staging`, `checks`, or
+  `finalization`), or `failed`. The text does not include scan findings,
+  report bodies, or digests.
+- A registry that predates this route can answer `404`, or `200` with the
+  version document and no `state`. The command then reads
+  `GET /api/v1/packages/{name}/versions/{version}`. A public version is
+  reported as published. A response that already has `state` but does not
+  match the publication contract still fails.
+- `recoverable: true` means an authorized publisher may recover the attempt.
+  It does not mean the current login can. The text shows
+  `clawhub package recover <attempt-id> --manual-override-reason "<reason>"`.
+- This does not say whether the package is an official migration candidate.
+  Use `package readiness` for that check.
+- Flags:
+  - `--version <version>`: exact version.
+  - `--json`: machine-readable output, the response object unchanged.
+
+Example:
+
+```bash
+clawhub package publication @openclaw/example-plugin --version 1.2.3
+```
+
 ### `package readiness <name>`
 
 - Checks whether a package is ready for future OpenClaw consumption.
+- A community package fails the `official` check here even when its latest
+  version is public. Use `package publication` for an exact version.
 - Calls `GET /api/v1/packages/{name}/readiness`.
 - Reports blockers for official status, ClawPack availability, artifact digest,
   source provenance, OpenClaw compatibility, host targets, environment metadata,

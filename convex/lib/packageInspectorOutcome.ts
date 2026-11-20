@@ -19,8 +19,6 @@ export const packageInspectorFailureReasonValidator = v.union(
   v.literal("error"),
 );
 
-export type PackageInspectorFailureReason = Infer<typeof packageInspectorFailureReasonValidator>;
-
 export const packageInspectorFailureValidator = v.object({
   stage: v.string(),
   reason: packageInspectorFailureReasonValidator,

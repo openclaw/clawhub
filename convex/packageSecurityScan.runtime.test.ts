@@ -3,6 +3,7 @@
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { convexTest } from "convex-test";
 import { expect, it, vi } from "vitest";
+import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
 import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import schema from "./schema";
@@ -34,21 +35,16 @@ async function createPackageScanFixture() {
       scanStatus: "pending",
     } as const;
     const packageId = await ctx.db.insert("packages", {
+      ...createPackageSeedDefaults(),
       name: "endor-plugin",
       normalizedName: "endor-plugin",
       displayName: "Endor plugin",
       ownerUserId: userId,
       ownerPublisherId: publisherId,
-      family: "code-plugin",
-      channel: "community",
-      isOfficial: false,
-      tags: {},
       compatibility: {},
       verification,
       scanStatus: "pending",
       stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
-      createdAt: 1,
-      updatedAt: 1,
     });
     const releaseId = await ctx.db.insert("packageReleases", {
       packageId,

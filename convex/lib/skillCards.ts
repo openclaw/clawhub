@@ -1,3 +1,4 @@
+import { normalizeBundlePathForComparison } from "./bundlePaths";
 import { hashSkillFiles } from "./skills/fileHash";
 
 export const SKILL_CARD_FILE_PATH = "skill-card.md";
@@ -11,18 +12,8 @@ export type SkillCardFile = {
   contentType?: string;
 };
 
-function normalizeSkillCardPathForComparison(path: string) {
-  return path
-    .trim()
-    .replace(/^\/+/, "")
-    .split("/")
-    .filter((segment) => segment && segment !== ".")
-    .join("/")
-    .toLowerCase();
-}
-
 export function isSkillCardPath(path: string) {
-  return normalizeSkillCardPathForComparison(path) === SKILL_CARD_FILE_PATH;
+  return normalizeBundlePathForComparison(path) === SKILL_CARD_FILE_PATH;
 }
 
 export function sourceSkillVersionFiles<T extends { path: string }>(

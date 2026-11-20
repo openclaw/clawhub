@@ -3,6 +3,7 @@ import { internal } from "../_generated/api";
 import type { ActionCtx } from "../_generated/server";
 import { mergeHeaders } from "../lib/httpHeaders";
 import { applyRateLimit } from "../lib/httpRateLimit";
+import type { PromotionInput as PromotionInputPayload } from "../promotions";
 import {
   formatUserFacingErrorMessage,
   getPathSegments,
@@ -38,28 +39,6 @@ function promotionsCacheHeaders(
     "Cache-Control": `public, max-age=${maxAge}, s-maxage=${maxAge}, must-revalidate`,
   };
 }
-
-type PromotionModelPayload = {
-  modelRef: string;
-  alias?: string;
-  suggestedDefault?: boolean;
-};
-
-type PromotionInputPayload = {
-  slug: string;
-  title: string;
-  blurb: string;
-  sponsor?: string;
-  startsAt: number;
-  endsAt: number;
-  provider?: string;
-  authChoiceId?: string;
-  pluginNames?: string[];
-  models: PromotionModelPayload[];
-  signupUrl?: string;
-  docsUrl?: string;
-  launchPageUrl?: string;
-};
 
 function optionalString(value: unknown, label: string) {
   if (value === undefined || value === null) return undefined;

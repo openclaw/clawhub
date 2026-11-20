@@ -291,9 +291,22 @@ describe("cmdRevokeSkillVersion", () => {
   });
 });
 
-describe("cmdRescanAllSkills", () => {
+describe.each([
+  {
+    name: "cmdRescanAllSkills",
+    run: cmdRescanAllSkills,
+    sampleKey: "sampleSlugs",
+    batchPath: "/api/v1/skills/-/scan/batch",
+  },
+  {
+    name: "cmdRescanAllPackages",
+    run: cmdRescanAllPackages,
+    sampleKey: "sampleNames",
+    batchPath: "/api/v1/packages/-/scan/batch",
+  },
+])("$name", ({ run, sampleKey, batchPath }) => {
   it("requires --yes for real runs when input is disabled", async () => {
-    await expect(cmdRescanAllSkills(makeGlobalOpts(), {}, false)).rejects.toThrow(/--yes/i);
+    await expect(run(makeGlobalOpts(), {}, false)).rejects.toThrow(/--yes/i);
     expect(httpMocks.apiRequest).not.toHaveBeenCalled();
   });
 
@@ -308,7 +321,7 @@ describe("cmdRescanAllSkills", () => {
         jobIds: [],
         nextCursor: "cursor-2",
         done: false,
-        sampleSlugs: ["one", "two"],
+        [sampleKey]: ["one", "two"],
       })
       .mockResolvedValueOnce({
         ok: true,
@@ -319,14 +332,10 @@ describe("cmdRescanAllSkills", () => {
         jobIds: [],
         nextCursor: null,
         done: true,
-        sampleSlugs: ["three", "four"],
+        [sampleKey]: ["three", "four"],
       });
 
-    const result = await cmdRescanAllSkills(
-      makeGlobalOpts(),
-      { dryRun: true, batchSize: 2 },
-      false,
-    );
+    const result = await run(makeGlobalOpts(), { dryRun: true, batchSize: 2 }, false);
 
     expect(result).toMatchObject({ ok: true, batches: 2, queued: 3, alreadyQueued: 1 });
     expect(httpMocks.apiRequest).toHaveBeenNthCalledWith(
@@ -334,7 +343,7 @@ describe("cmdRescanAllSkills", () => {
       "https://clawhub.ai",
       expect.objectContaining({
         method: "POST",
-        path: "/api/v1/skills/-/scan/batch",
+        path: batchPath,
         body: {
           mode: "all-active-latest",
           cursor: null,
@@ -349,7 +358,7 @@ describe("cmdRescanAllSkills", () => {
       "https://clawhub.ai",
       expect.objectContaining({
         method: "POST",
-        path: "/api/v1/skills/-/scan/batch",
+        path: batchPath,
         body: {
           mode: "all-active-latest",
           cursor: "cursor-2",
@@ -372,7 +381,7 @@ describe("cmdRescanAllSkills", () => {
         jobIds: ["securityScanJobs:1"],
         nextCursor: null,
         done: true,
-        sampleSlugs: ["one"],
+        [sampleKey]: ["one"],
       })
       .mockResolvedValueOnce({
         ok: true,
@@ -387,11 +396,7 @@ describe("cmdRescanAllSkills", () => {
         failedJobIds: [],
       });
 
-    const result = await cmdRescanAllSkills(
-      makeGlobalOpts(),
-      { yes: true, batchSize: 2, pollInterval: 0 },
-      false,
-    );
+    const result = await run(makeGlobalOpts(), { yes: true, batchSize: 2, pollInterval: 0 }, false);
 
     expect(result).toMatchObject({ ok: true, batches: 1, queued: 1, failed: 0 });
     expect(httpMocks.apiRequest).toHaveBeenNthCalledWith(
@@ -399,7 +404,7 @@ describe("cmdRescanAllSkills", () => {
       "https://clawhub.ai",
       expect.objectContaining({
         method: "POST",
-        path: "/api/v1/skills/-/scan/batch",
+        path: batchPath,
         token: "tkn",
         body: {
           mode: "all-active-latest",
@@ -415,7 +420,7 @@ describe("cmdRescanAllSkills", () => {
       "https://clawhub.ai",
       expect.objectContaining({
         method: "POST",
-        path: "/api/v1/skills/-/scan/batch/status",
+        path: `${batchPath}/status`,
         token: "tkn",
         body: { jobIds: ["securityScanJobs:1"] },
       }),
@@ -436,7 +441,7 @@ describe("cmdRescanAllSkills", () => {
           jobIds: ["securityScanJobs:1"],
           nextCursor: null,
           done: true,
-          sampleSlugs: ["one"],
+          [sampleKey]: ["one"],
         })
         .mockResolvedValueOnce({
           ok: true,
@@ -451,11 +456,7 @@ describe("cmdRescanAllSkills", () => {
           failedJobIds: [],
         });
 
-      await cmdRescanAllSkills(
-        makeGlobalOpts(),
-        { yes: true, batchSize: 3, pollInterval: 0 },
-        false,
-      );
+      await run(makeGlobalOpts(), { yes: true, batchSize: 3, pollInterval: 0 }, false);
 
       expect(consoleLog).toHaveBeenCalledWith("Batch 1: queued 1, already queued 1, skipped 1.");
       expect(consoleLog).toHaveBeenCalledWith(
@@ -480,7 +481,7 @@ describe("cmdRescanAllSkills", () => {
         jobIds: ["securityScanJobs:1"],
         nextCursor: null,
         done: true,
-        sampleSlugs: ["one"],
+        [sampleKey]: ["one"],
       })
       .mockResolvedValueOnce({
         ok: true,
@@ -496,7 +497,7 @@ describe("cmdRescanAllSkills", () => {
       });
 
     await expect(
-      cmdRescanAllSkills(makeGlobalOpts(), { yes: true, batchSize: 1, pollInterval: 0 }, false),
+      run(makeGlobalOpts(), { yes: true, batchSize: 1, pollInterval: 0 }, false),
     ).rejects.toThrow(/failed job/i);
   });
 });
@@ -565,214 +566,6 @@ describe("cmdRescanAllPackages", () => {
       expect(httpMocks.apiRequest).toHaveBeenCalledTimes(2);
     },
   );
-
-  it("requires --yes for real runs when input is disabled", async () => {
-    await expect(cmdRescanAllPackages(makeGlobalOpts(), {}, false)).rejects.toThrow(/--yes/i);
-    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
-  });
-
-  it("pages dry-runs without polling status", async () => {
-    httpMocks.apiRequest
-      .mockResolvedValueOnce({
-        ok: true,
-        mode: "all-active-latest",
-        queued: 2,
-        alreadyQueued: 0,
-        skipped: 0,
-        jobIds: [],
-        nextCursor: "cursor-2",
-        done: false,
-        sampleNames: ["one", "two"],
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        mode: "all-active-latest",
-        queued: 1,
-        alreadyQueued: 1,
-        skipped: 0,
-        jobIds: [],
-        nextCursor: null,
-        done: true,
-        sampleNames: ["three", "four"],
-      });
-
-    const result = await cmdRescanAllPackages(
-      makeGlobalOpts(),
-      { dryRun: true, batchSize: 2 },
-      false,
-    );
-
-    expect(result).toMatchObject({ ok: true, batches: 2, queued: 3, alreadyQueued: 1 });
-    expect(httpMocks.apiRequest).toHaveBeenNthCalledWith(
-      1,
-      "https://clawhub.ai",
-      expect.objectContaining({
-        method: "POST",
-        path: "/api/v1/packages/-/scan/batch",
-        body: {
-          mode: "all-active-latest",
-          cursor: null,
-          batchSize: 2,
-          dryRun: true,
-        },
-      }),
-      expect.anything(),
-    );
-    expect(httpMocks.apiRequest).toHaveBeenNthCalledWith(
-      2,
-      "https://clawhub.ai",
-      expect.objectContaining({
-        method: "POST",
-        path: "/api/v1/packages/-/scan/batch",
-        body: {
-          mode: "all-active-latest",
-          cursor: "cursor-2",
-          batchSize: 2,
-          dryRun: true,
-        },
-      }),
-      expect.anything(),
-    );
-  });
-
-  it("queues a batch and polls until drained", async () => {
-    httpMocks.apiRequest
-      .mockResolvedValueOnce({
-        ok: true,
-        mode: "all-active-latest",
-        queued: 1,
-        alreadyQueued: 0,
-        skipped: 0,
-        jobIds: ["securityScanJobs:1"],
-        nextCursor: null,
-        done: true,
-        sampleNames: ["one"],
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        total: 1,
-        queued: 0,
-        running: 0,
-        succeeded: 1,
-        failed: 0,
-        missing: 0,
-        terminal: 1,
-        done: true,
-        failedJobIds: [],
-      });
-
-    const result = await cmdRescanAllPackages(
-      makeGlobalOpts(),
-      { yes: true, batchSize: 2, pollInterval: 0 },
-      false,
-    );
-
-    expect(result).toMatchObject({ ok: true, batches: 1, queued: 1, failed: 0 });
-    expect(httpMocks.apiRequest).toHaveBeenNthCalledWith(
-      1,
-      "https://clawhub.ai",
-      expect.objectContaining({
-        method: "POST",
-        path: "/api/v1/packages/-/scan/batch",
-        token: "tkn",
-        body: {
-          mode: "all-active-latest",
-          cursor: null,
-          batchSize: 2,
-          dryRun: false,
-        },
-      }),
-      expect.anything(),
-    );
-    expect(httpMocks.apiRequest).toHaveBeenNthCalledWith(
-      2,
-      "https://clawhub.ai",
-      expect.objectContaining({
-        method: "POST",
-        path: "/api/v1/packages/-/scan/batch/status",
-        token: "tkn",
-        body: { jobIds: ["securityScanJobs:1"] },
-      }),
-      expect.anything(),
-    );
-  });
-
-  it("prints human-readable progress and summary by default", async () => {
-    const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
-    try {
-      httpMocks.apiRequest
-        .mockResolvedValueOnce({
-          ok: true,
-          mode: "all-active-latest",
-          queued: 1,
-          alreadyQueued: 1,
-          skipped: 1,
-          jobIds: ["securityScanJobs:1"],
-          nextCursor: null,
-          done: true,
-          sampleNames: ["one"],
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          total: 1,
-          queued: 0,
-          running: 0,
-          succeeded: 1,
-          failed: 0,
-          missing: 0,
-          terminal: 1,
-          done: true,
-          failedJobIds: [],
-        });
-
-      await cmdRescanAllPackages(
-        makeGlobalOpts(),
-        { yes: true, batchSize: 3, pollInterval: 0 },
-        false,
-      );
-
-      expect(consoleLog).toHaveBeenCalledWith("Batch 1: queued 1, already queued 1, skipped 1.");
-      expect(consoleLog).toHaveBeenCalledWith(
-        "Batch 1 status: 1 succeeded, 0 failed, 0 running, 0 queued.",
-      );
-      expect(consoleLog).toHaveBeenCalledWith(
-        "Bulk rescan finished: 1 batch(es), 1 queued, 1 already queued, 1 skipped, 0 failed.",
-      );
-    } finally {
-      consoleLog.mockRestore();
-    }
-  });
-
-  it("fails when drained batches contain failed jobs", async () => {
-    httpMocks.apiRequest
-      .mockResolvedValueOnce({
-        ok: true,
-        mode: "all-active-latest",
-        queued: 1,
-        alreadyQueued: 0,
-        skipped: 0,
-        jobIds: ["securityScanJobs:1"],
-        nextCursor: null,
-        done: true,
-        sampleNames: ["one"],
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        total: 1,
-        queued: 0,
-        running: 0,
-        succeeded: 0,
-        failed: 1,
-        missing: 0,
-        terminal: 1,
-        done: true,
-        failedJobIds: ["securityScanJobs:1"],
-      });
-
-    await expect(
-      cmdRescanAllPackages(makeGlobalOpts(), { yes: true, batchSize: 1, pollInterval: 0 }, false),
-    ).rejects.toThrow(/failed job/i);
-  });
 });
 
 describe("cmdRecoverPersonalPublisher", () => {

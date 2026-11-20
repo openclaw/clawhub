@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 
 vi.mock("./skillStatEvents", () => ({
   insertStatEvent: vi.fn(),
@@ -26,27 +27,16 @@ const { insertStatEvent } = await import("./skillStatEvents");
 const { bumpLiveHourlySkillStats, ensureHourlyStatsState } = await import("./lib/skillHourlyStats");
 const { addStarInternal, isStarred, removeStarInternal, toggle } = await import("./stars");
 
-type WrappedHandler<TArgs, TResult> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
-
-const toggleHandler = (
-  toggle as unknown as WrappedHandler<{ skillId: string }, { starred: boolean }>
-)._handler;
-const addStarInternalHandler = (
-  addStarInternal as unknown as WrappedHandler<
-    { userId: string; skillId: string },
-    { ok: true; starred: boolean; alreadyStarred: boolean }
-  >
-)._handler;
-const removeStarInternalHandler = (
-  removeStarInternal as unknown as WrappedHandler<
-    { userId: string; skillId: string },
-    { ok: true; unstarred: boolean; alreadyUnstarred: boolean }
-  >
-)._handler;
-const isStarredHandler = (isStarred as unknown as WrappedHandler<{ skillId: string }, boolean>)
-  ._handler;
+const toggleHandler = getTestHandler<{ skillId: string }, { starred: boolean }>(toggle);
+const addStarInternalHandler = getTestHandler<
+  { userId: string; skillId: string },
+  { ok: true; starred: boolean; alreadyStarred: boolean }
+>(addStarInternal);
+const removeStarInternalHandler = getTestHandler<
+  { userId: string; skillId: string },
+  { ok: true; unstarred: boolean; alreadyUnstarred: boolean }
+>(removeStarInternal);
+const isStarredHandler = getTestHandler<{ skillId: string }, boolean>(isStarred);
 
 function makeSkill(overrides: Record<string, unknown> = {}) {
   return {

@@ -4,6 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx } from "./_generated/server";
 import { action, internalMutation, internalQuery } from "./functions";
 import { storedFileValidator } from "./lib/fileValidators";
+import { runMutationRef, runQueryRef } from "./lib/functionRefs";
 import { sha256Hex as sha256BytesHex } from "./lib/hash";
 import {
   admitSkillCardClaims,
@@ -55,22 +56,6 @@ const internalRefs = internal as unknown as {
     enqueueForVersionInternal: unknown;
   };
 };
-
-async function runQueryRef<T>(
-  ctx: { runQuery: (ref: never, args: never) => Promise<unknown> },
-  ref: unknown,
-  args: unknown,
-): Promise<T> {
-  return (await ctx.runQuery(ref as never, args as never)) as T;
-}
-
-async function runMutationRef<T>(
-  ctx: { runMutation: (ref: never, args: never) => Promise<unknown> },
-  ref: unknown,
-  args: unknown,
-): Promise<T> {
-  return (await ctx.runMutation(ref as never, args as never)) as T;
-}
 
 function assertWorkerToken(token: string) {
   // Shared Convex worker credential used by security and Skill Card workers.

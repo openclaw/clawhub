@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { hashSkillFiles } from "./lib/skills";
 import { resolveVersionByHash } from "./skills";
 
@@ -7,16 +8,10 @@ vi.mock("@convex-dev/auth/server", () => ({
   authTables: {},
 }));
 
-type WrappedHandler<TArgs, TResult = unknown> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
-
-const resolveHandler = (
-  resolveVersionByHash as unknown as WrappedHandler<
-    { slug: string; hash: string },
-    { match: { version: string } | null; latestVersion: { version: string } | null } | null
-  >
-)._handler;
+const resolveHandler = getTestHandler<
+  { slug: string; hash: string },
+  { match: { version: string } | null; latestVersion: { version: string } | null } | null
+>(resolveVersionByHash);
 
 function chain<T>(value: T) {
   const q = {

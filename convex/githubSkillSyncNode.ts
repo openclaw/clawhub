@@ -3,17 +3,8 @@
 import { v } from "convex/values";
 import { internalAction } from "./functions";
 import { syncGitHubSkillSourcesHandler, verifyGitHubSkillHandler } from "./githubSkillSync";
+import { getGitHubSyncErrorMessage as getErrorMessage } from "./lib/githubSkillSync";
 import { Events, logErrorEvent } from "./lib/observabilityEvents";
-
-function getErrorMessage(error: unknown) {
-  if (error instanceof Error) return error.message;
-  if (typeof error === "string") return error;
-  if (error && typeof error === "object" && "message" in error) {
-    const message = (error as { message?: unknown }).message;
-    if (typeof message === "string") return message;
-  }
-  return String(error);
-}
 
 export const syncGitHubSkillSourcesInternal = internalAction({
   args: {

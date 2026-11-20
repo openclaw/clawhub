@@ -1,10 +1,10 @@
 /* @vitest-environment node */
 import { execFileSync } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
+import { createTestTempDirectories } from "../lib/testTempDirectories";
 import { ClawScanContainerCleanupError } from "./clawscan-docker-cleanup";
 import { summarizeClawScanExposure } from "./clawscan-exposure";
 import partialReport from "./fixtures/skillspector-usable-partial.json";
@@ -26,7 +26,7 @@ import { isAdjudicableSkillSpectorResult } from "./skillSpectorReportPolicy";
 const diagnosticLogs = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }));
 vi.mock("../lib/workerLogger", () => ({ createWorkerLogger: () => diagnosticLogs }));
 
-const tempDirs: string[] = [];
+const tempDirs = createTestTempDirectories("clawhub-prepublication-worker-test-");
 const noNewExposure = {
   scanExecution: "not_started",
   eligibleScanAttempt: false,
@@ -83,17 +83,11 @@ function legacyArtifact(
 afterEach(async () => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
-  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { force: true, recursive: true })));
+  await tempDirs.cleanup();
 });
 
-async function tempDir() {
-  const dir = await mkdtemp(join(tmpdir(), "clawhub-prepublication-worker-test-"));
-  tempDirs.push(dir);
-  return dir;
-}
-
 async function nativeDiagnosticCase(artifactText: string | null, exitCode = 1) {
-  const workspace = await tempDir();
+  const workspace = await tempDirs.create();
   await mkdir(join(workspace, "artifact"));
   await writeFile(join(workspace, "artifact", "SKILL.md"), "# Synthetic diagnostic control\n");
   const fakeClawScan = join(workspace, "fake-clawscan");
@@ -181,7 +175,7 @@ describe("pre-publication worker", () => {
     });
     expect(result).toEqual({ completed: false, result: undefined, workerMustStop: true });
     expect(client.action).not.toHaveBeenCalled();
-    tempDirs.push(preserved!);
+    tempDirs.track(preserved!);
     expect(await readFile(join(preserved!, "artifact/SKILL.md"), "utf8")).toBe(
       "retained mounted fixture",
     );
@@ -381,7 +375,7 @@ describe("pre-publication worker", () => {
   it.each(["recovered receipt", "repeated failure", "malformed metadata", "missing artifact"])(
     "reports native %s exposure without publishing metadata",
     async (scenario) => {
-      const root = await tempDir();
+      const root = await tempDirs.create();
       const command = join(root, "fake-clawscan");
       const result = legacyJudgeResult("malicious", "Security block, not clean.");
       const first = {
@@ -1056,7 +1050,7 @@ describe("pre-publication worker", () => {
   it.each([false, true])(
     "runs the real native subprocess with independent defaults/overrides (override=%s)",
     async (overrides) => {
-      const workspace = await tempDir();
+      const workspace = await tempDirs.create();
       await mkdir(join(workspace, "artifact"), { recursive: true });
       await writeFile(join(workspace, "artifact", "SKILL.md"), "# Demo\n");
       await writeFile(join(workspace, "artifact", "openclaw.plugin.json"), '{"id":"demo"}\n');
@@ -1178,7 +1172,7 @@ JSON
   it.each(["./artifact", "./artifact/package"])(
     "scans the plugin manifest in dual-layout package %s",
     async (packageRoot) => {
-      const workspace = await tempDir();
+      const workspace = await tempDirs.create();
       await mkdir(join(workspace, packageRoot), { recursive: true });
       await writeFile(join(workspace, packageRoot, "package.json"), '{"name":"demo-plugin"}\n');
       await writeFile(
@@ -1483,7 +1477,7 @@ JSON
   });
 
   it("logs allowlisted completeness evidence for a failed scanner without artifact text", async () => {
-    const workspace = await tempDir();
+    const workspace = await tempDirs.create();
     await mkdir(join(workspace, "artifact"), { recursive: true });
     await writeFile(join(workspace, "artifact", "SKILL.md"), "# Demo\n");
     const report = {
@@ -1567,8 +1561,33 @@ process.exit(1);
     }
   });
 
-  it("fails closed when a completed skill scan omits a required scanner", async () => {
-    const workspace = await tempDir();
+  it.each([
+    {
+      name: "fails closed when a completed skill scan omits a required scanner",
+      artifact: () =>
+        `{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"aig":{"status":"completed","raw":{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"aig-skill-scan","version":"0.2.1"}},"results":[]}]}},"clawscan-static":{"status":"completed"}},"judge":{"status":"completed","result":{"verdict":"benign","confidence":"high","summary":"Native ClawScan passed."}}}`,
+      summary: "ClawScan scanner did not complete: skillspector=missing",
+    },
+    {
+      name: "preserves a redacted scanner error when a required scanner fails",
+      artifact: () =>
+        `{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"aig":{"status":"failed","error":"provider rejected request with api_key=secret-value"},"clawscan-static":{"status":"completed"},"skillspector":{"status":"completed"}},"judge":{"status":"failed"}}`,
+      summary:
+        "ClawScan scanner did not complete: aig=failed (provider rejected request with api_key=[redacted-secret])",
+    },
+    {
+      name: "fails closed when completed A.I.G output has no SARIF run",
+      artifact: () => JSON.stringify(legacyArtifact({ version: "2.1.0", runs: [] })),
+      summary: "A.I.G SARIF output did not contain a run.",
+    },
+    {
+      name: "preserves the redacted ClawScan judge failure reason",
+      artifact: () =>
+        `{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"clawscan-static":{"status":"completed"},"skillspector":{"status":"completed"}},"judge":{"status":"failed","error":"Codex request was rate limited.","result":null}}`,
+      summary: "ClawScan judge status was failed: Codex request was rate limited.",
+    },
+  ])("$name", async (fixture) => {
+    const workspace = await tempDirs.create();
     await mkdir(join(workspace, "artifact"), { recursive: true });
     await writeFile(join(workspace, "artifact", "SKILL.md"), "# Demo\n");
     const fakeClawScan = join(workspace, "fake-clawscan");
@@ -1585,7 +1604,7 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 cat > "$output" <<'JSON'
-{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"aig":{"status":"completed","raw":{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"aig-skill-scan","version":"0.2.1"}},"results":[]}]}},"clawscan-static":{"status":"completed"}},"judge":{"status":"completed","result":{"verdict":"benign","confidence":"high","summary":"Native ClawScan passed."}}}
+${fixture.artifact()}
 JSON
 `,
     );
@@ -1612,170 +1631,7 @@ JSON
       ).resolves.toEqual({
         check: {
           status: "failed",
-          summary: "ClawScan scanner did not complete: skillspector=missing",
-        },
-      });
-    } finally {
-      if (previousCommand === undefined) delete process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
-      else process.env.PREPUBLICATION_CLAWSCAN_COMMAND = previousCommand;
-    }
-  });
-
-  it("preserves a redacted scanner error when a required scanner fails", async () => {
-    const workspace = await tempDir();
-    await mkdir(join(workspace, "artifact"), { recursive: true });
-    await writeFile(join(workspace, "artifact", "SKILL.md"), "# Demo\n");
-    const fakeClawScan = join(workspace, "fake-clawscan");
-    await writeFile(
-      fakeClawScan,
-      `#!/usr/bin/env bash
-set -euo pipefail
-output=""
-while [ "$#" -gt 0 ]; do
-  if [ "$1" = "--output" ]; then
-    output="$2"
-    break
-  fi
-  shift
-done
-cat > "$output" <<'JSON'
-{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"aig":{"status":"failed","error":"provider rejected request with api_key=secret-value"},"clawscan-static":{"status":"completed"},"skillspector":{"status":"completed"}},"judge":{"status":"failed"}}
-JSON
-`,
-    );
-    await chmod(fakeClawScan, 0o755);
-    const previousCommand = process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
-    process.env.PREPUBLICATION_CLAWSCAN_COMMAND = fakeClawScan;
-
-    try {
-      await expect(
-        runNativeClawScan(
-          {
-            job: {
-              _id: String(attempt.attemptId),
-              attempts: 1,
-              hasMaliciousSignal: false,
-              leaseToken: attempt.claimId,
-              source: "pre-publication",
-              targetKind: "skillVersion",
-            },
-            target: {},
-          },
-          workspace,
-        ),
-      ).resolves.toEqual({
-        check: {
-          status: "failed",
-          summary:
-            "ClawScan scanner did not complete: aig=failed (provider rejected request with api_key=[redacted-secret])",
-        },
-      });
-    } finally {
-      if (previousCommand === undefined) delete process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
-      else process.env.PREPUBLICATION_CLAWSCAN_COMMAND = previousCommand;
-    }
-  });
-
-  it("fails closed when completed A.I.G output has no SARIF run", async () => {
-    const workspace = await tempDir();
-    await mkdir(join(workspace, "artifact"), { recursive: true });
-    await writeFile(join(workspace, "artifact", "SKILL.md"), "# Demo\n");
-    const fakeClawScan = join(workspace, "fake-clawscan");
-    await writeFile(
-      fakeClawScan,
-      `#!/usr/bin/env bash
-set -euo pipefail
-output=""
-while [ "$#" -gt 0 ]; do
-  if [ "$1" = "--output" ]; then
-    output="$2"
-    break
-  fi
-  shift
-done
-cat > "$output" <<'JSON'
-${JSON.stringify(legacyArtifact({ version: "2.1.0", runs: [] }))}
-JSON
-`,
-    );
-    await chmod(fakeClawScan, 0o755);
-    const previousCommand = process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
-    process.env.PREPUBLICATION_CLAWSCAN_COMMAND = fakeClawScan;
-
-    try {
-      await expect(
-        runNativeClawScan(
-          {
-            job: {
-              _id: String(attempt.attemptId),
-              attempts: 1,
-              hasMaliciousSignal: false,
-              leaseToken: attempt.claimId,
-              source: "pre-publication",
-              targetKind: "skillVersion",
-            },
-            target: {},
-          },
-          workspace,
-        ),
-      ).resolves.toEqual({
-        check: {
-          status: "failed",
-          summary: "A.I.G SARIF output did not contain a run.",
-        },
-      });
-    } finally {
-      if (previousCommand === undefined) delete process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
-      else process.env.PREPUBLICATION_CLAWSCAN_COMMAND = previousCommand;
-    }
-  });
-
-  it("preserves the redacted ClawScan judge failure reason", async () => {
-    const workspace = await tempDir();
-    await mkdir(join(workspace, "artifact"), { recursive: true });
-    await writeFile(join(workspace, "artifact", "SKILL.md"), "# Demo\n");
-    const fakeClawScan = join(workspace, "fake-clawscan");
-    await writeFile(
-      fakeClawScan,
-      `#!/usr/bin/env bash
-set -euo pipefail
-output=""
-while [ "$#" -gt 0 ]; do
-  if [ "$1" = "--output" ]; then
-    output="$2"
-    break
-  fi
-  shift
-done
-cat > "$output" <<'JSON'
-{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"clawscan-static":{"status":"completed"},"skillspector":{"status":"completed"}},"judge":{"status":"failed","error":"Codex request was rate limited.","result":null}}
-JSON
-`,
-    );
-    await chmod(fakeClawScan, 0o755);
-    const previousCommand = process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
-    process.env.PREPUBLICATION_CLAWSCAN_COMMAND = fakeClawScan;
-
-    try {
-      await expect(
-        runNativeClawScan(
-          {
-            job: {
-              _id: String(attempt.attemptId),
-              attempts: 1,
-              hasMaliciousSignal: false,
-              leaseToken: attempt.claimId,
-              source: "pre-publication",
-              targetKind: "skillVersion",
-            },
-            target: {},
-          },
-          workspace,
-        ),
-      ).resolves.toEqual({
-        check: {
-          status: "failed",
-          summary: "ClawScan judge status was failed: Codex request was rate limited.",
+          summary: fixture.summary,
         },
       });
     } finally {
@@ -1785,7 +1641,7 @@ JSON
   });
 
   it("terminates the full ClawScan process tree on timeout", async () => {
-    const workspace = await tempDir();
+    const workspace = await tempDirs.create();
     await mkdir(join(workspace, "artifact"), { recursive: true });
     await writeFile(join(workspace, "artifact", "SKILL.md"), "# Demo\n");
     const fakeClawScan = join(workspace, "fake-clawscan");
@@ -1809,7 +1665,7 @@ wait "$child_pid"
     const previousTimeout = process.env.PREPUBLICATION_CLAWSCAN_TIMEOUT_MS;
     process.env.PREPUBLICATION_CLAWSCAN_COMMAND = fakeClawScan;
     process.env.PREPUBLICATION_CLAWSCAN_TIMEOUT_MS = "500";
-    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
 
     try {
       const scanPromise = runNativeClawScan(
@@ -1823,8 +1679,9 @@ wait "$child_pid"
       );
       void scanPromise.catch(() => undefined);
       const descendantPid = await readStartedPid(descendantPidPath);
-      await vi.advanceTimersByTimeAsync(10_500);
-      await expect(scanPromise).rejects.toThrow("timed out");
+      // Include the shared runner's bounded process-group cleanup allowance.
+      await vi.advanceTimersByTimeAsync(60_500);
+      await expect(scanPromise).rejects.toMatchObject({ timedOut: true });
       vi.useRealTimers();
 
       let descendantRunning = true;
@@ -1854,8 +1711,29 @@ wait "$child_pid"
     }
   });
 
+  it.each([
+    ["stdout", 33 * 1024 * 1024],
+    ["stderr", 2 * 1024 * 1024],
+  ] as const)("bounds excessive %s from a native scanner", async (stream, bytes) => {
+    const workspace = await tempDirs.create();
+    const command = join(workspace, "noisy-scanner");
+    await writeFile(
+      command,
+      `#!/usr/bin/env node
+process.${stream}.write(Buffer.alloc(${bytes}, "x"));
+`,
+    );
+    await chmod(command, 0o755);
+    vi.stubEnv("PREPUBLICATION_TRUFFLEHOG_COMMAND", command);
+
+    await expect(runNativeTruffleHog(workspace)).rejects.toMatchObject({
+      failureKind: "output_limit",
+      outputLimitExceeded: stream,
+    });
+  });
+
   it("maps TruffleHog verified-secret exit code to a blocked result", async () => {
-    const workspace = await tempDir();
+    const workspace = await tempDirs.create();
     await mkdir(join(workspace, "artifact"), { recursive: true });
     const fakeTruffleHog = join(workspace, "fake-trufflehog");
     await writeFile(

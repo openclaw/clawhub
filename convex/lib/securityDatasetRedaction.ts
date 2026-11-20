@@ -1,3 +1,5 @@
+import { normalizeBundlePathForComparison } from "./bundlePaths";
+
 const SECRET_PATTERNS: RegExp[] = [
   /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,
   /\bgh[pousr]_[A-Za-z0-9_]{20,}\b/g,
@@ -43,16 +45,6 @@ export function isExcludedSkillBundlePath(path: string) {
 export function isPrimarySkillReadmePath(path: string) {
   const normalized = normalizeBundlePathForComparison(path);
   return normalized === "skill.md" || normalized === "skills.md";
-}
-
-function normalizeBundlePathForComparison(path: string) {
-  return path
-    .trim()
-    .replace(/^\/+/, "")
-    .split("/")
-    .filter((segment) => segment && segment !== ".")
-    .join("/")
-    .toLowerCase();
 }
 
 export function totalBundleBytes(files: Array<{ content: string }>) {

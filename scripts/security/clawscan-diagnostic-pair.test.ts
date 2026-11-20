@@ -1,15 +1,13 @@
 /* @vitest-environment node */
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
+import { createTestTempDirectories } from "../lib/testTempDirectories";
 import { type DiagnosticEventContext, runPairedDiagnostic } from "./clawscan-diagnostic-pair";
 import { runDiagnosticProcess } from "./run-clawscan-diagnostic";
 
-const roots: string[] = [];
-afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
-});
+const roots = createTestTempDirectories("paired-diagnostic-test-");
+afterEach(roots.cleanup);
 
 function artifact(verdict = "benign", retry = false) {
   const result = {
@@ -93,8 +91,7 @@ type Mode =
   | "judge_failed";
 
 async function harness(mode: (context: DiagnosticEventContext) => Mode = () => "benign") {
-  const root = await mkdtemp(join(tmpdir(), "paired-diagnostic-test-"));
-  roots.push(root);
+  const root = await roots.create();
   const home = join(root, "home");
   const codexHome = join(root, "codex-home");
   await mkdir(home);

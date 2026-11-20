@@ -4,6 +4,7 @@ import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { register as registerWorkpool } from "@convex-dev/workpool/test";
 import { convexTest } from "convex-test";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
 import { api } from "./_generated/api";
 import { hashToken } from "./lib/tokens";
 import schema from "./schema";
@@ -95,19 +96,14 @@ it.each(["plugin", "skill"] as const)(
         let id: string;
         if (artifactKind === "plugin") {
           const packageId = await ctx.db.insert("packages", {
+            ...createPackageSeedDefaults(),
             name,
             normalizedName: name,
             displayName: name,
-            family: "code-plugin",
             ownerUserId: actorUserId,
-            channel: "community",
-            isOfficial: false,
             categories: ["developer-tools"],
-            tags: {},
             scanStatus: "clean",
             stats: { downloads: 1, installs: 1, stars: 0, versions: 1 },
-            createdAt: 1,
-            updatedAt: 1,
           });
           const releaseId = await ctx.db.insert("packageReleases", {
             packageId,

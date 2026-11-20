@@ -393,6 +393,59 @@ describe("CliDeviceAuth", () => {
     },
   );
 
+  it("keeps the decided login on screen and ignores a later code", async () => {
+    let decided = false;
+    approveMock.mockImplementation(async () => {
+      decided = true;
+    });
+    describeCodeAs(() =>
+      decided ? { ...pendingDescription, label: "other box" } : pendingDescription,
+    );
+    useMutationMock.mockImplementation((mutation: string) =>
+      mutation === "approve" ? approveMock : denyMock,
+    );
+
+    render(<CliDeviceAuth />);
+    typeCode();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Authorize" }));
+    });
+
+    const input = screen.getByLabelText("Code");
+    expect(input).toHaveProperty("disabled", true);
+    expect(input).toHaveProperty("value", "ABCD-2345");
+    fireEvent.change(input, { target: { value: "ZZZZ-9999" } });
+
+    expect(screen.getByText("Label: ssh box")).toBeTruthy();
+    expect(screen.queryByText("Label: other box")).toBeNull();
+    expect(screen.getByLabelText("Code")).toHaveProperty("value", "ABCD-2345");
+  });
+
+  it("unlocks the code when the decision is rejected", async () => {
+    denyMock.mockRejectedValue(
+      new Error(
+        "[CONVEX M(cliDeviceAuth:deny)] [Request ID: test] Server Error Called by client ConvexError: Device code expired",
+      ),
+    );
+    useMutationMock.mockImplementation((mutation: string) =>
+      mutation === "approve" ? approveMock : denyMock,
+    );
+
+    render(<CliDeviceAuth />);
+    typeCode();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Deny" }));
+    });
+
+    expect(await screen.findByText("Device code expired")).toBeTruthy();
+    expect(screen.getByText(paragraph(EXPIRED_MESSAGE))).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Deny" })).toHaveProperty("disabled", true);
+    const input = screen.getByLabelText("Code");
+    expect(input).toHaveProperty("disabled", false);
+    fireEvent.change(input, { target: { value: "ZZZZ-9999" } });
+    expect(screen.getByLabelText("Code")).toHaveProperty("value", "ZZZZ-9999");
+  });
+
   it("shows the token label before authorization", () => {
     useMutationMock.mockReturnValue(vi.fn());
 

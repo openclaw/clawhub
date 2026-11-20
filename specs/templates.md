@@ -25,12 +25,29 @@ Its `agent` object carries identity and purpose plus supported native `groupChat
 `tools.profile` selects a bounded tool policy. The existing bounded tool, memory
 consent, path and environment restrictions remain enforced.
 
+`agent.model` is an optional preference naming one exact `provider/model`
+reference of at most 200 characters, without aliases or auth-profile suffixes.
+ClawHub validates only its shape. It does not make the provider a dependency,
+carry credentials, or promise availability: OpenClaw applies the preference at
+Add only when the Gateway reports that model as available and permitted, and
+otherwise leaves the agent on the Gateway's default model.
+
 Top-level `skills` and `plugins` contain exact `{ref, version}` ClawHub references
 or strict `{path}` package-local directories. A single source-aware inventory
 (`kind`, `source`, and either `ref`/`version` or `path`/optional metadata `name`) drives
 validation output, bounded summary counts, release detail APIs and website lists.
 Template version and artifact SHA-256 remain on the existing release envelope;
 declared dependencies do not imply installed or connected state.
+
+The Template detail page additionally projects `workspace` destinations that
+OpenClaw loads natively into the matching tab: `skills/**/SKILL.md` and
+`.agents/skills/**/SKILL.md` as skills, `.openclaw/extensions/<id>/openclaw.plugin.json`
+as plugins, and `HEARTBEAT.md` as heartbeat work that Add converts into interval
+automations. This projection is display-only and derived in the browser from the
+pinned `CLAW.md`: it names entries from their destination path, labels them as
+workspace files, and never changes the stored inventory, summary counts or
+validation. Other workspace files, including guides that merely describe
+optional automations, stay only under Workspace files.
 
 Retired `packages`, `profiles`, `extensions`, `cronJobs`, `profiles/` files and
 `metadata.openclaw.config` fail with migration guidance. There is no profile
@@ -73,16 +90,64 @@ again. Short descriptions have no disclosure control. Overflow is measured from
 the actual layout and rechecked on resize and font readiness, not inferred from
 character count. Route metadata and registry descriptions remain untruncated.
 
+## Website catalog
+
+`/templates` is a direct link, not an entry in the global header or navigation. It uses
+the Plugins browse layout and reads the public package list and search APIs anonymously,
+with `family=template`. The URL keeps the search text (`q`) and category filter so a
+filtered view can be shared. Results show download counts and link to the existing
+publisher-scoped Template detail pages. Browse lists load more entries by cursor; text
+search returns up to 25 results without pagination.
+
+The directory and its filtered URLs share the same 1200×630 “OpenClaw Templates”
+card. Its versioned PNG is bundled, not fetched from the registry, and uses the
+official unadorned OpenClaw mascot instead of a specific Template or publisher.
+Regenerate it with `bun scripts/generate-template-directory-og.ts` when the copy or
+art changes, and bump the image path to invalidate cached unfurls.
+
+Where a Template row shows an icon, it displays the package’s verified artwork in color,
+uncropped and directly on the surface without a border, background tile, or shadow.
+If the artwork is absent, untrusted or fails to load, the row uses the shared Blobster
+glyph. A publisher profile picture is never a substitute for Template artwork.
+
+## Publisher notifications
+
+For a publisher with an email address, schedule the receipt in the same transaction
+that makes the version publicly readable. A clean scan alone is too early: the
+version can still be private. Waiting for the finalizer to finish is too late:
+its follow-up work can fail after the version becomes public. Use the release
+identity for the receipt, including when a retry first publishes the version.
+Replaying a callback, resuming the finalizer, or rescanning an already-public
+version must not schedule a second receipt. Link to the canonical public Template
+page; claim a successful audit only when the recorded checks and report support it.
+
+Before publication, a secret or malicious verdict notifies immediately. Reuse
+the existing secret-block notice rather than sending two messages. An operational
+scanner failure is not a rejection: notify only on the third consecutive failure
+of the attempt, not the first two or a later failed recovery retry. These notices
+identify the Template and version without exposing findings or linking to a
+private submission. A missing email address does not affect publication.
+
 ## Catalog artwork
 
-A Template may package `assets/icon.png` for its catalog artwork, independently of
-its portable `agent.identity.avatar`. Publication validates the PNG bytes,
-decodability, size and uploaded digest through the shared package-icon path.
-Only the resulting content-addressed `/api/v1/skill-icons/<sha256>` asset is
-projected into the Official Template feed; arbitrary URLs are not accepted there.
-Missing or invalid artwork preserves the consumer's fallback. Templates do not use
-the bundled-plugin GitHub asset recovery path. Artifact and security gates are
-unchanged, and catalog metadata becomes visible only after publication.
+A valid `assets/icon.png` always wins. Otherwise publication resolves the parsed
+`agent.identity.avatar` from its declared `workspace.files[].path` destination to its
+packaged source, or decodes a bounded inline image. Only supported static artwork
+is accepted; SVG is validated and rasterized, never served as SVG. Missing or
+unusable artwork keeps the generic icon. Neither publication nor browsing fetches
+a remote avatar, and Templates never use the bundled-plugin GitHub recovery path.
+
+The catalog, release and Official Template feed project a verified,
+content-addressed PNG through the existing `/api/v1/skill-icons/<sha256>` route. Artifact
+and security gates are unchanged: metadata becomes public only after publication.
+
+Public Template detail pages share a 1200×630 PNG with the agent name, publisher
+handle, short description and hosted catalog artwork. When the artwork is absent
+or unreadable the card uses the Template glyph, never the publisher's profile
+image. The image route independently checks the anonymous package projection,
+family and owner; query parameters cannot override the card's content. Both the
+directory and detail cards place their artwork directly on the dark background,
+without a tile or clipping mask.
 
 ## Launch contract
 
@@ -92,9 +157,17 @@ unchanged, and catalog metadata becomes visible only after publication.
   local Labs visibility, inspection, consent, and new-agent addition.
 - Template publication still requires validation, moderation, ownership, and
   scanner checks.
+- The install reference for a Template is `@publisher/slug`, matching skills.
+  Templates published from OpenClaw's creator flow are stored under an unscoped
+  slug, so package reads resolve `@publisher/slug` to the unscoped Template
+  owned by that publisher when no exact scoped package exists. The exact name
+  always wins, the owner is the current active publisher, and the rule applies
+  only to Templates. Responses keep the stored package name because OpenClaw
+  verifies the archive's `package.json` name against it.
 - Detail pages present release security-audit status and details in the Security
   audit sidebar, not repeated as inline subtext beneath the install command. This is
-  presentational only: CLI and prompt copy remain unavailable unless the package
+  presentational only: the identity-only native Install CTA and command copy
+  remain unavailable unless the package
   scan status is clean and a current release exists. Missing, pending, not-run,
   suspicious, and malicious scan states do not become ready to add.
 
@@ -200,6 +273,12 @@ Convex storage. There is no ClawHub deployment flag for Template publication.
 The `family: template` path preserves ownership, moderation, scanning, and release
 invariants. OpenClaw independently controls local discovery and addition through
 Settings > Labs (`gateway.controlUi.experimental.templates`).
+
+The CLI chooses a Template display name from explicit display metadata, then the
+validated `CLAW.md` `agent.name`, then the archive filename with its extension and
+known artifact-version suffix removed. README headings never supply Template
+identity: README is optional documentation, while `CLAW.md` is the required
+manifest. Non-Template package README and source-folder fallbacks stay unchanged.
 
 Experimental Template publication is exact-artifact-only:
 

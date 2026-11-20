@@ -27,14 +27,19 @@ It does not schedule from a time kept in React state: a page opened before the
 code was typed would then count from the older time and leave the buttons on
 past expiry. The browser clock is compared with the server's `expiresAt` as is.
 A browser clock that runs ahead turns the buttons off early, and one that runs
-behind leaves them on until `approve` or `deny` rejects the code. The page has
-no server time to correct this with, and `describePending` cannot supply one.
+behind leaves them on until `approve` or `deny` rejects the code. That
+rejection shows the same recovery line as a locally expired code: run
+`clawhub login` again and type the new code. The pending query can still say
+pending, because the rejected mutation does not keep the expiry write. The
+page has no server time to correct this with, and `describePending` cannot
+supply one.
 
 Expired, used, and unknown codes each say what to do next: retype a mistyped
 code, or run `clawhub login` again for a new one. After this page approves or
 denies a code, the row leaves `pending` and `describePending` reports it as
-used. The page then shows only the result of that decision, not the used-code
-message.
+used. The code field locks when that decision starts, and the label and start
+time stay the ones for that code. A rejected attempt unlocks the field. The
+page then shows only the result of that decision, not the used-code message.
 
 A requested scope other than `read write` is rejected. Device login does not
 issue a narrower token. The minted `apiTokens` row is the same full token a

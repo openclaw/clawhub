@@ -4,6 +4,7 @@ import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { convexTest } from "convex-test";
 import { getFunctionName } from "convex/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { api, internal } from "./_generated/api";
 import { hashToken } from "./lib/tokens";
 import schema from "./schema";
@@ -575,14 +576,10 @@ describe("staff search intelligence report", () => {
 });
 
 describe("current search metadata batching", () => {
-  const handler = (
-    readCurrentResultsInternal as unknown as {
-      _handler: (
-        ctx: unknown,
-        args: unknown,
-      ) => Promise<{ rows: Array<{ query: string; results: Array<{ id: string }> }> }>;
-    }
-  )._handler;
+  const handler = getTestHandler<
+    unknown,
+    { rows: Array<{ query: string; results: Array<{ id: string }> }> }
+  >(readCurrentResultsInternal);
   it.each(["plugin", "skill"])(
     "hydrates shared identities once while preserving every %s query's order",
     async (artifactKind) => {

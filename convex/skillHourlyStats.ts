@@ -1,23 +1,14 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalMutation, internalQuery } from "./functions";
-import { RETENTION_STANDARD_BATCH_SIZE } from "./lib/retentionPolicy";
+import { normalizeRetentionBatchSize } from "./lib/retentionPolicy";
 import {
   ensureHourlyStatsState,
   getCompletedRolling24HourWindow,
   HOURLY_STATS_STATE_KEY,
 } from "./lib/skillHourlyStats";
 
-const MAX_PRUNE_BATCH_SIZE = 1_000;
 const HOURLY_AGGREGATION_MAX_AGE_MS = 2 * 60 * 60 * 1_000;
-
-function normalizeBatchSize(value: number | undefined) {
-  if (!Number.isFinite(value)) return RETENTION_STANDARD_BATCH_SIZE;
-  return Math.max(
-    1,
-    Math.min(Math.trunc(value ?? RETENTION_STANDARD_BATCH_SIZE), MAX_PRUNE_BATCH_SIZE),
-  );
-}
 
 export const initializeInternal = internalMutation({
   args: {},
@@ -89,7 +80,7 @@ export const markAggregationCompletedInternal = internalMutation({
 export const pruneExpiredInternal = internalMutation({
   args: { batchSize: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    const batchSize = normalizeBatchSize(args.batchSize);
+    const batchSize = normalizeRetentionBatchSize(args.batchSize);
     const rows = await ctx.db
       .query("skillHourlyStats")
       .withIndex("by_expires_at", (q) => q.lte("expiresAt", Date.now()))

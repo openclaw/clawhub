@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -8,14 +9,10 @@ vi.mock("@convex-dev/auth/server", () => ({
 const { getAuthUserId } = await import("@convex-dev/auth/server");
 const { getDownloadMetrics } = await import("./dashboard");
 
-type WrappedHandler = {
-  _handler: (
-    ctx: unknown,
-    args: { publisherId: string; endDay: number },
-  ) => Promise<{ allTimeDownloads: number }>;
-};
-
-const getDownloadMetricsHandler = (getDownloadMetrics as unknown as WrappedHandler)._handler;
+const getDownloadMetricsHandler = getTestHandler<
+  { publisherId: string; endDay: number },
+  { allTimeDownloads: number }
+>(getDownloadMetrics);
 
 function emptyQuery() {
   const chain: {

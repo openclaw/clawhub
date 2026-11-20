@@ -1,6 +1,7 @@
-/* @vitest-environment node */
-
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createMockDb } from "../src/__tests__/helpers/convexDb";
+/* @vitest-environment node */
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { ACTIVITY_TREND_DAYS, getActivityTrendRange } from "./lib/downloadTrend";
 import {
   computeRecommendationScore,
@@ -21,59 +22,72 @@ vi.mock("@convex-dev/auth/server", () => ({
 
 const { getAuthUserId } = await import("@convex-dev/auth/server");
 
-type WrappedHandler<TArgs, TResult> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
+const recordDownloadHandler = getTestHandler<{ packageId: string }, void>(
+  recordPackageDownloadInternal,
+);
 
-const recordDownloadHandler = (
-  recordPackageDownloadInternal as unknown as WrappedHandler<{ packageId: string }, void>
-)._handler;
+const recordInstallHandler = getTestHandler<
+  {
+    packageId: string;
+    identityKind?: "user" | "ip";
+    identityHash?: string;
+    dayStart?: number;
+    occurredAt?: number;
+  },
+  void
+>(recordPackageInstallInternal);
 
-const recordInstallHandler = (
-  recordPackageInstallInternal as unknown as WrappedHandler<
-    {
-      packageId: string;
-      identityKind?: "user" | "ip";
-      identityHash?: string;
-      dayStart?: number;
-      occurredAt?: number;
+const processStatsHandler = getTestHandler<
+  { batchSize?: number },
+  { processed: number; packagesUpdated: number }
+>(processPackageStatEventsInternal);
+
+const pruneProcessedPackageStatEventBatchHandler = getTestHandler<
+  {
+    cutoffProcessedAt: number;
+    dryRun: boolean;
+    batchSize?: number;
+    confirmationToken?: string;
+  },
+  { matched: number; deleted: number; hasMore: boolean }
+>(pruneProcessedPackageStatEventBatchInternal);
+
+const getActivityTrendHandler = getTestHandler<
+  { name: string; endDay: number },
+  {
+    downloads: {
+      range: "daily";
+      days: number;
+      total: number;
+      points: Array<{ day: number; value: number }>;
+    };
+  } | null
+>(getActivityTrendForName);
+
+function makeActivityTrendQueryMocks<TPackage, TDailyQuery>(
+  readPackage: () => Promise<TPackage>,
+  createDailyQuery: () => TDailyQuery,
+) {
+  const packageIndexBuilder = { eq: vi.fn(() => packageIndexBuilder) };
+  const dailyIndexBuilder = {
+    eq: vi.fn(() => dailyIndexBuilder),
+    gte: vi.fn(() => dailyIndexBuilder),
+    lte: vi.fn(() => dailyIndexBuilder),
+  };
+  const packageWithIndex = vi.fn(
+    (_indexName: string, buildQuery: (q: typeof packageIndexBuilder) => unknown) => {
+      buildQuery(packageIndexBuilder);
+      return { unique: vi.fn(readPackage) };
     },
-    void
-  >
-)._handler;
-
-const processStatsHandler = (
-  processPackageStatEventsInternal as unknown as WrappedHandler<
-    { batchSize?: number },
-    { processed: number; packagesUpdated: number }
-  >
-)._handler;
-
-const pruneProcessedPackageStatEventBatchHandler = (
-  pruneProcessedPackageStatEventBatchInternal as unknown as WrappedHandler<
-    {
-      cutoffProcessedAt: number;
-      dryRun: boolean;
-      batchSize?: number;
-      confirmationToken?: string;
+  );
+  const dailyWithIndex = vi.fn(
+    (_indexName: string, buildQuery: (q: typeof dailyIndexBuilder) => unknown) => {
+      buildQuery(dailyIndexBuilder);
+      return createDailyQuery();
     },
-    { matched: number; deleted: number; hasMore: boolean }
-  >
-)._handler;
-
-const getActivityTrendHandler = (
-  getActivityTrendForName as unknown as WrappedHandler<
-    { name: string; endDay: number },
-    {
-      downloads: {
-        range: "daily";
-        days: number;
-        total: number;
-        points: Array<{ day: number; value: number }>;
-      };
-    } | null
-  >
-)._handler;
+  );
+  return { packageIndexBuilder, dailyIndexBuilder, packageWithIndex, dailyWithIndex };
+}
 
 function makeActivityTrendContext<TPackageIndex, TDailyIndex>(
   packageWithIndex: TPackageIndex,
@@ -81,17 +95,12 @@ function makeActivityTrendContext<TPackageIndex, TDailyIndex>(
 ) {
   return {
     db: {
+      ...createMockDb(),
       query: vi.fn((tableName: string) => {
         if (tableName === "packages") return { withIndex: packageWithIndex };
         if (tableName === "packageDailyStats") return { withIndex: dailyWithIndex };
         throw new Error(`Unexpected table ${tableName}`);
       }),
-      get: vi.fn(),
-      normalizeId: vi.fn(),
-      insert: vi.fn(),
-      patch: vi.fn(),
-      replace: vi.fn(),
-      delete: vi.fn(),
       system: {
         get: vi.fn(),
         query: vi.fn(),
@@ -111,13 +120,8 @@ describe("package stat events", () => {
     await recordDownloadHandler(
       {
         db: {
-          query: vi.fn(),
-          get: vi.fn(),
-          normalizeId: vi.fn(),
+          ...createMockDb(),
           insert,
-          patch: vi.fn(),
-          replace: vi.fn(),
-          delete: vi.fn(),
           system: {
             get: vi.fn(),
             query: vi.fn(),
@@ -145,13 +149,8 @@ describe("package stat events", () => {
     await recordInstallHandler(
       {
         db: {
-          query: vi.fn(),
-          get: vi.fn(),
-          normalizeId: vi.fn(),
+          ...createMockDb(),
           insert,
-          patch: vi.fn(),
-          replace: vi.fn(),
-          delete: vi.fn(),
           system: {
             get: vi.fn(),
             query: vi.fn(),
@@ -187,13 +186,9 @@ describe("package stat events", () => {
     });
     const ctx = {
       db: {
+        ...createMockDb(),
         query: vi.fn(() => ({ withIndex })),
-        get: vi.fn(),
-        normalizeId: vi.fn(),
         insert,
-        patch: vi.fn(),
-        replace: vi.fn(),
-        delete: vi.fn(),
         system: {
           get: vi.fn(),
           query: vi.fn(),
@@ -278,6 +273,7 @@ describe("package stat events", () => {
     const patch = vi.fn();
     const ctx = {
       db: {
+        ...createMockDb(),
         query: vi.fn((tableName: string) => {
           if (tableName === "packageStatEvents") {
             return {
@@ -296,11 +292,8 @@ describe("package stat events", () => {
           _id: id,
           stats: { downloads: 10, installs: 1, stars: 2, versions: 3 },
         })),
-        normalizeId: vi.fn(),
         insert,
         patch,
-        replace: vi.fn(),
-        delete: vi.fn(),
         system: {
           get: vi.fn(),
           query: vi.fn(),
@@ -391,6 +384,7 @@ describe("package stat events", () => {
     const patch = vi.fn();
     const ctx = {
       db: {
+        ...createMockDb(),
         query: vi.fn((tableName: string) => {
           if (tableName === "packageStatEvents") {
             return {
@@ -416,11 +410,8 @@ describe("package stat events", () => {
           _id: id,
           stats: { downloads: 10, installs: 1, stars: 2, versions: 3 },
         })),
-        normalizeId: vi.fn(),
         insert,
         patch,
-        replace: vi.fn(),
-        delete: vi.fn(),
         system: {
           get: vi.fn(),
           query: vi.fn(),
@@ -457,6 +448,7 @@ describe("package stat events", () => {
     const runAfter = vi.fn();
     const ctx = {
       db: {
+        ...createMockDb(),
         query: vi.fn((tableName: string) => {
           if (tableName === "packageStatEvents") {
             return {
@@ -474,11 +466,7 @@ describe("package stat events", () => {
           _id: id,
           stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
         })),
-        normalizeId: vi.fn(),
-        insert: vi.fn(),
         patch,
-        replace: vi.fn(),
-        delete: vi.fn(),
         system: {
           get: vi.fn(),
           query: vi.fn(),
@@ -507,6 +495,7 @@ describe("package stat events", () => {
     const gt = vi.fn(() => ({ lt: vi.fn(() => "processed-range") }));
     const ctx = {
       db: {
+        ...createMockDb(),
         query: vi.fn((tableName: string) => {
           expect(tableName).toBe("packageStatEvents");
           return {
@@ -518,11 +507,6 @@ describe("package stat events", () => {
           };
         }),
         delete: deleteDoc,
-        get: vi.fn(),
-        insert: vi.fn(),
-        normalizeId: vi.fn(),
-        patch: vi.fn(),
-        replace: vi.fn(),
         system: {
           get: vi.fn(),
           query: vi.fn(),
@@ -557,38 +541,23 @@ describe("package stat events", () => {
     vi.setSystemTime(now);
 
     try {
-      const packageIndexBuilder = { eq: vi.fn(() => packageIndexBuilder) };
-      const dailyIndexBuilder = {
-        eq: vi.fn(() => dailyIndexBuilder),
-        gte: vi.fn(() => dailyIndexBuilder),
-        lte: vi.fn(() => dailyIndexBuilder),
-      };
-      const packageWithIndex = vi.fn(
-        (_indexName: string, buildQuery: (q: typeof packageIndexBuilder) => unknown) => {
-          buildQuery(packageIndexBuilder);
-          return {
-            unique: vi.fn(async () => ({
-              _id: "packages:one",
-              _creationTime: Date.UTC(2026, 5, 1),
-              createdAt: Date.UTC(2026, 5, 1),
-              normalizedName: "demo-plugin",
-              channel: "public",
-              scanStatus: "clean",
-              stats: { downloads: 143, installs: 0, stars: 0, versions: 1 },
-            })),
-          };
-        },
-      );
       const takeDailyStats = vi.fn(async () => [
         { day: endDay - 1, downloads: 2, installs: 1 },
         { day: endDay, downloads: 1, installs: 3 },
       ]);
-      const dailyWithIndex = vi.fn(
-        (_indexName: string, buildQuery: (q: typeof dailyIndexBuilder) => unknown) => {
-          buildQuery(dailyIndexBuilder);
-          return { take: takeDailyStats };
-        },
-      );
+      const { packageIndexBuilder, dailyIndexBuilder, packageWithIndex, dailyWithIndex } =
+        makeActivityTrendQueryMocks(
+          async () => ({
+            _id: "packages:one",
+            _creationTime: Date.UTC(2026, 5, 1),
+            createdAt: Date.UTC(2026, 5, 1),
+            normalizedName: "demo-plugin",
+            channel: "public",
+            scanStatus: "clean",
+            stats: { downloads: 143, installs: 0, stars: 0, versions: 1 },
+          }),
+          () => ({ take: takeDailyStats }),
+        );
       const ctx = makeActivityTrendContext(packageWithIndex, dailyWithIndex);
 
       const trend = await getActivityTrendHandler(ctx, { name: "demo-plugin", endDay });
@@ -623,34 +592,18 @@ describe("package stat events", () => {
     vi.setSystemTime(now);
 
     try {
-      const packageIndexBuilder = { eq: vi.fn(() => packageIndexBuilder) };
-      const dailyIndexBuilder = {
-        eq: vi.fn(() => dailyIndexBuilder),
-        gte: vi.fn(() => dailyIndexBuilder),
-        lte: vi.fn(() => dailyIndexBuilder),
-      };
-      const packageWithIndex = vi.fn(
-        (_indexName: string, buildQuery: (q: typeof packageIndexBuilder) => unknown) => {
-          buildQuery(packageIndexBuilder);
-          return {
-            unique: vi.fn(async () => ({
-              _id: "packages:one",
-              _creationTime: Date.UTC(2026, 5, 1),
-              createdAt: Date.UTC(2026, 5, 1),
-              normalizedName: "demo-plugin",
-              channel: "public",
-              scanStatus: "clean",
-              stats: { downloads: 143, installs: 12, stars: 0, versions: 1 },
-            })),
-          };
-        },
-      );
       const takeDailyStats = vi.fn(async () => []);
-      const dailyWithIndex = vi.fn(
-        (_indexName: string, buildQuery: (q: typeof dailyIndexBuilder) => unknown) => {
-          buildQuery(dailyIndexBuilder);
-          return { take: takeDailyStats };
-        },
+      const { packageWithIndex, dailyWithIndex } = makeActivityTrendQueryMocks(
+        async () => ({
+          _id: "packages:one",
+          _creationTime: Date.UTC(2026, 5, 1),
+          createdAt: Date.UTC(2026, 5, 1),
+          normalizedName: "demo-plugin",
+          channel: "public",
+          scanStatus: "clean",
+          stats: { downloads: 143, installs: 12, stars: 0, versions: 1 },
+        }),
+        () => ({ take: takeDailyStats }),
       );
       const ctx = makeActivityTrendContext(packageWithIndex, dailyWithIndex);
 
@@ -673,38 +626,22 @@ describe("package stat events", () => {
     vi.setSystemTime(now);
 
     try {
-      const packageIndexBuilder = { eq: vi.fn(() => packageIndexBuilder) };
-      const dailyIndexBuilder = {
-        eq: vi.fn(() => dailyIndexBuilder),
-        gte: vi.fn(() => dailyIndexBuilder),
-        lte: vi.fn(() => dailyIndexBuilder),
-      };
-      const packageWithIndex = vi.fn(
-        (_indexName: string, buildQuery: (q: typeof packageIndexBuilder) => unknown) => {
-          buildQuery(packageIndexBuilder);
-          return {
-            unique: vi.fn(async () => ({
-              _id: "packages:one",
-              _creationTime: Date.UTC(2026, 4, 1),
-              createdAt: Date.UTC(2026, 4, 1),
-              normalizedName: "demo-plugin",
-              channel: "public",
-              scanStatus: "clean",
-              stats: { downloads: 143, installs: 12, stars: 0, versions: 1 },
-            })),
-          };
-        },
-      );
       const takeDailyStats = vi.fn(async () => [
         { day: endDay - 2, downloads: 41, installs: 3 },
         { day: endDay - 1, downloads: 52, installs: 4 },
         { day: endDay, downloads: 50, installs: 5 },
       ]);
-      const dailyWithIndex = vi.fn(
-        (_indexName: string, buildQuery: (q: typeof dailyIndexBuilder) => unknown) => {
-          buildQuery(dailyIndexBuilder);
-          return { take: takeDailyStats };
-        },
+      const { packageWithIndex, dailyWithIndex } = makeActivityTrendQueryMocks(
+        async () => ({
+          _id: "packages:one",
+          _creationTime: Date.UTC(2026, 4, 1),
+          createdAt: Date.UTC(2026, 4, 1),
+          normalizedName: "demo-plugin",
+          channel: "public",
+          scanStatus: "clean",
+          stats: { downloads: 143, installs: 12, stars: 0, versions: 1 },
+        }),
+        () => ({ take: takeDailyStats }),
       );
       const ctx = makeActivityTrendContext(packageWithIndex, dailyWithIndex);
 
@@ -728,33 +665,17 @@ describe("package stat events", () => {
     vi.setSystemTime(now);
 
     try {
-      const packageIndexBuilder = { eq: vi.fn(() => packageIndexBuilder) };
-      const dailyIndexBuilder = {
-        eq: vi.fn(() => dailyIndexBuilder),
-        gte: vi.fn(() => dailyIndexBuilder),
-        lte: vi.fn(() => dailyIndexBuilder),
-      };
-      const packageWithIndex = vi.fn(
-        (_indexName: string, buildQuery: (q: typeof packageIndexBuilder) => unknown) => {
-          buildQuery(packageIndexBuilder);
-          return {
-            unique: vi.fn(async () => ({
-              _id: "packages:one",
-              _creationTime: Date.UTC(2026, 5, 1),
-              createdAt: Date.UTC(2026, 5, 1),
-              normalizedName: "demo-plugin",
-              channel: "public",
-              scanStatus: "clean",
-              stats: { downloads: 143, installs: 12, stars: 0, versions: 1 },
-            })),
-          };
-        },
-      );
-      const dailyWithIndex = vi.fn(
-        (_indexName: string, buildQuery: (q: typeof dailyIndexBuilder) => unknown) => {
-          buildQuery(dailyIndexBuilder);
-          return { take: vi.fn(async () => [{ day: serverEndDay, downloads: 1, installs: 1 }]) };
-        },
+      const { dailyIndexBuilder, packageWithIndex, dailyWithIndex } = makeActivityTrendQueryMocks(
+        async () => ({
+          _id: "packages:one",
+          _creationTime: Date.UTC(2026, 5, 1),
+          createdAt: Date.UTC(2026, 5, 1),
+          normalizedName: "demo-plugin",
+          channel: "public",
+          scanStatus: "clean",
+          stats: { downloads: 143, installs: 12, stars: 0, versions: 1 },
+        }),
+        () => ({ take: vi.fn(async () => [{ day: serverEndDay, downloads: 1, installs: 1 }]) }),
       );
       const ctx = makeActivityTrendContext(packageWithIndex, dailyWithIndex);
 
@@ -778,36 +699,20 @@ describe("package stat events", () => {
     vi.setSystemTime(now);
 
     try {
-      const packageIndexBuilder = { eq: vi.fn(() => packageIndexBuilder) };
-      const dailyIndexBuilder = {
-        eq: vi.fn(() => dailyIndexBuilder),
-        gte: vi.fn(() => dailyIndexBuilder),
-        lte: vi.fn(() => dailyIndexBuilder),
-      };
-      const packageWithIndex = vi.fn(
-        (_indexName: string, buildQuery: (q: typeof packageIndexBuilder) => unknown) => {
-          buildQuery(packageIndexBuilder);
-          return {
-            unique: vi.fn(async () => ({
-              _id: "packages:one",
-              _creationTime: Date.UTC(2026, 5, 1),
-              createdAt: Date.UTC(2026, 5, 1),
-              ownerUserId: "users:owner",
-              ownerPublisherId: undefined,
-              normalizedName: "demo-plugin",
-              channel: "private",
-              scanStatus: "clean",
-              stats: { downloads: 143, installs: 12, stars: 0, versions: 1 },
-            })),
-          };
-        },
-      );
       const takeDailyStats = vi.fn(async () => [{ day: endDay, downloads: 2, installs: 1 }]);
-      const dailyWithIndex = vi.fn(
-        (_indexName: string, buildQuery: (q: typeof dailyIndexBuilder) => unknown) => {
-          buildQuery(dailyIndexBuilder);
-          return { take: takeDailyStats };
-        },
+      const { packageWithIndex, dailyWithIndex } = makeActivityTrendQueryMocks(
+        async () => ({
+          _id: "packages:one",
+          _creationTime: Date.UTC(2026, 5, 1),
+          createdAt: Date.UTC(2026, 5, 1),
+          ownerUserId: "users:owner",
+          ownerPublisherId: undefined,
+          normalizedName: "demo-plugin",
+          channel: "private",
+          scanStatus: "clean",
+          stats: { downloads: 143, installs: 12, stars: 0, versions: 1 },
+        }),
+        () => ({ take: takeDailyStats }),
       );
       const get = vi.fn(async (id: string) => {
         if (id === "users:owner") {
@@ -817,17 +722,13 @@ describe("package stat events", () => {
       });
       const ctx = {
         db: {
+          ...createMockDb(),
           query: vi.fn((tableName: string) => {
             if (tableName === "packages") return { withIndex: packageWithIndex };
             if (tableName === "packageDailyStats") return { withIndex: dailyWithIndex };
             throw new Error(`Unexpected table ${tableName}`);
           }),
           get,
-          normalizeId: vi.fn(),
-          insert: vi.fn(),
-          patch: vi.fn(),
-          replace: vi.fn(),
-          delete: vi.fn(),
           system: {
             get: vi.fn(),
             query: vi.fn(),

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -8,23 +9,15 @@ vi.mock("@convex-dev/auth/server", () => ({
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { setOwnedSkillSoftDeleted, setSkillSoftDeletedInternal } from "./skills";
 
-type WrappedHandler<TArgs> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<unknown>;
-};
-
-const setSkillSoftDeletedInternalHandler = (
-  setSkillSoftDeletedInternal as unknown as WrappedHandler<{
-    userId: string;
-    slug: string;
-    deleted: boolean;
-    reason?: string;
-  }>
-)._handler;
-const setOwnedSkillSoftDeletedHandler = (
-  setOwnedSkillSoftDeleted as unknown as WrappedHandler<{
-    skillId: string;
-  }>
-)._handler;
+const setSkillSoftDeletedInternalHandler = getTestHandler<{
+  userId: string;
+  slug: string;
+  deleted: boolean;
+  reason?: string;
+}>(setSkillSoftDeletedInternal);
+const setOwnedSkillSoftDeletedHandler = getTestHandler<{
+  skillId: string;
+}>(setOwnedSkillSoftDeleted);
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -354,64 +347,6 @@ describe("setSkillSoftDeletedInternal B1 undelete gate", () => {
   // undefined` here would trap owners who delete a normal freshly-published
   // skill and then try to undelete it. The gate must only deny on reasons
   // that describe a system/admin-originated hide.
-  it("allows owner undelete when skill carries benign pending.scan reason (freshly-published owner delete)", async () => {
-    const skill = makeSkill({
-      moderationReason: "pending.scan",
-      hiddenBy: "users:owner",
-    });
-    const { ctx, patch, insert } = makeCtx({
-      skill,
-      actor: { _id: "users:owner", role: "user" },
-    });
-
-    await expect(
-      setSkillSoftDeletedInternalHandler(ctx, {
-        userId: "users:owner",
-        slug: "demo",
-        deleted: false,
-      }),
-    ).resolves.toEqual({ ok: true });
-
-    expect(patch).toHaveBeenCalledWith(
-      "skills:1",
-      expect.objectContaining({
-        moderationStatus: "active",
-        softDeletedAt: undefined,
-      }),
-    );
-    expect(insert).toHaveBeenCalledWith(
-      "auditLogs",
-      expect.objectContaining({ action: "skill.undelete", actorUserId: "users:owner" }),
-    );
-  });
-
-  it("allows owner undelete when skill carries benign scanner.aggregate.clean reason", async () => {
-    const skill = makeSkill({
-      moderationReason: "scanner.aggregate.clean",
-      hiddenBy: "users:owner",
-    });
-    const { ctx, patch } = makeCtx({
-      skill,
-      actor: { _id: "users:owner", role: "user" },
-    });
-
-    await expect(
-      setSkillSoftDeletedInternalHandler(ctx, {
-        userId: "users:owner",
-        slug: "demo",
-        deleted: false,
-      }),
-    ).resolves.toEqual({ ok: true });
-
-    expect(patch).toHaveBeenCalledWith(
-      "skills:1",
-      expect.objectContaining({
-        moderationStatus: "active",
-        softDeletedAt: undefined,
-      }),
-    );
-  });
-
   // BLOCKER regression: a moderator restore (`setSoftDeleted` with
   // deleted=false) clears `hiddenBy` but does NOT clear `moderationReason`,
   // so a row can carry a stale "auto.reports" reason while being
@@ -419,63 +354,55 @@ describe("setSkillSoftDeletedInternal B1 undelete gate", () => {
   // hide is owner-initiated (hiddenBy === owner) and a later self-undelete
   // must be allowed — the stale historical reason must not create a sticky
   // 403 that requires moderator intervention.
-  it("allows owner undelete when hiddenBy === owner even though stale moderationReason is auto.reports", async () => {
-    const skill = makeSkill({
-      moderationReason: "auto.reports",
-      hiddenBy: "users:owner",
+  for (const { name, reason } of [
+    {
+      name: "allows owner undelete when skill carries benign pending.scan reason (freshly-published owner delete)",
+      reason: "pending.scan",
+    },
+    {
+      name: "allows owner undelete when skill carries benign scanner.aggregate.clean reason",
+      reason: "scanner.aggregate.clean",
+    },
+    {
+      name: "allows owner undelete when hiddenBy === owner even though stale moderationReason is auto.reports",
+      reason: "auto.reports",
+    },
+    {
+      name: "allows owner undelete when hiddenBy === owner even though stale moderationReason is manual.report",
+      reason: "manual.report",
+    },
+  ] as const) {
+    it(name, async () => {
+      const skill = makeSkill({
+        moderationReason: reason,
+        hiddenBy: "users:owner",
+      });
+      const { ctx, patch, insert } = makeCtx({
+        skill,
+        actor: { _id: "users:owner", role: "user" },
+      });
+
+      await expect(
+        setSkillSoftDeletedInternalHandler(ctx, {
+          userId: "users:owner",
+          slug: "demo",
+          deleted: false,
+        }),
+      ).resolves.toEqual({ ok: true });
+
+      expect(patch).toHaveBeenCalledWith(
+        "skills:1",
+        expect.objectContaining({
+          moderationStatus: "active",
+          softDeletedAt: undefined,
+        }),
+      );
+      expect(insert).toHaveBeenCalledWith(
+        "auditLogs",
+        expect.objectContaining({ action: "skill.undelete", actorUserId: "users:owner" }),
+      );
     });
-    const { ctx, patch, insert } = makeCtx({
-      skill,
-      actor: { _id: "users:owner", role: "user" },
-    });
-
-    await expect(
-      setSkillSoftDeletedInternalHandler(ctx, {
-        userId: "users:owner",
-        slug: "demo",
-        deleted: false,
-      }),
-    ).resolves.toEqual({ ok: true });
-
-    expect(patch).toHaveBeenCalledWith(
-      "skills:1",
-      expect.objectContaining({
-        moderationStatus: "active",
-        softDeletedAt: undefined,
-      }),
-    );
-    expect(insert).toHaveBeenCalledWith(
-      "auditLogs",
-      expect.objectContaining({ action: "skill.undelete", actorUserId: "users:owner" }),
-    );
-  });
-
-  it("allows owner undelete when hiddenBy === owner even though stale moderationReason is manual.report", async () => {
-    const skill = makeSkill({
-      moderationReason: "manual.report",
-      hiddenBy: "users:owner",
-    });
-    const { ctx, patch } = makeCtx({
-      skill,
-      actor: { _id: "users:owner", role: "user" },
-    });
-
-    await expect(
-      setSkillSoftDeletedInternalHandler(ctx, {
-        userId: "users:owner",
-        slug: "demo",
-        deleted: false,
-      }),
-    ).resolves.toEqual({ ok: true });
-
-    expect(patch).toHaveBeenCalledWith(
-      "skills:1",
-      expect.objectContaining({
-        moderationStatus: "active",
-        softDeletedAt: undefined,
-      }),
-    );
-  });
+  }
 
   // Data hygiene: when the owner self-deletes a skill that carried a stale
   // moderation reason (e.g. left over from a previous moderator restore),
@@ -767,71 +694,49 @@ describe("setSkillSoftDeletedInternal B1 undelete gate", () => {
     expect(insert).not.toHaveBeenCalled();
   });
 
-  it("still allows owner to soft-delete (deleted=true) their own skill regardless of gate", async () => {
-    const now = 1_700_000_000_000;
-    vi.spyOn(Date, "now").mockReturnValue(now);
-    const skill = makeSkill({
-      moderationStatus: "active",
-      softDeletedAt: undefined,
-      hiddenAt: undefined,
-      hiddenBy: undefined,
-      moderationReason: undefined,
+  for (const { name, ownerRole } of [
+    {
+      name: "still allows owner to soft-delete (deleted=true) their own skill regardless of gate",
+      ownerRole: "user",
+    },
+    {
+      name: "returns a slug reservation when an elevated owner soft-deletes their own skill",
+      ownerRole: "admin",
+    },
+  ] as const) {
+    it(name, async () => {
+      const now = 1_700_000_000_000;
+      vi.spyOn(Date, "now").mockReturnValue(now);
+      const skill = makeSkill({
+        moderationStatus: "active",
+        softDeletedAt: undefined,
+        hiddenAt: undefined,
+        hiddenBy: undefined,
+        moderationReason: undefined,
+      });
+      const { ctx, patch } = makeCtx({
+        skill,
+        actor: { _id: "users:owner", role: ownerRole },
+      });
+
+      await expect(
+        setSkillSoftDeletedInternalHandler(ctx, {
+          userId: "users:owner",
+          slug: "demo",
+          deleted: true,
+        }),
+      ).resolves.toEqual({ ok: true, slugReservedUntil: now + 30 * 24 * 60 * 60 * 1000 });
+
+      expect(patch).toHaveBeenCalledWith(
+        "skills:1",
+        expect.objectContaining({
+          moderationStatus: "hidden",
+          hiddenBy: "users:owner",
+          unpublishedSlugReservedUntil: now + 30 * 24 * 60 * 60 * 1000,
+        }),
+      );
     });
-    const { ctx, patch } = makeCtx({
-      skill,
-      actor: { _id: "users:owner", role: "user" },
-    });
-
-    await expect(
-      setSkillSoftDeletedInternalHandler(ctx, {
-        userId: "users:owner",
-        slug: "demo",
-        deleted: true,
-      }),
-    ).resolves.toEqual({ ok: true, slugReservedUntil: now + 30 * 24 * 60 * 60 * 1000 });
-
-    expect(patch).toHaveBeenCalledWith(
-      "skills:1",
-      expect.objectContaining({
-        moderationStatus: "hidden",
-        hiddenBy: "users:owner",
-        unpublishedSlugReservedUntil: now + 30 * 24 * 60 * 60 * 1000,
-      }),
-    );
-  });
-
-  it("returns a slug reservation when an elevated owner soft-deletes their own skill", async () => {
-    const now = 1_700_000_000_000;
-    vi.spyOn(Date, "now").mockReturnValue(now);
-    const skill = makeSkill({
-      moderationStatus: "active",
-      softDeletedAt: undefined,
-      hiddenAt: undefined,
-      hiddenBy: undefined,
-      moderationReason: undefined,
-    });
-    const { ctx, patch } = makeCtx({
-      skill,
-      actor: { _id: "users:owner", role: "admin" },
-    });
-
-    await expect(
-      setSkillSoftDeletedInternalHandler(ctx, {
-        userId: "users:owner",
-        slug: "demo",
-        deleted: true,
-      }),
-    ).resolves.toEqual({ ok: true, slugReservedUntil: now + 30 * 24 * 60 * 60 * 1000 });
-
-    expect(patch).toHaveBeenCalledWith(
-      "skills:1",
-      expect.objectContaining({
-        moderationStatus: "hidden",
-        hiddenBy: "users:owner",
-        unpublishedSlugReservedUntil: now + 30 * 24 * 60 * 60 * 1000,
-      }),
-    );
-  });
+  }
 
   it("rejects delete attempts for removed skills without downgrading them to hidden", async () => {
     const skill = makeSkill({

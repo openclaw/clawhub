@@ -1,5 +1,5 @@
+import type { SkillAppealListStatus, SkillReportListStatus } from "clawhub-schema";
 import {
-  ApiRoutes,
   ApiV1SkillUploadUrlRequestSchema,
   ApiV1SkillBulkRescanBatchRequestSchema,
   ApiV1SkillBulkRescanStatusRequestSchema,
@@ -12,12 +12,11 @@ import {
   SkillAppealResolveRequestSchema,
   SkillReportTriageRequestSchema,
   SkillVersionRevokeRequestSchema,
-  formatSecurityAuditOverview,
-  normalizeContentType,
   parseArk,
-  type SkillAppealListStatus,
-  type SkillReportListStatus,
 } from "clawhub-schema";
+import { ApiRoutes } from "clawhub-schema/routes";
+import { formatSecurityAuditOverview } from "clawhub-schema/securityAudit";
+import { normalizeContentType } from "clawhub-schema/textFiles";
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
@@ -38,6 +37,7 @@ import {
   type ClawHubVercelEnvironment,
   verifyClawHubVercelOidcToken,
 } from "../lib/clawhubVercelOidc";
+import { runMutationRef, runQueryRef } from "../lib/functionRefs";
 import {
   buildGitHubSkillHandoffDescriptor,
   getGitHubHandoffBlock,
@@ -45,6 +45,7 @@ import {
   type GitHubHandoffTarget,
   type ReadyGitHubHandoffTarget,
 } from "../lib/githubHandoff";
+import { toHex } from "../lib/hash";
 import { mergeHeaders } from "../lib/httpHeaders";
 import { applyRateLimit } from "../lib/httpRateLimit";
 import { parseBooleanQueryParam, resolveBooleanQueryParam } from "../lib/httpUtils";
@@ -412,14 +413,6 @@ const internalRefs = internal as unknown as {
   };
 };
 
-async function runQueryRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
-  return (await ctx.runQuery(ref as never, args as never)) as T;
-}
-
-async function runMutationRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
-  return (await ctx.runMutation(ref as never, args as never)) as T;
-}
-
 function isMultipartRequest(request: Request) {
   return (
     request.headers.get("content-type")?.toLowerCase().includes("multipart/form-data") === true
@@ -440,6 +433,76 @@ function scanReportPart(status: Record<string, unknown>, key: string) {
   return (report as Record<string, unknown>)[key] ?? null;
 }
 
+type FailedPublication = {
+  stage: string;
+  retrying: boolean;
+  checks: { trufflehog: string; clawscan: string };
+  guidance: string;
+};
+
+// Present only when the checks stopped before a verdict; see
+// failedSkillPublicationReport, which chooses these fields.
+function failedPublication(status: Record<string, unknown>): FailedPublication | null {
+  if (status.status !== "failed") return null;
+  const value = status.publication;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const publication = value as Partial<FailedPublication>;
+  const checks = publication.checks;
+  if (
+    typeof publication.stage !== "string" ||
+    typeof publication.retrying !== "boolean" ||
+    typeof publication.guidance !== "string" ||
+    typeof checks?.trufflehog !== "string" ||
+    typeof checks.clawscan !== "string"
+  )
+    return null;
+  return {
+    stage: publication.stage,
+    retrying: publication.retrying,
+    checks: { trufflehog: checks.trufflehog, clawscan: checks.clawscan },
+    guidance: publication.guidance,
+  };
+}
+
+function failedPublicationReadme(scanId: string, publication: FailedPublication) {
+  const next =
+    publication.guidance === "remove_python_bytecode"
+      ? [
+          "ClawHub cannot safely inspect packaged Python bytecode. Remove `.pyc`, `.pyo`, and `.pyd` files, then publish a new version.",
+        ]
+      : [
+          "A required scanner did not finish. You do not need to change the submitted files.",
+          "",
+          publication.retrying
+            ? "Another check attempt is already waiting. You do not need a new version."
+            : "ClawHub will not retry this version on its own. Ask for a retry with this version: https://github.com/openclaw/clawhub/issues/new",
+        ];
+  return [
+    "# ClawHub Scan Report",
+    "",
+    `Scan ID: ${scanId}`,
+    "Status: failed (no safety verdict)",
+    "",
+    "The security checks for this submitted version did not complete, so ClawHub has no safety verdict for it. This is not a finding against the submitted files. The version is not public or installable.",
+    "",
+    "## Checks",
+    "",
+    `- Secret check: ${publication.checks.trufflehog}`,
+    `- Security check: ${publication.checks.clawscan}`,
+    "",
+    "## What to do",
+    "",
+    ...next,
+    "",
+    "## Files",
+    "",
+    "- `manifest.json`: artifact identity, scan status, and timestamps.",
+    "- `publication.json`: publication stage, check states, and whether a retry is waiting.",
+    "- `README.md`: this guide.",
+    "",
+  ].join("\n");
+}
+
 function buildSkillScanReportZip(status: Record<string, unknown>) {
   const manifest = {
     scanId: status.scanId,
@@ -454,6 +517,17 @@ function buildSkillScanReportZip(status: Record<string, unknown>) {
   };
   const scanIdText = typeof status.scanId === "string" ? status.scanId : "";
   const statusText = typeof status.status === "string" ? status.status : "";
+  const publication = failedPublication(status);
+  if (publication) {
+    return buildDeterministicZip([
+      { path: "manifest.json", bytes: encodeJsonEntry(manifest) },
+      { path: "publication.json", bytes: encodeJsonEntry(publication) },
+      {
+        path: "README.md",
+        bytes: encodeTextEntry(failedPublicationReadme(scanIdText, publication)),
+      },
+    ]);
+  }
   const readme = [
     "# ClawHub Scan Report",
     "",
@@ -2994,9 +3068,7 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
         return text("Uploaded file size does not match its upload ticket", 400, rate.headers);
       }
       const digest = await crypto.subtle.digest("SHA-256", bytes);
-      const sha256 = Array.from(new Uint8Array(digest), (byte) =>
-        byte.toString(16).padStart(2, "0"),
-      ).join("");
+      const sha256 = toHex(new Uint8Array(digest));
       if (sha256 !== expected.sha256) {
         return text("Uploaded file SHA-256 does not match its upload ticket", 400, rate.headers);
       }

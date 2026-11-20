@@ -1,5 +1,5 @@
-import { normalizeContentType } from "clawhub-schema";
-import { v } from "convex/values";
+import { normalizeContentType } from "clawhub-schema/textFiles";
+import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
@@ -69,7 +69,7 @@ export const getSkillPublishUploadForUserInternal = internalQuery({
       ticket.storageId ||
       ticket.expiresAt <= Date.now()
     ) {
-      throw new Error("Skill upload ticket is missing, used, or expired");
+      throw new ConvexError("Skill upload ticket is missing, used, or expired");
     }
     return {
       path: ticket.path,
@@ -96,7 +96,7 @@ export const attachSkillPublishUploadInternal = internalMutation({
       ticket.storageId ||
       ticket.expiresAt <= now
     ) {
-      throw new Error("Skill upload ticket is missing, used, or expired");
+      throw new ConvexError("Skill upload ticket is missing, used, or expired");
     }
     const metadata = await ctx.db.system.get("_storage", args.storageId);
     if (
@@ -106,7 +106,7 @@ export const attachSkillPublishUploadInternal = internalMutation({
       !matchesStorageSha256(metadata.sha256, ticket.sha256) ||
       normalizeContentType(metadata.contentType) !== ticket.contentType
     ) {
-      throw new Error("Uploaded file does not match its skill upload ticket");
+      throw new ConvexError("Uploaded file does not match its skill upload ticket");
     }
     await ctx.db.patch(ticket._id, { storageId: args.storageId });
   },
@@ -129,16 +129,16 @@ export async function consumeSkillPublishUploads(
   },
 ) {
   if (args.uploadTickets.length !== args.files.length) {
-    throw new Error("Every directly uploaded skill file requires an upload ticket");
+    throw new ConvexError("Every directly uploaded skill file requires an upload ticket");
   }
   if (new Set(args.uploadTickets).size !== args.uploadTickets.length) {
-    throw new Error("Skill upload tickets cannot be reused");
+    throw new ConvexError("Skill upload tickets cannot be reused");
   }
   const now = Date.now();
   for (let index = 0; index < args.files.length; index += 1) {
     const uploadTicket = args.uploadTickets[index];
     const file = args.files[index];
-    if (!uploadTicket || !file) throw new Error("Skill upload ticket mismatch");
+    if (!uploadTicket || !file) throw new ConvexError("Skill upload ticket mismatch");
     const ticket = await ctx.db.get(uploadTicket);
     if (
       !ticket ||
@@ -151,7 +151,7 @@ export async function consumeSkillPublishUploads(
       ticket.sha256 !== file.sha256.toLowerCase() ||
       ticket.contentType !== normalizeContentType(file.contentType)
     ) {
-      throw new Error("Skill upload ticket does not match this publish");
+      throw new ConvexError("Skill upload ticket does not match this publish");
     }
     await ctx.db.patch(ticket._id, { usedAt: now });
   }

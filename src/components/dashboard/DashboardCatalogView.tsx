@@ -1,8 +1,10 @@
 import { Download, EyeOff } from "lucide-react";
+import { Bot } from "lucide-react";
 import type { ReactNode } from "react";
 import { formatCompactStat } from "../../lib/numberFormat";
 import { buildPluginDetailHref } from "../../lib/pluginRoutes";
 import { presentationTitle } from "../../lib/presentationTitle";
+import { buildTemplateDetailHref } from "../../lib/templateRoutes";
 import { timeAgo } from "../../lib/timeAgo";
 import { truncateText } from "../../lib/truncateText";
 import {
@@ -130,8 +132,12 @@ function PluginListRow({
 }) {
   return (
     <CatalogRow
-      href={buildPluginDetailHref(pkg.name, { ownerHandle })}
-      kindLabel="Plugin"
+      href={
+        pkg.family === "template"
+          ? buildTemplateDetailHref(pkg.name, ownerHandle)!
+          : buildPluginDetailHref(pkg.name, { ownerHandle })
+      }
+      kindLabel={pkg.family === "template" ? "Template" : "Plugin"}
       title={presentationTitle(pkg.displayName, pkg.name)}
       version={pkg.latestVersion ?? pkg.latestRelease?.version}
       secondary={packageRowSecondary(pkg.updatedAt)}
@@ -277,19 +283,31 @@ function SkillGridCard({ skill, ownerHandle }: { skill: DashboardSkill; ownerHan
 function PluginGridCard({ pkg, ownerHandle }: { pkg: DashboardPackage; ownerHandle: string }) {
   return (
     <DashboardCatalogGridCard
-      href={buildPluginDetailHref(pkg.name, { ownerHandle })}
+      href={
+        pkg.family === "template"
+          ? buildTemplateDetailHref(pkg.name, ownerHandle)!
+          : buildPluginDetailHref(pkg.name, { ownerHandle })
+      }
       title={presentationTitle(pkg.displayName, pkg.name)}
       summary={pkg.summary}
-      summaryFallback="Gateway plugin for OpenClaw workflows."
-      icon={
-        <MarketplaceIcon
-          kind="plugin"
-          label={presentationTitle(pkg.displayName, pkg.name)}
-          imageUrl={pkg.icon}
-          size="sm"
-        />
+      summaryFallback={
+        pkg.family === "template"
+          ? "An agent template for OpenClaw."
+          : "Gateway plugin for OpenClaw workflows."
       }
-      kindLabel="Plugin"
+      icon={
+        pkg.family === "template" ? (
+          <Bot size={20} aria-hidden="true" />
+        ) : (
+          <MarketplaceIcon
+            kind="plugin"
+            label={presentationTitle(pkg.displayName, pkg.name)}
+            imageUrl={pkg.icon}
+            size="sm"
+          />
+        )
+      }
+      kindLabel={pkg.family === "template" ? "Template" : "Plugin"}
       status={packageArtifactStatus(pkg)}
       downloads={pkg.stats.downloads ?? 0}
       updatedAt={pkg.updatedAt}
@@ -314,7 +332,7 @@ function DashboardCatalogGridCard({
   summary?: string | null;
   summaryFallback: string;
   icon: ReactNode;
-  kindLabel: "Skill" | "Plugin";
+  kindLabel: "Skill" | "Plugin" | "Template";
   status: ArtifactDisplayStatus;
   downloads: number;
   downloadTitle?: string;

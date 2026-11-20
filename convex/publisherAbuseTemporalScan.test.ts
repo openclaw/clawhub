@@ -1,5 +1,6 @@
 /* @vitest-environment node */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { chainEq } from "../src/__tests__/helpers/convexQuery";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx } from "./_generated/server";
 import { assertModerator, requireUser, requireUserFromAction } from "./lib/access";
@@ -193,12 +194,7 @@ describe("scheduled temporal publisher abuse scan", () => {
     const actorUserId = "users:moderator" as Id<"users">;
     const runId = "publisherAbuseScoreRuns:manual-signals" as Id<"publisherAbuseScoreRuns">;
     const constraints: Record<string, unknown> = {};
-    const q = {
-      eq(field: string, value: unknown) {
-        constraints[field] = value;
-        return q;
-      },
-    };
+    const q = chainEq(constraints);
     const insert = vi.fn(async () => runId);
     let queryCount = 0;
     const ctx = {

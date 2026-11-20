@@ -2,6 +2,7 @@
 
 import * as fsPromises from "node:fs/promises";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { makeApiSkill } from "../../../test/apiFixtures.js";
 import {
   createAuthTokenModuleMocks,
   createHttpModuleMocks,
@@ -1064,15 +1065,7 @@ describe("cmdUpdate", () => {
 
   it("uses stored owner handle when updating an owner-qualified install", async () => {
     mockApiRequest.mockResolvedValue({
-      skill: {
-        slug: "demo",
-        displayName: "Demo",
-        summary: null,
-        tags: {},
-        stats: {},
-        createdAt: 0,
-        updatedAt: 0,
-      },
+      skill: makeApiSkill(),
       latestVersion: { version: "2.0.0" },
       owner: { handle: "openclaw" },
       moderation: null,
@@ -1114,15 +1107,7 @@ describe("cmdUpdate", () => {
 
   it("updates owner-qualified lock entries in their owner-scoped directory", async () => {
     mockApiRequest.mockResolvedValue({
-      skill: {
-        slug: "demo",
-        displayName: "Demo",
-        summary: null,
-        tags: {},
-        stats: {},
-        createdAt: 0,
-        updatedAt: 0,
-      },
+      skill: makeApiSkill(),
       latestVersion: { version: "2.0.0" },
       owner: { handle: "alice" },
       moderation: null,
@@ -1563,15 +1548,7 @@ describe("cmdUpdate", () => {
 
   it("writes identical installedAt to origin and lockfile on update", async () => {
     mockApiRequest.mockResolvedValue({
-      skill: {
-        slug: "demo",
-        displayName: "Demo",
-        summary: null,
-        tags: {},
-        stats: {},
-        createdAt: 0,
-        updatedAt: 0,
-      },
+      skill: makeApiSkill(),
       latestVersion: { version: "2.0.0" },
       owner: null,
       moderation: null,
@@ -2269,15 +2246,7 @@ describe("cmdInstall", () => {
     mockApiRequest.mockImplementation(async (_registry, args) => {
       if (args.path === LegacyApiRoutes.cliTelemetryInstall) return { ok: true };
       return {
-        skill: {
-          slug: "demo",
-          displayName: "Demo",
-          summary: null,
-          tags: {},
-          stats: {},
-          createdAt: 0,
-          updatedAt: 0,
-        },
+        skill: makeApiSkill(),
         latestVersion: { version: "1.0.0" },
         owner: null,
         moderation: null,
@@ -2318,15 +2287,7 @@ describe("cmdInstall", () => {
     mockApiRequest.mockImplementation(async (_registry, args) => {
       if (args.path === LegacyApiRoutes.cliTelemetryInstall) throw new Error("telemetry down");
       return {
-        skill: {
-          slug: "demo",
-          displayName: "Demo",
-          summary: null,
-          tags: {},
-          stats: {},
-          createdAt: 0,
-          updatedAt: 0,
-        },
+        skill: makeApiSkill(),
         latestVersion: { version: "1.0.0" },
         owner: null,
         moderation: null,
@@ -2349,15 +2310,10 @@ describe("cmdInstall", () => {
     mockGetOptionalAuthToken.mockResolvedValue("tkn");
     mockApiRequest
       .mockResolvedValueOnce({
-        skill: {
+        skill: makeApiSkill({
           slug: "aiq-deploy",
           displayName: "AIQ Deploy",
-          summary: null,
-          tags: {},
-          stats: {},
-          createdAt: 0,
-          updatedAt: 0,
-        },
+        }),
         latestVersion: null,
         owner: null,
         moderation: null,
@@ -2428,15 +2384,10 @@ describe("cmdInstall", () => {
     mockGetOptionalAuthToken.mockResolvedValue("tkn");
     mockApiRequest
       .mockResolvedValueOnce({
-        skill: {
+        skill: makeApiSkill({
           slug: "aiq-deploy",
           displayName: "AIQ Deploy",
-          summary: null,
-          tags: {},
-          stats: {},
-          createdAt: 0,
-          updatedAt: 0,
-        },
+        }),
         latestVersion: null,
         owner: null,
         moderation: null,
@@ -2472,15 +2423,7 @@ describe("cmdInstall", () => {
   it("installs owner-qualified skill refs using owner-scoped API requests", async () => {
     mockGetOptionalAuthToken.mockResolvedValue("tkn");
     mockApiRequest.mockResolvedValue({
-      skill: {
-        slug: "demo",
-        displayName: "Demo",
-        summary: null,
-        tags: {},
-        stats: {},
-        createdAt: 0,
-        updatedAt: 0,
-      },
+      skill: makeApiSkill(),
       latestVersion: { version: "1.0.0" },
       owner: { handle: "openclaw" },
       moderation: null,
@@ -2550,15 +2493,7 @@ describe("cmdInstall", () => {
     mockApiRequest.mockImplementation(async (_registry, args) => {
       const ownerHandle = args.url ? new URL(args.url).searchParams.get("ownerHandle") : null;
       return {
-        skill: {
-          slug: "demo",
-          displayName: "Demo",
-          summary: null,
-          tags: {},
-          stats: {},
-          createdAt: 0,
-          updatedAt: 0,
-        },
+        skill: makeApiSkill(),
         latestVersion: { version: ownerHandle === "alice" ? "1.0.0" : "2.0.0" },
         owner: { handle: ownerHandle },
         moderation: null,
@@ -2593,15 +2528,7 @@ describe("cmdInstall", () => {
   it("keeps the requested owner namespace when installing through an owner alias", async () => {
     mockGetOptionalAuthToken.mockResolvedValue("tkn");
     mockApiRequest.mockResolvedValue({
-      skill: {
-        slug: "demo",
-        displayName: "Demo",
-        summary: null,
-        tags: {},
-        stats: {},
-        createdAt: 0,
-        updatedAt: 0,
-      },
+      skill: makeApiSkill(),
       latestVersion: { version: "1.0.0" },
       owner: { handle: "target" },
       moderation: null,
@@ -2647,15 +2574,7 @@ describe("cmdInstall", () => {
   it("uses the resolved slug when an unqualified alias resolves to an owner-scoped skill", async () => {
     mockGetOptionalAuthToken.mockResolvedValue("tkn");
     mockApiRequest.mockResolvedValue({
-      skill: {
-        slug: "demo",
-        displayName: "Demo",
-        summary: null,
-        tags: {},
-        stats: {},
-        createdAt: 0,
-        updatedAt: 0,
-      },
+      skill: makeApiSkill(),
       latestVersion: { version: "1.0.0" },
       owner: { handle: "target" },
       moderation: null,
@@ -2701,15 +2620,7 @@ describe("cmdInstall", () => {
   it("does not rm local directory when skill is malware-blocked (--force)", async () => {
     vi.mocked(stat).mockResolvedValue({} as unknown as Awaited<ReturnType<typeof stat>>); // target exists
     mockApiRequest.mockResolvedValue({
-      skill: {
-        slug: "demo",
-        displayName: "Demo",
-        summary: null,
-        tags: {},
-        stats: {},
-        createdAt: 0,
-        updatedAt: 0,
-      },
+      skill: makeApiSkill(),
       latestVersion: { version: "1.0.0" },
       owner: null,
       moderation: { isMalwareBlocked: true, isSuspicious: false },
@@ -2732,15 +2643,7 @@ describe("cmdInstall", () => {
   it("keeps the installed directory when force reinstall download fails", async () => {
     vi.mocked(stat).mockResolvedValue({} as unknown as Awaited<ReturnType<typeof stat>>);
     mockApiRequest.mockResolvedValue({
-      skill: {
-        slug: "demo",
-        displayName: "Demo",
-        summary: null,
-        tags: {},
-        stats: {},
-        createdAt: 0,
-        updatedAt: 0,
-      },
+      skill: makeApiSkill(),
       latestVersion: { version: "1.0.0" },
       owner: null,
       moderation: null,
@@ -2769,15 +2672,7 @@ describe("cmdInstall", () => {
     vi.mocked(stat).mockResolvedValue({} as unknown as Awaited<ReturnType<typeof stat>>); // target exists
     mockApiRequest
       .mockResolvedValueOnce({
-        skill: {
-          slug: "demo",
-          displayName: "Demo",
-          summary: null,
-          tags: {},
-          stats: {},
-          createdAt: 0,
-          updatedAt: 0,
-        },
+        skill: makeApiSkill(),
         latestVersion: { version: "1.0.0" },
         owner: null,
         moderation: null,
@@ -2803,15 +2698,7 @@ describe("cmdInstall", () => {
     vi.mocked(stat).mockResolvedValue({} as unknown as Awaited<ReturnType<typeof stat>>); // target exists
     mockApiRequest
       .mockResolvedValueOnce({
-        skill: {
-          slug: "demo",
-          displayName: "Demo",
-          summary: null,
-          tags: {},
-          stats: {},
-          createdAt: 0,
-          updatedAt: 0,
-        },
+        skill: makeApiSkill(),
         latestVersion: { version: "1.0.0" },
         owner: null,
         moderation: null,
@@ -2854,15 +2741,7 @@ describe("cmdInstall", () => {
   it("stages replacement before swapping an existing install (--force)", async () => {
     vi.mocked(stat).mockResolvedValue({} as unknown as Awaited<ReturnType<typeof stat>>); // target exists
     mockApiRequest.mockResolvedValue({
-      skill: {
-        slug: "demo",
-        displayName: "Demo",
-        summary: null,
-        tags: {},
-        stats: {},
-        createdAt: 0,
-        updatedAt: 0,
-      },
+      skill: makeApiSkill(),
       latestVersion: { version: "1.0.0" },
       owner: null,
       moderation: null,
@@ -2899,15 +2778,7 @@ describe("cmdInstall", () => {
   it("keeps a finished --force swap when backup delete fails", async () => {
     vi.mocked(stat).mockResolvedValue({} as unknown as Awaited<ReturnType<typeof stat>>);
     mockApiRequest.mockResolvedValue({
-      skill: {
-        slug: "demo",
-        displayName: "Demo",
-        summary: null,
-        tags: {},
-        stats: {},
-        createdAt: 0,
-        updatedAt: 0,
-      },
+      skill: makeApiSkill(),
       latestVersion: { version: "1.0.0" },
       owner: null,
       moderation: null,
@@ -2939,15 +2810,7 @@ describe("cmdInstall", () => {
     mockApiRequest.mockImplementation(async (_registry, args) => {
       if (args.path === LegacyApiRoutes.cliTelemetryInstall) return { ok: true };
       return {
-        skill: {
-          slug: "demo",
-          displayName: "Demo",
-          summary: null,
-          tags: {},
-          stats: {},
-          createdAt: 0,
-          updatedAt: 0,
-        },
+        skill: makeApiSkill(),
         latestVersion: { version: "1.0.0" },
         owner: null,
         moderation: null,

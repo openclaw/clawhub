@@ -14,7 +14,6 @@ import {
   fetchSkillsShMirrorBatch,
   fetchSkillsShMirrorControlledBatch,
   fetchSkillsShCatalogPage,
-  fetchSkillsShCatalogTestPage,
   getSkillsShCatalogTestSourcePolicy,
   measureSkillsShMirrorProofSource,
   measureSkillsShTrendingSource,
@@ -23,18 +22,69 @@ import {
   skillsShSourceRetryAfterSeconds,
   SkillsShCatalogOwnerProofRequiredError,
   validateSkillsShCatalogGitHubOwnerProof,
+  type SkillsShCatalogListRow,
 } from "./skillsShCatalogSource";
 
-const proofMetadataRow = {
-  id: "owner/repo/skill",
-  installUrl: "https://github.com/owner/repo",
-  installs: 1,
-  name: "Skill",
-  slug: "skill",
-  source: "owner/repo",
-  sourceType: "github",
-  url: "https://www.skills.sh/owner/repo/skill",
-};
+function makeProofCatalogRow(
+  overrides: Partial<SkillsShCatalogListRow> = {},
+): SkillsShCatalogListRow {
+  return {
+    id: "owner/repo/skill",
+    installUrl: "https://github.com/owner/repo",
+    installs: 1,
+    name: "Skill",
+    slug: "skill",
+    source: "owner/repo",
+    sourceType: "github",
+    url: "https://www.skills.sh/owner/repo/skill",
+    ...overrides,
+  };
+}
+
+function makeLarkDocCatalogRow(
+  overrides: Partial<SkillsShCatalogListRow> = {},
+): SkillsShCatalogListRow {
+  return {
+    id: "larksuite/cli/lark-doc",
+    installUrl: null,
+    installs: 383_123,
+    name: "lark-doc",
+    slug: "lark-doc",
+    source: "larksuite/cli",
+    sourceType: "well-known",
+    url: "https://www.skills.sh/larksuite/cli/lark-doc",
+    ...overrides,
+  };
+}
+
+function makeFindSkillsCatalogRow(): SkillsShCatalogListRow {
+  return {
+    id: "vercel-labs/skills/find-skills",
+    installUrl: "https://github.com/vercel-labs/skills",
+    installs: 42,
+    name: "Find Skills",
+    slug: "find-skills",
+    source: "vercel-labs/skills",
+    sourceType: "github",
+    url: "https://skills.sh/vercel-labs/skills/find-skills",
+  };
+}
+
+const proofMetadataRow = makeProofCatalogRow();
+
+function larkDocCatalogPage() {
+  return {
+    data: [makeLarkDocCatalogRow()],
+    pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
+  };
+}
+
+function findSkillsCatalogPage() {
+  return {
+    data: [makeFindSkillsCatalogRow()],
+    pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
+  };
+}
 
 function proofMetadataFetch(metadataResponse: () => Response) {
   return vi.fn(async (input: string | URL | Request) => {
@@ -881,16 +931,7 @@ describe("skills.sh Vercel source boundary", () => {
   });
 
   it("rejects proof metadata redirects outside the exact skills.sh route", async () => {
-    const row = {
-      id: "owner/repo/skill",
-      installUrl: "https://github.com/owner/repo",
-      installs: 1,
-      name: "Skill",
-      slug: "skill",
-      source: "owner/repo",
-      sourceType: "github",
-      url: "https://www.skills.sh/owner/repo/skill",
-    };
+    const row = makeProofCatalogRow();
     const fetchImpl = vi.fn(async (input: string | URL | Request) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       if (url.includes("/api/v1/skills?page=0")) {
@@ -1149,16 +1190,11 @@ describe("skills.sh Vercel source boundary", () => {
   });
 
   it("uses an exact GitHub install identity when the source type marker drifts", () => {
-    const liveRow = {
-      id: "larksuite/cli/lark-doc",
+    const liveRow = makeLarkDocCatalogRow({
       installUrl: "https://github.com/larksuite/cli.git",
-      installs: 383_123,
-      name: "lark-doc",
-      slug: "lark-doc",
-      source: "larksuite/cli",
       sourceType: " GitHub-Repository ",
       url: "https://skills.sh/larksuite/cli/lark-doc",
-    };
+    });
     expect(buildSkillsShMirrorObservation(liveRow)).toMatchObject({
       externalId: "larksuite/cli/lark-doc",
       sourceType: "github",
@@ -1172,16 +1208,11 @@ describe("skills.sh Vercel source boundary", () => {
   });
 
   it("normalizes advisory source types to the persisted token grammar", () => {
-    const liveRow = {
-      id: "larksuite/cli/lark-doc",
+    const liveRow = makeLarkDocCatalogRow({
       installUrl: "https://github.com/larksuite/cli",
-      installs: 383_123,
-      name: "lark-doc",
-      slug: "lark-doc",
-      source: "larksuite/cli",
       sourceType: ".GitHub_Repository.",
       url: "https://skills.sh/larksuite/cli/lark-doc",
-    };
+    });
     expect(buildSkillsShMirrorObservation(liveRow)).toMatchObject({
       sourceType: "github",
       upstreamSourceType: "github_repository",
@@ -1193,16 +1224,7 @@ describe("skills.sh Vercel source boundary", () => {
   });
 
   it("uses only the labeled Repository section for an ambiguous GitHub-backed row", () => {
-    const liveRow = {
-      id: "larksuite/cli/lark-doc",
-      installUrl: null,
-      installs: 383_123,
-      name: "lark-doc",
-      slug: "lark-doc",
-      source: "larksuite/cli",
-      sourceType: "well-known",
-      url: "https://www.skills.sh/larksuite/cli/lark-doc",
-    };
+    const liveRow = makeLarkDocCatalogRow();
     const html = `
       <main>
         <article>
@@ -1243,16 +1265,11 @@ describe("skills.sh Vercel source boundary", () => {
   });
 
   it("rejects conflicting GitHub structural identity without exposing the install URL", () => {
-    const liveRow = {
-      id: "larksuite/cli/lark-doc",
+    const liveRow = makeLarkDocCatalogRow({
       installUrl: "https://github.com/larksuite/cli",
-      installs: 383_123,
-      name: "lark-doc",
-      slug: "lark-doc",
-      source: "larksuite/cli",
       sourceType: "repository",
       url: "https://skills.sh/larksuite/cli/lark-doc",
-    };
+    });
     const invalidRows = [
       { ...liveRow, installUrl: "https://github.com/larksuite/docs" },
       { ...liveRow, installUrl: "https://github.com/larksuite/cli/tree/main" },
@@ -1279,16 +1296,11 @@ describe("skills.sh Vercel source boundary", () => {
   });
 
   it("quarantines a non-string skills.sh id instead of throwing", () => {
-    const liveRow = {
-      id: "larksuite/cli/lark-doc",
+    const liveRow = makeLarkDocCatalogRow({
       installUrl: "https://github.com/larksuite/cli",
-      installs: 383_123,
-      name: "lark-doc",
-      slug: "lark-doc",
-      source: "larksuite/cli",
       sourceType: "repository",
       url: "https://skills.sh/larksuite/cli/lark-doc",
-    };
+    });
     const malformed = { ...liveRow, id: 12, source: { repo: "larksuite/cli" } };
     expect(() => buildSkillsShMirrorObservation(malformed as never)).toThrow(
       "Unsupported skills.sh mirror identity",
@@ -1303,16 +1315,7 @@ describe("skills.sh Vercel source boundary", () => {
   });
 
   it("keeps a legacy blank id hash distinct from the stored missing placeholder", () => {
-    const row = {
-      id: "owner/repo/skill",
-      installUrl: "https://github.com/owner/repo",
-      installs: 1,
-      name: "Skill",
-      slug: "skill",
-      source: "owner/repo",
-      sourceType: "github",
-      url: "https://skills.sh/owner/repo/skill",
-    };
+    const row = makeProofCatalogRow({ url: "https://skills.sh/owner/repo/skill" });
     const legacy = [{ ...row, id: "   " }, row];
     const empty = [{ ...row, id: "" }, row];
     const stored = [{ ...row, id: "missing:4:0" }, row];
@@ -1695,16 +1698,7 @@ describe("skills.sh Vercel source boundary", () => {
         return new Response(
           JSON.stringify({
             data: [
-              {
-                id: "vercel-labs/skills/find-skills",
-                installUrl: "https://github.com/vercel-labs/skills",
-                installs: 42,
-                name: "Find Skills",
-                slug: "find-skills",
-                source: "vercel-labs/skills",
-                sourceType: "github",
-                url: "https://skills.sh/vercel-labs/skills/find-skills",
-              },
+              makeFindSkillsCatalogRow(),
               {
                 id: "open.feishu.cn/lark-doc",
                 installUrl: null,
@@ -1788,16 +1782,7 @@ describe("skills.sh Vercel source boundary", () => {
   });
 
   it("accounts for exact downloaded list, detail, and audit JSON bytes", async () => {
-    const row = {
-      id: "owner/repo/skill",
-      installUrl: "https://github.com/owner/repo",
-      installs: 42,
-      name: "Skill",
-      slug: "skill",
-      source: "owner/repo",
-      sourceType: "github",
-      url: "https://www.skills.sh/owner/repo/skill",
-    };
+    const row = makeProofCatalogRow({ installs: 42 });
     const listJson = JSON.stringify(
       {
         data: [row],
@@ -1851,16 +1836,7 @@ describe("skills.sh Vercel source boundary", () => {
   });
 
   it("uses the durable captured page without refetching the mutable leaderboard", async () => {
-    const row = {
-      id: "vercel-labs/skills/find-skills",
-      installUrl: "https://github.com/vercel-labs/skills",
-      installs: 42,
-      name: "Find Skills",
-      slug: "find-skills",
-      source: "vercel-labs/skills",
-      sourceType: "github",
-      url: "https://skills.sh/vercel-labs/skills/find-skills",
-    };
+    const row = makeFindSkillsCatalogRow();
     const fetchImpl = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
       if (url.includes("?page=")) throw new Error("leaderboard refetch is forbidden");
@@ -1958,23 +1934,7 @@ describe("skills.sh Vercel source boundary", () => {
     const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
       const url = String(urlInput);
       if (url.includes("?page=0&per_page=500")) {
-        return new Response(
-          JSON.stringify({
-            data: [
-              {
-                id: "vercel-labs/skills/find-skills",
-                installUrl: "https://github.com/vercel-labs/skills",
-                installs: 42,
-                name: "Find Skills",
-                slug: "find-skills",
-                source: "vercel-labs/skills",
-                sourceType: "github",
-                url: "https://skills.sh/vercel-labs/skills/find-skills",
-              },
-            ],
-            pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
-          }),
-        );
+        return new Response(JSON.stringify(findSkillsCatalogPage()));
       }
       if (url.includes("/api/v1/skills/audit/")) {
         return new Response(JSON.stringify({ error: "not_found" }), { status: 404 });
@@ -2036,23 +1996,7 @@ describe("skills.sh Vercel source boundary", () => {
       const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
         const url = String(urlInput);
         if (url.includes("?page=0&per_page=500")) {
-          return new Response(
-            JSON.stringify({
-              data: [
-                {
-                  id: "larksuite/cli/lark-doc",
-                  installUrl: null,
-                  installs: 383_123,
-                  name: "lark-doc",
-                  slug: "lark-doc",
-                  source: "larksuite/cli",
-                  sourceType: "well-known",
-                  url: "https://www.skills.sh/larksuite/cli/lark-doc",
-                },
-              ],
-              pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
-            }),
-          );
+          return new Response(JSON.stringify(larkDocCatalogPage()));
         }
         if (url === "https://www.skills.sh/larksuite/cli/lark-doc") {
           identityPageAttempts += 1;
@@ -2118,23 +2062,7 @@ describe("skills.sh Vercel source boundary", () => {
     const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
       const url = String(urlInput);
       if (url.includes("?page=0&per_page=500")) {
-        return new Response(
-          JSON.stringify({
-            data: [
-              {
-                id: "larksuite/cli/lark-doc",
-                installUrl: null,
-                installs: 383_123,
-                name: "lark-doc",
-                slug: "lark-doc",
-                source: "larksuite/cli",
-                sourceType: "well-known",
-                url: "https://www.skills.sh/larksuite/cli/lark-doc",
-              },
-            ],
-            pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
-          }),
-        );
+        return new Response(JSON.stringify(larkDocCatalogPage()));
       }
       if (url === "https://www.skills.sh/larksuite/cli/lark-doc") {
         identityPageAttempts += 1;
@@ -2170,18 +2098,7 @@ describe("skills.sh Vercel source boundary", () => {
       if (url.includes("?page=0&per_page=500")) {
         return new Response(
           JSON.stringify({
-            data: [
-              {
-                id: "larksuite/cli/lark-doc",
-                installUrl: null,
-                installs: 383_123,
-                name: "lark-doc",
-                slug: "lark-doc",
-                source: "larksuite/cli",
-                sourceType: "well-known",
-                url: "https://skills.sh/larksuite/cli/lark-doc",
-              },
-            ],
+            data: [makeLarkDocCatalogRow({ url: "https://skills.sh/larksuite/cli/lark-doc" })],
             pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
           }),
         );
@@ -2232,28 +2149,7 @@ describe("skills.sh Vercel source boundary", () => {
       if (url.includes("?page=0&per_page=500")) {
         return new Response(
           JSON.stringify({
-            data: [
-              {
-                id: "larksuite/cli/lark-doc",
-                installUrl: null,
-                installs: 383_123,
-                name: "lark-doc",
-                slug: "lark-doc",
-                source: "larksuite/cli",
-                sourceType: "well-known",
-                url: "https://www.skills.sh/larksuite/cli/lark-doc",
-              },
-              {
-                id: "vercel-labs/skills/find-skills",
-                installUrl: "https://github.com/vercel-labs/skills",
-                installs: 42,
-                name: "Find Skills",
-                slug: "find-skills",
-                source: "vercel-labs/skills",
-                sourceType: "github",
-                url: "https://skills.sh/vercel-labs/skills/find-skills",
-              },
-            ],
+            data: [makeLarkDocCatalogRow(), makeFindSkillsCatalogRow()],
             pagination: { page: 0, perPage: 500, total: 2, hasMore: false },
           }),
         );
@@ -2329,16 +2225,7 @@ describe("skills.sh Vercel source boundary", () => {
                 sourceType: "github",
                 url: "https://skills.sh/owner/repo/removed-skill",
               },
-              {
-                id: "vercel-labs/skills/find-skills",
-                installUrl: "https://github.com/vercel-labs/skills",
-                installs: 42,
-                name: "Find Skills",
-                slug: "find-skills",
-                source: "vercel-labs/skills",
-                sourceType: "github",
-                url: "https://skills.sh/vercel-labs/skills/find-skills",
-              },
+              makeFindSkillsCatalogRow(),
             ],
             pagination: { page: 0, perPage: 500, total: 2, hasMore: false },
           }),
@@ -2395,23 +2282,7 @@ describe("skills.sh Vercel source boundary", () => {
     const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
       const url = String(urlInput);
       if (url.includes("?page=0&per_page=500")) {
-        return new Response(
-          JSON.stringify({
-            data: [
-              {
-                id: "larksuite/cli/lark-doc",
-                installUrl: null,
-                installs: 383_123,
-                name: "lark-doc",
-                slug: "lark-doc",
-                source: "larksuite/cli",
-                sourceType: "well-known",
-                url: "https://www.skills.sh/larksuite/cli/lark-doc",
-              },
-            ],
-            pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
-          }),
-        );
+        return new Response(JSON.stringify(larkDocCatalogPage()));
       }
       if (url === "https://www.skills.sh/larksuite/cli/lark-doc") {
         return new Response(
@@ -2459,23 +2330,7 @@ describe("skills.sh Vercel source boundary", () => {
     const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
       const url = String(urlInput);
       if (url.includes("?page=0&per_page=500")) {
-        return new Response(
-          JSON.stringify({
-            data: [
-              {
-                id: "larksuite/cli/lark-doc",
-                installUrl: null,
-                installs: 383_123,
-                name: "lark-doc",
-                slug: "lark-doc",
-                source: "larksuite/cli",
-                sourceType: "well-known",
-                url: "https://www.skills.sh/larksuite/cli/lark-doc",
-              },
-            ],
-            pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
-          }),
-        );
+        return new Response(JSON.stringify(larkDocCatalogPage()));
       }
       if (url === "https://www.skills.sh/larksuite/cli/lark-doc") {
         identityPageAttempts += 1;
@@ -2546,23 +2401,7 @@ describe("skills.sh Vercel source boundary", () => {
       const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
         const url = String(urlInput);
         if (url.includes("?page=0&per_page=500")) {
-          return new Response(
-            JSON.stringify({
-              data: [
-                {
-                  id: "larksuite/cli/lark-doc",
-                  installUrl: null,
-                  installs: 383_123,
-                  name: "lark-doc",
-                  slug: "lark-doc",
-                  source: "larksuite/cli",
-                  sourceType: "well-known",
-                  url: "https://www.skills.sh/larksuite/cli/lark-doc",
-                },
-              ],
-              pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
-            }),
-          );
+          return new Response(JSON.stringify(larkDocCatalogPage()));
         }
         if (url === "https://www.skills.sh/larksuite/cli/lark-doc") {
           identityPageAttempts += 1;
@@ -2600,23 +2439,7 @@ describe("skills.sh Vercel source boundary", () => {
     const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
       const url = String(urlInput);
       if (url.includes("?page=0&per_page=500")) {
-        return new Response(
-          JSON.stringify({
-            data: [
-              {
-                id: "larksuite/cli/lark-doc",
-                installUrl: null,
-                installs: 383_123,
-                name: "lark-doc",
-                slug: "lark-doc",
-                source: "larksuite/cli",
-                sourceType: "well-known",
-                url: "https://www.skills.sh/larksuite/cli/lark-doc",
-              },
-            ],
-            pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
-          }),
-        );
+        return new Response(JSON.stringify(larkDocCatalogPage()));
       }
       if (url === "https://www.skills.sh/larksuite/cli/lark-doc") {
         return new Response(
@@ -2664,16 +2487,7 @@ describe("skills.sh Vercel source boundary", () => {
                 sourceType: "github",
                 url: "https://skills.sh/owner/repo/nested/skill",
               },
-              {
-                id: "vercel-labs/skills/find-skills",
-                installUrl: "https://github.com/vercel-labs/skills",
-                installs: 42,
-                name: "Find Skills",
-                slug: "find-skills",
-                source: "vercel-labs/skills",
-                sourceType: "github",
-                url: "https://skills.sh/vercel-labs/skills/find-skills",
-              },
+              makeFindSkillsCatalogRow(),
             ],
             pagination: { page: 0, perPage: 500, total: 2, hasMore: false },
           }),
@@ -2774,23 +2588,7 @@ describe("skills.sh Vercel source boundary", () => {
     const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
       const url = String(urlInput);
       if (url.includes("?page=0&per_page=500")) {
-        return new Response(
-          JSON.stringify({
-            data: [
-              {
-                id: "vercel-labs/skills/find-skills",
-                installUrl: "https://github.com/vercel-labs/skills",
-                installs: 42,
-                name: "Find Skills",
-                slug: "find-skills",
-                source: "vercel-labs/skills",
-                sourceType: "github",
-                url: "https://skills.sh/vercel-labs/skills/find-skills",
-              },
-            ],
-            pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
-          }),
-        );
+        return new Response(JSON.stringify(findSkillsCatalogPage()));
       }
       if (url.includes("/api/v1/skills/audit/")) {
         return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 });
@@ -2824,23 +2622,7 @@ describe("skills.sh Vercel source boundary", () => {
     const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
       const url = String(urlInput);
       if (url.includes("?page=0&per_page=500")) {
-        return new Response(
-          JSON.stringify({
-            data: [
-              {
-                id: "vercel-labs/skills/find-skills",
-                installUrl: "https://github.com/vercel-labs/skills",
-                installs: 42,
-                name: "Find Skills",
-                slug: "find-skills",
-                source: "vercel-labs/skills",
-                sourceType: "github",
-                url: "https://skills.sh/vercel-labs/skills/find-skills",
-              },
-            ],
-            pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
-          }),
-        );
+        return new Response(JSON.stringify(findSkillsCatalogPage()));
       }
       if (url.includes("/api/v1/skills/audit/")) {
         auditAttempts += 1;
@@ -2891,23 +2673,7 @@ describe("skills.sh Vercel source boundary", () => {
       requestTimes.push(Date.now());
       const url = String(urlInput);
       if (url.includes("?page=0&per_page=500")) {
-        return new Response(
-          JSON.stringify({
-            data: [
-              {
-                id: "vercel-labs/skills/find-skills",
-                installUrl: "https://github.com/vercel-labs/skills",
-                installs: 42,
-                name: "Find Skills",
-                slug: "find-skills",
-                source: "vercel-labs/skills",
-                sourceType: "github",
-                url: "https://skills.sh/vercel-labs/skills/find-skills",
-              },
-            ],
-            pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
-          }),
-        );
+        return new Response(JSON.stringify(findSkillsCatalogPage()));
       }
       if (url.includes("/api/v1/skills/audit/")) {
         return new Response(JSON.stringify({ audits: [] }));
@@ -3319,8 +3085,8 @@ describe("skills.sh Vercel source boundary", () => {
         }),
       );
     });
-    const readOidc = async () => "oidc";
-    const verifyOidc = async () => ({
+    const readOidc = vi.fn(async () => "oidc");
+    const verifyOidc = vi.fn(async () => ({
       payload: {
         owner_id: "team_pLdjXbfy0XvPRiNmAygTjTSH",
         project_id: "prj_UVAJPNPYrBwTEkPJwkpEySsge8Mc",
@@ -3329,7 +3095,7 @@ describe("skills.sh Vercel source boundary", () => {
         aud: "https://vercel.com",
         iss: "https://oidc.vercel.com",
       },
-    });
+    }));
     const options = {
       env: {
         CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "test",
@@ -3425,11 +3191,37 @@ describe("skills.sh Vercel source boundary", () => {
       skippedIncompleteDetails: 1,
     });
     expect(detailUrls).toHaveLength(504);
+    expect(readOidc).toHaveBeenCalledTimes(4);
+    expect(verifyOidc).toHaveBeenCalledWith("oidc", {
+      projectId: "prj_UVAJPNPYrBwTEkPJwkpEySsge8Mc",
+      ownerId: "team_pLdjXbfy0XvPRiNmAygTjTSH",
+      environment: "test",
+    });
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://skills.sh/api/v1/skills?page=0&per_page=500",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer oidc" }),
+      }),
+    );
+
+    const sourceFetches = fetchImpl.mock.calls.length;
+    await expect(
+      captureSkillsShCatalogTestSnapshot({
+        ...options,
+        readConvexControl: async () => ({
+          ...(await options.readConvexControl()),
+          mode: "fixture",
+        }),
+      }),
+    ).rejects.toThrow("exact dark 500-row control");
+    expect(fetchImpl).toHaveBeenCalledTimes(sourceFetches);
   });
 
   it("rejects an ordinary Preview even when spoofable Test strings are present", async () => {
+    const fetchImpl = vi.fn(async () => new Response("unexpected source fetch", { status: 400 }));
     await expect(
-      fetchSkillsShCatalogTestPage({
+      captureSkillsShCatalogTestSnapshot({
+        fetchImpl,
         env: {
           CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "test",
           VERCEL_ENV: "preview",
@@ -3452,11 +3244,14 @@ describe("skills.sh Vercel source boundary", () => {
         }),
       }),
     ).rejects.toThrow("unexpected Vercel project");
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it("rejects a verified ClawHub Preview token without the custom Test environment claim", async () => {
+    const fetchImpl = vi.fn(async () => new Response("unexpected source fetch", { status: 400 }));
     await expect(
-      fetchSkillsShCatalogTestPage({
+      captureSkillsShCatalogTestSnapshot({
+        fetchImpl,
         env: {
           CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "test",
           VERCEL_ENV: "preview",
@@ -3486,103 +3281,6 @@ describe("skills.sh Vercel source boundary", () => {
         }),
       }),
     ).rejects.toThrow("verified ClawHub Vercel identity");
-  });
-
-  it("fetches through the verified request token only when the dark Convex control allows it", async () => {
-    const rows = Array.from({ length: 500 }, (_, index) => ({
-      id: `owner/repo/skill-${index}`,
-      installUrl: null,
-      installs: index,
-      name: `Skill ${index}`,
-      slug: `skill-${index}`,
-      source: "owner/repo",
-      sourceType: "github",
-      url: `https://skills.sh/owner/repo/skill-${index}`,
-    }));
-    const fetchImpl = vi.fn(async () => {
-      return new Response(
-        JSON.stringify({
-          data: rows,
-          pagination: {
-            page: 0,
-            perPage: 500,
-            total: 500,
-            hasMore: false,
-          },
-        }),
-      );
-    });
-    const env = {
-      CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "test",
-      VERCEL_ENV: "preview",
-      VERCEL_TARGET_ENV: "test",
-      VITE_CLAWHUB_DEPLOY_ENV: "test",
-      VITE_CONVEX_URL: "https://academic-chihuahua-392.convex.cloud",
-      CLAWHUB_SKILLS_SH_TEST_LIVE_FETCH_ENABLED: "1",
-    };
-    const getOidcToken = vi.fn(async () => "request-token");
-    const verifyOidcToken = vi.fn(async () => ({
-      payload: {
-        owner_id: "team_pLdjXbfy0XvPRiNmAygTjTSH",
-        project_id: "prj_UVAJPNPYrBwTEkPJwkpEySsge8Mc",
-        environment: "test",
-        sub: "owner:project:test",
-        aud: "https://vercel.com",
-        iss: "https://oidc.vercel.com",
-      },
-    }));
-
-    const result = await fetchSkillsShCatalogTestPage({
-      env,
-      fetchImpl,
-      getOidcToken,
-      verifyOidcToken,
-      readConvexControl: async () => ({
-        mode: "staging-live",
-        discoveryEnabled: true,
-        writesEnabled: true,
-        scanPlanningEnabled: true,
-        maxEntriesPerRun: 500,
-        publicVisibilityEnabled: false,
-      }),
-    });
-
-    expect(result.page.data).toHaveLength(500);
-    expect(getOidcToken).toHaveBeenCalledOnce();
-    expect(verifyOidcToken).toHaveBeenCalledWith("request-token", {
-      projectId: "prj_UVAJPNPYrBwTEkPJwkpEySsge8Mc",
-      ownerId: "team_pLdjXbfy0XvPRiNmAygTjTSH",
-      environment: "test",
-    });
-    expect(result.controls).toEqual({
-      maxDiscoveryRows: 500,
-      maxRealScanAdmissions: 10,
-      publicVisibilityEnabled: false,
-    });
-    expect(fetchImpl).toHaveBeenCalledWith(
-      "https://skills.sh/api/v1/skills?page=0&per_page=500",
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          Authorization: "Bearer request-token",
-        }),
-      }),
-    );
-
-    await expect(
-      fetchSkillsShCatalogTestPage({
-        env,
-        fetchImpl,
-        getOidcToken: async () => "request-token",
-        verifyOidcToken,
-        readConvexControl: async () => ({
-          mode: "fixture",
-          discoveryEnabled: true,
-          writesEnabled: true,
-          scanPlanningEnabled: true,
-          maxEntriesPerRun: 500,
-          publicVisibilityEnabled: false,
-        }),
-      }),
-    ).rejects.toThrow("dark Convex staging control");
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });

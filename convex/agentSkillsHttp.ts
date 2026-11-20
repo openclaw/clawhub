@@ -10,6 +10,7 @@ import {
 } from "./lib/agentSkillsDiscovery";
 import { fetchGitHubZipBytes, stripGitHubZipRoot } from "./lib/githubImport";
 import { computeGitHubSkillFolderContentHash } from "./lib/githubSkillSync";
+import { sha256Hex } from "./lib/hash";
 import {
   buildSkillInstallResolution,
   type InstallResolverSkill,
@@ -385,13 +386,6 @@ function parseArchivePin(request: Request): ArchivePin | null {
     return { kind: "github", commit, contentHash };
   }
   return null;
-}
-
-async function sha256Hex(bytes: Uint8Array) {
-  const digest = await crypto.subtle.digest("SHA-256", new Uint8Array(bytes));
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
 }
 
 function text(message: string, status: number) {

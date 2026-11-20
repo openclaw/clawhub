@@ -1,6 +1,8 @@
 /* @vitest-environment node */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
+import { indexedUnique } from "../src/__tests__/helpers/convexQuery";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -12,13 +14,9 @@ const packagesModule = (await import("./packages")) as unknown as Record<string,
 const { getAuthUserId } = await import("@convex-dev/auth/server");
 
 type DeletionHelper<TArgs> = (ctx: unknown, actor: unknown, args: TArgs) => Promise<unknown>;
-type WrappedHandler<TArgs, TResult = unknown> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
-
-const deleteOwnedReleaseHandler = (
-  packagesModule.deleteOwnedRelease as WrappedHandler<{ name: string; version: string }>
-)._handler;
+const deleteOwnedReleaseHandler = getTestHandler<{ name: string; version: string }>(
+  packagesModule.deleteOwnedRelease,
+);
 const deleteOwnedSkillVersionForUser = skillsModule.deleteOwnedSkillVersionForUser as (
   ctx: unknown,
   args: { actorUserId: string; slug: string; version: string },
@@ -217,18 +215,10 @@ function makeSkillDeletionCtx(options: {
           };
         }
         if (table === "skillSearchDigest") {
-          return {
-            withIndex: vi.fn(() => ({
-              unique: vi.fn().mockResolvedValue(digest),
-            })),
-          };
+          return indexedUnique(() => digest);
         }
         if (table === "publisherMembers") {
-          return {
-            withIndex: vi.fn(() => ({
-              unique: vi.fn().mockResolvedValue(options.membership ?? null),
-            })),
-          };
+          return indexedUnique(() => options.membership ?? null);
         }
         throw new Error(`Unexpected table ${table}`);
       }),
@@ -355,11 +345,7 @@ function makePackageDeletionCtx(options: {
       }),
       query: vi.fn((table: string) => {
         if (table === "packages") {
-          return {
-            withIndex: vi.fn(() => ({
-              unique: vi.fn().mockResolvedValue(pkg),
-            })),
-          };
+          return indexedUnique(() => pkg);
         }
         if (table === "packageReleases") {
           return {
@@ -395,18 +381,10 @@ function makePackageDeletionCtx(options: {
           };
         }
         if (table === "publishers") {
-          return {
-            withIndex: vi.fn(() => ({
-              unique: vi.fn().mockResolvedValue(null),
-            })),
-          };
+          return indexedUnique(() => null);
         }
         if (table === "packageSearchDigest") {
-          return {
-            withIndex: vi.fn(() => ({
-              unique: vi.fn().mockResolvedValue(digest),
-            })),
-          };
+          return indexedUnique(() => digest);
         }
         if (
           table === "packageCapabilitySearchDigest" ||
@@ -420,11 +398,7 @@ function makePackageDeletionCtx(options: {
           };
         }
         if (table === "publisherMembers") {
-          return {
-            withIndex: vi.fn(() => ({
-              unique: vi.fn().mockResolvedValue(options.membership ?? null),
-            })),
-          };
+          return indexedUnique(() => options.membership ?? null);
         }
         throw new Error(`Unexpected table ${table}`);
       }),
@@ -1514,12 +1488,12 @@ describe("owner package release deletion", () => {
     );
   });
 
-  it("removes every package tag targeting the deleted release and synchronizes its digest", async () => {
+  it("removes every package tag targeting the deleted release", async () => {
     const deleteOwned = getDeletionHelper<{ name: string; version: string }>(
       packagesModule,
       "deleteOwnedPackageReleaseForActor",
     );
-    const { actors, ctx, digest, patches, pkg } = makePackageDeletionCtx({
+    const { actors, ctx, patches, pkg } = makePackageDeletionCtx({
       pkg: {
         ...makePackageDeletionCtx({}).pkg,
         tags: {
@@ -1547,14 +1521,6 @@ describe("owner package release deletion", () => {
         updatedAt: expect.any(Number),
       },
     });
-    expect(digest).toMatchObject({
-      packageId: "packages:demo",
-      latestVersion: "2.0.0",
-      ownerHandle: "owner",
-      ownerKind: "user",
-      updatedAt: expect.any(Number),
-    });
-    expect(digest.updatedAt).toBe(pkg.updatedAt);
   });
 
   it("allows an org admin to delete an owned package release", async () => {

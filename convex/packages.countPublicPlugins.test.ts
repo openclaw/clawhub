@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -7,16 +8,12 @@ vi.mock("@convex-dev/auth/server", () => ({
 
 import { countPublicPlugins, countPublicPluginsInternal } from "./packages";
 
-type WrappedHandler<TArgs, TResult> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
-
-const countPublicPluginsHandler = (
-  countPublicPluginsInternal as unknown as WrappedHandler<Record<string, never>, number | null>
-)._handler;
-const countPublicPluginsPublicHandler = (
-  countPublicPlugins as unknown as WrappedHandler<Record<string, never>, number>
-)._handler;
+const countPublicPluginsHandler = getTestHandler<Record<string, never>, number | null>(
+  countPublicPluginsInternal,
+);
+const countPublicPluginsPublicHandler = getTestHandler<Record<string, never>, number>(
+  countPublicPlugins,
+);
 
 function makeCtx(globalStats: { activePluginsCount?: number } | null) {
   return {

@@ -2,7 +2,11 @@
 import { getFunctionName } from "convex/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { sha256Hex } from "./clawpack";
-import { bundledPluginIconSourceUrl, resolvePackageIcon } from "./packageIcons";
+import {
+  bundledPluginIconSourceUrl,
+  resolvePackageIcon,
+  resolveTemplatePackageIcon,
+} from "./packageIcons";
 
 const png = new Uint8Array(
   Buffer.from(
@@ -49,6 +53,35 @@ describe("package icons", () => {
       }),
     ).toBe(`/api/v1/skill-icons/${await sha256Hex(png)}`);
     expect(ctx.storage.store.mock.calls[0]?.[0]).toHaveProperty("type", "image/png");
+  });
+  it("checks a Template's fixed PNG first and does not fetch or write in a dry run", async () => {
+    const fetcher = vi.fn();
+    vi.stubGlobal("fetch", fetcher);
+    const ctx = context();
+    const icon = await resolveTemplatePackageIcon(ctx as never, {
+      files: [await file()],
+      manifest: {
+        schemaVersion: 1,
+        agent: { id: "example", identity: { avatar: "avatars/unused.svg" } },
+      },
+      dryRun: true,
+    });
+    expect(icon).toBe(`/api/v1/skill-icons/${await sha256Hex(png)}`);
+    expect(ctx.storage.get).toHaveBeenCalledTimes(1);
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(ctx.storage.store).not.toHaveBeenCalled();
+  });
+  it("leaves unreadable or changed Template artwork generic when there is no avatar", async () => {
+    const ctx = context();
+    const fixed = await file();
+    const missing = { ...ctx, storage: { ...ctx.storage, get: vi.fn(async () => null) } };
+    for (const [reader, entry] of [
+      [missing, fixed],
+      [ctx, { ...fixed, sha256: "0".repeat(64) }],
+    ] as const) {
+      expect(await resolveTemplatePackageIcon(reader as never, { files: [entry] })).toBeUndefined();
+    }
+    expect(ctx.storage.store).not.toHaveBeenCalled();
   });
   it("recovers an omitted official asset from the immutable source without writes during dry run", async () => {
     const fetcher = vi.fn(async () => new Response(png));

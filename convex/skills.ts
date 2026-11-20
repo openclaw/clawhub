@@ -1,18 +1,16 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
+import type { ApiV1SkillPublicationResponse, SkillCategorySlug } from "clawhub-schema";
 import {
-  decodeUtf8Text,
   getCatalogTopicSlugs,
-  INTERNAL_UNCATEGORIZED_CATEGORY,
   isSkillCategorySlug,
   normalizeCatalogTopic,
   normalizeCatalogTopics,
   resolveSkillCategories,
   resolveStoredSkillCategories,
-  type ApiV1SkillPublicationResponse,
-  type SkillCategorySlug,
-} from "clawhub-schema";
+} from "clawhub-schema/catalogMetadata";
+import { decodeUtf8Text } from "clawhub-schema/textFiles";
 import { getPage, type IndexKey, paginator } from "convex-helpers/server/pagination";
-import { paginationOptsValidator } from "convex/server";
+import { paginationOptsValidator, type PaginationResult } from "convex/server";
 import { ConvexError, v } from "convex/values";
 import semver from "semver";
 import { internal } from "./_generated/api";
@@ -44,6 +42,10 @@ import {
 } from "./lib/artifactModeration";
 import { getSkillBadgeMap, getSkillBadgeMaps, isSkillHighlighted } from "./lib/badges";
 import { scheduleNextBatchIfNeeded } from "./lib/batching";
+import {
+  type CatalogTextMatch as SkillCatalogSearchMatch,
+  matchCatalogText,
+} from "./lib/catalogTextMatch";
 import { generateChangelogPreview as buildChangelogPreview } from "./lib/changelog";
 import {
   ACTIVITY_TREND_DAYS,
@@ -133,7 +135,7 @@ import {
   rankedSearchKey,
   type SearchTrustSignals,
 } from "./lib/searchRanking";
-import { matchesAllTokens, matchesExploratoryTokenPrefixes, tokenize } from "./lib/searchText";
+import { tokenize } from "./lib/searchText";
 import {
   aigAnalysisValidator,
   skillSpectorAnalysisValidator,
@@ -155,7 +157,6 @@ import {
   type PublicSkillVersionParsed,
 } from "./lib/skillPageRead";
 import { isHostedSkillPresentationIconPath } from "./lib/skillPresentation";
-import { skillPresentationValidator } from "./lib/skillPresentationValidator";
 import {
   readSkillPublicationProgress,
   readSkillVersionPublicationProgress,
@@ -169,7 +170,8 @@ import {
   qualityAssessmentValidator,
   type StoredQualityAssessment,
 } from "./lib/skillQualityContract";
-import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
+import { hashSkillFiles } from "./lib/skills/fileHash";
+import { getFrontmatterValue } from "./lib/skills/frontmatterValue";
 import { getPublicSkillMetadataOwner } from "./lib/skills/publicVersions";
 import {
   getSkillBySlugForPublisher,
@@ -202,7 +204,11 @@ import {
 import { normalizeSkillTags } from "./lib/skillTags";
 import { fetchText } from "./lib/storageText";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
-import schema from "./schema";
+import schema, {
+  llmAnalysisValidator,
+  skillParsedMetadataValidator,
+  skillSourceProvenanceValidator,
+} from "./schema";
 import { consumeSkillPublishUploads } from "./skillPublishUploads";
 
 const MAX_OWNER_SUMMARY_LENGTH = 500;
@@ -223,7 +229,6 @@ type FilePreviewResult = {
   size: number;
   sha256: string;
 };
-const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
 
 const MAX_DIFF_FILE_BYTES = 200 * 1024;
 const MAX_LIST_LIMIT = 50;
@@ -1082,6 +1087,15 @@ function buildReleasedUnpublishedSkillSlug(skill: Pick<Doc<"skills">, "_id">, at
   // the public slug validator, so released hidden rows cannot squat on public
   // slug space after their unpublished reservation expires.
   return `__unpublished_${idPart || "skill"}${suffix}`;
+}
+
+function availableSlugResult() {
+  return {
+    available: true,
+    reason: "available" as const,
+    message: null,
+    url: null,
+  };
 }
 
 function slugValidationAvailabilityFailure(error: unknown) {
@@ -2346,12 +2360,7 @@ export const checkSlugAvailability = query({
       } catch (error) {
         return slugValidationAvailabilityFailure(error);
       }
-      return {
-        available: true,
-        reason: "available" as const,
-        message: null,
-        url: null,
-      };
+      return availableSlugResult();
     }
 
     const unpublishedReservationExpiresAt = await getUnpublishedSlugReservationExpiresAt(
@@ -2372,12 +2381,7 @@ export const checkSlugAvailability = query({
         } catch (error) {
           return slugValidationAvailabilityFailure(error);
         }
-        return {
-          available: true,
-          reason: "available" as const,
-          message: null,
-          url: null,
-        };
+        return availableSlugResult();
       }
       return {
         available: false,
@@ -2392,22 +2396,12 @@ export const checkSlugAvailability = query({
       : requestedPublisher.kind === "user" && requestedPublisher.linkedUserId === skill.ownerUserId;
 
     if (userId && skill.ownerUserId === userId && requestedPublisherMatchesSkill) {
-      return {
-        available: true,
-        reason: "available" as const,
-        message: null,
-        url: null,
-      };
+      return availableSlugResult();
     }
     if (userId && skill.ownerPublisherId && requestedPublisherMatchesSkill) {
       const membership = await getPublisherMembership(ctx, skill.ownerPublisherId, userId);
       if (membership && isPublisherRoleAllowed(membership.role, ["publisher"])) {
-        return {
-          available: true,
-          reason: "available" as const,
-          message: null,
-          url: null,
-        };
+        return availableSlugResult();
       }
     }
 
@@ -2433,12 +2427,7 @@ export const checkSlugAvailability = query({
           callerProviderAccountId,
         )
       ) {
-        return {
-          available: true,
-          reason: "available" as const,
-          message: null,
-          url: null,
-        };
+        return availableSlugResult();
       }
     }
 
@@ -3076,11 +3065,7 @@ export const list = query({
     if (args.batch) {
       if (args.batch === "highlighted") {
         const skills = await loadHighlightedSkills(ctx, limit);
-        const withBadges = await attachBadgesToSkills(ctx, skills);
-        const visibleSkills = await filterSkillsByActiveOwner(ctx, withBadges);
-        return visibleSkills
-          .map((skill) => toPublicSkill(skill))
-          .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill));
+        return await mapDashboardSkillPage(ctx, skills, false);
       }
       const entries = await ctx.db
         .query("skills")
@@ -3088,11 +3073,7 @@ export const list = query({
         .order("desc")
         .take(takeLimit);
       const filtered = entries.filter((skill) => !skill.softDeletedAt).slice(0, limit);
-      const withBadges = await attachBadgesToSkills(ctx, filtered);
-      const visibleSkills = await filterSkillsByActiveOwner(ctx, withBadges);
-      return visibleSkills
-        .map((skill) => toPublicSkill(skill))
-        .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill));
+      return await mapDashboardSkillPage(ctx, filtered, false);
     }
     const ownerPublisherId = args.ownerPublisherId;
     if (ownerPublisherId) {
@@ -3136,18 +3117,7 @@ export const list = query({
           all.findIndex((candidate) => candidate._id === skill._id) === index,
       );
       const filtered = combined.slice(0, limit);
-      const withBadges = await attachBadgesToSkills(ctx, filtered);
-
-      if (isOwnDashboard) {
-        return await Promise.all(
-          withBadges.map(async (skill) => await toDashboardSkillListItem(ctx, skill)),
-        );
-      }
-
-      const visibleSkills = await filterSkillsByActiveOwner(ctx, withBadges);
-      return visibleSkills
-        .map((skill) => toPublicSkill(skill))
-        .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill));
+      return await mapDashboardSkillPage(ctx, filtered, isOwnDashboard);
     }
     const ownerUserId = args.ownerUserId;
     if (ownerUserId) {
@@ -3160,26 +3130,11 @@ export const list = query({
         .take(takeLimit);
       const scoped = await filterSkillsForOwnerUserDashboard(ctx, entries, ownerUserId);
       const filtered = scoped.filter((skill) => !skill.softDeletedAt).slice(0, limit);
-      const withBadges = await attachBadgesToSkills(ctx, filtered);
-
-      if (isOwnDashboard) {
-        return await Promise.all(
-          withBadges.map(async (skill) => await toDashboardSkillListItem(ctx, skill)),
-        );
-      }
-
-      const visibleSkills = await filterSkillsByActiveOwner(ctx, withBadges);
-      return visibleSkills
-        .map((skill) => toPublicSkill(skill))
-        .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill));
+      return await mapDashboardSkillPage(ctx, filtered, isOwnDashboard);
     }
     const entries = await ctx.db.query("skills").order("desc").take(takeLimit);
     const filtered = entries.filter((skill) => !skill.softDeletedAt).slice(0, limit);
-    const withBadges = await attachBadgesToSkills(ctx, filtered);
-    const visibleSkills = await filterSkillsByActiveOwner(ctx, withBadges);
-    return visibleSkills
-      .map((skill) => toPublicSkill(skill))
-      .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill));
+    return await mapDashboardSkillPage(ctx, filtered, false);
   },
 });
 
@@ -4350,22 +4305,24 @@ export const listPublicPage = query({
   },
 });
 
+const publicListSortValidator = v.optional(
+  v.union(
+    v.literal("default"),
+    v.literal("recommended"),
+    v.literal("newest"),
+    v.literal("updated"),
+    v.literal("downloads"),
+    v.literal("installs"),
+    v.literal("stars"),
+    v.literal("name"),
+  ),
+);
+
 /** @deprecated V2 is gutted — returns empty results with no DB reads. */
 export const listPublicPageV2 = query({
   args: {
     paginationOpts: paginationOptsValidator,
-    sort: v.optional(
-      v.union(
-        v.literal("default"),
-        v.literal("recommended"),
-        v.literal("newest"),
-        v.literal("updated"),
-        v.literal("downloads"),
-        v.literal("installs"),
-        v.literal("stars"),
-        v.literal("name"),
-      ),
-    ),
+    sort: publicListSortValidator,
     dir: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
     highlightedOnly: v.optional(v.boolean()),
     nonSuspiciousOnly: v.optional(v.boolean()),
@@ -4556,6 +4513,80 @@ function decodePublicApiPrefixCursor(cursor: string | undefined, prefix: string)
   }
 }
 
+async function resolvePublicSkillListQuery(
+  ctx: Pick<QueryCtx, "db">,
+  {
+    cursor,
+    requestedSort,
+    nonSuspiciousOnly,
+    eqPrefix,
+  }: {
+    cursor?: string;
+    requestedSort: PublicListSort;
+    nonSuspiciousOnly: boolean;
+    eqPrefix: IndexKey;
+  },
+) {
+  const recommendedIndexName = nonSuspiciousOnly
+    ? NONSUSPICIOUS_SORT_INDEXES.recommended
+    : SORT_INDEXES.recommended;
+  const recommendedRankIndexName = getRecommendedRankIndexName(nonSuspiciousOnly);
+  const updatedIndexName = nonSuspiciousOnly
+    ? NONSUSPICIOUS_SORT_INDEXES.updated
+    : SORT_INDEXES.updated;
+  const recommendedCursor = getPublicListCursorKey({
+    cursor,
+    sort: "recommended",
+    nonSuspiciousOnly,
+    indexName: recommendedIndexName,
+    eqPrefix,
+    allowLegacyArray: false,
+  });
+  const recommendedRankCursor = getRecommendedRankCursorKey({
+    cursor,
+    nonSuspiciousOnly,
+    eqPrefix,
+  });
+  const updatedCursor = getPublicListCursorKey({
+    cursor,
+    sort: "updated",
+    nonSuspiciousOnly,
+    indexName: updatedIndexName,
+    eqPrefix,
+  });
+  const recommendedAnyCursor = recommendedCursor ?? recommendedRankCursor ?? updatedCursor;
+  const hasMissingRecommendedScore =
+    requestedSort === "recommended"
+      ? await hasMissingRecommendedScores(ctx, nonSuspiciousOnly, recommendedAnyCursor)
+      : false;
+  const recommendedResolution =
+    requestedSort === "recommended"
+      ? resolveRecommendedPublicListQuery({
+          scoreIndexName: recommendedIndexName,
+          rankIndexName: recommendedRankIndexName,
+          updatedIndexName,
+          scoreCursor: recommendedCursor,
+          rankCursor: recommendedRankCursor,
+          updatedCursor,
+          hasMissingScores: hasMissingRecommendedScore,
+        })
+      : null;
+  const sort = recommendedResolution?.sort ?? requestedSort;
+  const indexName =
+    recommendedResolution?.indexName ??
+    (nonSuspiciousOnly ? NONSUSPICIOUS_SORT_INDEXES[sort] : SORT_INDEXES[sort]);
+  const decodedCursor =
+    recommendedResolution?.decodedCursor ??
+    getPublicListCursorKey({
+      cursor,
+      sort,
+      nonSuspiciousOnly,
+      indexName,
+      eqPrefix,
+    });
+  return { sort, indexName, decodedCursor };
+}
+
 function getPublicListCursorKey({
   cursor,
   sort,
@@ -4641,18 +4672,7 @@ export const listPublicPageV4 = query({
   args: {
     cursor: v.optional(v.string()),
     numItems: v.optional(v.number()),
-    sort: v.optional(
-      v.union(
-        v.literal("default"),
-        v.literal("recommended"),
-        v.literal("newest"),
-        v.literal("updated"),
-        v.literal("downloads"),
-        v.literal("installs"),
-        v.literal("stars"),
-        v.literal("name"),
-      ),
-    ),
+    sort: publicListSortValidator,
     dir: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
     highlightedOnly: v.optional(v.boolean()),
     officialOnly: v.optional(v.boolean()),
@@ -4684,33 +4704,6 @@ export const listPublicPageV4 = query({
     const dir = resolvePublicListDir(requestedSort, args.dir);
     const numItems = clampInt(args.numItems ?? 25, 1, MAX_PUBLIC_LIST_LIMIT);
     const eqPrefix: IndexKey = args.nonSuspiciousOnly ? [undefined, false] : [undefined];
-    const recommendedIndexName = args.nonSuspiciousOnly
-      ? NONSUSPICIOUS_SORT_INDEXES.recommended
-      : SORT_INDEXES.recommended;
-    const recommendedRankIndexName = getRecommendedRankIndexName(args.nonSuspiciousOnly ?? false);
-    const updatedIndexName = args.nonSuspiciousOnly
-      ? NONSUSPICIOUS_SORT_INDEXES.updated
-      : SORT_INDEXES.updated;
-    const recommendedCursor = getPublicListCursorKey({
-      cursor: publicListCursor,
-      sort: "recommended",
-      nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
-      indexName: recommendedIndexName,
-      eqPrefix,
-      allowLegacyArray: false,
-    });
-    const recommendedRankCursor = getRecommendedRankCursorKey({
-      cursor: publicListCursor,
-      nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
-      eqPrefix,
-    });
-    const updatedCursor = getPublicListCursorKey({
-      cursor: publicListCursor,
-      sort: "updated",
-      nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
-      indexName: updatedIndexName,
-      eqPrefix,
-    });
 
     // Highlighted skills use a completely different path: query skillBadges
     // by kind to find highlighted skill IDs, then look up their digests.
@@ -4776,40 +4769,12 @@ export const listPublicPageV4 = query({
       });
     }
 
-    const recommendedAnyCursor = recommendedCursor ?? recommendedRankCursor ?? updatedCursor;
-    const hasMissingRecommendedScore =
-      requestedSort === "recommended"
-        ? await hasMissingRecommendedScores(
-            ctx,
-            args.nonSuspiciousOnly ?? false,
-            recommendedAnyCursor,
-          )
-        : false;
-    const recommendedResolution =
-      requestedSort === "recommended"
-        ? resolveRecommendedPublicListQuery({
-            scoreIndexName: recommendedIndexName,
-            rankIndexName: recommendedRankIndexName,
-            updatedIndexName,
-            scoreCursor: recommendedCursor,
-            rankCursor: recommendedRankCursor,
-            updatedCursor,
-            hasMissingScores: hasMissingRecommendedScore,
-          })
-        : null;
-    const sort = recommendedResolution?.sort ?? requestedSort;
-    const indexName =
-      recommendedResolution?.indexName ??
-      (args.nonSuspiciousOnly ? NONSUSPICIOUS_SORT_INDEXES[sort] : SORT_INDEXES[sort]);
-    const decodedCursor =
-      recommendedResolution?.decodedCursor ??
-      getPublicListCursorKey({
-        cursor: publicListCursor,
-        sort,
-        nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
-        indexName,
-        eqPrefix,
-      });
+    const { sort, indexName, decodedCursor } = await resolvePublicSkillListQuery(ctx, {
+      cursor: publicListCursor,
+      requestedSort,
+      nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
+      eqPrefix,
+    });
     const isFirstPage = !decodedCursor;
     const startIndexKey: IndexKey = decodedCursor ?? eqPrefix;
 
@@ -5099,12 +5064,7 @@ async function listSkillTopicFilteredPage(
       if (
         digest &&
         (!opts.excludeCurated || !isCuratedSkillDigest(digest)) &&
-        digestPassesPublicListFilters(digest, {
-          categorySlug: opts.categorySlug,
-          topic: opts.topic,
-          categoryKeywords: opts.categoryKeywords,
-          excludeCategoryKeywords: opts.excludeCategoryKeywords,
-        })
+        digestPassesPublicListFilters(digest, opts)
       ) {
         const item = await buildPublicSkillEntryFromDigest(ctx, digest);
         if (item) items.push(item);
@@ -5444,18 +5404,7 @@ export const listPublicApiPageV1 = query({
     cursor: v.optional(v.string()),
     numItems: v.optional(v.number()),
     prefix: v.optional(v.string()),
-    sort: v.optional(
-      v.union(
-        v.literal("default"),
-        v.literal("recommended"),
-        v.literal("newest"),
-        v.literal("updated"),
-        v.literal("downloads"),
-        v.literal("installs"),
-        v.literal("stars"),
-        v.literal("name"),
-      ),
-    ),
+    sort: publicListSortValidator,
     dir: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
     nonSuspiciousOnly: v.optional(v.boolean()),
   },
@@ -5509,67 +5458,12 @@ export const listPublicApiPageV1 = query({
           : null;
       return { items, nextCursor };
     }
-    const recommendedIndexName = args.nonSuspiciousOnly
-      ? NONSUSPICIOUS_SORT_INDEXES.recommended
-      : SORT_INDEXES.recommended;
-    const recommendedRankIndexName = getRecommendedRankIndexName(args.nonSuspiciousOnly ?? false);
-    const updatedIndexName = args.nonSuspiciousOnly
-      ? NONSUSPICIOUS_SORT_INDEXES.updated
-      : SORT_INDEXES.updated;
-    const recommendedCursor = getPublicListCursorKey({
+    const { indexName, decodedCursor } = await resolvePublicSkillListQuery(ctx, {
       cursor: args.cursor,
-      sort: "recommended",
-      nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
-      indexName: recommendedIndexName,
-      eqPrefix,
-      allowLegacyArray: false,
-    });
-    const recommendedRankCursor = getRecommendedRankCursorKey({
-      cursor: args.cursor,
+      requestedSort,
       nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
       eqPrefix,
     });
-    const updatedCursor = getPublicListCursorKey({
-      cursor: args.cursor,
-      sort: "updated",
-      nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
-      indexName: updatedIndexName,
-      eqPrefix,
-    });
-    const recommendedAnyCursor = recommendedCursor ?? recommendedRankCursor ?? updatedCursor;
-    const hasMissingRecommendedScore =
-      requestedSort === "recommended"
-        ? await hasMissingRecommendedScores(
-            ctx,
-            args.nonSuspiciousOnly ?? false,
-            recommendedAnyCursor,
-          )
-        : false;
-    const recommendedResolution =
-      requestedSort === "recommended"
-        ? resolveRecommendedPublicListQuery({
-            scoreIndexName: recommendedIndexName,
-            rankIndexName: recommendedRankIndexName,
-            updatedIndexName,
-            scoreCursor: recommendedCursor,
-            rankCursor: recommendedRankCursor,
-            updatedCursor,
-            hasMissingScores: hasMissingRecommendedScore,
-          })
-        : null;
-    const sort = recommendedResolution?.sort ?? requestedSort;
-    const indexName =
-      recommendedResolution?.indexName ??
-      (args.nonSuspiciousOnly ? NONSUSPICIOUS_SORT_INDEXES[sort] : SORT_INDEXES[sort]);
-    const decodedCursor =
-      recommendedResolution?.decodedCursor ??
-      getPublicListCursorKey({
-        cursor: args.cursor,
-        sort,
-        nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
-        indexName,
-        eqPrefix,
-      });
     const isFirstPage = !decodedCursor;
     const result = await getPage(ctx, {
       table: "skillSearchDigest",
@@ -5754,15 +5648,24 @@ async function toPublicSkillCatalogItem(
   };
 }
 
-async function listSkillPackageCatalogTopicPage(
+async function collectSkillPackageCatalogPage<TRow>(
   ctx: QueryCtx,
   args: {
     channel?: "official" | "community" | "private";
     isOfficial?: boolean;
     highlightedOnly?: boolean;
-    topic: string;
+    topic?: string;
     sort?: "updated" | "downloads" | "recommended" | "installs";
     paginationOpts: { cursor: string | null; numItems: number };
+  },
+  source: {
+    loadPage: (
+      paginationOpts: { cursor: string | null; numItems: number },
+      sort: typeof args.sort,
+    ) => Promise<PaginationResult<TRow>>;
+    loadDigest: (
+      row: TRow,
+    ) => Doc<"skillSearchDigest"> | null | Promise<Doc<"skillSearchDigest"> | null>;
   },
 ) {
   const targetCount = args.paginationOpts.numItems;
@@ -5794,26 +5697,14 @@ async function listSkillPackageCatalogTopicPage(
     if (effectivePageSize <= 0) break;
     remainingScanBudget -= effectivePageSize;
     const pageCursor = cursor;
-    const indexName =
-      catalogSort === "downloads"
-        ? "by_active_topic_downloads"
-        : catalogSort === "installs"
-          ? "by_active_topic_installs"
-          : catalogSort === "recommended"
-            ? "by_active_topic_recommended_score"
-            : "by_active_topic_updated";
-    const page = await paginator(ctx.db, schema)
-      .query("skillTopicSearchDigest")
-      .withIndex(indexName, (q) => q.eq("softDeletedAt", undefined).eq("topic", args.topic))
-      .order("desc")
-      .paginate({ cursor: pageCursor, numItems: effectivePageSize });
+    const page = await source.loadPage(
+      { cursor: pageCursor, numItems: effectivePageSize },
+      catalogSort,
+    );
 
     for (let index = offset; index < page.page.length; index += 1) {
-      const topicDigest = page.page[index];
-      const digest = await ctx.db
-        .query("skillSearchDigest")
-        .withIndex("by_skill", (q) => q.eq("skillId", topicDigest.skillId))
-        .unique();
+      // Resolve lazily so filling a result page does not read the remaining topic rows.
+      const digest = await source.loadDigest(page.page[index]);
       if (!digest || !skillCatalogMatchesFilters(digest, args)) continue;
       const item = await toPublicSkillCatalogItem(ctx, digest);
       if (!item) continue;
@@ -5864,75 +5755,20 @@ async function listSkillPackageCatalogTopicPage(
   };
 }
 
-type SkillCatalogSearchMatch = {
-  rankTier: number;
-  score: number;
-};
-
 function skillCatalogSearchMatch(
   digest: Doc<"skillSearchDigest">,
   queryText: string,
 ): SkillCatalogSearchMatch | null {
-  const needle = queryText.toLowerCase();
-  const queryTokens = tokenize(queryText);
-  if (queryTokens.length === 0) return null;
-  const slug = digest.slug.toLowerCase();
-  const display = digest.displayName.toLowerCase();
-  const slugTokens = tokenize(slug);
-  const displayTokens = tokenize(display);
-  let score = 0;
-  let rankTier = Number.POSITIVE_INFINITY;
-
-  const setMatch = (tier: number, boost: number) => {
-    score += boost;
-    rankTier = Math.min(rankTier, tier);
-  };
-
-  if (slug === needle) setMatch(0, 200);
-  else if (slug.startsWith(needle)) setMatch(1, 120);
-  else if (slug.includes(needle)) setMatch(1, 80);
-
-  if (display === needle) setMatch(0, 150);
-  else if (display.startsWith(needle)) setMatch(1, 70);
-  else if (display.includes(needle)) setMatch(1, 40);
-
-  if (matchesAllTokens(queryTokens, [...slugTokens, ...displayTokens], (a, b) => a === b)) {
-    setMatch(1, 65);
-  } else if (
-    matchesAllTokens(queryTokens, [...slugTokens, ...displayTokens], (a, b) => a.startsWith(b))
-  ) {
-    setMatch(1, 35);
-  }
-
-  const taxonomyQuery = normalizeCatalogTopic(queryText);
-  const categories = (digest.categories ?? []).filter(
-    (category) => category !== INTERNAL_UNCATEGORIZED_CATEGORY,
+  return matchCatalogText(
+    {
+      name: digest.slug,
+      displayName: digest.displayName,
+      categories: digest.categories,
+      topics: digest.topics,
+      summary: digest.summary,
+    },
+    queryText,
   );
-  const topicSlugs = getCatalogTopicSlugs(digest.topics);
-  if (taxonomyQuery && (categories.includes(taxonomyQuery) || topicSlugs.includes(taxonomyQuery))) {
-    setMatch(2, 25);
-  }
-  if (
-    matchesExploratoryTokenPrefixes(
-      queryTokens,
-      [...categories, ...(digest.topics ?? [])],
-      EXPLORATORY_SKILL_CATALOG_SEARCH_MIN_TOKEN_LENGTH,
-    )
-  ) {
-    setMatch(2, 20);
-  }
-
-  if (
-    matchesExploratoryTokenPrefixes(
-      queryTokens,
-      [digest.summary],
-      EXPLORATORY_SKILL_CATALOG_SEARCH_MIN_TOKEN_LENGTH,
-    )
-  ) {
-    setMatch(3, 20);
-  }
-  if (!Number.isFinite(rankTier)) return null;
-  return { rankTier, score };
 }
 
 // Skills have no verification tiers, so curated status + adoption are the
@@ -6017,104 +5853,51 @@ export const listPackageCatalogPage = query({
       };
     }
     if (topic) {
-      return await listSkillPackageCatalogTopicPage(ctx, {
-        ...args,
-        topic,
-      });
-    }
-    const targetCount = args.paginationOpts.numItems;
-    const collected: PublicSkillCatalogItem[] = [];
-    const decodedCursor = decodeSkillCatalogCursor(args.paginationOpts.cursor);
-    let cursor = decodedCursor.cursor;
-    let offset = decodedCursor.offset;
-    let pageSize = decodedCursor.pageSize;
-    let done = decodedCursor.done;
-    let loops = 0;
-    let remainingScanBudget = MAX_SKILL_CATALOG_SCAN_DOCUMENTS;
-    const recommendedFallback = decodedCursor.recommendedFallback;
-    const catalogSort = recommendedFallback ?? args.sort;
-
-    while (
-      (offset > 0 || !done) &&
-      collected.length < targetCount &&
-      loops < MAX_SKILL_CATALOG_SCAN_PAGES &&
-      remainingScanBudget > 0
-    ) {
-      loops += 1;
-      const effectivePageSize = Math.min(
-        remainingScanBudget,
-        250,
-        offset > 0 && pageSize
-          ? Math.max(pageSize, offset + 1)
-          : Math.max(targetCount * 3, targetCount),
+      return await collectSkillPackageCatalogPage(
+        ctx,
+        { ...args, topic },
+        {
+          loadPage: async (paginationOpts, catalogSort) => {
+            const indexName =
+              catalogSort === "downloads"
+                ? "by_active_topic_downloads"
+                : catalogSort === "installs"
+                  ? "by_active_topic_installs"
+                  : catalogSort === "recommended"
+                    ? "by_active_topic_recommended_score"
+                    : "by_active_topic_updated";
+            return await paginator(ctx.db, schema)
+              .query("skillTopicSearchDigest")
+              .withIndex(indexName, (q) => q.eq("softDeletedAt", undefined).eq("topic", topic))
+              .order("desc")
+              .paginate(paginationOpts);
+          },
+          loadDigest: (topicDigest) =>
+            ctx.db
+              .query("skillSearchDigest")
+              .withIndex("by_skill", (q) => q.eq("skillId", topicDigest.skillId))
+              .unique(),
+        },
       );
-      if (effectivePageSize <= 0) break;
-      remainingScanBudget -= effectivePageSize;
-      const pageCursor = cursor;
-      const indexName =
-        catalogSort === "downloads"
-          ? "by_active_stats_downloads"
-          : catalogSort === "installs"
-            ? "by_active_stats_installs_all_time"
-            : catalogSort === "recommended"
-              ? "by_active_recommended_score"
-              : "by_active_updated";
-      const page = await paginator(ctx.db, schema)
-        .query("skillSearchDigest")
-        .withIndex(indexName, (q) => q.eq("softDeletedAt", undefined))
-        .order("desc")
-        .paginate({ cursor: pageCursor, numItems: effectivePageSize });
-
-      for (let index = offset; index < page.page.length; index += 1) {
-        const digest = page.page[index];
-        if (!skillCatalogMatchesFilters(digest, args)) continue;
-        const item = await toPublicSkillCatalogItem(ctx, digest);
-        if (!item) continue;
-        collected.push(item);
-        if (collected.length >= targetCount) {
-          const nextOffset = index + 1;
-          if (nextOffset < page.page.length) {
-            cursor = pageCursor;
-            offset = nextOffset;
-            pageSize = effectivePageSize;
-            done = page.isDone;
-          } else {
-            cursor = page.continueCursor;
-            offset = 0;
-            pageSize = effectivePageSize;
-            done = page.isDone;
-          }
-          return {
-            page: collected,
-            isDone: done && offset === 0,
-            continueCursor: encodeSkillCatalogCursor({
-              cursor,
-              offset,
-              pageSize,
-              done,
-              recommendedFallback,
-            }),
-          };
-        }
-      }
-
-      done = page.isDone;
-      cursor = page.continueCursor;
-      offset = 0;
-      pageSize = effectivePageSize;
     }
-
-    return {
-      page: collected,
-      isDone: done,
-      continueCursor: encodeSkillCatalogCursor({
-        cursor,
-        offset,
-        pageSize,
-        done,
-        recommendedFallback,
-      }),
-    };
+    return await collectSkillPackageCatalogPage(ctx, args, {
+      loadPage: async (paginationOpts, catalogSort) => {
+        const indexName =
+          catalogSort === "downloads"
+            ? "by_active_stats_downloads"
+            : catalogSort === "installs"
+              ? "by_active_stats_installs_all_time"
+              : catalogSort === "recommended"
+                ? "by_active_recommended_score"
+                : "by_active_updated";
+        return await paginator(ctx.db, schema)
+          .query("skillSearchDigest")
+          .withIndex(indexName, (q) => q.eq("softDeletedAt", undefined))
+          .order("desc")
+          .paginate(paginationOpts);
+      },
+      loadDigest: (digest) => digest,
+    });
   },
 });
 
@@ -6124,8 +5907,6 @@ export const hasMissingPackageCatalogRecommendationScoresInternal = internalQuer
     return await hasMissingRecommendedScores(ctx, false, null);
   },
 });
-
-const EXPLORATORY_SKILL_CATALOG_SEARCH_MIN_TOKEN_LENGTH = 3;
 
 function skillCatalogPrefixUpperBound(value: string) {
   return `${value}\uffff`;
@@ -6560,12 +6341,7 @@ async function listCuratedSkillPage(
       }
       if (
         (typeof opts.createdAfter !== "number" || curatedDigest.createdAt >= opts.createdAfter) &&
-        digestPassesPublicListFilters(curatedDigest, {
-          topic: opts.topic,
-          categorySlug: opts.categorySlug,
-          categoryKeywords: opts.categoryKeywords,
-          excludeCategoryKeywords: opts.excludeCategoryKeywords,
-        })
+        digestPassesPublicListFilters(curatedDigest, opts)
       ) {
         // The compact projection contains official and highlighted rows but omits badge kind,
         // so hydrate before applying officialOnly and appending a result.
@@ -6579,12 +6355,7 @@ async function listCuratedSkillPage(
           (!opts.officialOnly || isSkillCatalogOfficial(digest)) &&
           (typeof opts.createdAfter !== "number" || digest.createdAt >= opts.createdAfter) &&
           (!opts.nonSuspiciousOnly || !digest.isSuspicious) &&
-          digestPassesPublicListFilters(digest, {
-            topic: opts.topic,
-            categorySlug: opts.categorySlug,
-            categoryKeywords: opts.categoryKeywords,
-            excludeCategoryKeywords: opts.excludeCategoryKeywords,
-          })
+          digestPassesPublicListFilters(digest, opts)
         ) {
           const item = await buildPublicSkillEntryFromDigest(ctx, digest);
           if (item) items.push(item);
@@ -6686,15 +6457,7 @@ async function listCommunitySkillCategoryPage(
     for (let index = 0; index < result.page.length; index += 1) {
       const digest = result.page[index];
       const cursor = result.indexKeys[index];
-      if (
-        !isCuratedSkillDigest(digest) &&
-        digestPassesPublicListFilters(digest, {
-          topic: opts.topic,
-          categorySlug: opts.categorySlug,
-          categoryKeywords: opts.categoryKeywords,
-          excludeCategoryKeywords: opts.excludeCategoryKeywords,
-        })
-      ) {
+      if (!isCuratedSkillDigest(digest) && digestPassesPublicListFilters(digest, opts)) {
         const item = await buildPublicSkillEntryFromDigest(ctx, digest);
         if (item) items.push(item);
       }
@@ -6813,14 +6576,7 @@ async function fetchHighlightedPage(
       .unique();
     if (!digest || digest.softDeletedAt) continue;
     if (opts.nonSuspiciousOnly && digest.isSuspicious) continue;
-    if (
-      !digestPassesPublicListFilters(digest, {
-        categorySlug: opts.categorySlug,
-        topic: opts.topic,
-        categoryKeywords: opts.categoryKeywords,
-        excludeCategoryKeywords: opts.excludeCategoryKeywords,
-      })
-    ) {
+    if (!digestPassesPublicListFilters(digest, opts)) {
       continue;
     }
     digests.push(digest);
@@ -7042,10 +6798,12 @@ export const getVersionsByIdsInternal = internalQuery({
   },
 });
 
-export const getVersionByIdInternal = internalQuery({
-  args: { versionId: v.id("skillVersions") },
-  handler: async (ctx, args) => ctx.db.get(args.versionId),
-});
+// Preserve the publishing-module paths while file reads share one implementation.
+export {
+  getSkillByIdInternal,
+  getVersionByIdInternal,
+  listVersionFingerprintsInternal,
+} from "./skillFileReads";
 
 export const getVersionBySkillAndVersionInternal = internalQuery({
   args: { skillId: v.id("skills"), version: v.string() },
@@ -7057,26 +6815,6 @@ export const getVersionBySkillAndVersionInternal = internalQuery({
       )
       .unique();
   },
-});
-
-export const listVersionFingerprintsInternal = internalQuery({
-  args: { skillVersionId: v.id("skillVersions") },
-  handler: async (ctx, args) => {
-    const entries = await ctx.db
-      .query("skillVersionFingerprints")
-      .withIndex("by_version", (q) => q.eq("versionId", args.skillVersionId))
-      .collect();
-    return entries.map((entry) => ({
-      fingerprint: entry.fingerprint,
-      kind: entry.kind,
-      createdAt: entry.createdAt,
-    }));
-  },
-});
-
-export const getSkillByIdInternal = internalQuery({
-  args: { skillId: v.id("skills") },
-  handler: async (ctx, args) => ctx.db.get(args.skillId),
 });
 
 /**
@@ -7837,70 +7575,7 @@ export const updateVersionLlmAnalysisInternal = internalMutation({
     versionId: v.id("skillVersions"),
     scannerReportsStorageId: v.optional(v.id("_storage")),
     moderationMode: v.optional(v.union(v.literal("normal"), v.literal("preserve"))),
-    llmAnalysis: v.object({
-      status: v.string(),
-      verdict: v.optional(v.string()),
-      confidence: v.optional(v.string()),
-      summary: v.optional(v.string()),
-      dimensions: v.optional(
-        v.array(
-          v.object({
-            name: v.string(),
-            label: v.string(),
-            rating: v.string(),
-            detail: v.string(),
-          }),
-        ),
-      ),
-      guidance: v.optional(v.string()),
-      findings: v.optional(v.string()),
-      agenticRiskFindings: v.optional(
-        v.array(
-          v.object({
-            categoryId: v.string(),
-            categoryLabel: v.string(),
-            riskBucket: v.union(
-              v.literal("abnormal_behavior_control"),
-              v.literal("permission_boundary"),
-              v.literal("sensitive_data_protection"),
-            ),
-            status: v.union(v.literal("none"), v.literal("note"), v.literal("concern")),
-            severity: v.string(),
-            confidence: v.union(v.literal("high"), v.literal("medium"), v.literal("low")),
-            evidence: v.optional(
-              v.object({
-                path: v.string(),
-                snippet: v.string(),
-                explanation: v.string(),
-              }),
-            ),
-            userImpact: v.string(),
-            recommendation: v.string(),
-          }),
-        ),
-      ),
-      riskSummary: v.optional(
-        v.object({
-          abnormal_behavior_control: v.object({
-            status: v.union(v.literal("none"), v.literal("note"), v.literal("concern")),
-            summary: v.string(),
-            highestSeverity: v.optional(v.string()),
-          }),
-          permission_boundary: v.object({
-            status: v.union(v.literal("none"), v.literal("note"), v.literal("concern")),
-            summary: v.string(),
-            highestSeverity: v.optional(v.string()),
-          }),
-          sensitive_data_protection: v.object({
-            status: v.union(v.literal("none"), v.literal("note"), v.literal("concern")),
-            summary: v.string(),
-            highestSeverity: v.optional(v.string()),
-          }),
-        }),
-      ),
-      model: v.optional(v.string()),
-      checkedAt: v.number(),
-    }),
+    llmAnalysis: llmAnalysisValidator,
   },
   handler: async (ctx, args) => {
     const version = await ctx.db.get(args.versionId);
@@ -10396,65 +10071,50 @@ export const setDuplicate = mutation({
   },
 });
 
+async function setAdminSkillBadge(
+  ctx: MutationCtx,
+  skillId: Id<"skills">,
+  kind: "official" | "deprecated",
+  enabled: boolean,
+) {
+  const { user } = await requireUser(ctx);
+  assertAdmin(user);
+  const skill = await ctx.db.get(skillId);
+  if (!skill) throw new Error("Skill not found");
+
+  const now = Date.now();
+  if (enabled) {
+    await upsertSkillBadge(ctx, skill._id, kind, user._id, now);
+  } else {
+    await removeSkillBadge(ctx, skill._id, kind);
+  }
+
+  await ctx.db.patch(skill._id, {
+    lastReviewedAt: now,
+    updatedAt: now,
+  });
+
+  await ctx.db.insert("auditLogs", {
+    actorUserId: user._id,
+    action: `badge.${kind}.${enabled ? "set" : "unset"}`,
+    targetType: "skill",
+    targetId: skill._id,
+    metadata: { [kind]: enabled },
+    createdAt: now,
+  });
+}
+
 export const setOfficialBadge = mutation({
   args: { skillId: v.id("skills"), official: v.boolean() },
   handler: async (ctx, args) => {
-    const { user } = await requireUser(ctx);
-    assertAdmin(user);
-    const skill = await ctx.db.get(args.skillId);
-    if (!skill) throw new Error("Skill not found");
-
-    const now = Date.now();
-    if (args.official) {
-      await upsertSkillBadge(ctx, skill._id, "official", user._id, now);
-    } else {
-      await removeSkillBadge(ctx, skill._id, "official");
-    }
-
-    await ctx.db.patch(skill._id, {
-      lastReviewedAt: now,
-      updatedAt: now,
-    });
-
-    await ctx.db.insert("auditLogs", {
-      actorUserId: user._id,
-      action: args.official ? "badge.official.set" : "badge.official.unset",
-      targetType: "skill",
-      targetId: skill._id,
-      metadata: { official: args.official },
-      createdAt: now,
-    });
+    await setAdminSkillBadge(ctx, args.skillId, "official", args.official);
   },
 });
 
 export const setDeprecatedBadge = mutation({
   args: { skillId: v.id("skills"), deprecated: v.boolean() },
   handler: async (ctx, args) => {
-    const { user } = await requireUser(ctx);
-    assertAdmin(user);
-    const skill = await ctx.db.get(args.skillId);
-    if (!skill) throw new Error("Skill not found");
-
-    const now = Date.now();
-    if (args.deprecated) {
-      await upsertSkillBadge(ctx, skill._id, "deprecated", user._id, now);
-    } else {
-      await removeSkillBadge(ctx, skill._id, "deprecated");
-    }
-
-    await ctx.db.patch(skill._id, {
-      lastReviewedAt: now,
-      updatedAt: now,
-    });
-
-    await ctx.db.insert("auditLogs", {
-      actorUserId: user._id,
-      action: args.deprecated ? "badge.deprecated.set" : "badge.deprecated.unset",
-      targetType: "skill",
-      targetId: skill._id,
-      metadata: { deprecated: args.deprecated },
-      createdAt: now,
-    });
+    await setAdminSkillBadge(ctx, args.skillId, "deprecated", args.deprecated);
   },
 });
 
@@ -10618,6 +10278,41 @@ function asSkillPendingPublishArgs(value: unknown): SkillPendingPublishArgs {
   return value as SkillPendingPublishArgs;
 }
 
+function buildInitialSkillModeration(
+  user: Pick<Doc<"users">, "requiresModerationAt" | "requiresModerationReason">,
+  qualityAssessment: StoredQualityAssessment | undefined,
+  now: number,
+) {
+  const isQualityQuarantine = qualityAssessment?.decision === "quarantine";
+  const isPublisherUnderModeration = Boolean(user.requiresModerationAt);
+  return {
+    status:
+      isQualityQuarantine || isPublisherUnderModeration ? ("hidden" as const) : ("active" as const),
+    reason: isQualityQuarantine
+      ? "quality.low"
+      : isPublisherUnderModeration
+        ? USER_MODERATION_REASON
+        : "pending.scan",
+    notes: isQualityQuarantine
+      ? `Auto-quarantined by quality gate (score=${qualityAssessment.score}, tier=${qualityAssessment.trustTier}, similar=${qualityAssessment.similarRecentCount}).`
+      : isPublisherUnderModeration
+        ? (user.requiresModerationReason ??
+          "Publisher is currently under manual moderation review.")
+        : undefined,
+    quality: qualityAssessment
+      ? {
+          score: qualityAssessment.score,
+          decision: qualityAssessment.decision,
+          trustTier: qualityAssessment.trustTier,
+          similarRecentCount: qualityAssessment.similarRecentCount,
+          reason: qualityAssessment.reason,
+          signals: qualityAssessment.signals,
+          evaluatedAt: now,
+        }
+      : undefined,
+  };
+}
+
 export const insertVersion = internalMutation({
   args: {
     userId: v.id("users"),
@@ -10637,17 +10332,7 @@ export const insertVersion = internalMutation({
     version: v.string(),
     changelog: v.string(),
     changelogSource: v.optional(v.union(v.literal("auto"), v.literal("user"))),
-    sourceProvenance: v.optional(
-      v.object({
-        kind: v.literal("github"),
-        url: v.string(),
-        repo: v.string(),
-        ref: v.string(),
-        commit: v.string(),
-        path: v.optional(v.string()),
-        importedAt: v.number(),
-      }),
-    ),
+    sourceProvenance: v.optional(skillSourceProvenanceValidator),
     tags: v.optional(v.array(v.string())),
     categories: v.optional(v.array(v.string())),
     topics: v.optional(v.array(v.string())),
@@ -10661,13 +10346,7 @@ export const insertVersion = internalMutation({
       }),
     ),
     files: storedFilesValidator,
-    parsed: v.object({
-      frontmatter: v.record(v.string(), v.any()),
-      metadata: v.optional(v.any()),
-      clawdis: v.optional(v.any()),
-      license: v.optional(v.literal(PLATFORM_SKILL_LICENSE)),
-      presentation: v.optional(skillPresentationValidator),
-    }),
+    parsed: skillParsedMetadataValidator.omit("moltbot"),
     summary: v.optional(v.string()),
     qualityAssessment: v.optional(qualityAssessmentValidator),
     // Retired static publish scan. Still accepted so stored insert args from
@@ -11005,37 +10684,8 @@ export const insertVersion = internalMutation({
       skill = { ...skill, ownerPublisherId, lastReviewedAt: now, updatedAt: now };
     }
 
-    const qualityAssessment = args.qualityAssessment;
-    const isQualityQuarantine = qualityAssessment?.decision === "quarantine";
-
     const initialScannerSnapshot = buildModerationSnapshot({});
-    const isPublisherUnderModeration = Boolean(user.requiresModerationAt);
-    const initialModerationStatus =
-      isQualityQuarantine || isPublisherUnderModeration ? "hidden" : "active";
-
-    const moderationReason = isQualityQuarantine
-      ? "quality.low"
-      : isPublisherUnderModeration
-        ? USER_MODERATION_REASON
-        : "pending.scan";
-    const moderationNotes = isQualityQuarantine
-      ? `Auto-quarantined by quality gate (score=${qualityAssessment.score}, tier=${qualityAssessment.trustTier}, similar=${qualityAssessment.similarRecentCount}).`
-      : isPublisherUnderModeration
-        ? (user.requiresModerationReason ??
-          "Publisher is currently under manual moderation review.")
-        : undefined;
-
-    const qualityRecord = qualityAssessment
-      ? {
-          score: qualityAssessment.score,
-          decision: qualityAssessment.decision,
-          trustTier: qualityAssessment.trustTier,
-          similarRecentCount: qualityAssessment.similarRecentCount,
-          reason: qualityAssessment.reason,
-          signals: qualityAssessment.signals,
-          evaluatedAt: now,
-        }
-      : undefined;
+    const initialModeration = buildInitialSkillModeration(user, args.qualityAssessment, now);
 
     if (!skill) {
       // Anti-squatting: enforce reserved slug cooldown.
@@ -11125,11 +10775,11 @@ export const insertVersion = internalMutation({
           official: undefined,
           deprecated: undefined,
         },
-        moderationStatus: isPendingPublication ? "hidden" : initialModerationStatus,
-        moderationReason: isPendingPublication ? "pending.publication" : moderationReason,
+        moderationStatus: isPendingPublication ? "hidden" : initialModeration.status,
+        moderationReason: isPendingPublication ? "pending.publication" : initialModeration.reason,
         moderationNotes: isPendingPublication
           ? "Pre-publication security checks are pending."
-          : moderationNotes,
+          : initialModeration.notes,
         moderationVerdict: initialScannerSnapshot.verdict,
         moderationReasonCodes: initialScannerSnapshot.reasonCodes.length
           ? initialScannerSnapshot.reasonCodes
@@ -11141,11 +10791,11 @@ export const insertVersion = internalMutation({
         moderationEngineVersion: initialScannerSnapshot.engineVersion,
         moderationEvaluatedAt: initialScannerSnapshot.evaluatedAt,
         moderationSourceVersionId: undefined,
-        quality: qualityRecord,
+        quality: initialModeration.quality,
         moderationFlags: newSkillFlags.length ? newSkillFlags : undefined,
         isSuspicious: computeIsSuspicious({
           moderationFlags: newSkillFlags.length ? newSkillFlags : undefined,
-          moderationReason: moderationReason,
+          moderationReason: initialModeration.reason,
         }),
         reportCount: 0,
         lastReportedAt: undefined,
@@ -11270,7 +10920,7 @@ export const insertVersion = internalMutation({
       new Set([...(derivedFlags ?? []), ...(moderationSnapshot.legacyFlags ?? [])]),
     );
     const scannerModerationPatch =
-      args.llmAnalysis && !isQualityQuarantine && !isPublisherUnderModeration
+      args.llmAnalysis && initialModeration.status === "active"
         ? buildScannerModerationPatchFromVersion({
             owner: null,
             version: {
@@ -11318,9 +10968,9 @@ export const insertVersion = internalMutation({
         : {}),
       stats: { ...skill.stats, versions: skill.stats.versions + 1 },
       softDeletedAt: undefined,
-      moderationStatus: initialModerationStatus,
-      moderationReason,
-      moderationNotes,
+      moderationStatus: initialModeration.status,
+      moderationReason: initialModeration.reason,
+      moderationNotes: initialModeration.notes,
       moderationVerdict: moderationSnapshot.verdict,
       moderationReasonCodes: moderationSnapshot.reasonCodes.length
         ? moderationSnapshot.reasonCodes
@@ -11332,11 +10982,11 @@ export const insertVersion = internalMutation({
       moderationEngineVersion: moderationSnapshot.engineVersion,
       moderationEvaluatedAt: moderationSnapshot.evaluatedAt,
       moderationSourceVersionId: versionId,
-      quality: qualityRecord ?? skill.quality,
+      quality: initialModeration.quality ?? skill.quality,
       moderationFlags: nextFlags.length ? nextFlags : undefined,
       isSuspicious: computeIsSuspicious({
         moderationFlags: nextFlags.length ? nextFlags : undefined,
-        moderationReason: moderationReason,
+        moderationReason: initialModeration.reason,
       }),
       unpublishedSlugReservedUntil: undefined,
       unpublishedSlugReleasedAt: undefined,
@@ -11525,33 +11175,7 @@ export const publishPendingVersionInternal = internalMutation({
       skill.summary;
     const nextSummary = isNewLatest ? derivedSummary : skill.summary;
     const nextDisplayName = isNewLatest ? publishArgs.displayName : skill.displayName;
-    const qualityAssessment = publishArgs.qualityAssessment;
-    const isQualityQuarantine = qualityAssessment?.decision === "quarantine";
-    const isPublisherUnderModeration = Boolean(user.requiresModerationAt);
-    const initialModerationStatus =
-      isQualityQuarantine || isPublisherUnderModeration ? "hidden" : "active";
-    const moderationReason = isQualityQuarantine
-      ? "quality.low"
-      : isPublisherUnderModeration
-        ? USER_MODERATION_REASON
-        : "pending.scan";
-    const moderationNotes = isQualityQuarantine
-      ? `Auto-quarantined by quality gate (score=${qualityAssessment.score}, tier=${qualityAssessment.trustTier}, similar=${qualityAssessment.similarRecentCount}).`
-      : isPublisherUnderModeration
-        ? (user.requiresModerationReason ??
-          "Publisher is currently under manual moderation review.")
-        : undefined;
-    const qualityRecord = qualityAssessment
-      ? {
-          score: qualityAssessment.score,
-          decision: qualityAssessment.decision,
-          trustTier: qualityAssessment.trustTier,
-          similarRecentCount: qualityAssessment.similarRecentCount,
-          reason: qualityAssessment.reason,
-          signals: qualityAssessment.signals,
-          evaluatedAt: now,
-        }
-      : undefined;
+    const initialModeration = buildInitialSkillModeration(user, publishArgs.qualityAssessment, now);
 
     const derivedFlags = deriveModerationFlags({
       skill: {
@@ -11571,7 +11195,7 @@ export const publishPendingVersionInternal = internalMutation({
       llmAnalysis: publishArgs.llmAnalysis ?? version.llmAnalysis,
     };
     const scannerModerationPatch =
-      versionForModeration.llmAnalysis && !isQualityQuarantine && !isPublisherUnderModeration
+      versionForModeration.llmAnalysis && initialModeration.status === "active"
         ? buildScannerModerationPatchFromVersion({
             owner: null,
             version: versionForModeration,
@@ -11624,9 +11248,9 @@ export const publishPendingVersionInternal = internalMutation({
       ? {
           ...basePatch,
           softDeletedAt: undefined,
-          moderationStatus: initialModerationStatus,
-          moderationReason,
-          moderationNotes,
+          moderationStatus: initialModeration.status,
+          moderationReason: initialModeration.reason,
+          moderationNotes: initialModeration.notes,
           moderationVerdict: moderationSnapshot.verdict,
           moderationReasonCodes: moderationSnapshot.reasonCodes.length
             ? moderationSnapshot.reasonCodes
@@ -11638,11 +11262,11 @@ export const publishPendingVersionInternal = internalMutation({
           moderationEngineVersion: moderationSnapshot.engineVersion,
           moderationEvaluatedAt: moderationSnapshot.evaluatedAt,
           moderationSourceVersionId: version._id,
-          quality: qualityRecord ?? skill.quality,
+          quality: initialModeration.quality ?? skill.quality,
           moderationFlags: nextFlags.length ? nextFlags : undefined,
           isSuspicious: computeIsSuspicious({
             moderationFlags: nextFlags.length ? nextFlags : undefined,
-            moderationReason,
+            moderationReason: initialModeration.reason,
           }),
           unpublishedSlugReservedUntil: undefined,
           unpublishedSlugReleasedAt: undefined,

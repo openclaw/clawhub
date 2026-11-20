@@ -34,6 +34,9 @@ import {
   ApiV1PackagePublishResponseSchema,
   type ApiV1PackagePublishResponse,
   ApiV1PackageReadinessResponseSchema,
+  ApiV1PackageVersionPublicationResponseSchema,
+  type ApiV1PackageVersionPublicationResponse,
+  parseArk,
   ApiV1PackageReportResponseSchema,
   ApiV1PackageResponseSchema,
   ApiV1PackageSearchResponseSchema,
@@ -61,9 +64,11 @@ import {
 } from "../../schema/index.js";
 import { buildGitHubFolderContentHash, hashSkillFiles } from "../../skills.js";
 import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
+import { pathExists } from "../fs.js";
 import { withLoaderErrorHandling } from "../loader.js";
+import { writeJsonIfRequested } from "../output.js";
 import { getRegistry } from "../registry.js";
-import { titleCase } from "../slug.js";
+import { displayNameFromArchive, titleCase } from "../slug.js";
 import type { GlobalOpts } from "../types.js";
 import {
   createCrabLoader,
@@ -515,10 +520,7 @@ export async function cmdGetPackageTrustedPublisher(
   return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequestPackageTrustedPublisher(registry, trimmed, token);
     spinner.stop();
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-      return;
-    }
+    if (writeJsonIfRequested(options.json, result)) return;
     if (!result.trustedPublisher) {
       console.log("No trusted publisher configured.");
       return;
@@ -558,10 +560,7 @@ export async function cmdSetPackageTrustedPublisher(
       ApiV1PackageTrustedPublisherResponseSchema,
     );
     spinner.stop();
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-      return;
-    }
+    if (writeJsonIfRequested(options.json, result)) return;
     console.log(`Trusted publisher saved for ${trimmed}.`);
     if (result.trustedPublisher) {
       printTrustedPublisher(result.trustedPublisher);
@@ -589,10 +588,7 @@ export async function cmdDeletePackageTrustedPublisher(
       ApiV1DeleteResponseSchema,
     );
     spinner.stop();
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-      return;
-    }
+    if (writeJsonIfRequested(options.json, result)) return;
     console.log(`Trusted publisher deleted for ${trimmed}.`);
   });
 }
@@ -747,8 +743,8 @@ export async function cmdValidatePackage(
 
 async function createPluginInspectorConfigIfNeeded(sourcePath: string) {
   if (
-    (await fileExists(join(sourcePath, "plugin-inspector.config.json"))) ||
-    (await fileExists(join(sourcePath, ".plugin-inspector.json")))
+    (await pathExists(join(sourcePath, "plugin-inspector.config.json"))) ||
+    (await pathExists(join(sourcePath, ".plugin-inspector.json")))
   ) {
     return null;
   }
@@ -782,10 +778,6 @@ async function createPluginInspectorConfigIfNeeded(sourcePath: string) {
     )}\n`,
   );
   return { dir: configDir, path: configPath };
-}
-
-async function fileExists(path: string) {
-  return Boolean(await stat(path).catch(() => null));
 }
 
 function hasPackagePluginInspectorConfig(packageJson: Record<string, unknown> | null) {
@@ -1531,10 +1523,7 @@ export async function cmdDownloadPackage(
       npmIntegrity: artifactResult.artifact.kind === "npm-pack" ? identity.npmIntegrity : undefined,
       npmShasum: artifactResult.artifact.kind === "npm-pack" ? identity.npmShasum : undefined,
     };
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
-      return;
-    }
+    if (writeJsonIfRequested(options.json, output)) return;
     console.log(`Downloaded ${artifactResult.package.name}@${targetVersion} -> ${outputPath}`);
     console.log(`Artifact: ${artifactResult.artifact.kind}`);
     console.log(`SHA-256: ${identity.sha256}`);
@@ -1603,10 +1592,7 @@ export async function cmdVerifyPackage(
       },
       verified: Boolean(expectedSha256 || expectedNpmIntegrity || expectedNpmShasum),
     };
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
-      return;
-    }
+    if (writeJsonIfRequested(options.json, output)) return;
     console.log(`Path: ${targetFile}`);
     console.log(`SHA-256: ${identity.sha256}`);
     console.log(`npm integrity: ${identity.npmIntegrity}`);
@@ -1779,10 +1765,7 @@ export async function cmdReportPackage(
       ApiV1PackageReportResponseSchema,
     );
     spinner?.stop();
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-      return;
-    }
+    if (writeJsonIfRequested(options.json, result)) return;
     if (result.alreadyReported) {
       console.log(`Already reported ${trimmed}.`);
       return;
@@ -1810,10 +1793,7 @@ export async function cmdPackageModerationStatus(
     ApiV1PackageModerationStatusResponseSchema,
   );
 
-  if (options.json) {
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    return;
-  }
+  if (writeJsonIfRequested(options.json, result)) return;
 
   console.log(`${result.package.name} moderation`);
   console.log(`  package scan: ${result.package.scanStatus ?? "unknown"}`);
@@ -1835,6 +1815,120 @@ export async function cmdPackageModerationStatus(
   }
 }
 
+export async function cmdPackagePublication(
+  opts: GlobalOpts,
+  packageName: string,
+  options: { version?: string; json?: boolean } = {},
+) {
+  const trimmed = normalizePackageNameOrFail(packageName);
+  const version = options.version?.trim();
+  if (!version) {
+    fail(
+      "Pass --version. Publication state is for one exact version, not the public latest version.",
+    );
+  }
+  const registry = await getRegistry(opts, { cache: true });
+  const token = await getOptionalAuthToken(registry);
+  const result = await loadPackagePublication(registry, trimmed, version, token);
+
+  if (writeJsonIfRequested(options.json, result)) return;
+
+  console.log(`${result.name}@${result.version}`);
+  printPackagePublication(result);
+}
+
+// A registry that predates this route answers 404, or returns the version
+// document with no `state`. Confirm that through the version endpoint.
+// A body that already has `state` is a publication response and stays strict.
+async function loadPackagePublication(
+  registry: string,
+  packageName: string,
+  version: string,
+  token: string | undefined,
+): Promise<ApiV1PackageVersionPublicationResponse> {
+  const path = `${ApiRoutes.packages}/${encodeURIComponent(packageName)}/versions/${encodeURIComponent(version)}/publication`;
+  let raw: unknown;
+  try {
+    raw = await apiRequest(registry, { method: "GET", path, token });
+  } catch (error) {
+    if (getHttpErrorStatus(error) !== 404) throw error;
+    return await publicationFromLegacyVersion(registry, packageName, version, token);
+  }
+  if (isLegacyVersionDocument(raw)) {
+    return await publicationFromLegacyVersion(registry, packageName, version, token);
+  }
+  return parseArk(ApiV1PackageVersionPublicationResponseSchema, raw, "API response");
+}
+
+function isLegacyVersionDocument(value: unknown) {
+  return Boolean(
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    !("state" in value) &&
+    ("version" in value || "package" in value),
+  );
+}
+
+async function publicationFromLegacyVersion(
+  registry: string,
+  packageName: string,
+  version: string,
+  token: string | undefined,
+): Promise<ApiV1PackageVersionPublicationResponse> {
+  const detail = await apiRequestPackageVersion(registry, packageName, version, token);
+  if (!detail.package || !detail.version) fail("Version not found");
+  return {
+    name: detail.package.name,
+    version: detail.version.version,
+    state: "published",
+  };
+}
+
+function printPackagePublication(result: ApiV1PackageVersionPublicationResponse) {
+  if (result.state === "published") {
+    console.log("Published.");
+    console.log("This version is in the public version list.");
+    return;
+  }
+  if (result.state === "absent") {
+    console.log("Not accepted.");
+    console.log(
+      "This version was not accepted. A pending release is also missing from the public version list, so check the exact version you submitted.",
+    );
+    return;
+  }
+  if (result.state === "pending") {
+    console.log(
+      result.stage === "checks"
+        ? "Pending publication checks."
+        : result.stage === "finalization"
+          ? "Pending final publication."
+          : "Pending publication.",
+    );
+    console.log("This version is not public yet. The upload is still recorded.");
+    if (result.stage !== "staging") {
+      console.log(`Attempt: ${result.attemptId}`);
+    }
+    return;
+  }
+  if (result.state !== "failed") return;
+  console.log("Publication failed.");
+  if (!result.recoverable) {
+    console.log("This attempt cannot be recovered.");
+  } else {
+    console.log("An authorized publisher may be able to recover this attempt.");
+    if (result.attemptId) {
+      console.log(
+        `clawhub package recover ${result.attemptId} --manual-override-reason "<reason>"`,
+      );
+    }
+  }
+  if (result.attemptId && !result.recoverable) {
+    console.log(`Attempt: ${result.attemptId}`);
+  }
+}
+
 export async function cmdPackageReadiness(
   opts: GlobalOpts,
   packageName: string,
@@ -1853,10 +1947,7 @@ export async function cmdPackageReadiness(
     ApiV1PackageReadinessResponseSchema,
   );
 
-  if (options.json) {
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    return;
-  }
+  if (writeJsonIfRequested(options.json, result)) return;
 
   console.log(`${result.package.name} readiness: ${result.ready ? "ready" : "blocked"}`);
   for (const check of result.checks) {
@@ -1885,10 +1976,7 @@ export async function cmdPackageMigrationStatus(
     ApiV1PackageReadinessResponseSchema,
   );
 
-  if (options.json) {
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    return;
-  }
+  if (writeJsonIfRequested(options.json, result)) return;
 
   const version = result.package.latestVersion ?? "no release";
   console.log(`${result.package.name} migration: ${result.ready ? "ready" : "blocked"}`);
@@ -2661,13 +2749,12 @@ async function preparePackagePublishPlan(
     packageJsonString(pluginManifest, "id") ||
     packageJsonString(bundleManifest, "id") ||
     basename(folder).trim().toLowerCase();
-  const displayName =
+  const declaredDisplayName =
     options.displayName?.trim() ||
     packageJsonString(pluginManifest, "name") ||
     packageJsonString(packageJson, "displayName") ||
-    packageJsonString(bundleManifest, "name") ||
-    readReadmeH1FromPackageFiles(filesOnDisk) ||
-    titleCase(basename(folder));
+    packageJsonString(bundleManifest, "name");
+  let templateAgentName: string | undefined;
   const ownerHandle = options.owner?.trim().replace(/^@+/, "");
   const version =
     options.version?.trim() ||
@@ -2678,7 +2765,6 @@ async function preparePackagePublishPlan(
   const source = buildSource(options, inferredSource);
 
   if (!name) fail("--name required");
-  if (!displayName) fail("--display-name required");
   if (!version) fail("--version required");
   if (family === "code-plugin" && !fileSet.has("openclaw.plugin.json")) {
     fail("openclaw.plugin.json required");
@@ -2712,10 +2798,20 @@ async function preparePackagePublishPlan(
     if (!validation.ok) {
       fail(validation.issues.map((issue) => `${issue.path}: ${issue.message}`).join(" "));
     }
+    templateAgentName = validation.value.manifest.agent.name?.trim() || undefined;
     if (!clawpackOnDisk) {
       fail("Template publication requires an already-built package tarball (.tgz)");
     }
   }
+
+  const displayName =
+    declaredDisplayName ||
+    templateAgentName ||
+    (family === "template" ? undefined : readReadmeH1FromPackageFiles(filesOnDisk)) ||
+    (parsedClawpack
+      ? displayNameFromArchive(basename(folder), parsedClawpack.packageVersion)
+      : titleCase(basename(folder)));
+  if (!displayName) fail("--display-name required");
 
   if (family === "code-plugin" && !clawpackOnDisk) {
     const packDestination = await mkdtemp(join(tmpdir(), "clawhub-clawpack-"));
@@ -2959,7 +3055,10 @@ async function resolvePackagePublishToken(params: {
     if (params.spinner) {
       params.spinner.text = "Trusted publishing unavailable, falling back to ClawHub token";
     }
-    return { kind: "user" as const, token: await requireAuthToken(params.registry) };
+    // Do not let a missing fallback token hide the trusted-publishing failure.
+    const token = await getOptionalAuthToken(params.registry);
+    if (!token) throw error;
+    return { kind: "user" as const, token };
   }
 }
 

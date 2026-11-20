@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("./lib/verifiedClientIp", () => ({
   getVerifiedClientIp: async () => "203.0.113.1",
 }));
+import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
 import { internal } from "./_generated/api";
 import { derivePluginManifestSummary } from "./lib/packageRegistry";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
@@ -28,21 +29,18 @@ async function fixture() {
       updatedAt: 1,
     });
     const packageId = await ctx.db.insert("packages", {
+      ...createPackageSeedDefaults(),
       name: "@openclaw/whatsapp",
       normalizedName: "@openclaw/whatsapp",
       displayName: "WhatsApp",
       ownerUserId,
       ownerPublisherId,
-      family: "code-plugin",
       channel: "official",
       isOfficial: true,
       scanStatus: "clean",
       categories: ["channels"],
       topics: ["WhatsApp"],
       stats: { downloads: 100, installs: 1, stars: 0, versions: 1 },
-      tags: {},
-      createdAt: 1,
-      updatedAt: 1,
     });
     const releaseId = await ctx.db.insert("packageReleases", {
       packageId,

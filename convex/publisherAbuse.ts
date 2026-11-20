@@ -982,84 +982,59 @@ export async function autoBanPublisherAbuseCandidatesPageInternalHandler(
       continue;
     }
 
-    if (!nomination.ownerPublisherId) {
-      await setPublisherAbuseReviewStatusWithActor(ctx, {
-        nomination,
-        status: "needs_policy_discussion",
-        notes: MISSING_PUBLISHER_AUTOBAN_SKIP_NOTE,
-        now,
-      });
+    const markSkipped = async (
+      status: "needs_policy_discussion" | "reviewed_no_action",
+      notes: string,
+    ) => {
+      await setPublisherAbuseReviewStatusWithActor(ctx, { nomination, status, notes, now });
       skipped += 1;
+    };
+
+    if (!nomination.ownerPublisherId) {
+      await markSkipped("needs_policy_discussion", MISSING_PUBLISHER_AUTOBAN_SKIP_NOTE);
       continue;
     }
 
     const publisher = await ctx.db.get(nomination.ownerPublisherId);
     if (!publisher) {
-      await setPublisherAbuseReviewStatusWithActor(ctx, {
-        nomination,
-        status: "needs_policy_discussion",
-        notes: MISSING_PUBLISHER_AUTOBAN_SKIP_NOTE,
-        now,
-      });
-      skipped += 1;
+      await markSkipped("needs_policy_discussion", MISSING_PUBLISHER_AUTOBAN_SKIP_NOTE);
       continue;
     }
 
     if (publisher.deletedAt || publisher.deactivatedAt) {
-      await setPublisherAbuseReviewStatusWithActor(ctx, {
-        nomination,
-        status: "reviewed_no_action",
-        notes: INACTIVE_PUBLISHER_AUTOBAN_SKIP_NOTE,
-        now,
-      });
-      skipped += 1;
+      await markSkipped("reviewed_no_action", INACTIVE_PUBLISHER_AUTOBAN_SKIP_NOTE);
       continue;
     }
 
     if (await isPublisherExcludedFromPublisherAbuse(ctx, publisher)) {
-      await setPublisherAbuseReviewStatusWithActor(ctx, {
-        nomination,
-        status: "reviewed_no_action",
-        notes: "Autoban skipped: publisher is excluded from publisher abuse enforcement.",
-        now,
-      });
-      skipped += 1;
+      await markSkipped(
+        "reviewed_no_action",
+        "Autoban skipped: publisher is excluded from publisher abuse enforcement.",
+      );
       continue;
     }
 
     if (!nomination.ownerUserId || publisher.linkedUserId !== nomination.ownerUserId) {
-      await setPublisherAbuseReviewStatusWithActor(ctx, {
-        nomination,
-        status: "needs_policy_discussion",
-        notes: nomination.ownerUserId
+      await markSkipped(
+        "needs_policy_discussion",
+        nomination.ownerUserId
           ? STALE_PUBLISHER_LINK_AUTOBAN_SKIP_NOTE
           : "Autoban skipped: nomination has no linked user account.",
-        now,
-      });
-      skipped += 1;
+      );
       continue;
     }
 
     const targetUser = await ctx.db.get(nomination.ownerUserId);
     if (!targetUser) {
-      await setPublisherAbuseReviewStatusWithActor(ctx, {
-        nomination,
-        status: "needs_policy_discussion",
-        notes: "Autoban skipped: user_not_found.",
-        now,
-      });
-      skipped += 1;
+      await markSkipped("needs_policy_discussion", "Autoban skipped: user_not_found.");
       continue;
     }
 
     if (targetUser.role === "admin" || targetUser.role === "moderator") {
-      await setPublisherAbuseReviewStatusWithActor(ctx, {
-        nomination,
-        status: "needs_policy_discussion",
-        notes: "Autoban skipped: staff accounts require manual review.",
-        now,
-      });
-      skipped += 1;
+      await markSkipped(
+        "needs_policy_discussion",
+        "Autoban skipped: staff accounts require manual review.",
+      );
       continue;
     }
 
@@ -1073,13 +1048,7 @@ export async function autoBanPublisherAbuseCandidatesPageInternalHandler(
         (!nomination.warningPendingAt || isPublisherAbusePendingWarningRetryable(nomination, now))
       ) {
         if (!targetUser.email?.trim()) {
-          await setPublisherAbuseReviewStatusWithActor(ctx, {
-            nomination,
-            status: "needs_policy_discussion",
-            notes: MISSING_WARNING_EMAIL_AUTOBAN_SKIP_NOTE,
-            now,
-          });
-          skipped += 1;
+          await markSkipped("needs_policy_discussion", MISSING_WARNING_EMAIL_AUTOBAN_SKIP_NOTE);
           continue;
         }
         await warnPublisherAbuseAutobanCandidate(ctx, {

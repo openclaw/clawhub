@@ -344,3 +344,28 @@ it("preserves the legacy internal entrypoints during rollout", async () => {
     await f.t.query(internal.publicSkillVersions.getPublicVersionSelectionsInternal, batch),
   );
 });
+
+it("preserves publishing-module file snapshot paths", async () => {
+  const f = await fixture();
+  await f.t.run((ctx) =>
+    ctx.db.insert("skillVersionFingerprints", {
+      skillId: f.skillId,
+      versionId: f.publishedId,
+      fingerprint: "fixture-fingerprint",
+      kind: "source",
+      createdAt: 1,
+    }),
+  );
+  const skillArgs = { skillId: f.skillId };
+  expect(await f.t.query(internal.skills.getSkillByIdInternal, skillArgs)).toEqual(
+    await f.t.query(internal.skillFileReads.getSkillByIdInternal, skillArgs),
+  );
+  const versionArgs = { versionId: f.publishedId };
+  expect(await f.t.query(internal.skills.getVersionByIdInternal, versionArgs)).toEqual(
+    await f.t.query(internal.skillFileReads.getVersionByIdInternal, versionArgs),
+  );
+  const fingerprintArgs = { skillVersionId: f.publishedId };
+  expect(await f.t.query(internal.skills.listVersionFingerprintsInternal, fingerprintArgs)).toEqual(
+    await f.t.query(internal.skillFileReads.listVersionFingerprintsInternal, fingerprintArgs),
+  );
+});

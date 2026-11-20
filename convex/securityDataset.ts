@@ -1,23 +1,15 @@
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
-import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import type { ActionCtx, QueryCtx } from "./_generated/server";
 import { internalAction, internalQuery } from "./functions";
 import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
 import { getOwnerPublisher } from "./lib/publishers";
-import {
-  isExcludedSkillBundlePath,
-  isPrimarySkillReadmePath,
-  redactBundleContent,
-  totalBundleBytes,
-  utf8Bytes,
-} from "./lib/securityDatasetRedaction";
+import { collectArtifactExportBatch, MAX_EXPORT_BATCH_PAGES } from "./lib/securityDatasetBatch";
+import { readRedactedBundleFiles, readRedactedSkillMdContent } from "./lib/securityDatasetContent";
+import { totalBundleBytes } from "./lib/securityDatasetRedaction";
 
 const MAX_EXPORT_PAGE_SIZE = 50;
-const MAX_EXPORT_BATCH_PAGES = 20;
-const MAX_REDACTED_BUNDLE_FILE_BYTES = 192 * 1024;
-const MAX_REDACTED_BUNDLE_BYTES_PER_ARTIFACT = 256 * 1024;
 const MAX_REDACTED_BUNDLE_BYTES_PER_RESPONSE = 256 * 1024;
 const REDACTION_POLICY_VERSION = "public-signals-v2-bundle-files";
 const SOURCE_TABLES = ["skillVersions", "packageReleases"] as const;
@@ -34,7 +26,7 @@ type StoredLlmAnalysis = Doc<"skillVersions">["llmAnalysis"];
 type ArtifactExportRow =
   | Awaited<ReturnType<typeof skillVersionPageToLatestExportRows>>[number]
   | Awaited<ReturnType<typeof packageReleasePageToExportRows>>[number];
-type ArtifactExportPage = {
+export type ArtifactExportPage = {
   page: ArtifactExportRow[];
   isDone: boolean;
   continueCursor: string;
@@ -117,34 +109,10 @@ export const listArtifactExportBatchInternal = internalAction({
     pageCount: v.number(),
   },
   handler: async (ctx, args) => {
-    const pageCount = Math.min(Math.max(1, Math.floor(args.pageCount)), MAX_EXPORT_BATCH_PAGES);
-    let cursor = args.paginationOpts.cursor;
-    const page: ArtifactExportPage["page"] = [];
-    let isDone = false;
-    for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
-      const result: ArtifactExportPage = await ctx.runQuery(
-        internal.securityDataset.listArtifactExportPageInternal,
-        {
-          sourceKind: args.sourceKind,
-          mode: args.mode,
-          createdAtGte: args.createdAtGte,
-          createdAtLt: args.createdAtLt,
-          paginationOpts: {
-            cursor,
-            numItems: args.paginationOpts.numItems,
-          },
-        },
-      );
-      page.push(...result.page);
-      cursor = result.continueCursor;
-      isDone = result.isDone;
-      if (isDone) break;
-    }
+    const batch = await collectArtifactExportBatch(ctx, args);
     return {
-      page: await enrichAndSanitizeArtifactRows(ctx, page),
-      isDone,
-      continueCursor: cursor,
-      exportMode: args.mode ?? "public",
+      ...batch,
+      page: await enrichAndSanitizeArtifactRows(ctx, batch.page),
     };
   },
 });
@@ -313,46 +281,6 @@ async function enrichAndSanitizeArtifactRows(ctx: ActionCtx, rows: ArtifactExpor
     });
   }
   return enrichedRows;
-}
-
-async function readRedactedBundleFiles(
-  ctx: Pick<ActionCtx, "storage">,
-  files: Array<{ path: string; size?: number; storageId?: unknown }>,
-  remainingResponseBytes: number,
-) {
-  const bundleFiles: Array<{ path: string; content: string }> = [];
-  let remainingArtifactBytes = Math.min(
-    remainingResponseBytes,
-    MAX_REDACTED_BUNDLE_BYTES_PER_ARTIFACT,
-  );
-  for (const file of files) {
-    if (isExcludedSkillBundlePath(file.path) || typeof file.storageId !== "string") continue;
-    if (typeof file.size === "number" && file.size > MAX_REDACTED_BUNDLE_FILE_BYTES) continue;
-    if (remainingArtifactBytes <= 0) break;
-    const blob = await ctx.storage.get(file.storageId as never);
-    if (!blob) continue;
-    const content = redactBundleContent(await blob.text());
-    const contentBytes = utf8Bytes(content);
-    if (contentBytes > MAX_REDACTED_BUNDLE_FILE_BYTES || contentBytes > remainingArtifactBytes) {
-      continue;
-    }
-    bundleFiles.push({ path: file.path, content });
-    remainingArtifactBytes -= contentBytes;
-  }
-  return bundleFiles;
-}
-
-async function readRedactedSkillMdContent(
-  ctx: Pick<ActionCtx, "storage">,
-  files: Array<{ path: string; storageId?: unknown }>,
-) {
-  const skillFile = files.find((file) => {
-    return isPrimarySkillReadmePath(file.path);
-  });
-  if (!skillFile || typeof skillFile.storageId !== "string") return null;
-  const blob = await ctx.storage.get(skillFile.storageId as never);
-  if (!blob) return null;
-  return redactBundleContent(await blob.text()).trim();
 }
 
 function normalizeVtAnalysis(analysis: StoredVtAnalysis) {

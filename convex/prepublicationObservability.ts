@@ -1,6 +1,7 @@
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import { internalAction, internalQuery } from "./functions";
+import { runQueryRef } from "./lib/functionRefs";
 import { Events, logEvent } from "./lib/observabilityEvents";
 
 const MAX_PREPUBLICATION_QUEUE_HEALTH_READS = 512;
@@ -24,14 +25,6 @@ const internalRefs = internal as unknown as {
     getPrePublicationQueueHealthInternal: unknown;
   };
 };
-
-async function runQueryRef<T>(
-  ctx: { runQuery: (ref: never, args: never) => Promise<unknown> },
-  ref: unknown,
-  args: unknown,
-): Promise<T> {
-  return (await ctx.runQuery(ref as never, args as never)) as T;
-}
 
 function isReady(attempt: Doc<"publishAttempts">, snapshotAt: number) {
   return (attempt.checkClaimExpiresAt ?? 0) <= snapshotAt;

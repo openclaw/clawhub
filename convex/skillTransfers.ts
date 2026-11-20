@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { MutationCtx } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, internalQuery } from "./functions";
 import {
   assertCanManageOwnedResource,
@@ -20,8 +20,8 @@ function isExpired(transfer: TransferDoc, now: number) {
   return transfer.expiresAt < now;
 }
 
-async function requireActiveUserById(ctx: unknown, userId: Id<"users">) {
-  const db = (ctx as { db: { get: (id: Id<"users">) => Promise<Doc<"users"> | null> } }).db;
+async function requireActiveUserById(ctx: Pick<QueryCtx, "db">, userId: Id<"users">) {
+  const db = ctx.db;
   const user = await db.get(userId);
   if (!user || user.deletedAt || user.deactivatedAt) throw new Error("Unauthorized");
   return user;
@@ -106,27 +106,12 @@ async function findTransferDestinationSlugConflict(
   return null;
 }
 
-async function getActivePendingTransferForSkill(ctx: unknown, skillId: Id<"skills">, now: number) {
-  const db = (
-    ctx as {
-      db: {
-        patch: (id: Id<"skillOwnershipTransfers">, value: Partial<TransferDoc>) => Promise<unknown>;
-        query: (table: "skillOwnershipTransfers") => {
-          withIndex: (
-            indexName: "by_skill_status",
-            cb: (q: {
-              eq: (
-                field: "skillId",
-                value: Id<"skills">,
-              ) => {
-                eq: (field: "status", value: "pending") => unknown;
-              };
-            }) => unknown,
-          ) => { collect: () => Promise<TransferDoc[]> };
-        };
-      };
-    }
-  ).db;
+async function getActivePendingTransferForSkill(
+  ctx: Pick<MutationCtx, "db">,
+  skillId: Id<"skills">,
+  now: number,
+) {
+  const db = ctx.db;
 
   const transfers = await db
     .query("skillOwnershipTransfers")
@@ -145,7 +130,7 @@ async function getActivePendingTransferForSkill(ctx: unknown, skillId: Id<"skill
 }
 
 async function validatePendingTransferForActor(
-  ctx: unknown,
+  ctx: Pick<MutationCtx, "db">,
   params: {
     transferId: Id<"skillOwnershipTransfers">;
     actorUserId: Id<"users">;
@@ -153,14 +138,7 @@ async function validatePendingTransferForActor(
     now: number;
   },
 ) {
-  const db = (
-    ctx as {
-      db: {
-        get: (id: Id<"skillOwnershipTransfers">) => Promise<TransferDoc | null>;
-        patch: (id: Id<"skillOwnershipTransfers">, value: Partial<TransferDoc>) => Promise<unknown>;
-      };
-    }
-  ).db;
+  const db = ctx.db;
 
   const transfer = await db.get(params.transferId);
   if (!transfer) throw new Error("Transfer not found");

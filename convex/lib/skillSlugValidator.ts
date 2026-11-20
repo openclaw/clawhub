@@ -131,14 +131,6 @@ interface ValidateSlugOptions {
   allowReserved?: boolean;
 }
 
-export const SKILL_SLUG_CONSTRAINTS = {
-  minLength: MIN_SLUG_LENGTH,
-  maxLength: MAX_SLUG_LENGTH,
-  pattern: SLUG_PATTERN,
-  reserved: RESERVED_SKILL_SLUGS,
-  protectedAffixes: PROTECTED_SKILL_SLUG_AFFIXES,
-} as const;
-
 /**
  * Lowercase and trim a slug. Does not throw.
  *
@@ -150,30 +142,10 @@ export function normalizeSkillSlug(raw: string | undefined | null): string {
 }
 
 /**
- * Check whether a string already matches the full slug shape rules.
- * Returns true only when the value is a plausible slug (length, pattern).
- *
- * Note: this intentionally does NOT consult the reserved-word blocklist
- * because legacy rows may still carry reserved slugs and we want to
- * keep them readable. It DOES enforce the current min-length floor
- * (MIN_SLUG_LENGTH) and is therefore only appropriate for call sites
- * that treat a value as a "newly-shaped" slug. For read-only lookups
- * (search, redirect) that must stay discoverable for pre-existing
- * short slugs, use isSearchableSkillSlugShape instead.
- */
-export function isValidSkillSlugShape(value: string | undefined | null): boolean {
-  const normalized = normalizeSkillSlug(value);
-  if (normalized.length < MIN_SLUG_LENGTH || normalized.length > MAX_SLUG_LENGTH) {
-    return false;
-  }
-  return SLUG_PATTERN.test(normalized);
-}
-
-/**
  * Lenient shape check used by read paths (search exact-slug optimization,
  * redirect lookups, etc.).
  *
- * Unlike isValidSkillSlugShape, this predicate intentionally omits:
+ * Unlike write-path validation, this predicate intentionally omits:
  *   - the min-length floor (legacy rows with 1- or 2-char slugs must stay
  *     retrievable via the by_slug fast path),
  *   - the max-length cap (rows persisted before MAX_SLUG_LENGTH was
@@ -248,13 +220,4 @@ function getProtectedSkillSlugAffix(normalizedSlug: string): string | null {
     }
   }
   return null;
-}
-
-/**
- * Convenience predicate: is the slug on the reserved/protected blocklist?
- * Exposed so callers (e.g. admin tooling) can pre-check without a throw.
- */
-export function isReservedSkillSlug(slug: string | undefined | null): boolean {
-  const normalized = normalizeSkillSlug(slug);
-  return RESERVED_SKILL_SLUGS.has(normalized) || getProtectedSkillSlugAffix(normalized) !== null;
 }

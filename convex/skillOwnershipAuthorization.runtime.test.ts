@@ -2,6 +2,7 @@
 /* @vitest-environment edge-runtime */
 import { convexTest } from "convex-test";
 import { expect, it } from "vitest";
+import { createActiveSkillSeedDefaults } from "../src/__tests__/helpers/activeSkillSeed";
 import { internal } from "./_generated/api";
 import schema from "./schema";
 
@@ -27,16 +28,12 @@ async function setupOrganizationSkill() {
       updatedAt: 1,
     });
     const skillId = await ctx.db.insert("skills", {
+      ...createActiveSkillSeedDefaults(),
       slug: "organization-skill",
       displayName: "Organization skill",
       ownerUserId: creatorId,
       ownerPublisherId: publisherId,
-      tags: {},
-      badges: {},
-      moderationStatus: "active",
       stats: { comments: 0, downloads: 0, stars: 0, versions: 0 },
-      createdAt: 1,
-      updatedAt: 1,
     });
     return { creatorId, recipientId, publisherId, membershipId, skillId };
   });

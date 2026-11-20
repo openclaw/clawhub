@@ -1,8 +1,8 @@
 /* @vitest-environment node */
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
+import { createTestTempDirectories } from "../lib/testTempDirectories";
 
 const probe = vi.hoisted(() => ({
   calls: 0,
@@ -112,13 +112,13 @@ vi.mock("../lib/runWorkerCommand", async (original) => {
 });
 import { main } from "./solaris-bundled-diagnostic";
 
-const roots: string[] = [];
+const roots = createTestTempDirectories("solaris-diagnostic-test-");
 const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
 afterEach(async () => {
   Object.defineProperty(process, "platform", platform);
   vi.unstubAllEnvs();
   process.exitCode = undefined;
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  await roots.cleanup();
 });
 
 async function setup(corrupt = false) {
@@ -128,8 +128,7 @@ async function setup(corrupt = false) {
   // A later production rollout must not silently rewrite that diagnostic scope.
   probe.adoptedCommitOverride = "c3cfaf1515a47685786d72f031c714b1e5d9b34e";
   probe.scannerCommit = probe.adoptedCommitOverride;
-  const root = await mkdtemp(join(tmpdir(), "solaris-diagnostic-test-"));
-  roots.push(root);
+  const root = await roots.create();
   const source = join(root, "solaris-source/harnesses/openclaw/skills/control");
   await mkdir(source, { recursive: true });
   await writeFile(join(source, "SKILL.md"), corrupt ? "changed" : "control");

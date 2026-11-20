@@ -268,7 +268,7 @@ describe("cliDeviceAuth approval", () => {
     });
   });
 
-  it("does not deny stale pending rows after expiring them", async () => {
+  it("rejects a stale pending row instead of reporting a deny", async () => {
     const now = Date.now();
     const { ctx, patch } = makeCtx([
       {
@@ -281,7 +281,7 @@ describe("cliDeviceAuth approval", () => {
       },
     ]);
 
-    await expect(denyHandler(ctx, { userCode: "Q639-NBSX" })).resolves.toEqual({ ok: true });
+    await expect(denyHandler(ctx, { userCode: "Q639-NBSX" })).rejects.toThrow(/expired/);
 
     expect(patch).toHaveBeenCalledTimes(1);
     expect(patch).toHaveBeenCalledWith("cliDeviceCodes:expired", { status: "expired" });

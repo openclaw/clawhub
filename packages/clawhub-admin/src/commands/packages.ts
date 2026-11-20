@@ -3,12 +3,13 @@ import {
   presentModerationPlan,
   reportModerationPlan,
 } from "../../../clawhub/src/cli/commands/moderationPlan.js";
+import { withLoaderErrorHandling } from "../../../clawhub/src/cli/loader.js";
+import { writeJsonIfRequested } from "../../../clawhub/src/cli/output.js";
 import { getRegistry } from "../../../clawhub/src/cli/registry.js";
 import type { GlobalOpts } from "../../../clawhub/src/cli/types.js";
 import {
   createCrabLoader,
   fail,
-  formatError,
   isInteractive,
   promptConfirm,
 } from "../../../clawhub/src/cli/ui.js";
@@ -195,7 +196,7 @@ export async function cmdExportPackageValidationReport(
     },
     plugins,
   };
-  if (options.json) process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  writeJsonIfRequested(options.json, report);
   return report;
 }
 
@@ -228,7 +229,7 @@ export async function cmdHardDeletePackage(
   const spinner = options.json
     ? null
     : createCrabLoader(`${dryRun ? "Planning hard delete for" : "Hard-deleting"} ${name}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -250,12 +251,9 @@ export async function cmdHardDeletePackage(
         ? `Hard-deleted @${result.ownerHandle}/${result.name}`
         : `Dry run OK for @${result.ownerHandle}/${result.name}: pass --apply --confirm ${result.confirmationToken}`,
     );
-    if (options.json) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    writeJsonIfRequested(options.json, result);
     return result;
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdDeletePackageTrustedPublisher(
@@ -267,22 +265,16 @@ export async function cmdDeletePackageTrustedPublisher(
   const registry = await getRegistry(opts, { cache: true });
   const token = await requireAuthToken(registry);
   const spinner = createCrabLoader("Deleting trusted publisher");
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest<{ ok: boolean }>(registry, {
       method: "DELETE",
       path: `${ApiRoutes.packages}/${encodeURIComponent(trimmed)}/trusted-publisher`,
       token,
     });
     spinner.stop();
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-      return;
-    }
+    if (writeJsonIfRequested(options.json, result)) return;
     console.log(`Trusted publisher deleted for ${trimmed}.`);
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdModeratePackageRelease(
@@ -303,7 +295,7 @@ export async function cmdModeratePackageRelease(
   const registry = await getRegistry(opts, { cache: true });
   const token = await requireAuthToken(registry);
   const spinner = options.json ? null : createCrabLoader(`Moderating ${trimmed}@${version}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -315,16 +307,10 @@ export async function cmdModeratePackageRelease(
       ApiV1PackageReleaseModerationResponseSchema,
     );
     spinner?.stop();
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-      return;
-    }
+    if (writeJsonIfRequested(options.json, result)) return;
     console.log(`OK. ${trimmed}@${version} moderation state set to ${result.state}.`);
     console.log(`Scan status: ${result.scanStatus}`);
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdListPackageReports(
@@ -353,10 +339,7 @@ export async function cmdListPackageReports(
     ApiV1PackageReportListResponseSchema,
   );
 
-  if (options.json) {
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    return;
-  }
+  if (writeJsonIfRequested(options.json, result)) return;
 
   if (result.items.length === 0) {
     console.log("No package reports found.");
@@ -408,7 +391,7 @@ export async function cmdTriagePackageReport(
   const registry = await getRegistry(opts, { cache: true });
   const token = await requireAuthToken(registry);
   const spinner = options.json ? null : createCrabLoader(`Updating report ${trimmed}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -424,17 +407,11 @@ export async function cmdTriagePackageReport(
       ApiV1PackageReportTriageResponseSchema,
     );
     spinner?.stop();
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-      return;
-    }
+    if (writeJsonIfRequested(options.json, result)) return;
     const actionSuffix =
       result.actionTaken && result.actionTaken !== "none" ? `; action ${result.actionTaken}` : "";
     console.log(`OK. Report ${trimmed} set to ${result.status}${actionSuffix}.`);
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdPackageModerationQueue(
@@ -463,10 +440,7 @@ export async function cmdPackageModerationQueue(
     ApiV1PackageModerationQueueResponseSchema,
   );
 
-  if (options.json) {
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    return;
-  }
+  if (writeJsonIfRequested(options.json, result)) return;
 
   if (result.items.length === 0) {
     console.log("No package releases in the moderation queue.");
@@ -511,7 +485,7 @@ export async function cmdRepairPackageName(
   const spinner = options.json
     ? null
     : createCrabLoader(`${dryRun ? "Planning" : "Applying"} package name repair`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -529,10 +503,7 @@ export async function cmdRepairPackageName(
       ApiV1PackageRepairNameResponseSchema,
     );
     spinner?.stop();
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-      return;
-    }
+    if (writeJsonIfRequested(options.json, result)) return;
 
     console.log(
       `${result.dryRun ? "Dry run" : "Applied"} package repair: ${trimmed} -> ${nextName}`,
@@ -546,10 +517,7 @@ export async function cmdRepairPackageName(
       }
     }
     if (result.dryRun) console.log("Re-run with --apply to write these changes.");
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdRepairPackageRuntimeId(
@@ -569,7 +537,7 @@ export async function cmdRepairPackageRuntimeId(
   const spinner = options.json
     ? null
     : createCrabLoader(`${dryRun ? "Planning" : "Applying"} package runtime id repair`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -585,20 +553,14 @@ export async function cmdRepairPackageRuntimeId(
       ApiV1PackageRepairRuntimeIdResponseSchema,
     );
     spinner?.stop();
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-      return;
-    }
+    if (writeJsonIfRequested(options.json, result)) return;
 
     console.log(`${result.dryRun ? "Dry run" : "Applied"} package runtime id repair: ${trimmed}`);
     for (const operation of result.operations) {
       console.log(`- ${operation.action}: ${operation.from ?? "<none>"} -> ${operation.to}`);
     }
     if (result.dryRun) console.log("Re-run with --apply to write these changes.");
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdListPackageMigrations(
@@ -640,10 +602,7 @@ export async function cmdListPackageMigrations(
     ApiV1PackageOfficialMigrationListResponseSchema,
   );
 
-  if (options.json) {
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    return;
-  }
+  if (writeJsonIfRequested(options.json, result)) return;
 
   if (result.items.length === 0) {
     console.log("No package migrations found.");
@@ -679,7 +638,7 @@ export async function cmdUpsertPackageMigration(
   const registry = await getRegistry(opts, { cache: true });
   const token = await requireAuthToken(registry);
   const spinner = options.json ? null : createCrabLoader(`Updating migration ${trimmed}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -711,17 +670,11 @@ export async function cmdUpsertPackageMigration(
       ApiV1PackageOfficialMigrationResponseSchema,
     );
     spinner?.stop();
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-      return;
-    }
+    if (writeJsonIfRequested(options.json, result)) return;
     console.log(
       `OK. Migration ${result.migration.bundledPluginId} is ${result.migration.phase} for ${result.migration.packageName}.`,
     );
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdTransferPackageOwner(
@@ -741,7 +694,7 @@ export async function cmdTransferPackageOwner(
   const spinner = options.json
     ? null
     : createCrabLoader(`${dryRun ? "Planning" : "Applying"} package owner transfer`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -758,10 +711,7 @@ export async function cmdTransferPackageOwner(
       ApiV1PackageRepairNameResponseSchema,
     );
     spinner?.stop();
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-      return result;
-    }
+    if (writeJsonIfRequested(options.json, result)) return result;
     console.log(
       `${result.dryRun ? "Dry run" : "Applied"} package transfer: ${trimmed} -> @${owner}`,
     );
@@ -772,10 +722,7 @@ export async function cmdTransferPackageOwner(
     }
     if (result.dryRun) console.log("Re-run with --apply to write this change.");
     return result;
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 function normalizePackageNameOrFail(packageName: string) {

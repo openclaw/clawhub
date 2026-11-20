@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -18,6 +17,7 @@ import {
   securityWorkerDeadline,
 } from "../../convex/lib/securityWorkerBudgets";
 import { runWorkerCommand, CommandFailure } from "../lib/runWorkerCommand";
+import { numberFrom, optionalNumberFrom, requireEnv } from "../lib/scriptConfig";
 import { createWorkerLogger } from "../lib/workerLogger";
 import {
   maskKnownWorkerSecrets,
@@ -168,14 +168,6 @@ export function parseArgs(args = process.argv.slice(2), env: NodeJS.ProcessEnv =
     const value = index === -1 ? undefined : args[index + 1];
     return value && !value.startsWith("--") ? value : undefined;
   };
-  const numberFrom = (value: string | undefined, fallback: number) => {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-  };
-  const optionalNumberFrom = (value: string | undefined) => {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
-  };
   const optionalStringFrom = (value: string | undefined) => value?.trim() || undefined;
   const kind = optionalStringFrom(get("--kind") ?? env.PREPUBLICATION_CHECK_KIND);
   if (kind && kind !== "skill" && kind !== "package") {
@@ -201,12 +193,6 @@ export function parseArgs(args = process.argv.slice(2), env: NodeJS.ProcessEnv =
       version: optionalStringFrom(get("--version") ?? env.PREPUBLICATION_CHECK_VERSION),
     } satisfies PrePublicationClaimFilters,
   };
-}
-
-function requireEnv(name: string) {
-  const value = process.env[name]?.trim();
-  if (!value) throw new Error(`${name} is required`);
-  return value;
 }
 
 function publicText(value: string, maxChars = MAX_PUBLIC_SUMMARY_CHARS) {
@@ -331,61 +317,24 @@ async function runCommand(
     onOutput?: (output: { code: number | null; stdout: string; stderr: string }) => void;
   },
 ) {
-  return await new Promise<{ code: number | null; stdout: string; stderr: string }>(
-    (resolvePromise, reject) => {
-      const child = spawn(command, args, {
-        cwd: options.cwd,
-        detached: process.platform !== "win32",
-        env: options.env,
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-      let stdout = "";
-      let stderr = "";
-      let timedOut = false;
-      let forceKillTimeout: NodeJS.Timeout | undefined;
-      const killProcessTree = (signal: NodeJS.Signals) => {
-        if (process.platform !== "win32" && child.pid) {
-          try {
-            process.kill(-child.pid, signal);
-            return;
-          } catch {
-            // The process group may already have exited; fall back to the direct child.
-          }
-        }
-        child.kill(signal);
-      };
-      const timeout = setTimeout(() => {
-        timedOut = true;
-        killProcessTree("SIGTERM");
-        forceKillTimeout = setTimeout(() => killProcessTree("SIGKILL"), 10_000);
-        forceKillTimeout.unref();
-      }, options.timeoutMs);
-      child.stdout.on("data", (chunk) => {
-        stdout += String(chunk);
-      });
-      child.stderr.on("data", (chunk) => {
-        stderr += String(chunk);
-      });
-      child.on("error", (error) => {
-        clearTimeout(timeout);
-        if (timedOut) killProcessTree("SIGKILL");
-        if (forceKillTimeout) clearTimeout(forceKillTimeout);
-        options.onOutput?.({ code: null, stdout, stderr });
-        reject(error);
-      });
-      child.on("close", (code) => {
-        clearTimeout(timeout);
-        if (timedOut) killProcessTree("SIGKILL");
-        if (forceKillTimeout) clearTimeout(forceKillTimeout);
-        options.onOutput?.({ code, stdout, stderr });
-        if (timedOut) {
-          reject(new Error(`${command} timed out`));
-          return;
-        }
-        resolvePromise({ code, stdout, stderr });
-      });
-    },
-  );
+  let output: { code: number | null; stdout: string; stderr: string } = {
+    code: null,
+    stdout: "",
+    stderr: "",
+  };
+  try {
+    output = { code: 0, ...(await runWorkerCommand(command, args, options)) };
+    return output;
+  } catch (error) {
+    if (error instanceof CommandFailure) {
+      output = { code: error.exitCode, stdout: error.stdout, stderr: error.stderr };
+      // Scanner exit codes carry verdicts; transport and resource failures must still reject.
+      if (error.failureKind === "exit") return output;
+    }
+    throw error;
+  } finally {
+    options.onOutput?.(output);
+  }
 }
 
 function restrictedChildEnvironment(
@@ -1349,6 +1298,11 @@ export async function processPrePublicationBatch(
             attemptId: attempt.attemptId,
             event: "prepublication_attempt_unhandled_failure",
             kind: attempt.kind,
+            // The cause was previously dropped, so a stalled attempt left no
+            // recoverable evidence: CI showed this line only and the attempt
+            // silently stayed claimable. Reuse the redacted backend diagnostic
+            // so the class and Convex request id survive without raw text.
+            ...backendFailureDiagnostic(error),
           },
           "pre-publication attempt failed unexpectedly; continuing batch",
         );
@@ -1486,6 +1440,20 @@ async function main() {
     },
     "pre-publication worker summary",
   );
+
+  // Claiming work and completing none is a stall, not success. The run still
+  // exits zero so a known-held backlog cannot wedge the schedule red, but the
+  // error level gives alerting a signal instead of a green job hiding it.
+  if (totalClaimed > 0 && totalCompleted === 0) {
+    logger.error(
+      {
+        event: "prepublication_worker_stalled",
+        totalClaimed,
+        totalCompleted,
+      },
+      "pre-publication worker claimed attempts but completed none",
+    );
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

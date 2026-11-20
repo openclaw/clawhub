@@ -14,7 +14,7 @@
 
 .template-detail-hero {
   max-width: 744px;
-  margin-bottom: 64px;
+  margin-bottom: 40px;
 }
 
 .template-detail-category {
@@ -96,13 +96,14 @@
   min-width: 0;
 }
 
-.template-detail-install .skill-install-command-header {
-  box-sizing: border-box;
-  min-height: 52px;
-  margin: 0;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--line);
-  align-items: center;
+/* Keep the review notice in the content column, adjacent to its publisher. */
+.template-detail-hero:has(+ .template-detail-layout .pending-package-notice),
+.template-detail-main > .template-detail-hero:has(+ .pending-package-notice) {
+  margin-bottom: 18px;
+}
+
+.template-detail-main > .pending-package-notice {
+  margin-bottom: 20px;
 }
 
 .template-detail-install .skill-install-panel-title {
@@ -114,12 +115,20 @@
 }
 
 .template-detail-install .skill-install-command-shell {
-  min-height: 54px;
   background: var(--oc-bg-surface);
 }
 
-.template-detail-contents {
-  margin-top: 48px;
+.template-detail-install .skill-install-command-shell:not(.skill-install-command-shell-cli) {
+  min-height: 54px;
+}
+
+.template-detail-metadata {
+  display: grid;
+  gap: 24px;
+}
+
+.template-detail-install {
+  min-width: 0;
 }
 
 .template-detail-tabs {
@@ -252,18 +261,6 @@
   overflow-wrap: anywhere;
 }
 
-.template-detail-security-value {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 2px;
-  align-items: center;
-  line-height: 19.2px;
-}
-
-.template-detail-security-value .security-audit-meter {
-  margin-right: 10px;
-}
-
 .template-detail-content-message {
   margin: 0;
   color: var(--ink-soft);
@@ -365,7 +362,7 @@
   }
 }
 
-@media (max-width: 800px) {
+@media (max-width: 900px) {
   .template-detail-page {
     padding: 36px 20px 48px;
   }
@@ -380,10 +377,14 @@
   }
 
   .template-detail-metadata {
-    grid-row: 1;
+    grid-row: auto;
   }
 
   .template-detail-panel {
     padding: 20px;
+  }
+
+  .template-detail-main > .template-detail-install {
+    margin-bottom: 36px;
   }
 }

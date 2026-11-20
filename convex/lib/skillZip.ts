@@ -1,7 +1,7 @@
 import {
   findTemplatePackagePathHierarchyCollision,
   isSafeTemplatePackagePath,
-} from "clawhub-schema";
+} from "clawhub-schema/templatePaths";
 import { Zip, ZipDeflate, zipSync } from "fflate";
 
 type ZipEntry = {
@@ -284,14 +284,6 @@ export function buildDeterministicPackageZip(entries: ZipEntry[]) {
   if (unsafeEntry) {
     throw new Error(`Package contains unsafe package path: ${unsafeEntry.path}`);
   }
-  const hierarchyCollision = findTemplatePackagePathHierarchyCollision(
-    entries.map((entry) => entry.path),
-  );
-  if (hierarchyCollision) {
-    throw new Error(
-      `Package contains file/ancestor path collision: ${hierarchyCollision.ancestor} and ${hierarchyCollision.descendant}`,
-    );
-  }
   return buildPackageZip(entries);
 }
 
@@ -305,14 +297,6 @@ export function buildLegacyPackageScanZip(entries: ZipEntry[]) {
   if (unsafeEntry) {
     throw new Error(`Package contains unsafe legacy scan path: ${unsafeEntry.path}`);
   }
-  const hierarchyCollision = findTemplatePackagePathHierarchyCollision(
-    entries.map((entry) => entry.path),
-  );
-  if (hierarchyCollision) {
-    throw new Error(
-      `Package contains file/ancestor path collision: ${hierarchyCollision.ancestor} and ${hierarchyCollision.descendant}`,
-    );
-  }
   return buildPackageZip(entries);
 }
 
@@ -325,6 +309,15 @@ function isSafeLegacyScanPath(value: string) {
 }
 
 function buildPackageZip(entries: ZipEntry[]) {
+  const hierarchyCollision = findTemplatePackagePathHierarchyCollision(
+    entries.map((entry) => entry.path),
+  );
+  if (hierarchyCollision) {
+    throw new Error(
+      `Package contains file/ancestor path collision: ${hierarchyCollision.ancestor} and ${hierarchyCollision.descendant}`,
+    );
+  }
+
   const sorted = [...entries].sort((a, b) => a.path.localeCompare(b.path));
   const zipData: ZipInput = {};
 

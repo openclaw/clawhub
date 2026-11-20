@@ -3,11 +3,8 @@
 import { describe, expect, it } from "vitest";
 import {
   assertValidSkillSlug,
-  isReservedSkillSlug,
   isSearchableSkillSlugShape,
-  isValidSkillSlugShape,
   normalizeSkillSlug,
-  SKILL_SLUG_CONSTRAINTS,
 } from "./skillSlugValidator";
 
 describe("normalizeSkillSlug", () => {
@@ -27,11 +24,13 @@ describe("assertValidSkillSlug", () => {
   it.each([
     "abc",
     "my-cool-skill",
+    "my-skill-1",
+    "my-skill",
     "skill-123",
     "a1b",
     "123",
     "abc-def-ghi",
-    "z".repeat(SKILL_SLUG_CONSTRAINTS.maxLength),
+    "z".repeat(96),
   ])("accepts valid slug %s", (slug) => {
     expect(() => assertValidSkillSlug(slug)).not.toThrow();
     expect(assertValidSkillSlug(slug)).toBe(slug.toLowerCase());
@@ -55,8 +54,9 @@ describe("assertValidSkillSlug", () => {
   it.each([
     ["", "required"],
     [" ", "required"],
+    ["a", "at least"],
     ["ab", "at least"],
-    ["a".repeat(SKILL_SLUG_CONSTRAINTS.maxLength + 1), "at most"],
+    ["a".repeat(97), "at most"],
     ["-abc", "start and end"],
     ["abc-", "start and end"],
     ["a--b", "start and end"],
@@ -69,9 +69,15 @@ describe("assertValidSkillSlug", () => {
     expect(() => assertValidSkillSlug(slug)).toThrow(new RegExp(hint, "i"));
   });
 
+  it("rejects nullish input", () => {
+    expect(() => assertValidSkillSlug(undefined)).toThrow(/required/i);
+    expect(() => assertValidSkillSlug(null)).toThrow(/required/i);
+  });
+
   it.each([
     "account-banned",
     "admin",
+    "  ADMIN  ",
     "settings",
     "api",
     "openclaw",
@@ -93,12 +99,15 @@ describe("assertValidSkillSlug", () => {
     },
   );
 
-  it.each(["openclaw-helper", "helper-openclaw", "official-git", "git-official"])(
-    "rejects protected namespace slug %s",
-    (slug) => {
-      expect(() => assertValidSkillSlug(slug)).toThrow(/protected/i);
-    },
-  );
+  it.each([
+    "openclaw-helper",
+    "helper-openclaw",
+    "official-git",
+    "git-official",
+    "helper-official",
+  ])("rejects protected namespace slug %s", (slug) => {
+    expect(() => assertValidSkillSlug(slug)).toThrow(/protected/i);
+  });
 
   it.each(["doca-comm-channel-admin", "admin-tools", "cluster-admin"])(
     "allows descriptive slugs that contain admin as an affix: %s",
@@ -117,53 +126,6 @@ describe("assertValidSkillSlug", () => {
     expect(assertValidSkillSlug("openclaw-helper", { allowReserved: true })).toBe(
       "openclaw-helper",
     );
-  });
-});
-
-describe("isValidSkillSlugShape", () => {
-  it("returns true for well-formed slugs", () => {
-    expect(isValidSkillSlugShape("abc")).toBe(true);
-    expect(isValidSkillSlugShape("my-skill-1")).toBe(true);
-  });
-
-  it("returns true for reserved slugs (shape only)", () => {
-    // The reserved-word blocklist is intentionally NOT consulted here so
-    // that legacy rows carrying reserved slugs remain lookup-able.
-    expect(isValidSkillSlugShape("admin")).toBe(true);
-  });
-
-  it("is case-insensitive (normalizes before checking)", () => {
-    // Matches legacy read-path behaviour: search queries like "My-Skill"
-    // should still resolve to the slug row.
-    expect(isValidSkillSlugShape("A-B")).toBe(true);
-  });
-
-  it("returns false for malformed slugs", () => {
-    expect(isValidSkillSlugShape("a")).toBe(false);
-    expect(isValidSkillSlugShape("ab")).toBe(false);
-    expect(isValidSkillSlugShape("a--b")).toBe(false);
-    expect(isValidSkillSlugShape("-abc")).toBe(false);
-    expect(isValidSkillSlugShape("abc-")).toBe(false);
-    expect(isValidSkillSlugShape("a_b")).toBe(false);
-    expect(isValidSkillSlugShape("")).toBe(false);
-    expect(isValidSkillSlugShape("a".repeat(SKILL_SLUG_CONSTRAINTS.maxLength + 1))).toBe(false);
-  });
-});
-
-describe("isReservedSkillSlug", () => {
-  it("identifies reserved slugs case-insensitively", () => {
-    expect(isReservedSkillSlug("admin")).toBe(true);
-    expect(isReservedSkillSlug("  ADMIN  ")).toBe(true);
-    expect(isReservedSkillSlug("openclaw")).toBe(true);
-    expect(isReservedSkillSlug("openclaw-helper")).toBe(true);
-    expect(isReservedSkillSlug("helper-official")).toBe(true);
-    expect(isReservedSkillSlug("publishers")).toBe(true);
-  });
-
-  it("returns false for non-reserved slugs", () => {
-    expect(isReservedSkillSlug("my-skill")).toBe(false);
-    expect(isReservedSkillSlug("")).toBe(false);
-    expect(isReservedSkillSlug(null)).toBe(false);
   });
 });
 
@@ -210,8 +172,8 @@ describe("isSearchableSkillSlugShape", () => {
     // path must still resolve them via the by_slug fast path; otherwise
     // searchSkills falls back to scanning only the most recent digests and
     // can miss older records entirely.
-    expect(isSearchableSkillSlugShape("a".repeat(SKILL_SLUG_CONSTRAINTS.maxLength))).toBe(true);
-    expect(isSearchableSkillSlugShape("a".repeat(SKILL_SLUG_CONSTRAINTS.maxLength + 1))).toBe(true);
+    expect(isSearchableSkillSlugShape("a".repeat(96))).toBe(true);
+    expect(isSearchableSkillSlugShape("a".repeat(97))).toBe(true);
     expect(isSearchableSkillSlugShape("a".repeat(200))).toBe(true);
   });
 });

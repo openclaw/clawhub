@@ -3,6 +3,8 @@
 ## Categories
 
 - Skills, plugins, and Templates use separate controlled slug registries from `clawhub-schema`.
+- The Template category set, its one-category rule, and how removed Template slugs are still
+  read are specified in [`template-categories.md`](./template-categories.md).
 - Template package categories remain authoritative through search-digest construction. The shared
   package digest preserves their assigned Template slugs (or Other for an unassigned historical
   package); only code and bundle plugins use plugin-category normalization and plugin category
@@ -52,6 +54,9 @@
   stored summary; missing historical evidence does not retain the removed release’s category.
   Restore and malicious-release quarantine follow the same rule. The package trigger owns both
   search projections, so lifecycle callers must not overwrite them with an earlier package snapshot.
+  Package writes synchronously refresh these projections from the persisted package and latest
+  release. Maintenance that repairs a projection without writing the package must call the same
+  canonical synchronizer explicitly.
 - Capability tags are not taxonomy inputs.
 - A reviewed one-time refresh covers only each plugin's latest published release and package
   projection. Older releases are unchanged; exact-version lookup remains null for historical

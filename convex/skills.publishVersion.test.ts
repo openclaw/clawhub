@@ -1,6 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { type FunctionReference, getFunctionName } from "convex/server";
 import { describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { generateEmbedding } from "./lib/embeddings";
 import { publishVersion } from "./skills";
 
@@ -14,13 +15,7 @@ vi.mock("./lib/embeddings", async (importOriginal) => ({
   generateEmbedding: vi.fn(async () => [0, 1, 2]),
 }));
 
-type WrappedHandler<TArgs, TResult> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
-
-const publishVersionHandler = (
-  publishVersion as unknown as WrappedHandler<Record<string, unknown>, unknown>
-)._handler;
+const publishVersionHandler = getTestHandler<Record<string, unknown>>(publishVersion);
 
 const skillMarkdown = [
   "---",

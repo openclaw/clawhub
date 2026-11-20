@@ -4,7 +4,11 @@ import {
   selectTemplateBundledPluginManifest,
   type TemplatePackageFile,
 } from "./templateBundled.js";
-import { hasPortablePathSegments, portablePathKey } from "./templatePaths.js";
+import {
+  findTemplatePackagePathHierarchyCollision,
+  isSafeTemplatePackagePath,
+  portablePathKey,
+} from "./templatePaths.js";
 import {
   summarizeTemplateManifest,
   templateDependencyInventory,
@@ -30,41 +34,11 @@ export type ValidatedTemplatePackage = {
 };
 const EXACT_VERSION_PATTERN =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
-const MAX_TEMPLATE_MANIFEST_BYTES = 1024 * 1024;
+export const MAX_TEMPLATE_MANIFEST_BYTES = 1024 * 1024;
 const MAX_PACKAGE_BOOTSTRAP_BYTES = 2 * 1024 * 1024;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-export function isSafeTemplatePackagePath(value: string): boolean {
-  const normalized = value.replaceAll("\\", "/");
-  if (
-    !normalized ||
-    normalized !== value ||
-    normalized !== normalized.trim() ||
-    normalized.startsWith("/") ||
-    /^[A-Za-z]:\//.test(normalized)
-  ) {
-    return false;
-  }
-  return hasPortablePathSegments(normalized);
-}
-
-export function findTemplatePackagePathHierarchyCollision(
-  paths: readonly string[],
-): { ancestor: string; descendant: string } | null {
-  const pathByKey = new Map(paths.map((path) => [portablePathKey(path), path]));
-  for (const descendant of paths) {
-    const segments = portablePathKey(descendant).split("/");
-    for (let length = 1; length < segments.length; length += 1) {
-      const ancestor = pathByKey.get(segments.slice(0, length).join("/"));
-      if (ancestor !== undefined) {
-        return { ancestor, descendant };
-      }
-    }
-  }
-  return null;
 }
 
 function issue(code: string, path: string, message: string): TemplatePackageValidationIssue {
@@ -95,7 +69,8 @@ function findUnsupportedYamlFeature(document: ReturnType<typeof parseDocument>) 
   return unsupportedFeature;
 }
 
-function parseManifestDocument(
+/** Read the same alias/tag-free YAML used at publication (also for already-admitted artwork). */
+export function parseTemplateMarkdownDocument(
   raw: string,
   manifestPath: string,
 ):
@@ -158,7 +133,7 @@ export function templateBundledMetadataPaths(
   manifestPath: string,
   packagePaths: readonly string[],
 ): string[] {
-  const parsed = parseManifestDocument(raw, manifestPath);
+  const parsed = parseTemplateMarkdownDocument(raw, manifestPath);
   if ("issues" in parsed) return [];
   const validated = validateTemplateManifest(parsed.value);
   if (!validated.ok) return [];
@@ -296,7 +271,7 @@ export function validateTemplatePackageContents(input: {
       ],
     };
   }
-  const parsed = parseManifestDocument(manifestFile.text, manifestPath);
+  const parsed = parseTemplateMarkdownDocument(manifestFile.text, manifestPath);
   if ("issues" in parsed) return { ok: false, issues: parsed.issues };
   const validated = validateTemplateManifest(parsed.value);
   if (!validated.ok) {
@@ -446,3 +421,8 @@ export function validateTemplatePackageContents(input: {
     },
   };
 }
+
+export {
+  findTemplatePackagePathHierarchyCollision,
+  isSafeTemplatePackagePath,
+} from "./templatePaths.js";

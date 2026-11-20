@@ -748,7 +748,8 @@ Query params:
   `/api/v1/code-plugins`, `/api/v1/bundle-plugins`, or package endpoints with
   `family=code-plugin`/`family=bundle-plugin`). Controlled categories and
   legacy v1 filter aliases are documented under `GET /api/v1/plugins`. With
-  `family=template`, use a [Template category](./templates.md) or `other`;
+  `family=template`, use a [Template category](./templates.md), `other`, or a
+  removed Template category (`personal`, `governance`, `finance`, `people`);
   unrecognized categories are rejected.
 
 Notes:
@@ -781,7 +782,8 @@ Query params:
 - `category` (optional): plugin or Template category filter. For plugins, scope
   the request to plugin packages. Controlled categories and legacy v1
   filter aliases are documented under `GET /api/v1/plugins`. With
-  `family=template`, use a [Template category](./templates.md) or `other`;
+  `family=template`, use a [Template category](./templates.md), `other`, or a
+  removed Template category (`personal`, `governance`, `finance`, `people`);
   unrecognized categories are rejected.
 
 Notes:
@@ -1006,6 +1008,10 @@ field to be absent when querying registries that predate it.
 Notes:
 
 - Skills and Templates can also resolve through this route in the unified catalog.
+- Package read routes also accept a Template's publisher-qualified reference:
+  `@publisher/slug` resolves an unscoped Template `slug` owned by `publisher`
+  when no package has that exact scoped name. The response keeps the stored
+  `package.name`. Plugins resolve by exact name only.
 - Template package metadata may include bounded `templateManifestSummary` and
   `templateProfilePolicyVersion: 1`. The summary exposes identity and resource
   counts, never the full manifest, prompt body, bootstrap, or profile contents.
@@ -1178,6 +1184,8 @@ Response fields:
   audit text from scanner fields.
 - `verdict` is the display verdict used by the package security-audit page, derived from ClawScan including visible agentic-risk findings. It can differ from the download-policy `trust.scanStatus`. Older registries may omit it; clients should treat that as unavailable display metadata.
 - `securityAuditUrl` links to the exact release's package security-audit page.
+  A Template release links to `/<publisher>/templates/<name>/security-audit`;
+  plugin releases link to their plugin security-audit page.
 - `package.name`, `package.displayName`, and `package.family` identify the
   resolved registry package.
 - `release.releaseId`, `release.version`, and `release.createdAt` identify the

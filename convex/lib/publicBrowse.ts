@@ -2,6 +2,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { isPublicSkillDoc } from "./globalStats";
 import {
+  isPendingSkillModerationReason,
   isSecurityScanStatusBlockedFromPublic,
   normalizeSecurityScanStatus,
 } from "./securityScanPolicy";
@@ -40,18 +41,6 @@ type SkillVersionPublicBrowseFields = Pick<
 export type PublicBrowseVersionState =
   | { status: "available"; versionId: Id<"skillVersions"> }
   | { status: "unavailable" };
-
-function isPendingSkillModerationReason(reason: string | null | undefined) {
-  const normalized = reason?.trim().toLowerCase();
-  return (
-    normalized === "pending.scan" ||
-    normalized === "pending.scan.stale" ||
-    // Legacy reason from the retired VirusTotal poller. It stays pending (fail
-    // closed) until backfillLatestSkillModerationInternal rebuilds it from ClawScan.
-    normalized === "scanner.vt.pending" ||
-    normalized === "scanner.llm.pending"
-  );
-}
 
 export function isSkillPendingPublicReview(
   skill: Pick<Doc<"skills">, "moderationStatus" | "moderationReason" | "moderationFlags">,

@@ -1,9 +1,10 @@
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, type APIRequestContext, type Page, test } from "@playwright/test";
 import convexBrowser from "convex/browser";
+import { strFromU8, unzipSync } from "fflate";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { parseArk } from "../../packages/schema/src/ark";
@@ -649,6 +650,32 @@ test("owner sees failed publication status over HTTP and the built CLI", async (
     const cliBody = parseJson(json.stdout);
     const text = runCli(inspectArgs);
     const file = runCli([...inspectArgs, "--file", "SKILL.md", "--json"]);
+    const scanDownload = runCli([
+      "scan",
+      "download",
+      `@${ownerHandle}/${slug}`,
+      "--version",
+      version,
+      "--output",
+      "failed-report.zip",
+    ]);
+    const report =
+      scanDownload.status === 0
+        ? unzipSync(new Uint8Array(await readFile(join(root, "failed-report.zip"))))
+        : {};
+    const reportReadme = report["README.md"] ? strFromU8(report["README.md"]) : "";
+    await writeFile(
+      testInfo.outputPath("owner-failed-scan-report-proof.txt"),
+      [
+        `exit: ${scanDownload.status}`,
+        scanDownload.stdout.replaceAll(root, "<workdir>"),
+        scanDownload.stderr,
+        `files: ${Object.keys(report).sort().join(", ")}`,
+        "",
+        reportReadme,
+        report["publication.json"] ? strFromU8(report["publication.json"]) : "",
+      ].join("\n"),
+    );
     await writeFile(
       testInfo.outputPath("owner-publication-cli-proof.json"),
       JSON.stringify(
@@ -696,6 +723,18 @@ test("owner sees failed publication status over HTTP and the built CLI", async (
     expect(JSON.parse(file.stdout)).toMatchObject({
       publication: { stage: "checks_failed" },
       file: null,
+    });
+
+    expect(scanDownload.status, scanDownload.stderr).toBe(0);
+    expect(Object.keys(report).sort()).toEqual(["README.md", "manifest.json", "publication.json"]);
+    expect(reportReadme).toContain("Status: failed (no safety verdict)");
+    expect(reportReadme).toContain("Security check: failed");
+    expect(reportReadme).toContain("Another check attempt is already waiting.");
+    expect(JSON.parse(strFromU8(report["publication.json"]))).toEqual({
+      stage: "checks_failed",
+      retrying: true,
+      checks: { trufflehog: "clean", clawscan: "failed" },
+      guidance: "scanner_incomplete",
     });
   } finally {
     await rm(root, { recursive: true, force: true });

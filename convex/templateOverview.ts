@@ -12,11 +12,35 @@ import {
 } from "./lib/packageCatalogRead";
 import { isEnglishPluginListing } from "./lib/pluginDiscovery";
 
+const MAX_CATEGORY_ENTRIES = 256;
+const MAX_CATEGORY_BYTES = 256 * 1024;
+
+type Section = { category: string; items: PublicPackageListItem[] };
+
+function fitsCategoryEntryBudget(sections: Section[]) {
+  if (sections.reduce((count, section) => count + section.items.length, 0) > MAX_CATEGORY_ENTRIES) {
+    return false;
+  }
+  // Measure the exact wire JSON, including the section wrappers and repeated memberships.
+  // Stop at the budget instead of serializing a potentially much larger catalog in one go.
+  const encoder = new TextEncoder();
+  const byteSize = (value: unknown) => encoder.encode(JSON.stringify(value)).byteLength;
+  let bytes = byteSize(sections.map(({ category }) => ({ category, items: [] })));
+  for (const { items } of sections) {
+    bytes += Math.max(0, items.length - 1); // commas between items
+    for (const item of items) {
+      bytes += byteSize(item);
+      if (bytes > MAX_CATEGORY_BYTES) return false;
+    }
+  }
+  return true;
+}
+
 // The overview replaces fourteen independently paginated category reads with
 // one consistent public snapshot. Larger catalogs explicitly retain the paginated
 // path rather than silently returning a partial popularity ranking.
 export const get = internalQuery({
-  args: { limit: v.number() },
+  args: { limit: v.number(), includeCategoryEntries: v.optional(v.literal(true)) },
   handler: async (ctx, args) => {
     const limit = Math.max(1, Math.min(Math.floor(args.limit), 8));
     const maximumRows = 1000;
@@ -82,9 +106,16 @@ export const get = internalQuery({
     const sections = [...TEMPLATE_CATEGORY_DEFINITIONS.map(({ slug }) => slug), "other"]
       .map((category) => ({
         category,
-        items: ranked.filter((item) => item.categories?.includes(category)).slice(0, limit),
+        items: ranked.filter((item) => item.categories?.includes(category)),
       }))
       .filter((section) => section.items.length > 0);
-    return { complete: true, featured, sections };
+    if (args.includeCategoryEntries && fitsCategoryEntryBudget(sections)) {
+      return { complete: true, featured, sections, completeCategoryEntries: true as const };
+    }
+    return {
+      complete: true,
+      featured,
+      sections: sections.map((section) => ({ ...section, items: section.items.slice(0, limit) })),
+    };
   },
 });

@@ -72,5 +72,26 @@ describe("cli device login", () => {
     await expect(
       viewer.mutation(api.cliDeviceAuth.approve, { userCode: created.user_code }),
     ).rejects.toThrow(/expired/);
+    await expect(
+      viewer.mutation(api.cliDeviceAuth.deny, { userCode: created.user_code }),
+    ).rejects.toThrow(/expired/);
+  });
+
+  it("denies a code that is still pending", async () => {
+    const t = convexTest(schema, modules);
+    const userId = await t.run(async (ctx) => ctx.db.insert("users", { handle: "publisher" }));
+    const created = await t.mutation(internal.cliDeviceAuth.createInternal, {
+      scope: "read write",
+      siteUrl: "https://clawhub.ai",
+    });
+    const viewer = t.withIdentity({ subject: userId });
+    await expect(
+      viewer.mutation(api.cliDeviceAuth.deny, { userCode: created.user_code }),
+    ).resolves.toEqual({ ok: true });
+    const status = await t.run(async (ctx) => {
+      const row = await ctx.db.query("cliDeviceCodes").first();
+      return row?.status;
+    });
+    expect(status).toBe("denied");
   });
 });

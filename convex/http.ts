@@ -55,9 +55,7 @@ const listBundlePluginsV1Http = lazyHttpAction(
 const listCodePluginsV1Http = lazyHttpAction(
   async () => (await import("./httpApiV1")).listCodePluginsV1Http,
 );
-const listPackagesV1Http = lazyHttpAction(
-  async () => (await import("./httpApiV1")).listPackagesV1Http,
-);
+const listPackagesV1Http = lazyHttpAction(async () => (await import("./packageListHttp")).get);
 const listPluginsV1Http = lazyHttpAction(
   async () => (await import("./httpApiV1")).listPluginsV1Http,
 );
@@ -234,500 +232,98 @@ http.route({
   handler: downloadAnalyticsHttp,
 });
 auth.addHttpRoutes(http);
-http.route({
-  path: "/api/internal/prepublication-reports",
-  method: "POST",
-  handler: retainPrepublicationReportHttp,
-});
-http.route({
-  path: "/api/v1/search-insights/reports",
-  method: "POST",
-  handler: searchReportsV1Http,
-});
-http.route({
-  pathPrefix: "/api/v1/search-insights/reports/",
-  method: "GET",
-  handler: searchReportsV1Http,
-});
-http.route({ path: "/api/v1/search-insights", method: "GET", handler: searchInsightsV1Http });
-
-http.route({
-  pathPrefix: "/api/v1/skill-icons/",
-  method: "GET",
-  handler: skillPresentationAssetHttp,
-});
-
-// Convex routes HEAD through the matching GET action and strips the body.
-http.route({
-  pathPrefix: "/api/v1/agent-skills/",
-  method: "GET",
-  handler: agentSkillsHttp,
-});
-
-http.route({
-  path: ApiRoutes.download,
-  method: "GET",
-  handler: downloadZip,
-});
-
-http.route({
-  path: "/api/internal/archive-download-metric",
-  method: "POST",
-  handler: recordArchiveDownloadMetric,
-});
-
-http.route({
-  path: ApiRoutes.search,
-  method: "GET",
-  handler: searchSkillsV1Http,
-});
-
-http.route({
-  path: ApiRoutes.resolve,
-  method: "GET",
-  handler: resolveSkillVersionV1Http,
-});
-
-http.route({
-  path: ApiRoutes.skillsExport,
-  method: "GET",
-  handler: exportSkillsV1Http,
-});
-
-http.route({
-  path: ApiRoutes.skills,
-  method: "GET",
-  handler: listSkillsV1Http,
-});
-
-http.route({
-  path: ApiRoutes.trending,
-  method: "GET",
-  handler: trendingV1Http,
-});
-
-http.route({
-  pathPrefix: `${ApiRoutes.skillScans}/`,
-  method: "GET",
-  handler: skillScanGetRouterV1Http,
-});
-
-http.route({
-  path: ApiRoutes.packages,
-  method: "GET",
-  handler: listPackagesV1Http,
-});
-
-http.route({
-  path: ApiRoutes.plugins,
-  method: "GET",
-  handler: listPluginsV1Http,
-});
-
-http.route({
-  path: ApiRoutes.pluginOverview,
-  method: "GET",
-  handler: listPluginOverviewV1Http,
-});
-
-http.route({
-  path: ApiRoutes.pluginCategories,
-  method: "GET",
-  handler: listPluginCategoriesV1Http,
-});
-
-http.route({
-  path: ApiRoutes.pluginsExport,
-  method: "GET",
-  handler: exportPluginsV1Http,
-});
-
-http.route({
-  path: ApiRoutes.codePlugins,
-  method: "GET",
-  handler: listCodePluginsV1Http,
-});
-
-http.route({
-  path: ApiRoutes.bundlePlugins,
-  method: "GET",
-  handler: listBundlePluginsV1Http,
-});
-
-http.route({ pathPrefix: `${ApiRoutes.featured}/`, method: "GET", handler: featuredV1Http });
-http.route({ pathPrefix: `${ApiRoutes.featured}/`, method: "POST", handler: featuredV1Http });
-
-http.route({
-  path: ApiRoutes.promotions,
-  method: "GET",
-  handler: listPromotionsV1Http,
-});
-
-http.route({
-  pathPrefix: `${ApiRoutes.promotions}/`,
-  method: "GET",
-  handler: promotionsGetRouterV1Http,
-});
-
-http.route({
-  path: ApiRoutes.promotions,
-  method: "POST",
-  handler: createPromotionV1Http,
-});
-
-http.route({
-  pathPrefix: `${ApiRoutes.promotions}/`,
-  method: "POST",
-  handler: promotionsPostRouterV1Http,
-});
-
-http.route({
-  path: ApiRoutes.catalogFeed,
-  method: "GET",
-  handler: catalogFeedV1Http,
-});
-
-http.route({
-  path: ApiRoutes.catalogSkillsFeed,
-  method: "GET",
-  handler: catalogSkillsFeedV1Http,
-});
-
-http.route({
-  path: ApiRoutes.catalogTemplatesFeed,
-  method: "GET",
-  handler: catalogTemplatesFeedV1Http,
-});
-
-http.route({
-  path: ApiRoutes.promotionsFeed,
-  method: "GET",
-  handler: promotionsFeedV1Http,
-});
-
-http.route({
-  pathPrefix: `${ApiRoutes.skills}/`,
-  method: "GET",
-  handler: skillsGetRouterV1Http,
-});
-
-http.route({
-  pathPrefix: `${ApiRoutes.packages}/`,
-  method: "GET",
-  handler: packagesGetRouterV1Http,
-});
-
-http.route({
-  pathPrefix: "/api/npm/",
-  method: "GET",
-  handler: npmMirrorGetHttp,
-});
-
-http.route({
-  pathPrefix: `${ApiRoutes.plugins}/`,
-  method: "GET",
-  handler: pluginsGetRouterV1Http,
-});
-
-http.route({
-  path: ApiRoutes.skills,
-  method: "POST",
-  handler: publishSkillV1Http,
-});
-
-http.route({
-  path: ApiRoutes.skillScans,
-  method: "POST",
-  handler: skillScanSubmitV1Http,
-});
-
-http.route({
-  path: `${ApiRoutes.skillScans}/batch`,
-  method: "POST",
-  handler: skillScanBatchSubmitV1Http,
-});
-
-http.route({
-  path: `${ApiRoutes.skillScans}/batch/jobs`,
-  method: "POST",
-  handler: skillScanJobHistoryV1Http,
-});
-
-http.route({
-  path: `${ApiRoutes.skillScans}/batch/status`,
-  method: "POST",
-  handler: skillScanBatchStatusV1Http,
-});
-
-http.route({
-  path: ApiRoutes.packages,
-  method: "POST",
-  handler: publishPackageV1Http,
-});
-
-http.route({
-  path: ApiRoutes.publishTokenMint,
-  method: "POST",
-  handler: mintPublishTokenV1Http,
-});
-
-http.route({
-  pathPrefix: "/api/v1/publish/attempts/",
-  method: "GET",
-  handler: publishAttemptsGetRouterV1Http,
-});
-
-http.route({
-  pathPrefix: "/api/v1/publish/attempts/",
-  method: "POST",
-  handler: recoverPackagePublishAttemptV1Http,
-});
-
-http.route({
-  path: "/api/v1/package-inspector/claim",
-  method: "POST",
-  handler: packageInspectorClaimHttp,
-});
-
-http.route({ path: ApiRoutes.sdkUsage, method: "GET", handler: packageSdkUsageHttp });
-http.route({
-  path: ApiRoutes.sdkUsageCoverage,
-  method: "GET",
-  handler: packageSdkUsageCoverageHttp,
-});
-http.route({ path: ApiRoutes.sdkUsagePlugin, method: "GET", handler: packageSdkUsagePluginHttp });
-
-http.route({
-  path: "/api/v1/package-inspector/acknowledge",
-  method: "POST",
-  handler: packageInspectorAcknowledgeHttp,
-});
-
-http.route({
-  path: "/api/v1/package-inspector/artifact",
-  method: "GET",
-  handler: packageInspectorArtifactHttp,
-});
-
-http.route({
-  path: "/api/v1/package-inspector/results",
-  method: "POST",
-  handler: packageInspectorResultsHttp,
-});
-
-http.route({
-  path: "/api/v1/package-inspector/notify",
-  method: "POST",
-  handler: packageInspectorNotifyHttp,
-});
-
-http.route({
-  pathPrefix: `${ApiRoutes.packages}/`,
-  method: "POST",
-  handler: packagesPostRouterV1Http,
-});
-
-http.route({
-  pathPrefix: `${ApiRoutes.packages}/`,
-  method: "DELETE",
-  handler: packagesDeleteRouterV1Http,
-});
-
-http.route({
-  path: `${ApiRoutes.skills}/-/security-verdicts`,
-  method: "POST",
-  handler: skillSecurityVerdictsV1Http,
-});
-
-http.route({
-  pathPrefix: `${ApiRoutes.skills}/`,
-  method: "POST",
-  handler: skillsPostRouterV1Http,
-});
-
-http.route({
-  pathPrefix: `${ApiRoutes.skills}/`,
-  method: "DELETE",
-  handler: skillsDeleteRouterV1Http,
-});
-
-http.route({
-  pathPrefix: `${ApiRoutes.stars}/`,
-  method: "POST",
-  handler: starsPostRouterV1Http,
-});
-
-http.route({
-  pathPrefix: `${ApiRoutes.stars}/`,
-  method: "DELETE",
-  handler: starsDeleteRouterV1Http,
-});
-
-http.route({
-  pathPrefix: `${ApiRoutes.transfers}/`,
-  method: "GET",
-  handler: transfersGetRouterV1Http,
-});
-
-http.route({
-  path: ApiRoutes.publishers,
-  method: "POST",
-  handler: createPublisherV1Http,
-});
-
-http.route({
-  path: ApiRoutes.whoami,
-  method: "GET",
-  handler: whoamiV1Http,
-});
-
-http.route({
-  pathPrefix: `${ApiRoutes.contentRights}/`,
-  method: "GET",
-  handler: contentRightsV1Http,
-});
-
-http.route({
-  path: "/api/v1/operator/skills-sh/catalog-test",
-  method: "GET",
-  handler: skillsShCatalogTestV1Http,
-});
-
-http.route({
-  pathPrefix: "/api/v1/skills-sh/",
-  method: "GET",
-  handler: skillsShCatalogPublicV1Http,
-});
-http.route({
-  pathPrefix: "/api/v1/skills-sh/",
-  method: "POST",
-  handler: skillsShCatalogPublicV1Http,
-});
-
-http.route({
-  path: "/api/v1/operator/skills-sh/catalog-test",
-  method: "POST",
-  handler: skillsShCatalogTestV1Http,
-});
-
-http.route({
-  path: "/api/v1/operator/skills-sh/mirror",
-  method: "POST",
-  handler: skillsShCatalogTestV1Http,
-});
-
-http.route({
-  pathPrefix: `${ApiRoutes.contentRights}/`,
-  method: "POST",
-  handler: contentRightsV1Http,
-});
-
-http.route({
-  path: "/api/cli/device/code",
-  method: "POST",
-  handler: cliDeviceCodeHttp,
-});
-
-http.route({
-  path: "/api/cli/device/token",
-  method: "POST",
-  handler: cliDeviceTokenHttp,
-});
-
-http.route({
-  path: "/api/v1/docs/session/verify",
-  method: "GET",
-  handler: verifyDocsSessionV1Http,
-});
-
-http.route({
-  pathPrefix: `${ApiRoutes.users}/`,
-  method: "POST",
-  handler: usersPostRouterV1Http,
-});
-
-http.route({
-  path: "/api/v1/users/ban-appeal-context",
-  method: "GET",
-  handler: banAppealContextV1Http,
-});
-
-http.route({
-  pathPrefix: `${ApiRoutes.users}/`,
-  method: "GET",
-  handler: usersGetRouterV1Http,
-});
-
-http.route({
-  path: ApiRoutes.users,
-  method: "GET",
-  handler: usersListV1Http,
-});
-
-http.route({
-  pathPrefix: "/api/",
-  method: "OPTIONS",
-  handler: preflightHandler,
-});
-
-// TODO: remove legacy /api routes after deprecation window.
-http.route({
-  path: LegacyApiRoutes.download,
-  method: "GET",
-  handler: downloadZip,
-});
-http.route({
-  path: LegacyApiRoutes.search,
-  method: "GET",
-  handler: searchSkillsHttp,
-});
-
-http.route({
-  path: LegacyApiRoutes.skill,
-  method: "GET",
-  handler: getSkillHttp,
-});
-
-http.route({
-  path: LegacyApiRoutes.skillResolve,
-  method: "GET",
-  handler: resolveSkillVersionHttp,
-});
-
-http.route({
-  path: LegacyApiRoutes.cliWhoami,
-  method: "GET",
-  handler: cliWhoamiHttp,
-});
-
-http.route({
-  path: LegacyApiRoutes.cliUploadUrl,
-  method: "POST",
-  handler: cliUploadUrlHttp,
-});
-
-http.route({
-  path: LegacyApiRoutes.cliPublish,
-  method: "POST",
-  handler: cliPublishHttp,
-});
-
-http.route({
-  path: LegacyApiRoutes.cliTelemetryInstall,
-  method: "POST",
-  handler: cliTelemetryInstallHttp,
-});
-
-http.route({
-  path: LegacyApiRoutes.cliSkillDelete,
-  method: "POST",
-  handler: cliSkillDeleteHttp,
-});
-
-http.route({
-  path: LegacyApiRoutes.cliSkillUndelete,
-  method: "POST",
-  handler: cliSkillUndeleteHttp,
-});
+for (const [path, method, handler] of [
+  [{ path: "/api/internal/prepublication-reports" }, "POST", retainPrepublicationReportHttp],
+  [{ path: "/api/v1/search-insights/reports" }, "POST", searchReportsV1Http],
+  [{ pathPrefix: "/api/v1/search-insights/reports/" }, "GET", searchReportsV1Http],
+  [{ path: "/api/v1/search-insights" }, "GET", searchInsightsV1Http],
+  [{ pathPrefix: "/api/v1/skill-icons/" }, "GET", skillPresentationAssetHttp],
+  // Convex routes HEAD through the matching GET action and strips the body.
+  [{ pathPrefix: "/api/v1/agent-skills/" }, "GET", agentSkillsHttp],
+  [{ path: ApiRoutes.download }, "GET", downloadZip],
+  [{ path: "/api/internal/archive-download-metric" }, "POST", recordArchiveDownloadMetric],
+  [{ path: ApiRoutes.search }, "GET", searchSkillsV1Http],
+  [{ path: ApiRoutes.resolve }, "GET", resolveSkillVersionV1Http],
+  [{ path: ApiRoutes.skillsExport }, "GET", exportSkillsV1Http],
+  [{ path: ApiRoutes.skills }, "GET", listSkillsV1Http],
+  [{ path: ApiRoutes.trending }, "GET", trendingV1Http],
+  [{ pathPrefix: `${ApiRoutes.skillScans}/` }, "GET", skillScanGetRouterV1Http],
+  [{ path: ApiRoutes.packages }, "GET", listPackagesV1Http],
+  [{ path: ApiRoutes.plugins }, "GET", listPluginsV1Http],
+  [{ path: ApiRoutes.pluginOverview }, "GET", listPluginOverviewV1Http],
+  [{ path: ApiRoutes.pluginCategories }, "GET", listPluginCategoriesV1Http],
+  [{ path: ApiRoutes.pluginsExport }, "GET", exportPluginsV1Http],
+  [{ path: ApiRoutes.codePlugins }, "GET", listCodePluginsV1Http],
+  [{ path: ApiRoutes.bundlePlugins }, "GET", listBundlePluginsV1Http],
+  [{ pathPrefix: `${ApiRoutes.featured}/` }, "GET", featuredV1Http],
+  [{ pathPrefix: `${ApiRoutes.featured}/` }, "POST", featuredV1Http],
+  [{ path: ApiRoutes.promotions }, "GET", listPromotionsV1Http],
+  [{ pathPrefix: `${ApiRoutes.promotions}/` }, "GET", promotionsGetRouterV1Http],
+  [{ path: ApiRoutes.promotions }, "POST", createPromotionV1Http],
+  [{ pathPrefix: `${ApiRoutes.promotions}/` }, "POST", promotionsPostRouterV1Http],
+  [{ path: ApiRoutes.catalogFeed }, "GET", catalogFeedV1Http],
+  [{ path: ApiRoutes.catalogSkillsFeed }, "GET", catalogSkillsFeedV1Http],
+  [{ path: ApiRoutes.catalogTemplatesFeed }, "GET", catalogTemplatesFeedV1Http],
+  [{ path: ApiRoutes.promotionsFeed }, "GET", promotionsFeedV1Http],
+  [{ pathPrefix: `${ApiRoutes.skills}/` }, "GET", skillsGetRouterV1Http],
+  [{ pathPrefix: `${ApiRoutes.packages}/` }, "GET", packagesGetRouterV1Http],
+  [{ pathPrefix: "/api/npm/" }, "GET", npmMirrorGetHttp],
+  [{ pathPrefix: `${ApiRoutes.plugins}/` }, "GET", pluginsGetRouterV1Http],
+  [{ path: ApiRoutes.skills }, "POST", publishSkillV1Http],
+  [{ path: ApiRoutes.skillScans }, "POST", skillScanSubmitV1Http],
+  [{ path: `${ApiRoutes.skillScans}/batch` }, "POST", skillScanBatchSubmitV1Http],
+  [{ path: `${ApiRoutes.skillScans}/batch/jobs` }, "POST", skillScanJobHistoryV1Http],
+  [{ path: `${ApiRoutes.skillScans}/batch/status` }, "POST", skillScanBatchStatusV1Http],
+  [{ path: ApiRoutes.packages }, "POST", publishPackageV1Http],
+  [{ path: ApiRoutes.publishTokenMint }, "POST", mintPublishTokenV1Http],
+  [{ pathPrefix: "/api/v1/publish/attempts/" }, "GET", publishAttemptsGetRouterV1Http],
+  [{ pathPrefix: "/api/v1/publish/attempts/" }, "POST", recoverPackagePublishAttemptV1Http],
+  [{ path: "/api/v1/package-inspector/claim" }, "POST", packageInspectorClaimHttp],
+  [{ path: ApiRoutes.sdkUsage }, "GET", packageSdkUsageHttp],
+  [{ path: ApiRoutes.sdkUsageCoverage }, "GET", packageSdkUsageCoverageHttp],
+  [{ path: ApiRoutes.sdkUsagePlugin }, "GET", packageSdkUsagePluginHttp],
+  [{ path: "/api/v1/package-inspector/acknowledge" }, "POST", packageInspectorAcknowledgeHttp],
+  [{ path: "/api/v1/package-inspector/artifact" }, "GET", packageInspectorArtifactHttp],
+  [{ path: "/api/v1/package-inspector/results" }, "POST", packageInspectorResultsHttp],
+  [{ path: "/api/v1/package-inspector/notify" }, "POST", packageInspectorNotifyHttp],
+  [{ pathPrefix: `${ApiRoutes.packages}/` }, "POST", packagesPostRouterV1Http],
+  [{ pathPrefix: `${ApiRoutes.packages}/` }, "DELETE", packagesDeleteRouterV1Http],
+  [{ path: `${ApiRoutes.skills}/-/security-verdicts` }, "POST", skillSecurityVerdictsV1Http],
+  [{ pathPrefix: `${ApiRoutes.skills}/` }, "POST", skillsPostRouterV1Http],
+  [{ pathPrefix: `${ApiRoutes.skills}/` }, "DELETE", skillsDeleteRouterV1Http],
+  [{ pathPrefix: `${ApiRoutes.stars}/` }, "POST", starsPostRouterV1Http],
+  [{ pathPrefix: `${ApiRoutes.stars}/` }, "DELETE", starsDeleteRouterV1Http],
+  [{ pathPrefix: `${ApiRoutes.transfers}/` }, "GET", transfersGetRouterV1Http],
+  [{ path: ApiRoutes.publishers }, "POST", createPublisherV1Http],
+  [{ path: ApiRoutes.whoami }, "GET", whoamiV1Http],
+  [{ pathPrefix: `${ApiRoutes.contentRights}/` }, "GET", contentRightsV1Http],
+  [{ path: "/api/v1/operator/skills-sh/catalog-test" }, "GET", skillsShCatalogTestV1Http],
+  [{ pathPrefix: "/api/v1/skills-sh/" }, "GET", skillsShCatalogPublicV1Http],
+  [{ pathPrefix: "/api/v1/skills-sh/" }, "POST", skillsShCatalogPublicV1Http],
+  [{ path: "/api/v1/operator/skills-sh/catalog-test" }, "POST", skillsShCatalogTestV1Http],
+  [{ path: "/api/v1/operator/skills-sh/mirror" }, "POST", skillsShCatalogTestV1Http],
+  [{ pathPrefix: `${ApiRoutes.contentRights}/` }, "POST", contentRightsV1Http],
+  [{ path: "/api/cli/device/code" }, "POST", cliDeviceCodeHttp],
+  [{ path: "/api/cli/device/token" }, "POST", cliDeviceTokenHttp],
+  [{ path: "/api/v1/docs/session/verify" }, "GET", verifyDocsSessionV1Http],
+  [{ pathPrefix: `${ApiRoutes.users}/` }, "POST", usersPostRouterV1Http],
+  [{ path: "/api/v1/users/ban-appeal-context" }, "GET", banAppealContextV1Http],
+  [{ pathPrefix: `${ApiRoutes.users}/` }, "GET", usersGetRouterV1Http],
+  [{ path: ApiRoutes.users }, "GET", usersListV1Http],
+  [{ pathPrefix: "/api/" }, "OPTIONS", preflightHandler],
+  // TODO: remove legacy /api routes after deprecation window.
+  [{ path: LegacyApiRoutes.download }, "GET", downloadZip],
+  [{ path: LegacyApiRoutes.search }, "GET", searchSkillsHttp],
+  [{ path: LegacyApiRoutes.skill }, "GET", getSkillHttp],
+  [{ path: LegacyApiRoutes.skillResolve }, "GET", resolveSkillVersionHttp],
+  [{ path: LegacyApiRoutes.cliWhoami }, "GET", cliWhoamiHttp],
+  [{ path: LegacyApiRoutes.cliUploadUrl }, "POST", cliUploadUrlHttp],
+  [{ path: LegacyApiRoutes.cliPublish }, "POST", cliPublishHttp],
+  [{ path: LegacyApiRoutes.cliTelemetryInstall }, "POST", cliTelemetryInstallHttp],
+  [{ path: LegacyApiRoutes.cliSkillDelete }, "POST", cliSkillDeleteHttp],
+  [{ path: LegacyApiRoutes.cliSkillUndelete }, "POST", cliSkillUndeleteHttp],
+] as const) {
+  http.route({ ...path, method, handler });
+}
 
 export default http;

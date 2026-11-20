@@ -1,19 +1,19 @@
 /* @vitest-environment node */
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
+import { createTestTempDirectories } from "../lib/testTempDirectories";
 import { processPrePublicationAttempt, runNativeClawScan } from "./run-prepublication-worker";
 
 const logs = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }));
 vi.mock("../lib/workerLogger", () => ({ createWorkerLogger: () => logs }));
-const workspaces: string[] = [];
+const workspaces = createTestTempDirectories("prepublication-report-retention-");
 afterEach(async () => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
   vi.clearAllMocks();
-  await Promise.all(workspaces.splice(0).map((path) => rm(path, { recursive: true, force: true })));
+  await workspaces.cleanup();
 });
 
 it("stores private execution evidence before normal completion without changing its verdict", async () => {
@@ -161,8 +161,7 @@ it.each(["upload", "receipt", "old-backend"])(
 );
 
 it("retains the complete failed native execution before the workspace is removed", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "prepublication-report-retention-"));
-  workspaces.push(workspace);
+  const workspace = await workspaces.create();
   await mkdir(join(workspace, "artifact"));
   await writeFile(join(workspace, "artifact/SKILL.md"), "# Controlled fixture\n");
   const artifact = JSON.stringify({

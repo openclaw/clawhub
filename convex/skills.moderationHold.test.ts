@@ -1,26 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import {
   applyUserModerationToOwnedSkillsBatchInternal,
   restoreOwnedSkillsForModerationLiftBatchInternal,
 } from "./skills";
 
-type WrappedHandler<TArgs, TResult> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
-};
+const applyHoldHandler = getTestHandler<
+  { ownerUserId: string; hiddenAt: number; cursor?: string },
+  { hiddenCount: number; scheduled: boolean }
+>(applyUserModerationToOwnedSkillsBatchInternal);
 
-const applyHoldHandler = (
-  applyUserModerationToOwnedSkillsBatchInternal as unknown as WrappedHandler<
-    { ownerUserId: string; hiddenAt: number; cursor?: string },
-    { hiddenCount: number; scheduled: boolean }
-  >
-)._handler;
-
-const restoreHoldHandler = (
-  restoreOwnedSkillsForModerationLiftBatchInternal as unknown as WrappedHandler<
-    { ownerUserId: string; holdPlacedAt: number; cursor?: string },
-    { restoredCount: number; scheduled: boolean; aborted?: boolean }
-  >
-)._handler;
+const restoreHoldHandler = getTestHandler<
+  { ownerUserId: string; holdPlacedAt: number; cursor?: string },
+  { restoredCount: number; scheduled: boolean; aborted?: boolean }
+>(restoreOwnedSkillsForModerationLiftBatchInternal);
 
 function makeCtx({
   user = { _id: "users:owner", requiresModerationAt: 1_000 },

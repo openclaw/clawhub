@@ -6,11 +6,13 @@ import { action, internalAction, internalMutation, internalQuery } from "./funct
 import { reusableAigAnalysis } from "./lib/aigAnalysis";
 import { storedFilesValidator } from "./lib/fileValidators";
 import { isPendingSkillFinalizationBlocked } from "./lib/moderation";
+import { getPackageByNormalizedName } from "./lib/packageCatalogRead";
 import { manualPackageRecovery } from "./lib/packagePublishRecovery";
 import { resolvePackageReleaseFamily } from "./lib/packageReleaseFamily";
 import { sdkUsageReportStorageId } from "./lib/packageSdkUsageStorage";
 import { assertPluginScanEvidence } from "./lib/pluginScanRouting";
 import { bindExpiredFinalizationRecovery } from "./lib/publishAttemptOperationalRecovery";
+import { failedPublishAttemptPatch, PUBLISH_ATTEMPT_STATUSES } from "./lib/publishAttemptState";
 import { assertScannerSource } from "./lib/scannerSource";
 import {
   aigAnalysisValidator,
@@ -30,16 +32,6 @@ const SECURITY_SCAN_ENQUEUE_BACKUP_DELAY_MS = 15_000;
 const FINALIZATION_CLAIM_LEASE_MS = 10 * 60 * 1000;
 const MISSING_AIG_EVIDENCE_ERROR = "A.I.G evidence is required before a skill can be published.";
 const ACTIVE_CLAIM_OUTCOME = { outcome: "active_claim" as const };
-const PUBLISH_ATTEMPT_STATUSES = [
-  "pending_checks",
-  "ready_to_finalize",
-  "finalizing",
-  "finalized",
-  "blocked",
-  "failed",
-  "expired",
-] as const;
-export const ACTIVE_PUBLISH_ATTEMPT_STATUSES = PUBLISH_ATTEMPT_STATUSES.slice(0, 3);
 
 const publishResultValidator = v.object({
   skillId: v.id("skills"),
@@ -159,27 +151,6 @@ function isTerminalFinalizationConflict(error: string | undefined) {
       error.includes("OpenClaw release parent terminal state") ||
       error.includes("Recovered package publication authorization"))
   );
-}
-
-export function failedPublishAttemptPatch(
-  status: Doc<"publishAttempts">["status"],
-  error: string | undefined,
-  now: number,
-) {
-  return {
-    status: "failed" as const,
-    checkClaimId: undefined,
-    checkClaimedAt: undefined,
-    checkClaimExpiresAt: undefined,
-    checkClaimLastError: status === "pending_checks" ? error : undefined,
-    checkFailureCount: undefined,
-    finalizationClaimId: undefined,
-    finalizationClaimedAt: undefined,
-    finalizationClaimExpiresAt: undefined,
-    finalizationLastError: status === "pending_checks" ? undefined : error,
-    failedAt: now,
-    updatedAt: now,
-  };
 }
 
 function releaseFinalizationClaimPatch(error: string | undefined, now: number) {
@@ -776,6 +747,9 @@ export const completePendingPublishAttemptChecksInternal = internalMutation({
     };
 
     if (args.trufflehog.status === "blocked") {
+      // A first-release secret block deletes the staged rows. Resolve its family first;
+      // the existing secret notice is the only email for this transition.
+      const template = await templateCheckNoticeTarget(ctx, attempt);
       await Promise.all(
         getSecretBlockedStorageIds(attempt).map((storageId) => ctx.storage.delete(storageId)),
       );
@@ -800,7 +774,10 @@ export const completePendingPublishAttemptChecksInternal = internalMutation({
         blockedAt: now,
         updatedAt: now,
       });
-      await scheduleSecretPublishBlockedEmail(ctx, attempt);
+      if (!template || template.notify) {
+        const artifactKind = template ? "template" : attempt.kind === "skill" ? "skill" : "plugin";
+        await scheduleSecretPublishBlockedEmail(ctx, attempt, artifactKind);
+      }
       return { attemptId: attempt._id, kind: attempt.kind, status: "blocked" as const };
     }
 
@@ -813,6 +790,7 @@ export const completePendingPublishAttemptChecksInternal = internalMutation({
     }
 
     if (args.clawscan.status === "blocked") {
+      await scheduleTemplateCheckFailureEmail(ctx, attempt, "blocked");
       if (attempt.kind === "skill" && attempt.skillVersionId) {
         await ctx.db.patch(attempt.skillVersionId, {
           publicationStatus: "blocked",
@@ -879,6 +857,10 @@ export const completePendingPublishAttemptChecksInternal = internalMutation({
     if (args.trufflehog.status === "failed" || args.clawscan.status === "failed") {
       const checkFailureCount = previousScannerFailureCount(attempt) + 1;
       const terminal = checkFailureCount >= MAX_CONSECUTIVE_SCANNER_FAILURES;
+      // Operator recovery retains the count: a fourth failure is not another notice.
+      if (checkFailureCount === MAX_CONSECUTIVE_SCANNER_FAILURES) {
+        await scheduleTemplateCheckFailureEmail(ctx, attempt, "scan_failed");
+      }
       await ctx.db.patch(attempt._id, {
         status: terminal ? "failed" : "pending_checks",
         checks,
@@ -1847,6 +1829,57 @@ function buildCheckClaimId() {
     : `${Date.now()}:${Math.random().toString(16).slice(2)}`;
 }
 
+async function templateCheckNoticeTarget(ctx: MutationCtx, attempt: Doc<"publishAttempts">) {
+  if (attempt.kind !== "package") return null;
+  const legacy = asRecord(attempt.packageInsertArgs);
+  const stagedFamily = asRecord(asRecord(attempt.scanContext).package).family ?? legacy.family;
+  if (stagedFamily && stagedFamily !== "claw") return null;
+  const [release, pkg] = await Promise.all([
+    attempt.packageReleaseId ? ctx.db.get(attempt.packageReleaseId) : null,
+    attempt.packageId
+      ? ctx.db.get(attempt.packageId)
+      : stagedFamily === "claw"
+        ? getPackageByNormalizedName(ctx, attempt.slug)
+        : null,
+  ]);
+  const pending = asRecord(release?.pendingPublication);
+  // The staged channel/family can differ from an existing parent or reservation.
+  if ((pending.family ?? stagedFamily ?? pkg?.family) !== "claw") return null;
+  const channel = pending.channel ?? legacy.channel ?? pkg?.channel ?? "community";
+  return {
+    notify:
+      (channel === "community" || channel === "official") &&
+      pkg?.softDeletedAt === undefined &&
+      release?.softDeletedAt === undefined &&
+      release?.ownerDeletedAt === undefined &&
+      (!attempt.packageReleaseId ||
+        (release?.publicationStatus === "pending" &&
+          release.packageId === pkg?._id &&
+          (!release.publishAttemptId || release.publishAttemptId === attempt._id))),
+    displayName: release?.clawManifestSummary?.agent.name || attempt.displayName,
+  };
+}
+
+async function scheduleTemplateCheckFailureEmail(
+  ctx: MutationCtx,
+  attempt: Doc<"publishAttempts">,
+  outcome: "blocked" | "scan_failed",
+) {
+  const target = await templateCheckNoticeTarget(ctx, attempt);
+  if (!target?.notify) return;
+  const user = await ctx.db.get(attempt.userId);
+  const to = user?.email?.trim();
+  if (!to || user?.deletedAt || user?.deactivatedAt) return;
+  await ctx.scheduler.runAfter(0, internal.emailsNode.sendTemplatePublicationOutcomeInternal, {
+    to,
+    attemptId: attempt._id,
+    outcome,
+    packageName: attempt.slug,
+    displayName: target.displayName,
+    version: attempt.version,
+  });
+}
+
 async function scheduleSecretPublishBlockedEmail(
   ctx: MutationCtx,
   attempt: {
@@ -1856,9 +1889,10 @@ async function scheduleSecretPublishBlockedEmail(
     slug: string;
     version: string;
   },
+  artifactKind: "template" | "plugin" | "skill",
 ) {
   const user = await ctx.db.get(attempt.userId);
-  if (!user?.email) return;
+  if (!user?.email?.trim()) return;
   await ctx.scheduler.runAfter(
     0,
     internal.emailsNode.sendSecretPublishBlockedNotificationInternal,
@@ -1868,7 +1902,7 @@ async function scheduleSecretPublishBlockedEmail(
       to: user.email,
       handle: user.handle,
       artifact: {
-        kind: attempt.kind === "skill" ? "skill" : "plugin",
+        kind: artifactKind,
         name: attempt.slug,
       },
       version: attempt.version,

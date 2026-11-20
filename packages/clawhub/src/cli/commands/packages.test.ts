@@ -57,6 +57,7 @@ const {
   cmdInspectPackage,
   cmdPackageModerationStatus,
   cmdPackageMigrationStatus,
+  cmdPackagePublication,
   cmdPackageReadiness,
   cmdPackPackage,
   cmdPublishPackage,
@@ -157,23 +158,27 @@ async function writeDeclaredDistEntry(folder: string) {
   await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
 }
 
+async function writeCodePluginMetadata(
+  folder: string,
+  packageFields: Record<string, unknown>,
+  manifest: Record<string, unknown>,
+) {
+  await writeFile(join(folder, "package.json"), makeCodePluginPackageJson(packageFields), "utf8");
+  await writeFile(join(folder, "openclaw.plugin.json"), JSON.stringify(manifest), "utf8");
+}
+
 async function createCodePluginFixture(workdir: string, folderName: string, packageName: string) {
   const folder = join(workdir, folderName);
   await mkdir(join(folder, "dist"), { recursive: true });
-  await writeFile(
-    join(folder, "package.json"),
-    makeCodePluginPackageJson({
+  await writeCodePluginMetadata(
+    folder,
+    {
       name: packageName,
       displayName: "Wait Test Plugin",
       version: "1.0.0",
       files: ["dist", "openclaw.plugin.json"],
-    }),
-    "utf8",
-  );
-  await writeFile(
-    join(folder, "openclaw.plugin.json"),
-    JSON.stringify({ id: `${folderName}.plugin` }),
-    "utf8",
+    },
+    { id: `${folderName}.plugin` },
   );
   await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
   return folder;
@@ -1209,6 +1214,182 @@ describe("package commands", () => {
     expect(mockLog).toHaveBeenCalledWith("Next cursor: cursor-1");
   });
 
+  it("prints exact package publication state", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      name: "@scope/demo",
+      version: "1.2.3",
+      state: "pending",
+      stage: "checks",
+      attemptId: "attempt-1",
+    });
+
+    await cmdPackagePublication(makeOpts(), "@scope/demo", { version: "1.2.3" });
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      {
+        method: "GET",
+        path: "/api/v1/packages/%40scope%2Fdemo/versions/1.2.3/publication",
+        token: undefined,
+      },
+      undefined,
+    );
+    expect(mockLog).toHaveBeenCalledWith("@scope/demo@1.2.3");
+    expect(mockLog).toHaveBeenCalledWith("Pending publication checks.");
+    expect(mockLog).toHaveBeenCalledWith(
+      "This version is not public yet. The upload is still recorded.",
+    );
+    expect(mockLog).toHaveBeenCalledWith("Attempt: attempt-1");
+    expect(mockLog.mock.calls.map((call) => String(call[0])).join("\n")).not.toMatch(
+      /scan|report|digest/i,
+    );
+  });
+
+  it("sends the saved token and prints publication json unchanged", async () => {
+    authTokenMocks.getOptionalAuthToken.mockResolvedValueOnce("publisher-token");
+    const body = {
+      name: "demo-plugin",
+      version: "0.1.3",
+      state: "failed" as const,
+      recoverable: true,
+      attemptId: "attempt-2",
+    };
+    httpMocks.apiRequest.mockResolvedValueOnce(body);
+
+    await cmdPackagePublication(makeOpts(), "demo-plugin", { version: "0.1.3", json: true });
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      {
+        method: "GET",
+        path: "/api/v1/packages/demo-plugin/versions/0.1.3/publication",
+        token: "publisher-token",
+      },
+      undefined,
+    );
+    expect(JSON.parse(String(mockWrite.mock.calls[0]?.[0] ?? ""))).toEqual(body);
+    expect(mockLog).not.toHaveBeenCalled();
+  });
+
+  it("prints absent and failed publication states", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      name: "demo-plugin",
+      version: "0.1.3",
+      state: "absent",
+    });
+    await cmdPackagePublication(makeOpts(), "demo-plugin", { version: "0.1.3" });
+    expect(mockLog).toHaveBeenCalledWith("Not accepted.");
+
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      name: "demo-plugin",
+      version: "0.1.3",
+      state: "failed",
+      recoverable: false,
+    });
+    await cmdPackagePublication(makeOpts(), "demo-plugin", { version: "0.1.3" });
+    expect(mockLog).toHaveBeenCalledWith("Publication failed.");
+    expect(mockLog).toHaveBeenCalledWith("This attempt cannot be recovered.");
+  });
+
+  it("requires an exact version for package publication", async () => {
+    await expect(cmdPackagePublication(makeOpts(), "demo-plugin", {})).rejects.toThrow(
+      "Pass --version",
+    );
+    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
+  });
+
+  it("reports a public version when an older registry returns the version document", async () => {
+    const versionDocument = {
+      package: { name: "demo-plugin", displayName: "Demo", family: "code-plugin" },
+      version: {
+        version: "1.2.3",
+        createdAt: 1,
+        changelog: "",
+        files: [],
+      },
+    };
+    httpMocks.apiRequest
+      .mockResolvedValueOnce(versionDocument)
+      .mockResolvedValueOnce(versionDocument);
+
+    await cmdPackagePublication(makeOpts(), "demo-plugin", { version: "1.2.3", json: true });
+
+    expect(httpMocks.apiRequest).toHaveBeenNthCalledWith(
+      2,
+      "https://clawhub.ai",
+      {
+        method: "GET",
+        path: "/api/v1/packages/demo-plugin/versions/1.2.3",
+        token: undefined,
+      },
+      expect.anything(),
+    );
+    expect(JSON.parse(String(mockWrite.mock.calls[0]?.[0] ?? ""))).toEqual({
+      name: "demo-plugin",
+      version: "1.2.3",
+      state: "published",
+    });
+  });
+
+  it("probes the version endpoint after a legacy publication 404", async () => {
+    httpMocks.apiRequest.mockRejectedValueOnce(
+      Object.assign(new Error("Not found"), { status: 404 }),
+    );
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      package: { name: "demo-plugin", displayName: "Demo", family: "code-plugin" },
+      version: { version: "1.2.3", createdAt: 1, changelog: "", files: [] },
+    });
+
+    await cmdPackagePublication(makeOpts(), "demo-plugin", { version: "1.2.3" });
+
+    expect(mockLog).toHaveBeenCalledWith("Published.");
+    expect(mockLog).toHaveBeenCalledWith("This version is in the public version list.");
+  });
+
+  it("keeps a version-not-found error when the legacy probe also misses", async () => {
+    httpMocks.apiRequest.mockRejectedValueOnce(
+      Object.assign(new Error("Not found"), { status: 404 }),
+    );
+    httpMocks.apiRequest.mockRejectedValueOnce(
+      Object.assign(new Error("Version not found"), { status: 404 }),
+    );
+
+    await expect(
+      cmdPackagePublication(makeOpts(), "demo-plugin", { version: "9.9.9" }),
+    ).rejects.toThrow("Version not found");
+    expect(mockLog).not.toHaveBeenCalledWith("Published.");
+  });
+
+  it("rejects an unknown publication state without probing the version endpoint", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      name: "demo-plugin",
+      version: "1.2.3",
+      state: "quarantined",
+    });
+
+    await expect(
+      cmdPackagePublication(makeOpts(), "demo-plugin", { version: "1.2.3" }),
+    ).rejects.toThrow(/API response/);
+    expect(httpMocks.apiRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it("names package recover without treating the current token as sufficient", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      name: "demo-plugin",
+      version: "0.1.3",
+      state: "failed",
+      recoverable: true,
+      attemptId: "attempt-2",
+    });
+
+    await cmdPackagePublication(makeOpts(), "demo-plugin", { version: "0.1.3" });
+
+    const text = mockLog.mock.calls.map((call) => String(call[0])).join("\n");
+    expect(text).toContain("An authorized publisher may be able to recover this attempt.");
+    expect(text).toContain('clawhub package recover attempt-2 --manual-override-reason "<reason>"');
+    expect(text).not.toMatch(/current publisher token/i);
+  });
+
   it("prints package readiness checks", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({
       package: {
@@ -1474,20 +1655,15 @@ describe("package commands", () => {
     try {
       const folder = join(workdir, "pending-plugin");
       await mkdir(join(folder, "dist"), { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "@scope/pending-plugin",
           displayName: "Pending Plugin",
           version: "1.0.0",
           files: ["dist", "openclaw.plugin.json"],
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "pending.plugin" }),
-        "utf8",
+        },
+        { id: "pending.plugin" },
       );
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
 
@@ -1519,20 +1695,15 @@ describe("package commands", () => {
     try {
       const folder = join(workdir, "json-pending-plugin");
       await mkdir(join(folder, "dist"), { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "@scope/json-pending-plugin",
           displayName: "JSON Pending Plugin",
           version: "1.0.0",
           files: ["dist", "openclaw.plugin.json"],
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "json.pending.plugin" }),
-        "utf8",
+        },
+        { id: "json.pending.plugin" },
       );
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
 
@@ -2001,20 +2172,15 @@ describe("package commands", () => {
     try {
       const folder = join(workdir, "unknown-status-plugin");
       await mkdir(join(folder, "dist"), { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "@scope/unknown-status-plugin",
           displayName: "Unknown Status Plugin",
           version: "1.0.0",
           files: ["dist", "openclaw.plugin.json"],
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "unknown.status.plugin" }),
-        "utf8",
+        },
+        { id: "unknown.status.plugin" },
       );
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
       httpMocks.apiRequestForm.mockResolvedValueOnce({
@@ -2042,19 +2208,14 @@ describe("package commands", () => {
     try {
       const folder = join(workdir, "clear-topics-plugin");
       await mkdir(join(folder, "dist"), { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "@scope/clear-topics-plugin",
           version: "1.0.0",
           files: ["dist", "openclaw.plugin.json"],
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "clear.topics.plugin" }),
-        "utf8",
+        },
+        { id: "clear.topics.plugin" },
       );
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
       httpMocks.apiRequestForm.mockResolvedValueOnce({
@@ -2108,24 +2269,19 @@ describe("package commands", () => {
     },
   );
 
-  it("uses the README H1 as a package display name fallback", async () => {
+  it("keeps the README H1 as a plugin display name fallback", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const folder = join(workdir, "clawhub-github-publish-clh4hR");
       await mkdir(join(folder, "dist"), { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "@scope/demo-plugin",
           version: "1.0.0",
           files: ["dist", "openclaw.plugin.json", "README.md"],
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.plugin" }),
-        "utf8",
+        },
+        { id: "demo.plugin" },
       );
       await writeFile(
         join(folder, "README.md"),
@@ -2155,20 +2311,15 @@ describe("package commands", () => {
     try {
       const folder = join(workdir, "demo-plugin");
       await mkdir(join(folder, "dist"), { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "@scope/demo-plugin",
           displayName: "Package Display Name",
           version: "1.0.0",
           files: ["dist", "openclaw.plugin.json"],
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.plugin", name: "Manifest Display Name" }),
-        "utf8",
+        },
+        { id: "demo.plugin", name: "Manifest Display Name" },
       );
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
 
@@ -2193,19 +2344,14 @@ describe("package commands", () => {
     try {
       const folder = join(workdir, "language-plugin");
       await mkdir(join(folder, "dist"), { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "@scope/language-plugin",
           version: "1.0.0",
           files: ["dist", "openclaw.plugin.json", "README.md"],
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "language.plugin" }),
-        "utf8",
+        },
+        { id: "language.plugin" },
       );
       await writeFile(join(folder, "README.md"), "# C#\n\nDetails.\n", "utf8");
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
@@ -2232,20 +2378,15 @@ describe("package commands", () => {
     const previousCwd = process.cwd();
     try {
       await mkdir(join(pluginRoot, "dist"), { recursive: true });
-      await writeFile(
-        join(pluginRoot, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        pluginRoot,
+        {
           name: "@scope/cwd-plugin",
           displayName: "Cwd Plugin",
           version: "1.0.0",
           files: ["dist", "openclaw.plugin.json"],
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(pluginRoot, "openclaw.plugin.json"),
-        JSON.stringify({ id: "cwd.plugin", configSchema: { type: "object" } }),
-        "utf8",
+        },
+        { id: "cwd.plugin", configSchema: { type: "object" } },
       );
       await writeFile(join(pluginRoot, "dist", "index.js"), "export const demo = true;\n", "utf8");
 
@@ -2497,20 +2638,15 @@ describe("package commands", () => {
       const folder = join(workdir, "demo-plugin");
       await mkdir(join(folder, "dist"), { recursive: true });
       await mkdir(join(workdir, "packs"), { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "@scope/demo-plugin",
           displayName: "Demo Plugin",
           version: "1.0.0",
           description: "Demo plugin",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.plugin" }),
-        "utf8",
+        },
+        { id: "demo.plugin" },
       );
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
 
@@ -2538,19 +2674,14 @@ describe("package commands", () => {
       const folder = join(workdir, "demo-plugin");
       await mkdir(join(folder, "dist"), { recursive: true });
       await mkdir(join(workdir, "packs"), { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "@scope/demo-plugin",
           displayName: "Demo Plugin",
           version: "1.0.0",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.plugin" }),
-        "utf8",
+        },
+        { id: "demo.plugin" },
       );
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
 
@@ -2586,19 +2717,14 @@ describe("package commands", () => {
       const folder = join(workdir, "a & b");
       await mkdir(join(folder, "dist"), { recursive: true });
       await mkdir(join(workdir, "packs"), { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "@scope/demo-plugin",
           displayName: "Demo Plugin",
           version: "1.0.0",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.plugin" }),
-        "utf8",
+        },
+        { id: "demo.plugin" },
       );
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
 
@@ -2651,19 +2777,14 @@ describe("package commands", () => {
       const folder = join(workdir, "demo-plugin");
       await mkdir(join(folder, "dist"), { recursive: true });
       await mkdir(join(workdir, "packs"), { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "@scope/demo-plugin",
           displayName: "Demo Plugin",
           version: "1.0.0",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.plugin" }),
-        "utf8",
+        },
+        { id: "demo.plugin" },
       );
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
       return { cliCwd, workdir };
@@ -2824,19 +2945,14 @@ describe("package commands", () => {
       const folder = join(workdir, "demo-heavy-plugin");
       await mkdir(join(folder, "dist"), { recursive: true });
       await mkdir(join(workdir, "packs"), { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "demo-heavy-plugin",
           displayName: "Demo Heavy Plugin",
           version: "1.0.0",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.heavy.plugin" }),
-        "utf8",
+        },
+        { id: "demo.heavy.plugin" },
       );
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
       await writeFile(join(folder, "dist", "model.bin"), randomBytes(24 * 1024 * 1024));
@@ -2860,20 +2976,15 @@ describe("package commands", () => {
     try {
       const folder = join(workdir, "demo-heavy-plugin");
       await mkdir(join(folder, "dist"), { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "demo-heavy-plugin",
           displayName: "Demo Heavy Plugin",
           version: "1.0.0",
           repository: "https://github.com/openclaw/demo-heavy-plugin.git",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.heavy.plugin" }),
-        "utf8",
+        },
+        { id: "demo.heavy.plugin" },
       );
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
       await writeFile(join(folder, "dist", "model.bin"), randomBytes(24 * 1024 * 1024));
@@ -3044,12 +3155,209 @@ describe("package commands", () => {
         version: "1.0.0",
         expectedArtifactSha256: artifactSha256,
         categories: ["automation"],
+        displayName: "Demo Claw",
       });
       expect(mockWarn).not.toHaveBeenCalled();
       const uploaded = getPublishForm().get("clawpack");
       expect(uploaded).toBeInstanceOf(File);
       const parsed = parseClawPack(new Uint8Array(await (uploaded as File).arrayBuffer()));
       expect(parsed.entries.map((entry) => entry.path)).toContain("CLAW.md");
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("uses the Template agent name as the display name before the tarball filename", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const packName = "cooking-companion-0.2.0.tgz";
+      await writeFile(
+        join(workdir, packName),
+        npmPackFixture({
+          "package/package.json": JSON.stringify({
+            name: "cooking-companion",
+            version: "0.2.0",
+            openclaw: { template: "CLAW.md" },
+          }),
+          "package/CLAW.md":
+            "---\nschemaVersion: 1\nagent:\n  id: cooking-companion\n  name: Cooking Companion\n---\n# Cooking Companion\n",
+        }),
+      );
+      const packBytes = new Uint8Array(await readFile(join(workdir, packName)));
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        packageId: "pkg_claw",
+        releaseId: "rel_claw",
+        artifactSha256: artifactIdentity(packBytes).sha256,
+      });
+
+      await cmdPublishPackage(makeOpts(workdir), packName);
+
+      expect(getPublishPayload()).toMatchObject({
+        name: "cooking-companion",
+        family: "template",
+        displayName: "Cooking Companion",
+      });
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    {
+      label: "explicit CLI name",
+      displayName: "CLI Display",
+      packageDisplayName: "Package Display",
+      agentName: "Template Agent",
+      expected: "CLI Display",
+    },
+    {
+      label: "explicit package name",
+      displayName: undefined,
+      packageDisplayName: "Package Display",
+      agentName: "Template Agent",
+      expected: "Package Display",
+    },
+    {
+      label: "CLAW.md agent name",
+      displayName: undefined,
+      packageDisplayName: undefined,
+      agentName: "Template Agent",
+      expected: "Template Agent",
+    },
+    {
+      label: "cleaned filename without an agent name",
+      displayName: undefined,
+      packageDisplayName: undefined,
+      agentName: undefined,
+      expected: "Demo Claw",
+    },
+  ])("ignores Template README headings in favor of $label", async (testCase) => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const packName = "demo-claw-1.0.0.tgz";
+      await writeFile(
+        join(workdir, packName),
+        npmPackFixture({
+          "package/package.json": JSON.stringify({
+            name: "demo-claw",
+            version: "1.0.0",
+            displayName: testCase.packageDisplayName,
+            openclaw: { template: "CLAW.md" },
+          }),
+          "package/CLAW.md": [
+            "---",
+            "schemaVersion: 1",
+            "agent:",
+            "  id: demo-claw",
+            ...(testCase.agentName ? [`  name: ${testCase.agentName}`] : []),
+            "---",
+          ].join("\n"),
+          "package/README.md": "# Unrelated README Heading\n",
+        }),
+      );
+
+      await cmdPublishPackage(makeOpts(workdir), packName, {
+        dryRun: true,
+        json: true,
+        displayName: testCase.displayName,
+      });
+
+      const output = JSON.parse(String(mockWrite.mock.calls[0]?.[0] ?? ""));
+      expect(output).toMatchObject({ displayName: testCase.expected });
+      expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("preserves version-looking package-name text in an archive fallback", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const packName = "http-1.0.0-helper-2.0.0.tgz";
+      await writeFile(
+        join(workdir, packName),
+        npmPackFixture({
+          "package/package.json": JSON.stringify({
+            name: "http-1.0.0-helper",
+            version: "2.0.0",
+            openclaw: { template: "CLAW.md" },
+          }),
+          "package/CLAW.md": "---\nschemaVersion: 1\nagent:\n  id: http-helper\n---\n# Template\n",
+        }),
+      );
+
+      await cmdPublishPackage(makeOpts(workdir), packName, { dryRun: true, json: true });
+
+      const output = JSON.parse(String(mockWrite.mock.calls[0]?.[0] ?? ""));
+      expect(output).toMatchObject({ displayName: "Http 1.0.0 Helper", version: "2.0.0" });
+      expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it.each(["demo-plugin-2.0.0", "http-1.0.0-helper"])(
+    "preserves the ordinary folder fallback for %s",
+    async (folderName) => {
+      const workdir = await makeTmpWorkdir();
+      try {
+        const folder = join(workdir, folderName);
+        await mkdir(join(folder, "dist"), { recursive: true });
+        await writeCodePluginMetadata(
+          folder,
+          { name: "demo-plugin", version: "2.0.0" },
+          { id: "demo.plugin" },
+        );
+        await writeDeclaredDistEntry(folder);
+
+        await cmdPublishPackage(makeOpts(workdir), folderName, {
+          dryRun: true,
+          json: true,
+          sourceRepo: "openclaw/demo-plugin",
+          sourceCommit: "abc123",
+        });
+
+        const output = JSON.parse(String(mockWrite.mock.calls[0]?.[0] ?? ""));
+        expect(output).toMatchObject({
+          displayName:
+            folderName === "demo-plugin-2.0.0" ? "Demo Plugin 2.0.0" : "Http 1.0.0 Helper",
+        });
+        expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
+      } finally {
+        await rm(workdir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("prefers an explicit display name over the Template agent name", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const packName = "demo-claw-1.0.0.tgz";
+      await writeFile(
+        join(workdir, packName),
+        npmPackFixture({
+          "package/package.json": JSON.stringify({
+            name: "demo-claw",
+            displayName: "Demo Claw Deluxe",
+            version: "1.0.0",
+            openclaw: { template: "CLAW.md" },
+          }),
+          "package/CLAW.md":
+            "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n  name: Demo Agent\n---\n# Demo Template\n",
+        }),
+      );
+      const packBytes = new Uint8Array(await readFile(join(workdir, packName)));
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        packageId: "pkg_claw",
+        releaseId: "rel_claw",
+        artifactSha256: artifactIdentity(packBytes).sha256,
+      });
+
+      await cmdPublishPackage(makeOpts(workdir), packName);
+
+      expect(getPublishPayload()).toMatchObject({ displayName: "Demo Claw Deluxe" });
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }
@@ -3203,19 +3511,14 @@ describe("package commands", () => {
 
       const folder = join(workdir, "demo-plugin");
       await mkdir(folder, { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "@scope/demo-plugin",
           displayName: "Demo Plugin",
           version: "1.0.0",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.plugin" }),
-        "utf8",
+        },
+        { id: "demo.plugin" },
       );
       await mkdir(join(folder, "dist"), { recursive: true });
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
@@ -3339,19 +3642,14 @@ describe("package commands", () => {
 
       const folder = join(workdir, "demo-plugin");
       await mkdir(folder, { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "demo-plugin",
           displayName: "Demo Plugin",
           version: "1.0.0",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.plugin" }),
-        "utf8",
+        },
+        { id: "demo.plugin" },
       );
       await writeDeclaredDistEntry(folder);
 
@@ -3386,148 +3684,59 @@ describe("package commands", () => {
     }
   });
 
-  it("falls back to a normal auth token when trusted minting is unavailable", async () => {
+  it.each([
+    {
+      failure: "trusted minting is unavailable",
+      oidcFailure: false,
+      mintError: Object.assign(new Error("Trusted publisher config is not set"), { status: 403 }),
+    },
+    {
+      failure: "trusted minting returns a 400",
+      oidcFailure: false,
+      mintError: Object.assign(new Error("Trusted publishing requires workflow_dispatch"), {
+        status: 400,
+      }),
+    },
+    {
+      failure: "requesting the GitHub OIDC token fails",
+      oidcFailure: true,
+      mintError: undefined,
+    },
+  ])("falls back to a normal auth token when $failure", async ({ oidcFailure, mintError }) => {
     const workdir = await makeTmpWorkdir();
     try {
       process.env.ACTIONS_ID_TOKEN_REQUEST_URL = "https://token.actions.githubusercontent.com/oidc";
       process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN = "gh-request-token";
       const fetchMock = vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ value: "github-oidc-jwt" }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        }),
+        oidcFailure
+          ? new Response("oidc unavailable", {
+              status: 500,
+              statusText: "Internal Server Error",
+            })
+          : new Response(JSON.stringify({ value: "github-oidc-jwt" }), {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            }),
       );
       vi.stubGlobal("fetch", fetchMock);
 
       const folder = join(workdir, "demo-plugin");
       await mkdir(folder, { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "@scope/demo-plugin",
           displayName: "Demo Plugin",
           version: "1.0.0",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.plugin" }),
-        "utf8",
+        },
+        { id: "demo.plugin" },
       );
       await writeDeclaredDistEntry(folder);
 
-      authTokenMocks.requireAuthToken.mockResolvedValueOnce("fallback-token");
-      httpMocks.apiRequest.mockRejectedValueOnce(
-        Object.assign(new Error("Trusted publisher config is not set"), { status: 403 }),
-      );
-      httpMocks.apiRequestForm.mockResolvedValueOnce({
-        ok: true,
-        packageId: "pkg_1",
-        releaseId: "rel_1",
-      });
-
-      await cmdPublishPackage(makeOpts(workdir), "demo-plugin", {
-        sourceRepo: "openclaw/demo-plugin",
-        sourceCommit: "abc123",
-      });
-
-      const publishArgs = httpMocks.apiRequestForm.mock.calls[0]?.[1] as
-        | { token?: string }
-        | undefined;
-      expect(publishArgs?.token).toBe("fallback-token");
-    } finally {
-      await rm(workdir, { recursive: true, force: true });
-    }
-  });
-
-  it("falls back to a normal auth token when trusted minting returns a 400", async () => {
-    const workdir = await makeTmpWorkdir();
-    try {
-      process.env.ACTIONS_ID_TOKEN_REQUEST_URL = "https://token.actions.githubusercontent.com/oidc";
-      process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN = "gh-request-token";
-      const fetchMock = vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ value: "github-oidc-jwt" }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        }),
-      );
-      vi.stubGlobal("fetch", fetchMock);
-
-      const folder = join(workdir, "demo-plugin");
-      await mkdir(folder, { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
-          name: "@scope/demo-plugin",
-          displayName: "Demo Plugin",
-          version: "1.0.0",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.plugin" }),
-        "utf8",
-      );
-      await writeDeclaredDistEntry(folder);
-
-      authTokenMocks.requireAuthToken.mockResolvedValueOnce("fallback-token");
-      httpMocks.apiRequest.mockRejectedValueOnce(
-        Object.assign(new Error("Trusted publishing requires workflow_dispatch"), { status: 400 }),
-      );
-      httpMocks.apiRequestForm.mockResolvedValueOnce({
-        ok: true,
-        packageId: "pkg_1",
-        releaseId: "rel_1",
-      });
-
-      await cmdPublishPackage(makeOpts(workdir), "demo-plugin", {
-        sourceRepo: "openclaw/demo-plugin",
-        sourceCommit: "abc123",
-      });
-
-      const publishArgs = httpMocks.apiRequestForm.mock.calls[0]?.[1] as
-        | { token?: string }
-        | undefined;
-      expect(publishArgs?.token).toBe("fallback-token");
-    } finally {
-      await rm(workdir, { recursive: true, force: true });
-    }
-  });
-
-  it("falls back to a normal auth token when requesting the GitHub OIDC token fails", async () => {
-    const workdir = await makeTmpWorkdir();
-    try {
-      process.env.ACTIONS_ID_TOKEN_REQUEST_URL = "https://token.actions.githubusercontent.com/oidc";
-      process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN = "gh-request-token";
-      const fetchMock = vi.fn().mockResolvedValue(
-        new Response("oidc unavailable", {
-          status: 500,
-          statusText: "Internal Server Error",
-        }),
-      );
-      vi.stubGlobal("fetch", fetchMock);
-
-      const folder = join(workdir, "demo-plugin");
-      await mkdir(folder, { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
-          name: "@scope/demo-plugin",
-          displayName: "Demo Plugin",
-          version: "1.0.0",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.plugin" }),
-        "utf8",
-      );
-      await writeDeclaredDistEntry(folder);
-
-      authTokenMocks.requireAuthToken.mockResolvedValueOnce("fallback-token");
+      authTokenMocks.getOptionalAuthToken.mockResolvedValueOnce("fallback-token");
+      if (mintError) {
+        httpMocks.apiRequest.mockRejectedValueOnce(mintError);
+      }
       httpMocks.apiRequestForm.mockResolvedValueOnce({
         ok: true,
         packageId: "pkg_1",
@@ -3622,19 +3831,14 @@ describe("package commands", () => {
         const folder = join(workdir, "demo-plugin");
         await mkdir(join(folder, "dist"), { recursive: true });
         await mkdir(join(folder, "skills", "demo"), { recursive: true });
-        await writeFile(
-          join(folder, "package.json"),
-          makeCodePluginPackageJson({
+        await writeCodePluginMetadata(
+          folder,
+          {
             name: "demo-plugin",
             displayName: "Demo Plugin",
             version: "1.0.0",
-          }),
-          "utf8",
-        );
-        await writeFile(
-          join(folder, "openclaw.plugin.json"),
-          JSON.stringify({ id: "demo.plugin" }),
-          "utf8",
+          },
+          { id: "demo.plugin" },
         );
         for (const host of ["codex", "claude", "cursor"]) {
           await mkdir(join(folder, `.${host}-plugin`));
@@ -3694,15 +3898,10 @@ describe("package commands", () => {
     try {
       const folder = join(workdir, "demo-plugin");
       await mkdir(join(folder, "dist"), { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({ name: "demo-plugin", version: "1.0.0" }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.plugin" }),
-        "utf8",
+      await writeCodePluginMetadata(
+        folder,
+        { name: "demo-plugin", version: "1.0.0" },
+        { id: "demo.plugin" },
       );
 
       await expect(cmdPublishPackage(makeOpts(workdir), "demo-plugin", {})).rejects.toThrow(
@@ -4014,19 +4213,14 @@ describe("package commands", () => {
     try {
       const folder = join(workdir, "broken-plugin");
       await mkdir(folder, { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "broken-plugin",
           displayName: "Broken Plugin",
           version: "1.0.0",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "broken.plugin" }),
-        "utf8",
+        },
+        { id: "broken.plugin" },
       );
       await writeDeclaredDistEntry(folder);
 
@@ -4157,19 +4351,14 @@ describe("package commands", () => {
     try {
       const folder = join(workdir, "demo-plugin");
       await mkdir(join(folder, "dist"), { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "@scope/demo-plugin",
           displayName: "Demo Plugin",
           version: "1.0.0",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.plugin" }),
-        "utf8",
+        },
+        { id: "demo.plugin" },
       );
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
 
@@ -4221,19 +4410,14 @@ describe("package commands", () => {
     try {
       const folder = join(workdir, "demo-plugin");
       await mkdir(folder, { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "demo-plugin",
           displayName: "Demo Plugin",
           version: "1.0.0",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.plugin" }),
-        "utf8",
+        },
+        { id: "demo.plugin" },
       );
       await writeDeclaredDistEntry(folder);
 
@@ -4292,19 +4476,14 @@ describe("package commands", () => {
     try {
       const folder = join(workdir, "packages", "demo-plugin");
       await mkdir(folder, { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "demo-plugin",
           displayName: "Demo Plugin",
           version: "1.0.0",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.plugin", configSchema: { type: "object" } }),
-        "utf8",
+        },
+        { id: "demo.plugin", configSchema: { type: "object" } },
       );
       await writeDeclaredDistEntry(folder);
 
@@ -4445,19 +4624,14 @@ describe("package commands", () => {
     try {
       const folder = join(workdir, "demo-plugin");
       await mkdir(join(folder, "dist"), { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "demo-plugin",
           displayName: "Demo Plugin",
           version: "1.0.0",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.plugin" }),
-        "utf8",
+        },
+        { id: "demo.plugin" },
       );
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
 
@@ -4500,19 +4674,14 @@ describe("package commands", () => {
     try {
       const folder = join(workdir, "demo-plugin");
       await mkdir(folder, { recursive: true });
-      await writeFile(
-        join(folder, "package.json"),
-        makeCodePluginPackageJson({
+      await writeCodePluginMetadata(
+        folder,
+        {
           name: "demo-plugin",
           displayName: "Demo Plugin",
           version: "1.0.0",
-        }),
-        "utf8",
-      );
-      await writeFile(
-        join(folder, "openclaw.plugin.json"),
-        JSON.stringify({ id: "demo.plugin" }),
-        "utf8",
+        },
+        { id: "demo.plugin" },
       );
 
       runGit(folder, ["init", "-b", "main"]);

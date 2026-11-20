@@ -1,4 +1,5 @@
 import { requireAuthToken } from "../../../clawhub/src/cli/authToken.js";
+import { writeJsonIfRequested } from "../../../clawhub/src/cli/output.js";
 import { getRegistry } from "../../../clawhub/src/cli/registry.js";
 import type { GlobalOpts } from "../../../clawhub/src/cli/types.js";
 import { fail } from "../../../clawhub/src/cli/ui.js";
@@ -93,10 +94,7 @@ export async function cmdSetPackageFeatured(
     body: { featured },
   });
 
-  if (options.json) {
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    return result;
-  }
+  if (writeJsonIfRequested(options.json, result)) return result;
   console.log(`OK. ${featured ? "Featured" : "Unfeatured"} plugin ${result.name}.`);
   return result;
 }
@@ -122,10 +120,7 @@ export async function cmdSetSkillFeatured(
     },
   });
 
-  if (options.json) {
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    return result;
-  }
+  if (writeJsonIfRequested(options.json, result)) return result;
   const label = ref.externalId
     ? `skills-sh:${ref.externalId}`
     : result.ownerHandle

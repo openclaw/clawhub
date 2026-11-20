@@ -1,5 +1,7 @@
 import { createIsomorphicFn } from "@tanstack/react-start";
 import type {
+  PackageAigAnalysis,
+  PackageSkillSpectorAnalysis,
   ApiV1PackageResponse,
   ApiV1PackageVersionListResponse,
   PackageCompatibility,
@@ -10,7 +12,10 @@ import type {
   TemplateManifestSummary,
 } from "clawhub-schema";
 import { ApiRoutes } from "clawhub-schema/routes";
+import type { Infer } from "convex/values";
+import type { PublicPackageDocLike } from "../../convex/lib/packageReadProjection";
 import { getPluginBrowseSnapshotKind } from "../../convex/lib/pluginBrowseSnapshot";
+import type { llmAnalysisValidator } from "../../convex/schema";
 import { hasOwnProperty } from "./hasOwnProperty";
 import { publicApiUrl } from "./publicApiUrl";
 import {
@@ -20,10 +25,15 @@ import {
 import { getRuntimeEnv } from "./runtimeEnv";
 import { getPublicClawHubSiteUrl } from "./site";
 
-export type PackageListItem = {
+export type PackageListItem<
+  Family extends "skill" | "code-plugin" | "bundle-plugin" | "template" =
+    | "skill"
+    | "code-plugin"
+    | "bundle-plugin",
+> = {
   name: string;
   displayName: string;
-  family: "skill" | "code-plugin" | "bundle-plugin";
+  family: Family;
   runtimeId?: string | null;
   channel: "official" | "community" | "private";
   isOfficial: boolean;
@@ -55,7 +65,7 @@ export type PackageVersionDetail = {
   package: {
     name: string;
     displayName: string;
-    family: "skill" | "code-plugin" | "bundle-plugin";
+    family: "skill" | "code-plugin" | "bundle-plugin" | "template";
   } | null;
   version: {
     endorAnalysis?: PackageEndorAnalysis | null;
@@ -74,115 +84,12 @@ export type PackageVersionDetail = {
     templateManifestSummary?: TemplateManifestSummary | null;
     templateInventory?: TemplateDependencyInventory;
     verification?: PackageVerificationSummary | null;
-    artifact?: {
-      kind: "legacy-zip" | "npm-pack";
-      sha256?: string;
-      size?: number;
-      format?: string;
-      npmIntegrity?: string;
-      npmShasum?: string;
-      npmTarballName?: string;
-      npmUnpackedSize?: number;
-      npmFileCount?: number;
-    } | null;
+    artifact?: NonNullable<PublicPackageDocLike["artifact"]> | null;
     /** @deprecated Compatibility hash for exact /download ZIP bytes. Use artifact.sha256. */
     sha256hash?: string | null;
-    skillSpectorAnalysis?: {
-      status: string;
-      inspectionStatus?: "completed" | "partial";
-      score?: number;
-      severity?: string;
-      recommendation?: string;
-      issueCount: number;
-      issues: Array<{
-        issueId: string;
-        category?: string;
-        pattern?: string;
-        severity: string;
-        confidence?: number;
-        file?: string;
-        startLine?: number;
-        endLine?: number;
-        explanation: string;
-        remediation?: string;
-        finding?: string;
-        codeSnippet?: string;
-      }>;
-      scannerVersion?: string;
-      summary?: string;
-      error?: string;
-      checkedAt: number;
-    } | null;
-    aigAnalysis?: {
-      status: string;
-      issueCount: number;
-      findings: Array<{
-        ruleId: string;
-        level: string;
-        message: string;
-        title?: string;
-        description?: string;
-        file?: string;
-        startLine?: number;
-        endLine?: number;
-        remediation?: string;
-      }>;
-      scannerVersion?: string;
-      summary?: string;
-      error?: string;
-      checkedAt: number;
-    } | null;
-    llmAnalysis?: {
-      status: string;
-      verdict?: string;
-      confidence?: string;
-      summary?: string;
-      dimensions?: Array<{
-        name: string;
-        label: string;
-        rating: string;
-        detail: string;
-      }>;
-      guidance?: string;
-      findings?: string;
-      agenticRiskFindings?: Array<{
-        categoryId: string;
-        categoryLabel: string;
-        riskBucket:
-          | "abnormal_behavior_control"
-          | "permission_boundary"
-          | "sensitive_data_protection";
-        status: "none" | "note" | "concern";
-        severity: string;
-        confidence: "high" | "medium" | "low";
-        evidence?: {
-          path: string;
-          snippet: string;
-          explanation: string;
-        };
-        userImpact: string;
-        recommendation: string;
-      }>;
-      riskSummary?: {
-        abnormal_behavior_control: {
-          status: "none" | "note" | "concern";
-          summary: string;
-          highestSeverity?: string;
-        };
-        permission_boundary: {
-          status: "none" | "note" | "concern";
-          summary: string;
-          highestSeverity?: string;
-        };
-        sensitive_data_protection: {
-          status: "none" | "note" | "concern";
-          summary: string;
-          highestSeverity?: string;
-        };
-      };
-      model?: string;
-      checkedAt: number;
-    } | null;
+    skillSpectorAnalysis?: PackageSkillSpectorAnalysis | null;
+    aigAnalysis?: PackageAigAnalysis | null;
+    llmAnalysis?: Infer<typeof llmAnalysisValidator> | null;
   } | null;
 };
 
@@ -465,6 +372,35 @@ export async function fetchPackages(params: {
   );
 }
 
+export async function fetchTemplateCatalog(params: {
+  q?: string;
+  category?: string;
+  cursor?: string;
+  limit: number;
+  signal: AbortSignal;
+}): Promise<{ items: PackageListItem<"template">[]; nextCursor: string | null }> {
+  const query = params.q?.trim();
+  const url = await packageApiUrl(query ? `${ApiRoutes.packages}/search` : ApiRoutes.packages);
+  url.searchParams.set("family", "template");
+  url.searchParams.set("limit", String(params.limit));
+  if (params.category) url.searchParams.set("category", params.category);
+  if (query) {
+    url.searchParams.set("q", query);
+    const result = await fetchJson<{ results: Array<{ package: PackageListItem<"template"> }> }>(
+      url,
+      params.signal,
+      "anonymous",
+    );
+    return { items: result?.results.map((entry) => entry.package) ?? [], nextCursor: null };
+  }
+  if (params.cursor) url.searchParams.set("cursor", params.cursor);
+  const result = await fetchJson<{
+    items: PackageListItem<"template">[];
+    nextCursor: string | null;
+  }>(url, params.signal, "anonymous");
+  return result ?? { items: [], nextCursor: null };
+}
+
 export async function fetchPluginCatalog(params: {
   q?: string;
   searchSource?: "clawhub-web";
@@ -624,14 +560,19 @@ export async function fetchPackageVersions(
 export async function fetchPackageVersion(
   name: string,
   version: string,
+  options?: { throwOnError?: boolean },
 ): Promise<PackageVersionDetail | null> {
   try {
     const url = await packageApiUrl(
       `${ApiRoutes.packages}/${encodeURIComponent(name)}/versions/${encodeURIComponent(version)}`,
     );
     return await fetchJson<PackageVersionDetail>(url);
-  } catch {
-    // Return null on API error to prevent SSR crashes
+  } catch (error) {
+    // Exact-release audit pages distinguish a missing release from a retryable
+    // registry failure. Keep other callers' existing best-effort SSR behavior.
+    if (options?.throwOnError && !(error instanceof PackageApiError && error.status === 404)) {
+      throw error;
+    }
     return null;
   }
 }

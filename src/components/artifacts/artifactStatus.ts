@@ -117,16 +117,16 @@ export function skillArtifactStatus(skill: SkillArtifactStatusInput): ArtifactDi
 }
 
 export function packageArtifactStatus(pkg: PackageArtifactStatusInput): ArtifactDisplayStatus {
-  const releaseStatuses = new Set([pkg.latestRelease?.llmStatus]);
+  const scanStatus = pkg.scanStatus ?? pkg.latestRelease?.llmStatus;
 
-  if (pkg.scanStatus === "malicious" || releaseStatuses.has("malicious")) {
+  if (scanStatus === "malicious") {
     return {
       label: "Blocked",
       description: "Security checks found malicious content.",
       variant: "destructive",
     };
   }
-  if (pkg.scanStatus === "suspicious" || releaseStatuses.has("suspicious")) {
+  if (scanStatus === "suspicious") {
     return {
       label: "Review",
       description:
@@ -134,14 +134,14 @@ export function packageArtifactStatus(pkg: PackageArtifactStatusInput): Artifact
       variant: "warning",
     };
   }
-  if (pkg.scanStatus === "pending" || pkg.pendingReview) {
+  if (scanStatus === "pending" || pkg.pendingReview) {
     return {
       label: "Pending checks",
       description: "Security verification is still running.",
       variant: "pending",
     };
   }
-  if (pkg.scanStatus === "clean") {
+  if (scanStatus === "clean") {
     return {
       label: "Visible",
       description: "Available on public catalog surfaces.",

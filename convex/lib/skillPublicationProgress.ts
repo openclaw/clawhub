@@ -46,6 +46,40 @@ export async function readSkillVersionPublicationProgress(
   )
     return null;
 
+  const attempt = await readSkillVersionPublishAttempt(ctx, skill, version);
+  const unavailable: SkillPublicationProgress = {
+    version: version.version,
+    stage: "unavailable",
+    retrying: false,
+    updatedAt: version.createdAt,
+  };
+  if (!attempt || attempt.status === "finalized") return unavailable;
+
+  const checks = {
+    trufflehog: attempt.checks.trufflehog.status,
+    clawscan: attempt.checks.clawscan.status,
+  };
+  let stage: SkillPublicationProgress["stage"] = attempt.status;
+  if (attempt.status === "pending_checks" || attempt.status === "failed") {
+    if (checks.trufflehog === "failed" || checks.clawscan === "failed") stage = "checks_failed";
+    else if (attempt.checkClaimLastError) stage = "checks_incomplete";
+  }
+  return {
+    version: version.version,
+    stage,
+    retrying: attempt.status === "pending_checks" && stage !== "pending_checks",
+    updatedAt: attempt.updatedAt,
+    checks,
+  };
+}
+
+// The caller must authorize access to this exact skill before passing a version.
+// The attempt carries worker text and internal ids; never return it to a client.
+export async function readSkillVersionPublishAttempt(
+  ctx: QueryCtx,
+  skill: Doc<"skills">,
+  version: Doc<"skillVersions">,
+): Promise<Doc<"publishAttempts"> | null> {
   const matchesVersion = (attempt: Doc<"publishAttempts"> | null) =>
     attempt?.kind === "skill" &&
     attempt.skillId === skill._id &&
@@ -83,28 +117,5 @@ export async function readSkillVersionPublicationProgress(
         .filter(matchesVersion)
         .sort((a, b) => b.createdAt - a.createdAt)[0] ?? null;
   }
-  const unavailable: SkillPublicationProgress = {
-    version: version.version,
-    stage: "unavailable",
-    retrying: false,
-    updatedAt: version.createdAt,
-  };
-  if (!attempt || !matchesVersion(attempt) || attempt.status === "finalized") return unavailable;
-
-  const checks = {
-    trufflehog: attempt.checks.trufflehog.status,
-    clawscan: attempt.checks.clawscan.status,
-  };
-  let stage: SkillPublicationProgress["stage"] = attempt.status;
-  if (attempt.status === "pending_checks" || attempt.status === "failed") {
-    if (checks.trufflehog === "failed" || checks.clawscan === "failed") stage = "checks_failed";
-    else if (attempt.checkClaimLastError) stage = "checks_incomplete";
-  }
-  return {
-    version: version.version,
-    stage,
-    retrying: attempt.status === "pending_checks" && stage !== "pending_checks",
-    updatedAt: attempt.updatedAt,
-    checks,
-  };
+  return attempt && matchesVersion(attempt) ? attempt : null;
 }

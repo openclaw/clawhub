@@ -7,7 +7,7 @@ import type {
 } from "../components/SkillSecurityScanResults";
 
 type SecurityAuditExportEntity = {
-  kind: "skill" | "plugin";
+  kind: "skill" | "plugin" | "template";
   title: string;
   name: string;
   version?: string | null;

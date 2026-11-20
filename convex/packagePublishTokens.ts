@@ -1,45 +1,11 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./functions";
+import { packagePublishTokenFields } from "./lib/packagePublishTokenValidators";
 
 const TOKEN_TOUCH_MIN_INTERVAL_MS = 15 * 60_000;
 
 export const createInternal = internalMutation({
-  args: {
-    packageId: v.id("packages"),
-    version: v.string(),
-    prefix: v.string(),
-    tokenHash: v.string(),
-    provider: v.literal("github-actions"),
-    repository: v.string(),
-    repositoryId: v.string(),
-    repositoryOwner: v.string(),
-    repositoryOwnerId: v.string(),
-    workflowFilename: v.string(),
-    environment: v.optional(v.string()),
-    runId: v.string(),
-    runAttempt: v.string(),
-    sha: v.string(),
-    ref: v.string(),
-    refType: v.optional(v.string()),
-    actor: v.optional(v.string()),
-    actorId: v.optional(v.string()),
-    scope: v.optional(v.union(v.literal("upload"), v.literal("publish"))),
-    inventoryDigest: v.optional(v.string()),
-    authorizationVersion: v.optional(v.literal(2)),
-    authorizationRoute: v.optional(v.string()),
-    authorizationTransactionKey: v.optional(v.string()),
-    authorizationKey: v.optional(v.string()),
-    authorizationArtifactId: v.optional(v.string()),
-    authorizationArtifactDigest: v.optional(v.string()),
-    trustedToolingIdentityJson: v.optional(v.string()),
-    candidateRepository: v.optional(v.string()),
-    candidateSha: v.optional(v.string()),
-    parentRepository: v.optional(v.string()),
-    parentWorkflow: v.optional(v.string()),
-    parentRunId: v.optional(v.string()),
-    parentRunAttempt: v.optional(v.string()),
-    expiresAt: v.number(),
-  },
+  args: packagePublishTokenFields,
   handler: async (ctx, args) => {
     const now = Date.now();
     if (args.authorizationKey) {

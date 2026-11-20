@@ -416,10 +416,6 @@ export async function signInAsLocalPersona(page: Page, persona: LocalAuthPersona
   return devPersonaHandle(persona);
 }
 
-export async function signInAsLocalOwner(page: Page) {
-  return await signInAsLocalPublisher(page, "owner");
-}
-
 function parseOwnerHandle(text: string) {
   return text.match(/@([a-z0-9][a-z0-9-]*)/i)?.[1] ?? "";
 }

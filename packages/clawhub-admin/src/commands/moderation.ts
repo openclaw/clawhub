@@ -1,11 +1,12 @@
 import { isCancel, select } from "@clack/prompts";
 import { requireAuthToken } from "../../../clawhub/src/cli/authToken.js";
+import { withLoaderErrorHandling } from "../../../clawhub/src/cli/loader.js";
+import { writeJsonIfRequested } from "../../../clawhub/src/cli/output.js";
 import { getRegistry } from "../../../clawhub/src/cli/registry.js";
 import type { GlobalOpts } from "../../../clawhub/src/cli/types.js";
 import {
   createCrabLoader,
   fail,
-  formatError,
   isInteractive,
   promptConfirm,
 } from "../../../clawhub/src/cli/ui.js";
@@ -57,7 +58,7 @@ export async function cmdRevokeSkillVersion(
   const registry = await getRegistry(opts, { cache: true });
   const token = await requireAuthToken(registry);
   const spinner = options.json ? null : createCrabLoader(`Revoking ${slug}@${version}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -78,12 +79,9 @@ export async function cmdRevokeSkillVersion(
         ? `OK. ${slug}@${version} was already revoked`
         : `OK. Revoked ${slug}@${version}`,
     );
-    if (options.json) process.stdout.write(`${JSON.stringify(parsed, null, 2)}\n`);
+    writeJsonIfRequested(options.json, parsed);
     return parsed;
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdBanUser(
@@ -97,17 +95,9 @@ export async function cmdBanUser(
 
   const reason = options.reason?.trim() || undefined;
 
-  const registry = await getRegistry(opts, { cache: true });
-  const token = await requireAuthToken(registry);
-  const allowPrompt = isInteractive() && inputAllowed !== false;
-  const resolved = await resolveUserIdentifier(
-    registry,
-    token,
-    raw,
-    { id: options.id, fuzzy: options.fuzzy },
-    allowPrompt,
-  );
-  if (!resolved) return undefined;
+  const userContext = await resolveUserContext(opts, raw, options, inputAllowed);
+  if (!userContext) return undefined;
+  const { registry, token, allowPrompt, resolved } = userContext;
   if (!options.yes) {
     if (!allowPrompt) fail("Pass --yes (no input)");
     const ok = await promptConfirm(
@@ -117,7 +107,7 @@ export async function cmdBanUser(
   }
 
   const spinner = createCrabLoader(`Banning ${resolved.label}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -137,10 +127,7 @@ export async function cmdBanUser(
     }
     spinner.succeed(`OK. Banned ${resolved.label} (${formatDeletedSkills(parsed.deletedSkills)})`);
     return parsed;
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdUnbanUser(
@@ -154,17 +141,9 @@ export async function cmdUnbanUser(
 
   const reason = options.reason?.trim() || undefined;
 
-  const registry = await getRegistry(opts, { cache: true });
-  const token = await requireAuthToken(registry);
-  const allowPrompt = isInteractive() && inputAllowed !== false;
-  const resolved = await resolveUserIdentifier(
-    registry,
-    token,
-    raw,
-    { id: options.id, fuzzy: options.fuzzy },
-    allowPrompt,
-  );
-  if (!resolved) return undefined;
+  const userContext = await resolveUserContext(opts, raw, options, inputAllowed);
+  if (!userContext) return undefined;
+  const { registry, token, allowPrompt, resolved } = userContext;
   if (!options.yes) {
     if (!allowPrompt) fail("Pass --yes (no input)");
     const ok = await promptConfirm(
@@ -174,7 +153,7 @@ export async function cmdUnbanUser(
   }
 
   const spinner = createCrabLoader(`Unbanning ${resolved.label}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -196,10 +175,7 @@ export async function cmdUnbanUser(
       `OK. Unbanned ${resolved.label} (${formatRestoredSkills(parsed.restoredSkills)})`,
     );
     return parsed;
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdLiftModerationHold(
@@ -221,17 +197,9 @@ export async function cmdLiftModerationHold(
   if (!reason) fail("--reason required");
   if (reason.length > 500) fail("--reason must be 500 characters or fewer");
 
-  const registry = await getRegistry(opts, { cache: true });
-  const token = await requireAuthToken(registry);
-  const allowPrompt = isInteractive() && inputAllowed !== false;
-  const resolved = await resolveUserIdentifier(
-    registry,
-    token,
-    raw,
-    { id: options.id, fuzzy: options.fuzzy },
-    allowPrompt,
-  );
-  if (!resolved) return undefined;
+  const userContext = await resolveUserContext(opts, raw, options, inputAllowed);
+  if (!userContext) return undefined;
+  const { registry, token, allowPrompt, resolved } = userContext;
   if (!options.yes) {
     if (!allowPrompt) fail("Pass --yes (no input)");
     const ok = await promptConfirm(
@@ -243,7 +211,7 @@ export async function cmdLiftModerationHold(
   const spinner = options.json
     ? null
     : createCrabLoader(`Lifting moderation hold for ${resolved.label}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -266,12 +234,9 @@ export async function cmdLiftModerationHold(
         ? `OK. ${resolved.label} had no moderation hold`
         : `OK. Lifted moderation hold for ${resolved.label} (${formatRestoredSkills(parsed.restoredSkills)})`,
     );
-    if (options.json) process.stdout.write(`${JSON.stringify(parsed, null, 2)}\n`);
+    writeJsonIfRequested(options.json, parsed);
     return parsed;
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdSetRole(
@@ -285,17 +250,9 @@ export async function cmdSetRole(
   if (!raw) fail("Handle or user id required");
   const role = normalizeRole(roleArg);
 
-  const registry = await getRegistry(opts, { cache: true });
-  const token = await requireAuthToken(registry);
-  const allowPrompt = isInteractive() && inputAllowed !== false;
-  const resolved = await resolveUserIdentifier(
-    registry,
-    token,
-    raw,
-    { id: options.id, fuzzy: options.fuzzy },
-    allowPrompt,
-  );
-  if (!resolved) return undefined;
+  const userContext = await resolveUserContext(opts, raw, options, inputAllowed);
+  if (!userContext) return undefined;
+  const { registry, token, allowPrompt, resolved } = userContext;
   if (!options.yes) {
     if (!allowPrompt) fail("Pass --yes (no input)");
     const ok = await promptConfirm(`Set role for ${resolved.label} to ${role}? (admin only)`);
@@ -303,7 +260,7 @@ export async function cmdSetRole(
   }
 
   const spinner = createCrabLoader(`Setting role for ${resolved.label}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -319,10 +276,7 @@ export async function cmdSetRole(
     const parsed = parseArk(ApiV1SetRoleResponseSchema, result, "Set role response");
     spinner.succeed(`OK. ${resolved.label} is now ${parsed.role}`);
     return parsed;
-  } catch (error) {
-    spinner.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdRecoverPersonalPublisher(
@@ -374,7 +328,7 @@ export async function cmdRecoverPersonalPublisher(
   const spinner = options.json
     ? null
     : createCrabLoader(`${dryRun ? "Planning" : "Applying"} publisher recovery for @${handle}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -414,10 +368,7 @@ export async function cmdRecoverPersonalPublisher(
       if (dryRun) console.log("Re-run with --apply --verified --yes to write this recovery.");
     }
     return parsed;
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdRescanSkill(
@@ -440,7 +391,7 @@ export async function cmdRescanSkill(
   const registry = await getRegistry(opts, { cache: true });
   const token = await requireAuthToken(registry);
   const spinner = options.json ? null : createCrabLoader(`Queueing ClawScan rescan for ${slug}`);
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -462,14 +413,9 @@ export async function cmdRescanSkill(
     spinner?.succeed(
       `OK. Queued ClawScan for ${slug}${version ? `@${version}` : ""} (${parsed.alreadyQueued ? "existing job" : "new job"}).`,
     );
-    if (options.json) {
-      process.stdout.write(`${JSON.stringify(parsed, null, 2)}\n`);
-    }
+    writeJsonIfRequested(options.json, parsed);
     return parsed;
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 export async function cmdRescanAllPackages(
@@ -715,17 +661,9 @@ export async function cmdReclassifyBan(
   if (reason.length > 500) fail("Reason too long (max 500 chars)");
 
   const dryRun = options.apply !== true;
-  const registry = await getRegistry(opts, { cache: true });
-  const token = await requireAuthToken(registry);
-  const allowPrompt = isInteractive() && inputAllowed !== false;
-  const resolved = await resolveUserIdentifier(
-    registry,
-    token,
-    raw,
-    { id: options.id, fuzzy: options.fuzzy },
-    allowPrompt,
-  );
-  if (!resolved) return undefined;
+  const userContext = await resolveUserContext(opts, raw, options, inputAllowed);
+  if (!userContext) return undefined;
+  const { registry, token, allowPrompt, resolved } = userContext;
 
   if (!dryRun && !options.yes) {
     if (!allowPrompt) fail("Pass --yes (no input)");
@@ -740,7 +678,7 @@ export async function cmdReclassifyBan(
     : createCrabLoader(
         `${dryRun ? "Planning" : "Applying"} ban reclassification for ${resolved.label}`,
       );
-  try {
+  return await withLoaderErrorHandling(spinner, async () => {
     const result = await apiRequest(
       registry,
       {
@@ -765,10 +703,7 @@ export async function cmdReclassifyBan(
       console.log("Re-run with --apply --yes to write this change.");
     }
     return parsed;
-  } catch (error) {
-    spinner?.fail(formatError(error));
-    throw error;
-  }
+  });
 }
 
 function normalizeHandle(value: string) {
@@ -810,6 +745,26 @@ type UserSearchItem = {
   name?: string | null;
   role?: "admin" | "moderator" | "user" | null;
 };
+
+async function resolveUserContext(
+  opts: GlobalOpts,
+  raw: string,
+  options: { id?: boolean; fuzzy?: boolean },
+  inputAllowed: boolean,
+) {
+  const registry = await getRegistry(opts, { cache: true });
+  const token = await requireAuthToken(registry);
+  const allowPrompt = isInteractive() && inputAllowed !== false;
+  const resolved = await resolveUserIdentifier(
+    registry,
+    token,
+    raw,
+    { id: options.id, fuzzy: options.fuzzy },
+    allowPrompt,
+  );
+  if (!resolved) return null;
+  return { registry, token, allowPrompt, resolved };
+}
 
 async function resolveUserIdentifier(
   registry: string,

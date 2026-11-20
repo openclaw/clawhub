@@ -2,8 +2,12 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { MutationCtx } from "./_generated/server";
 import { internalAction, internalMutation } from "./functions";
+import { runMutationRef } from "./lib/functionRefs";
 import { createGitHubAppInstallationToken } from "./lib/githubAuth";
-import { dispatchGitHubRepositoryEvent } from "./lib/githubRepositoryDispatch";
+import {
+  dispatchGitHubRepositoryEvent,
+  isGitHubRepositoryDispatchConfigured,
+} from "./lib/githubRepositoryDispatch";
 
 const DISPATCH_STATE_KEY = "skill-evaluation-worker";
 const DISPATCH_LEASE_MS = 15 * 60 * 1000;
@@ -17,23 +21,9 @@ const internalRefs = internal as unknown as {
   };
 };
 
-async function runMutationRef<T>(
-  ctx: { runMutation: (ref: never, args: never) => Promise<unknown> },
-  ref: unknown,
-  args: unknown,
-): Promise<T> {
-  return (await ctx.runMutation(ref as never, args as never)) as T;
-}
-
 export function isSkillEvaluationEventDispatchEnabled(env: NodeJS.ProcessEnv = process.env) {
   return (
-    env.SECURITY_SCAN_EVENT_DISPATCH_ENABLED === "1" &&
-    env.CLAWHUB_PREVIEW !== "1" &&
-    Boolean(
-      env.GITHUB_APP_ID?.trim() &&
-      env.GITHUB_APP_INSTALLATION_ID?.trim() &&
-      env.GITHUB_APP_PRIVATE_KEY?.trim(),
-    )
+    env.SECURITY_SCAN_EVENT_DISPATCH_ENABLED === "1" && isGitHubRepositoryDispatchConfigured(env)
   );
 }
 

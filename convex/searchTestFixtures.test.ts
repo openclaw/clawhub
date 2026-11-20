@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { chainEq } from "../src/__tests__/helpers/convexQuery";
 import {
   cleanupCanonicalSearchTestFixture,
@@ -6,27 +7,17 @@ import {
   seedCanonicalSearchTestFixture,
 } from "./searchTestFixtures";
 
-type WrappedHandler<TArgs> = {
-  _handler: (ctx: unknown, args: TArgs) => Promise<unknown>;
-};
-
-const seedFixture = (
-  seedCanonicalSearchTestFixture as unknown as WrappedHandler<{
-    confirm: "manage-claw-577-canonical-search-test-fixture";
-  }>
-)._handler;
-const readFixture = (
-  readCanonicalSearchTestFixture as unknown as WrappedHandler<{
-    confirm: "manage-claw-577-canonical-search-test-fixture";
-  }>
-)._handler;
-const cleanupFixture = (
-  cleanupCanonicalSearchTestFixture as unknown as WrappedHandler<{
-    confirm: "manage-claw-577-canonical-search-test-fixture";
-    digestId: string;
-    runId: string;
-  }>
-)._handler;
+const seedFixture = getTestHandler<{
+  confirm: "manage-claw-577-canonical-search-test-fixture";
+}>(seedCanonicalSearchTestFixture);
+const readFixture = getTestHandler<{
+  confirm: "manage-claw-577-canonical-search-test-fixture";
+}>(readCanonicalSearchTestFixture);
+const cleanupFixture = getTestHandler<{
+  confirm: "manage-claw-577-canonical-search-test-fixture";
+  digestId: string;
+  runId: string;
+}>(cleanupCanonicalSearchTestFixture);
 
 function createDb() {
   const tables: Record<string, Array<Record<string, unknown> & { _id: string }>> = {};

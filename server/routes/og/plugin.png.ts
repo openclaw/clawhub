@@ -11,6 +11,7 @@ import {
   getMarkDataUrl,
   getWatermarkDataUrl,
 } from "../../og/ogAssets";
+import { cleanString, getApiBase } from "../../og/ogRequest";
 import { buildPluginOgSvg } from "../../og/pluginOgSvg";
 import { pngResponse } from "../../og/pngResponse";
 import { buildOgDownloadsStat } from "../../og/registryOgSvg";
@@ -26,22 +27,6 @@ type OgQuery = {
   avatar?: string;
   v?: string;
 };
-
-function cleanString(value: unknown) {
-  if (typeof value !== "string") return "";
-  return value.trim();
-}
-
-function getApiBase(eventHost: string | null) {
-  const direct = process.env.VITE_CONVEX_SITE_URL?.trim();
-  if (direct) return direct;
-
-  const site = process.env.SITE_URL?.trim() || process.env.VITE_SITE_URL?.trim();
-  if (site) return site;
-
-  if (eventHost) return `https://${eventHost}`;
-  return "https://clawhub.ai";
-}
 
 function getAuditLabel(status: string | null | undefined) {
   const normalized = status?.trim().toLowerCase();

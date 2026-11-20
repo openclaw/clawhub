@@ -69,15 +69,13 @@ export function MarketplaceIcon({
         : MARKETPLACE_KIND_ICONS[kind];
   const hashedTone = hashTone(label);
   // Legacy remote manifest URLs are not bundled icons; publisher profiles are a separate source.
+  const isProfile = kind === "user" || kind === "org";
+  const hostedIcon = isHostedSkillPresentationIcon(imageUrl);
   const supportedImageUrl =
-    (kind !== "skill" && kind !== "plugin") || isHostedSkillPresentationIcon(imageUrl)
-      ? imageUrl
-      : kind === "plugin"
-        ? publisherImageUrl
-        : null;
+    isProfile || hostedIcon ? imageUrl : kind === "plugin" ? publisherImageUrl : null;
   const directRasterUrl =
-    kind === "plugin" &&
-    isHostedSkillPresentationIcon(imageUrl) &&
+    (kind === "plugin" || kind === "template") &&
+    hostedIcon &&
     isConfiguredStorageUrl(rasterAssetUrl)
       ? rasterAssetUrl
       : null;

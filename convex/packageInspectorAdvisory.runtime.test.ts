@@ -4,6 +4,7 @@
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { convexTest } from "convex-test";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
 import { internal } from "./_generated/api";
 import schema from "./schema";
 
@@ -19,18 +20,13 @@ async function fixture() {
   const ids = await t.run(async (ctx) => {
     const ownerUserId = await ctx.db.insert("users", { handle: "advisory-owner", role: "user" });
     const packageId = await ctx.db.insert("packages", {
+      ...createPackageSeedDefaults(),
       name: "advisory-plugin",
       normalizedName: "advisory-plugin",
       displayName: "Advisory plugin",
-      family: "code-plugin",
-      channel: "community",
       ownerUserId,
-      isOfficial: false,
       scanStatus: "clean",
-      tags: {},
       stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
-      createdAt: 1,
-      updatedAt: 1,
     });
     const releaseId = await ctx.db.insert("packageReleases", {
       packageId,

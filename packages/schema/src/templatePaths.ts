@@ -23,3 +23,33 @@ export function hasPortablePathSegments(normalized: string): boolean {
 export function portablePathKey(value: string): string {
   return caseFold(value.replaceAll("\\", "/").normalize("NFC"));
 }
+
+export function isSafeTemplatePackagePath(value: string): boolean {
+  const normalized = value.replaceAll("\\", "/");
+  if (
+    !normalized ||
+    normalized !== value ||
+    normalized !== normalized.trim() ||
+    normalized.startsWith("/") ||
+    /^[A-Za-z]:\//.test(normalized)
+  ) {
+    return false;
+  }
+  return hasPortablePathSegments(normalized);
+}
+
+export function findTemplatePackagePathHierarchyCollision(
+  paths: readonly string[],
+): { ancestor: string; descendant: string } | null {
+  const pathByKey = new Map(paths.map((path) => [portablePathKey(path), path]));
+  for (const descendant of paths) {
+    const segments = portablePathKey(descendant).split("/");
+    for (let length = 1; length < segments.length; length += 1) {
+      const ancestor = pathByKey.get(segments.slice(0, length).join("/"));
+      if (ancestor !== undefined) {
+        return { ancestor, descendant };
+      }
+    }
+  }
+  return null;
+}

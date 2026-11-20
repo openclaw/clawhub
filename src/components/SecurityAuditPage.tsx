@@ -40,7 +40,7 @@ type OwnerRef = {
 };
 
 type EntityRef = {
-  kind: "skill" | "plugin";
+  kind: "skill" | "plugin" | "template";
   title: string;
   name: string;
   version?: string | null;
@@ -332,7 +332,11 @@ function formatAuditSidebarTime(value?: number | null) {
 }
 
 function getSecurityAuditBackLabel(entity: EntityRef) {
-  return entity.kind === "plugin" ? "Back to plugin" : "Back to skill";
+  return entity.kind === "template"
+    ? "Back to Template"
+    : entity.kind === "plugin"
+      ? "Back to plugin"
+      : "Back to skill";
 }
 
 function SecurityAuditSidebarActions({ props }: { props: SecurityAuditPageProps }) {
@@ -443,6 +447,20 @@ function SecurityAuditOverview(props: SecurityAuditPageProps) {
         </h2>
       </div>
       <div className="security-report-overview-body">
+        {props.entity.kind === "template" ? (
+          <>
+            <p>
+              Current Template audits use A.I.G MCP and an evidence-only verdict judge. Reports
+              below are the stored evidence for this exact release; historical releases may use
+              earlier scanners.
+            </p>
+            <p>
+              Final verdict status:{" "}
+              {props.llmAnalysis?.verdict ?? props.llmAnalysis?.status ?? "Unavailable"}
+              {props.llmAnalysis?.model ? " · " + props.llmAnalysis.model : ""}.
+            </p>
+          </>
+        ) : null}
         {overviewCopy.map((copy, index) => (
           <p key={`security-audit-overview-${index}`}>{copy}</p>
         ))}
@@ -576,7 +594,35 @@ function AigSection(props: SecurityAuditPageProps) {
           </p>
         </div>
       ) : null}
-      {showChecks ? <AigChecks analysis={analysis} hasHiddenFindings={hasHiddenFindings} /> : null}
+      {props.entity.kind === "template" ? (
+        <div className="security-report-overview-body">
+          <p>
+            Stored A.I.G report
+            {analysis.scannerVersion
+              ? " · Scanner version " + analysis.scannerVersion
+              : " · Scanner version not recorded"}
+            . Status: {analysis.status}. Checked {formatAuditSidebarTime(analysis.checkedAt)}.
+          </p>
+          <p>{analysis.summary || "No scanner summary was recorded."}</p>
+          <p>
+            Rule IDs and severity below are scanner evidence, not the final audit verdict.
+            Historical reports may use an earlier scanning pipeline.
+          </p>
+          {showChecks && !hasFindings ? (
+            <p>
+              No findings were reported. This is not a checklist of independently verified clean
+              rules.
+            </p>
+          ) : null}
+          {hasHiddenFindings ? (
+            <p>
+              Showing {analysis.findings.length} of {issueCount} reported findings.
+            </p>
+          ) : null}
+        </div>
+      ) : showChecks ? (
+        <AigChecks analysis={analysis} hasHiddenFindings={hasHiddenFindings} />
+      ) : null}
       {hasFindings ? (
         <div className="skillspector-findings-block">
           <div className="skillspector-subsection-title">{findingsTitle}</div>
@@ -584,6 +630,7 @@ function AigSection(props: SecurityAuditPageProps) {
             {analysis.findings.map((finding, index) => (
               <AigFindingCard
                 finding={finding}
+                useSkillTaxonomy={props.entity.kind !== "template"}
                 key={`${finding.ruleId}-${finding.file ?? "artifact"}-${finding.startLine ?? 0}-${index}`}
               />
             ))}
@@ -648,14 +695,22 @@ function AigChecks({
   );
 }
 
-function AigFindingCard({ finding }: { finding: AigAnalysis["findings"][number] }) {
-  const rule = AIG_RULE_BY_ID.get(finding.ruleId.toUpperCase() as (typeof AIG_RULES)[number]["id"]);
+function AigFindingCard({
+  finding,
+  useSkillTaxonomy = true,
+}: {
+  finding: AigAnalysis["findings"][number];
+  useSkillTaxonomy?: boolean;
+}) {
+  const rule = useSkillTaxonomy
+    ? AIG_RULE_BY_ID.get(finding.ruleId.toUpperCase() as (typeof AIG_RULES)[number]["id"])
+    : undefined;
   const findingTitle = finding.title?.trim();
   const description = finding.description?.trim();
   const fallbackDescription = finding.message.trim();
   const findingDescription = description || fallbackDescription;
   const location = finding.file
-    ? `${finding.file}${finding.startLine ? `:${finding.startLine}` : ""}`
+    ? `${finding.file}${finding.startLine ? `:${finding.startLine}${!useSkillTaxonomy && finding.endLine && finding.endLine !== finding.startLine ? `–${finding.endLine}` : ""}` : ""}`
     : null;
 
   return (
@@ -696,6 +751,16 @@ function AigFindingCard({ finding }: { finding: AigAnalysis["findings"][number] 
                 <summary>View full analysis</summary>
                 <MarkdownPreview variant="report">{findingDescription}</MarkdownPreview>
               </details>
+            </dd>
+          </div>
+        ) : null}
+        {!useSkillTaxonomy &&
+        fallbackDescription !== findingTitle &&
+        fallbackDescription !== findingDescription ? (
+          <div>
+            <dt>Evidence</dt>
+            <dd>
+              <MarkdownPreview variant="report">{fallbackDescription}</MarkdownPreview>
             </dd>
           </div>
         ) : null}
@@ -741,16 +806,24 @@ function SkillSpectorSection(props: SecurityAuditPageProps) {
   const showChecks = Boolean(
     analysis && !["error", "failed", "loading", "not_found", "pending"].includes(status ?? ""),
   );
-  const showOverview = !hasFindings && !showChecks;
+  const showOverview = !hasFindings && (!showChecks || props.entity.kind === "template");
 
   return (
     <div className="security-report-panel-body security-report-panel-body-findings">
+      {props.entity.kind === "template" && analysis ? (
+        <div className="security-report-overview-body">
+          <p>
+            Historical SkillSpector report · Status: {analysis.status}
+            {analysis.scannerVersion ? " · Scanner version " + analysis.scannerVersion : ""}.
+          </p>
+        </div>
+      ) : null}
       {showOverview ? (
         <div className="security-report-overview-body">
           <p>{overviewCopy}</p>
         </div>
       ) : null}
-      {showChecks ? (
+      {showChecks && props.entity.kind !== "template" ? (
         <SkillSpectorChecks
           hasHiddenFindings={hasHiddenFindings}
           issues={analysis?.issues ?? EMPTY_SKILLSPECTOR_ISSUES}
@@ -948,7 +1021,7 @@ function SecurityAuditScannerSection({
   props: SecurityAuditPageProps;
 }) {
   const label = AUDIT_SCANNER_LABELS[kind];
-  const scannerLink = AUDIT_SCANNER_LINKS[kind];
+  const scannerLink = props.entity.kind === "template" ? undefined : AUDIT_SCANNER_LINKS[kind];
   return (
     <section
       className="security-report-panel security-report-panel-compact"
@@ -971,7 +1044,7 @@ function SecurityAuditScannerSection({
             )}
           </h2>
           {kind === "skillspector" ? <SkillSpectorAttribution /> : null}
-          {kind === "aig" ? <AigAttribution /> : null}
+          {kind === "aig" && props.entity.kind !== "template" ? <AigAttribution /> : null}
         </div>
       </div>
       {kind === "aig" ? <AigSection {...props} /> : null}
@@ -1005,7 +1078,7 @@ function SecurityAuditSidebar(props: SecurityAuditPageProps) {
       density="compact"
       blocks={[
         {
-          label: "Outcome",
+          label: props.entity.kind === "template" ? "Final verdict" : "Outcome",
           value: <ScanResultBadge status={verdict} />,
         },
         {
@@ -1018,13 +1091,34 @@ function SecurityAuditSidebar(props: SecurityAuditPageProps) {
           ),
         },
         { label: "Version", value: props.entity.version ?? "Latest" },
+        ...(props.entity.kind === "template"
+          ? [{ label: "Package", value: props.entity.name }]
+          : []),
+        ...(props.entity.kind === "template"
+          ? [
+              {
+                label: "Artifact SHA-256",
+                value: props.sha256hash ? (
+                  <code style={{ overflowWrap: "anywhere" }}>{props.sha256hash}</code>
+                ) : (
+                  "Not recorded"
+                ),
+              },
+            ]
+          : []),
       ]}
     />
   );
 }
 
 export function SecurityAuditPage(props: SecurityAuditPageProps) {
-  const orderedScanners = getAuditScannerOrder(props);
+  const orderedScanners =
+    props.entity.kind === "template"
+      ? [
+          ...(props.aigAnalysis ? ["aig" as const] : []),
+          ...(props.skillSpectorAnalysis ? ["skillspector" as const] : []),
+        ]
+      : getAuditScannerOrder(props);
 
   return (
     <main className="section detail-page-section security-report-section security-audit-page">
@@ -1034,6 +1128,14 @@ export function SecurityAuditPage(props: SecurityAuditPageProps) {
         <div className="security-report-layout">
           <div className="security-report-main">
             <SecurityAuditOverview {...props} />
+            {props.entity.kind === "template" && !orderedScanners.length ? (
+              <section className="security-report-panel security-report-overview-body">
+                <p>
+                  No stored scanner evidence is available for this release. A missing report does
+                  not mean a clean scan.
+                </p>
+              </section>
+            ) : null}
             {orderedScanners.map((kind) => (
               <SecurityAuditScannerSection key={kind} kind={kind} props={props} />
             ))}
