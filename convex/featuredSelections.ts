@@ -46,6 +46,7 @@ async function getState(ctx: QueryCtx, artifactKind: Kind): Promise<SelectionSta
   const current: SearchCurrentResult[] = editorial.length
     ? await ctx.runQuery(internal.featuredArtifacts.readInternal, {
         identities: editorial.map((item) => item.id),
+        editorial: true,
       })
     : [];
   const artifacts = new Map(current.map((item) => [item.id, item]));
@@ -231,10 +232,19 @@ async function publishForActor(
     );
   // All eligibility reads and badge changes belong to one transaction. A scan,
   // version, editorial edit or competing publication cannot race this approval.
-  const current: SearchCurrentResult[] = await ctx.runQuery(
-    internal.featuredArtifacts.readInternal,
-    { identities: args.items.map((item) => item.id) },
-  );
+  const current: SearchCurrentResult[] = [];
+  for (const basis of ["editorial", "telemetry"] as const) {
+    const identities = args.items
+      .filter((item) => item.selectionBasis === basis)
+      .map((item) => item.id);
+    if (!identities.length) continue;
+    current.push(
+      ...(await ctx.runQuery(internal.featuredArtifacts.readInternal, {
+        identities,
+        editorial: basis === "editorial" ? true : undefined,
+      })),
+    );
+  }
   const artifacts = new Map(current.map((item) => [item.id, item]));
   for (const item of args.items) {
     const artifact = artifacts.get(item.id);

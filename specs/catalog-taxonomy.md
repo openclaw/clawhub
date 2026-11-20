@@ -98,12 +98,14 @@
 - Public v1 plugin read endpoints accept the retired documented filter slugs as aliases to their
   closest controlled categories. These compatibility aliases never become stored or author-facing
   taxonomy values.
-- Featured and Trending discovery exclude plugins whose primary category is Channels, Models,
-  or Agent runtimes. Only a single current category establishes that purpose; historical
-  capability-list order never does. Complete the reviewed category repair before generating the
-  final production selection. Official and community workflow/tool plugins remain eligible. All, search,
-  category browse, and setup retain the complete public catalog. Search-demand and integration-gap
-  reporting also retain these setup categories; only Featured candidate eligibility changes.
+- Trending and automatic Featured recommendations exclude plugins whose primary category is
+  Channels, Models, or Agent runtimes. Staff can explicitly Feature a channel or reserve it for an
+  editorial slot; a badge or reservation does not qualify it for automatic recommendations.
+  Models and Agent runtimes remain ineligible even for explicit selections. Only a single current
+  category establishes primary purpose; historical capability-list order never does. Complete the
+  reviewed category repair before generating the final production selection. Official and community
+  workflow/tool plugins remain eligible. All, search, category browse, setup, search-demand and
+  integration-gap reporting retain the complete public catalog.
 - Trending keeps its existing adoption ordering, selects eligible plugins before its snapshot limit,
   and filters older snapshots on read. Featured skips excluded badges before its returned-entry limit.
 - Plugin homepage shelves and `curated=true` category pages use the canonical ordered package

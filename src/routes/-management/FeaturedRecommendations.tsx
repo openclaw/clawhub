@@ -4,7 +4,7 @@ import { insightTime as date } from "./insightTime";
 type Report = typeof FeaturedIntelligenceReportSchema.infer;
 type Candidate = Report["recommendations"]["lineup"]["proposed"][number];
 const reasonLabels: Record<string, string> = {
-  "discovery-excluded:channels": "Channels belong in setup and direct browsing",
+  "discovery-excluded:channels": "Channels require an explicit Featured selection",
   "discovery-excluded:models": "Model providers belong in setup and direct browsing",
   "discovery-excluded:agent-runtimes": "Agent runtimes belong in setup and direct browsing",
   "no-public-version": "No public version",

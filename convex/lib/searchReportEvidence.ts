@@ -45,10 +45,7 @@ export async function renderReportEvidence(ctx: ActionCtx, saved: ReportEvidence
     ...new Set([
       ...searchReport.rows.flatMap((row) => row.currentResults.map((entry) => entry.id)),
       ...(saved.view === "recommendations"
-        ? [
-            ...saved.evidence.adoption.artifacts.map((entry) => entry.artifact.id),
-            ...saved.evidence.editorial.items.map((entry) => entry.id),
-          ]
+        ? saved.evidence.adoption.artifacts.map((entry) => entry.artifact.id)
         : []),
     ]),
   ];
@@ -92,9 +89,12 @@ export async function renderReportEvidence(ctx: ActionCtx, saved: ReportEvidence
         searchReport: refreshed,
         currentFeatured,
         currentEditorialRevision: editorial.revision,
-        editorialArtifacts: saved.evidence.editorial.items.flatMap(
-          (entry) => byId.get(entry.id) ?? [],
-        ),
+        editorialArtifacts: saved.evidence.editorial.items.length
+          ? await ctx.runQuery(internal.featuredArtifacts.readInternal, {
+              identities: saved.evidence.editorial.items.map((entry) => entry.id),
+              editorial: true,
+            })
+          : [],
         metadataCheckedAt: Date.now(),
         adoption: {
           ...adoption,

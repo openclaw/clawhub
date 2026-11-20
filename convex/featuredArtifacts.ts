@@ -27,14 +27,14 @@ import { getSkillsShPublicCatalogEnabledHandler } from "./rolloutCapabilities";
 // Search and adoption readers share this current eligibility owner. Each batch is
 // a single read snapshot; none of these advisory reads changes Featured badges.
 export const readInternal = internalQuery({
-  args: { identities: v.array(v.string()) },
-  handler: async (ctx, { identities }): Promise<SearchCurrentResult[]> => {
+  args: { identities: v.array(v.string()), editorial: v.optional(v.literal(true)) },
+  handler: async (ctx, { identities, editorial }): Promise<SearchCurrentResult[]> => {
     if (identities.length > 100 || identities.some((id) => !id || id.length > 300))
       throw new Error("Maximum 100 bounded artifact identities");
     const results: SearchCurrentResult[] = [];
     for (const id of new Set(identities)) {
       const row = id.startsWith("plugin:")
-        ? await readPlugin(ctx, id)
+        ? await readPlugin(ctx, id, editorial ? "explicit-featured" : "automatic")
         : id.startsWith("clawhub:")
           ? await readSkill(ctx, id)
           : id.startsWith("skills-sh:")
@@ -46,7 +46,11 @@ export const readInternal = internalQuery({
   },
 });
 
-async function readPlugin(ctx: QueryCtx, id: string): Promise<SearchCurrentResult | null> {
+async function readPlugin(
+  ctx: QueryCtx,
+  id: string,
+  selection: "automatic" | "explicit-featured",
+): Promise<SearchCurrentResult | null> {
   const detail = await readPackageForViewer(ctx, { name: id.slice(7) });
   if (
     !detail ||
@@ -63,7 +67,7 @@ async function readPlugin(ctx: QueryCtx, id: string): Promise<SearchCurrentResul
     .withIndex("by_package_kind", (q) => q.eq("packageId", pkg._id).eq("kind", "highlighted"))
     .unique();
   const eligibilityReasons = [];
-  const discoveryExclusion = getPluginDiscoveryExclusion(pkg.categories);
+  const discoveryExclusion = getPluginDiscoveryExclusion(pkg.categories, selection);
   if (discoveryExclusion) eligibilityReasons.push(`discovery-excluded:${discoveryExclusion}`);
   if (!release) eligibilityReasons.push("no-public-version");
   else {
@@ -191,7 +195,11 @@ export const readCurrentFeaturedInternal = internalQuery({
         : "skillId" in badge
           ? `clawhub:${badge.skillId}`
           : `package:${badge.packageId}`;
-      const artifact = pkg ? await readPlugin(ctx, id) : skill ? await readSkill(ctx, id) : null;
+      const artifact = pkg
+        ? await readPlugin(ctx, id, "automatic")
+        : skill
+          ? await readSkill(ctx, id)
+          : null;
       rows.push({
         ...(artifact ?? {
           id,

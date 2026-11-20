@@ -95,6 +95,7 @@ export async function collectFeaturedEvidence(
     currentEditorialRevision: editorial.revision,
     editorialArtifacts: await ctx.runQuery(internal.featuredArtifacts.readInternal, {
       identities: editorial.items.map((item) => item.id),
+      editorial: true,
     }),
     metadataCheckedAt: Math.max(
       startedAt,
