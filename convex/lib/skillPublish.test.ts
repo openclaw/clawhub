@@ -3,6 +3,7 @@
 import { createHash } from "node:crypto";
 import { getFunctionName } from "convex/server";
 import { describe, expect, it, vi } from "vitest";
+import { deferred } from "../../src/__tests__/helpers/deferred";
 import { internal } from "../_generated/api";
 import { generateEmbedding } from "./embeddings";
 import { MAX_PUBLISH_FILE_BYTES } from "./publishLimits";
@@ -292,7 +293,7 @@ describe("skillPublish", () => {
         };
         owner: { handle: string };
       }>();
-      const webhookSchedule = deferred<void>();
+      const webhookSchedule = deferred();
       const recordFinalized = vi.fn();
       const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
         if ("claimId" in args && !("result" in args)) {
@@ -1548,12 +1549,4 @@ function validPng() {
       "base64",
     ),
   );
-}
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((resolvePromise) => {
-    resolve = resolvePromise;
-  });
-  return { promise, resolve };
 }

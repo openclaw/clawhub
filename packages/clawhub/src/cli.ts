@@ -8,7 +8,7 @@ import {
   cmdUndeleteSkill,
   cmdUnhideSkill,
 } from "./cli/commands/delete.js";
-import { cmdInspect, cmdVerifySkill } from "./cli/commands/inspect.js";
+import { cmdInspect, cmdSkillPublication, cmdVerifySkill } from "./cli/commands/inspect.js";
 import { cmdMergeSkill, cmdRenameSkill, cmdSetSkillTag } from "./cli/commands/ownership.js";
 import {
   cmdDeletePackage,
@@ -443,6 +443,15 @@ registerCommand(skill, ["skill", "verify"])
   .option("--card", "Output generated skill-card.md Markdown")
   .addOption(new Option("--json", "Output JSON").hideHelp())
   .action(withGlobalOpts((opts, slug, options) => cmdVerifySkill(opts, slug, options)));
+
+registerCommand(skill, ["skill", "publication"])
+  .description("Show the publication stage of one exact skill version")
+  .argument("<skill>", "Skill ref, for example @owner/slug")
+  .requiredOption("--version <version>", "Exact skill version")
+  .option("--json", "Output JSON")
+  .action(
+    withGlobalOpts((opts, skillRef, options) => cmdSkillPublication(opts, skillRef, options)),
+  );
 
 registerCommand(skill, ["skill", "tag"])
   .description("Point a skill tag at an existing version")

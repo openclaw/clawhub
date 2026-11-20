@@ -1,7 +1,7 @@
-import { stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { Command } from "commander";
 import { resolveClawdbotDefaultWorkspace } from "./clawdbotConfig.js";
+import { pathExists } from "./fs.js";
 import { DEFAULT_REGISTRY, DEFAULT_SITE } from "./registry.js";
 import type { GlobalOpts } from "./types.js";
 
@@ -49,15 +49,6 @@ async function hasClawhubMarker(workdir: string) {
   if (await pathExists(legacyLockfile)) return true;
   const legacyMarkerDir = join(workdir, ".clawdhub");
   return pathExists(legacyMarkerDir);
-}
-
-async function pathExists(path: string) {
-  try {
-    await stat(path);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 type CommandActionArgs = Parameters<Parameters<Command["action"]>[0]>;

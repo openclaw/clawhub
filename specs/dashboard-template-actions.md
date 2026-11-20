@@ -1,0 +1,11 @@
+# Dashboard template identity and deletion
+
+Templates are stored as packages, but the publisher dashboard must identify them as Templates in list and grid views, give them a separate type filter, and link to their canonical publisher Template route (including security-review links). Package-backed storage is not a reason to label an agent template as a plugin. Download-metric keys retain the existing package-backed `plugin:` compatibility namespace; derive aggregate family labels from the complete metric inventory, not the capped dashboard list. Label the series Templates for template-only metrics, Plugins for plugin-only metrics, or Plugins & templates for mixed or older-server metrics without family metadata. Needs-attention entries carry package-family presentation metadata so templates remain labeled Template in the strip and review sheet without changing internal entity keys.
+
+The Template overflow menu offers View page, New version, and (for managers only) Delete template. Template updates currently use the documented CLI build/publish flow, not the plugin upload form; New version links to that guide.
+
+Deletion requires a confirmation naming the selected template and explaining that all versions become unavailable for new downloads while existing installations remain intact. Cancel receives initial focus; cancellation, Escape, and close restore focus to the selected row’s overflow trigger. While the request is pending, prevent repeated submissions and dismissal; retain errors in the dialog and do not report success on failure.
+
+Use the existing `packages.softDeletePackage` mutation, with the selected package ID. The server remains the authority: personal owners, organization owners/admins, and authorized staff can manage the package; publisher-only members cannot. Do not introduce client-supplied actor IDs, hard deletion, or alternate authorization. Successful soft deletion removes the package from the subscribed inventory.
+
+For repeatable local browser proof, seed `devSeed:seedDashboardTemplateFixture` on a fresh disposable local deployment with dev auth enabled, then use the existing User persona (`@local-user`). The fixture has Hopper, two retained releases, and synthetic download/scan state; it is not evidence of a live security scan or production telemetry. Never run this fixture against production.

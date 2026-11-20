@@ -9,13 +9,26 @@ vi.mock("./lib/verifiedClientIp", () => ({
   getVerifiedClientIp: async () => "203.0.113.1",
 }));
 import { api, internal } from "./_generated/api";
+import type { PublicPackageListItem } from "./lib/packageCatalogRead";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
 const expectedNames = ["@maker/research-claw", "@openclaw/research-claw"];
 
-async function fixture() {
+type Variant = {
+  name: string;
+  official?: boolean;
+  channel?: "private";
+  family?: "code-plugin";
+  softDeletedAt?: number;
+  scanStatus?: "malicious";
+  published?: boolean;
+  categories?: string[];
+  summary?: string;
+};
+
+async function fixture(extra: Variant[] = []) {
   const t = convexTest(schema, modules);
   registerRateLimiter(t, "rateLimiterV2");
   const ids = await t.run(async (ctx) => {
@@ -42,7 +55,7 @@ async function fixture() {
       createdAt: 1,
       updatedAt: 1,
     });
-    const variants = [
+    const variants: Variant[] = [
       { name: expectedNames[0] },
       { name: expectedNames[1], official: true },
       { name: "@openclaw/research-spoof" },
@@ -50,30 +63,23 @@ async function fixture() {
       { name: "@maker/research-hidden", softDeletedAt: 1 },
       { name: "@maker/research-blocked", scanStatus: "malicious" },
       { name: "@maker/research-pending", published: false },
-    ] as const;
-    for (const variant of variants) {
-      const options = variant as {
-        name: string;
-        official?: boolean;
-        channel?: "private";
-        softDeletedAt?: number;
-        scanStatus?: "malicious";
-        published?: boolean;
-      };
+      ...extra,
+    ];
+    for (const options of variants) {
       const ownerPublisherId = options.official ? officialPublisherId : personalPublisherId;
       const packageId = await ctx.db.insert("packages", {
         name: options.name,
         normalizedName: options.name,
         displayName: options.name,
-        summary: "Research assistant",
-        family: "claw",
+        summary: options.summary ?? "Research assistant",
+        family: options.family ?? "claw",
         ownerUserId,
         ownerPublisherId,
         channel: options.channel ?? (options.official ? "official" : "community"),
         isOfficial: Boolean(options.official),
         scanStatus: options.scanStatus ?? "clean",
         softDeletedAt: options.softDeletedAt,
-        categories: ["research"],
+        categories: options.categories ?? ["research"],
         topics: ["Research"],
         tags: {},
         stats: { downloads: 1, installs: 1, stars: 0, versions: 1 },
@@ -129,7 +135,17 @@ async function fixture() {
     }
     return { personalPublisherId, outsiderUserId };
   });
-  return { t, ...ids };
+  const readOverview = async (query: string) => {
+    const response = await t.fetch("/api/v1/templates/overview?" + query);
+    expect(response.status).toBe(200);
+    return (await response.json()) as {
+      complete: boolean;
+      completeCategoryEntries?: true;
+      featured: PublicPackageListItem[];
+      sections: Array<{ category: string; items: PublicPackageListItem[] }>;
+    };
+  };
+  return { t, readOverview, ...ids };
 }
 
 describe("community Template discovery", () => {
@@ -156,6 +172,109 @@ describe("community Template discovery", () => {
     const deactivated = await t.query(internal.templateOverview.get, { limit: 8 });
     expect(deactivated.featured.map((entry) => entry.name)).toEqual([expectedNames[1]]);
     expect(deactivated.sections[0].items.map((entry) => entry.name)).toEqual([expectedNames[1]]);
+  });
+
+  it("opts in to all public category entries without expanding featured or legacy shelves", async () => {
+    const multi = "@maker/multi";
+    const { t, readOverview, personalPublisherId } = await fixture([
+      { name: multi, categories: ["research", "other", "personal"] },
+      { name: "@maker/a-plugin", family: "code-plugin" },
+    ]);
+    await t.run(async (ctx) => {
+      const pkg = await ctx.db
+        .query("packages")
+        .withIndex("by_name", (q) => q.eq("normalizedName", multi))
+        .unique();
+      if (!pkg) throw Error("Missing fixture");
+      // The digest still reports one install; ranking must follow current package stats.
+      await ctx.db.patch(pkg._id, { stats: { ...pkg.stats, installs: 9 } });
+    });
+    const limited = await readOverview("limit=1");
+    const full = await readOverview("limit=1&include=categoryEntries");
+    expect(full.completeCategoryEntries).toBe(true);
+    expect(full.featured).toEqual(limited.featured);
+    expect(full.featured).toHaveLength(1);
+    expect(
+      full.sections.map(({ category, items }) => [category, items.map((i) => i.name)]),
+    ).toEqual([
+      ["research", [multi, ...expectedNames]],
+      ["other", [multi]],
+    ]);
+    for (const section of full.sections) {
+      const items: PublicPackageListItem[] = [];
+      const params = new URLSearchParams({
+        family: "template",
+        category: section.category,
+        limit: "1",
+      });
+      const seen = new Set<string>();
+      for (;;) {
+        const response = await t.fetch("/api/v1/packages?" + params);
+        expect(response.status).toBe(200);
+        const page = (await response.json()) as {
+          items: PublicPackageListItem[];
+          nextCursor: string | null;
+        };
+        expect(page.items.length).toBeLessThanOrEqual(1);
+        items.push(...page.items);
+        if (page.nextCursor === null) break;
+        expect(seen.has(page.nextCursor)).toBe(false);
+        seen.add(page.nextCursor);
+        params.set("cursor", page.nextCursor);
+      }
+      // The category reader exhausts the pages before ranking by installs and name.
+      expect(section.items).toEqual(
+        items.sort((a, b) => b.stats.installs - a.stats.installs || a.name.localeCompare(b.name)),
+      );
+    }
+    expect(limited).toEqual({
+      complete: true,
+      featured: full.featured,
+      sections: full.sections.map((s) => ({ ...s, items: s.items.slice(0, 1) })),
+    });
+    expect(await readOverview("limit=1&include=unknown")).toEqual(limited);
+    expect(await readOverview("limit=1&include=categoryEntries&include=unknown")).toEqual(limited);
+    await t.run(async (ctx) => {
+      await ctx.db.patch(personalPublisherId, { deactivatedAt: 1 });
+    });
+    const deactivated = await readOverview("limit=1&include=categoryEntries");
+    expect(deactivated.sections.map(({ items }) => items.map((i) => i.name))).toEqual([
+      [expectedNames[1]],
+    ]);
+  });
+
+  it.each([256, 257])(
+    "counts all %i memberships, including multi-category Templates, against the expansion cap",
+    async (count) => {
+      const { readOverview } = await fixture([
+        ...Array.from({ length: 127 }, (_, index) => ({
+          name: "@maker/entry-" + index,
+          categories: ["research", "other"],
+        })),
+        ...(count === 257 ? [{ name: "@maker/extra" }] : []),
+      ]);
+      const optedIn = await readOverview("limit=4&include=categoryEntries");
+      if (count === 256) {
+        expect(optedIn.completeCategoryEntries).toBe(true);
+        expect(optedIn.sections.map((s) => s.items.length)).toEqual([129, 127]);
+      } else {
+        expect(optedIn).toEqual(await readOverview("limit=4"));
+      }
+    },
+  );
+
+  it("includes exactly 256 KiB of UTF-8 section JSON, but not one byte more", async () => {
+    const query = "limit=1&include=categoryEntries";
+    const name = "@maker/zz-large";
+    const empty = await (await fixture([{ name, summary: "" }])).readOverview(query);
+    const remaining =
+      256 * 1024 - new TextEncoder().encode(JSON.stringify(empty.sections)).byteLength;
+    const padding = "界".repeat(Math.floor(remaining / 3)) + "x".repeat(remaining % 3);
+    const atLimit = await (await fixture([{ name, summary: padding }])).readOverview(query);
+    expect(atLimit.completeCategoryEntries).toBe(true);
+    expect(new TextEncoder().encode(JSON.stringify(atLimit.sections))).toHaveLength(256 * 1024);
+    const { readOverview } = await fixture([{ name, summary: padding + "!" }]);
+    expect(await readOverview(query)).toEqual(await readOverview("limit=1"));
   });
 
   it("uses current install counts and official badges, without a persistent cache", async () => {
@@ -226,7 +345,9 @@ describe("community Template discovery", () => {
         });
       }
     });
-    expect(await t.query(internal.templateOverview.get, { limit: 8 })).toEqual({
+    expect(
+      await t.query(internal.templateOverview.get, { limit: 8, includeCategoryEntries: true }),
+    ).toEqual({
       complete: false,
       featured: [],
       sections: [],
@@ -301,6 +422,37 @@ describe("community Template discovery", () => {
     }
     const feed = await t.query(internal.catalogFeed.listOfficialTemplateEntries, { cursor: null });
     expect(feed.entries.map((entry) => entry.id)).toEqual(["@openclaw/research-claw"]);
+  });
+
+  it("serves one category through HTTP with the catalog router's own page", async () => {
+    const { t } = await fixture();
+    const read = async (search: string) => {
+      const response = await t.fetch(`/api/v1/packages?${search}`);
+      return {
+        status: response.status,
+        body: response.status === 200 ? await response.json() : null,
+      };
+    };
+    // The narrow read answers this shape; an explicit default sort keeps the router.
+    const narrow = await read("family=template&category=research&limit=100");
+    const router = await read("family=template&category=research&limit=100&sort=updated");
+    expect(narrow.status).toBe(200);
+    expect(narrow.body.items.map((entry: { name: string }) => entry.name).sort()).toEqual(
+      expectedNames,
+    );
+    expect(narrow.body.nextCursor).toBeNull();
+    expect(narrow.body).toEqual(router.body);
+    const page = await t.query(internal.packages.listPageForViewerInternal, {
+      family: "template",
+      category: "research",
+      paginationOpts: { cursor: null, numItems: 100 },
+    });
+    expect(narrow.body.items).toEqual(page.page);
+    expect((await read("family=template&category=travel&limit=100")).body).toEqual({
+      items: [],
+      nextCursor: null,
+    });
+    expect((await read("family=template&category=marketing")).status).toBe(400);
   });
 
   it.each(["deletedAt", "deactivatedAt"] as const)(

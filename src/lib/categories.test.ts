@@ -1,3 +1,8 @@
+import {
+  PLUGIN_CATEGORY_DEFINITIONS,
+  SKILL_CATEGORY_DEFINITIONS,
+  TEMPLATE_CATEGORY_DEFINITIONS,
+} from "clawhub-schema/catalogMetadata";
 import { describe, expect, it } from "vitest";
 import {
   buildPluginTopicBrowseHref,
@@ -5,10 +10,30 @@ import {
   buildSkillTopicBrowseHref,
   formatCatalogTopicLabel,
   getSkillCategoryForSkill,
+  PLUGIN_CATEGORIES,
   resolvePluginBrowseCategorySlug,
   resolveSkillBrowseCategorySlug,
   SKILL_CATEGORIES,
 } from "./categories";
+
+describe("browse category icons", () => {
+  it.each([
+    ["Skills", SKILL_CATEGORIES, SKILL_CATEGORY_DEFINITIONS],
+    ["Plugins", PLUGIN_CATEGORIES, PLUGIN_CATEGORY_DEFINITIONS],
+  ] as const)(
+    "uses Template icons only for matching %s categories",
+    (_kind, categories, definitions) => {
+      expect(categories.map(({ slug, label, icon }) => ({ slug, label, icon }))).toEqual(
+        definitions.map(({ slug, label, icon }) => ({
+          slug,
+          label,
+          icon:
+            TEMPLATE_CATEGORY_DEFINITIONS.find((template) => template.slug === slug)?.icon ?? icon,
+        })),
+      );
+    },
+  );
+});
 
 describe("skill category helpers", () => {
   it("maps legacy browser category slugs without accepting unknown values", () => {

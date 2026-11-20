@@ -213,6 +213,11 @@ reach the existing retry UI. Legacy best-effort callers keep their null fallback
 The audit route opts out of parent nesting so it neither renders nor loads the
 latest detail view during historical navigation, reload or deep links.
 
+The package security API's `securityAuditUrl` must address this same Template
+subpage, because OpenClaw opens that URL verbatim from its Template detail view.
+A scoped name supplies the publisher; an unscoped Template uses its owner's
+handle. The plugin audit address is only a fallback when no owner resolves.
+
 The sidebar no longer repeats the Declared contents metadata block. Current
 version, install readiness, manifest warnings and provenance-aware inventory
 remain intact; artifact identity belongs on the audit detail.

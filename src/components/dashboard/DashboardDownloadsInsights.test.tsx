@@ -43,6 +43,52 @@ const metrics: DashboardDownloadMetrics = {
 };
 
 describe("DashboardDownloadsInsights", () => {
+  it("does not attribute template-only downloads to plugins", () => {
+    render(
+      <DashboardDownloadsInsights
+        skills={[]}
+        packages={[{ ...pkg, family: "template" }]}
+        metrics={{
+          ...metrics,
+          plugins: { ...metrics.plugins, hasTemplates: true, hasPlugins: false },
+        }}
+      />,
+    );
+    expect(screen.getByText("Templates")).toBeTruthy();
+    expect(screen.queryByText("Plugins")).toBeNull();
+  });
+
+  it("labels the combined package series honestly for mixed catalogs", () => {
+    render(
+      <DashboardDownloadsInsights
+        skills={[]}
+        packages={[pkg, { ...pkg, _id: "template", family: "template" }]}
+        metrics={metrics}
+      />,
+    );
+    expect(screen.getByText("Plugins & templates")).toBeTruthy();
+  });
+  it.each(["template", "code-plugin"] as const)(
+    "does not specialize %s labels from a capped inventory",
+    (family) => {
+      render(
+        <DashboardDownloadsInsights
+          skills={[]}
+          packages={Array.from({ length: 100 }, (_, index) => ({
+            ...pkg,
+            _id: String(index),
+            family,
+          }))}
+          metrics={{
+            ...metrics,
+            plugins: { ...metrics.plugins, hasTemplates: true, hasPlugins: true },
+          }}
+        />,
+      );
+      expect(screen.getByText("Plugins & templates")).toBeTruthy();
+    },
+  );
+
   it("renders daily download metrics with interactive chart tooltips", () => {
     const { container } = render(
       <DashboardDownloadsInsights skills={[skill]} packages={[pkg]} metrics={metrics} />,

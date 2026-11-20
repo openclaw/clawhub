@@ -2,6 +2,7 @@
 
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { deferred } from "../__tests__/helpers/deferred";
 import { makeCanonicalExternalSearchResult } from "../__tests__/helpers/unifiedSearch";
 import { isUnifiedNativeSkillResult, useUnifiedSearch } from "./useUnifiedSearch";
 
@@ -96,16 +97,6 @@ function makeCreator(handle: string) {
     },
     publishedItems: [],
   };
-}
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (error: Error) => void;
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
-  });
-  return { promise, resolve, reject };
 }
 
 describe("useUnifiedSearch", () => {

@@ -73,6 +73,8 @@ async function aggregatePluginDownloads(
   return {
     allTimeDownloads: packages.reduce((sum, pkg) => sum + Math.max(0, pkg.stats.downloads), 0),
     points,
+    hasTemplates: packages.some((pkg) => pkg.family === "claw"),
+    hasPlugins: packages.some((pkg) => pkg.family !== "claw"),
   };
 }
 

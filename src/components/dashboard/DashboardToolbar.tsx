@@ -29,6 +29,7 @@ const KIND_OPTIONS = [
   { value: "all", label: "All" },
   { value: "skill", label: "Skills" },
   { value: "plugin", label: "Plugins" },
+  { value: "template", label: "Templates" },
 ] as const;
 
 const SORT_OPTIONS = [
@@ -62,7 +63,12 @@ export function DashboardToolbar({
           options={KIND_OPTIONS}
           value={kind}
           onChange={(value) => {
-            if (value === "all" || value === "skill" || value === "plugin") {
+            if (
+              value === "all" ||
+              value === "skill" ||
+              value === "plugin" ||
+              value === "template"
+            ) {
               onKindChange(value);
             }
           }}

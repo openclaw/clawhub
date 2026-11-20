@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { SkillDetailPage } from "../components/SkillDetailPage";
 import type { SkillPageInitialData } from "../lib/skillPage";
+import { deferred } from "./helpers/deferred";
 
 const navigateMock = vi.fn();
 const routerInvalidateMock = vi.fn();
@@ -48,14 +49,6 @@ const convexQueryMock = vi.fn();
 const convexClientMock = { query: convexQueryMock };
 const getReadmeMock = vi.fn();
 const getSkillCardMock = vi.fn();
-
-function createPendingTextRead() {
-  let resolve!: (value: { text: string }) => void;
-  const promise = new Promise<{ text: string }>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
 
 function getDesktopSkillTabs() {
   return within(screen.getByRole("tablist", { name: "Skill detail tabs", hidden: true }));
@@ -1059,7 +1052,7 @@ describe("SkillDetailPage", () => {
     };
     data.result.latestVersion.files = [card];
     data.result.latestVersion.generatedSkillCard = card;
-    const pending = createPendingTextRead();
+    const pending = deferred<{ text: string }>();
     getSkillCardMock.mockReturnValue(pending.promise);
 
     const { rerender } = render(<SkillDetailPage slug="weather" initialData={data} />);
@@ -1087,8 +1080,8 @@ describe("SkillDetailPage", () => {
     };
     data.result.latestVersion.files = [card];
     data.result.latestVersion.generatedSkillCard = card;
-    const oldRead = createPendingTextRead();
-    const newRead = createPendingTextRead();
+    const oldRead = deferred<{ text: string }>();
+    const newRead = deferred<{ text: string }>();
     getSkillCardMock.mockReturnValueOnce(oldRead.promise).mockReturnValueOnce(newRead.promise);
     const { rerender } = render(<SkillDetailPage slug="weather" initialData={data} />);
     const nextVersionId = "skillVersions:2" as Id<"skillVersions">;

@@ -5,6 +5,17 @@ export type GitHubRepositoryDispatchToken = {
   permissions: Record<string, string>;
 };
 
+export function isGitHubRepositoryDispatchConfigured(env: NodeJS.ProcessEnv) {
+  return (
+    env.CLAWHUB_PREVIEW !== "1" &&
+    Boolean(
+      env.GITHUB_APP_ID?.trim() &&
+      env.GITHUB_APP_INSTALLATION_ID?.trim() &&
+      env.GITHUB_APP_PRIVATE_KEY?.trim(),
+    )
+  );
+}
+
 export function getGitHubRepositoryDispatchPermission(permissions: Record<string, string>) {
   const contentsPermission = permissions.contents ?? "none";
   return {

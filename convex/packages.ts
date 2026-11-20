@@ -1,3 +1,4 @@
+import { getAuthUserId } from "@convex-dev/auth/server";
 import type {
   PackageArtifactSummary,
   ApiV1PackageVersionPublicationResponse,
@@ -12,10 +13,11 @@ import type {
 import {
   INTERNAL_UNCATEGORIZED_CATEGORY,
   isPluginCategorySlug,
-  isTemplateCategorySlug,
+  isTemplateCategoryFilterSlug,
   normalizeCatalogTopic,
   normalizeCatalogTopics,
   normalizePluginCategories,
+  resolveDeclaredTemplateCategory,
   resolvePluginCategories,
 } from "clawhub-schema/catalogMetadata";
 import { MANAGED_MCP_DEFINITION_PATH } from "clawhub-schema/managedMcpUrls";
@@ -31,6 +33,7 @@ import { getPage, type IndexKey } from "convex-helpers/server/pagination";
 import { paginationOptsValidator, type PaginationOptions } from "convex/server";
 import { ConvexError, v } from "convex/values";
 import semver from "semver";
+import { buildTemplateDetailHref } from "../src/lib/templateRoutes";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
@@ -118,7 +121,7 @@ import {
   getPackageByNormalizedName,
 } from "./lib/packageCatalogRead";
 import { verifyPublishFileStorageMetadata } from "./lib/packageFileVerification";
-import { resolvePackageIcon } from "./lib/packageIcons";
+import { resolvePackageIcon, resolveTemplatePackageIcon } from "./lib/packageIcons";
 import {
   packageInspectorIssueInputValidator,
   type PackageInspectorFinding,
@@ -147,6 +150,7 @@ import {
   extractCodePluginArtifacts,
   maybeParseJson,
   normalizePackageName,
+  tryNormalizePackageName,
   normalizePublishFiles,
   readStorageText,
   readOptionalTextFile,
@@ -668,6 +672,13 @@ type PackageModerationStatus = {
   } | null;
 };
 
+function isLinkedPersonalPublisher(
+  ownerUserId: Id<"users">,
+  publisher: Doc<"publishers"> | null | undefined,
+) {
+  return publisher?.kind === "user" && publisher.linkedUserId === ownerUserId;
+}
+
 function getPackageOwnerKey(
   pkg: Pick<PackageDoc, "ownerUserId" | "ownerPublisherId">,
   options?: {
@@ -678,8 +689,7 @@ function getPackageOwnerKey(
   if (pkg.ownerPublisherId) return `publisher:${pkg.ownerPublisherId}`;
   if (
     options?.nextOwnerPublisherId &&
-    options.ownerPublisher?.kind === "user" &&
-    options.ownerPublisher.linkedUserId === pkg.ownerUserId
+    isLinkedPersonalPublisher(pkg.ownerUserId, options.ownerPublisher)
   ) {
     return `publisher:${options.nextOwnerPublisherId}`;
   }
@@ -1190,14 +1200,42 @@ async function removePackageBadge(
   return true;
 }
 
+async function getDashboardRelease(ctx: DbReaderCtx, pkg: Doc<"packages">) {
+  let releaseId = pkg.latestReleaseId ?? pkg.tags.latest;
+  if (!releaseId) {
+    // A prerelease-only package can have aliases, but no default release. Don't
+    // guess between distinct tag targets or fan out across them for every row.
+    const targets = new Set(Object.values(pkg.tags));
+    if (targets.size !== 1) return null;
+    [releaseId] = targets;
+  }
+  return selectPublishedPackageRelease(ctx, pkg, { releaseId });
+}
+
+function dashboardScanStatus(pkg: Doc<"packages">, release: Doc<"packageReleases"> | null) {
+  if (!release) return pkg.scanStatus;
+  const status = resolvePackageReleaseScanStatus(release);
+  if (status === "malicious" || pkg.scanStatus === "malicious") return "malicious";
+  if (status === "suspicious" || pkg.scanStatus === "suspicious") return "suspicious";
+  // The package scan summary is maintained for latest, not for other dist-tags.
+  if (
+    release._id === pkg.latestReleaseId &&
+    (status === "not-run" || pkg.scanStatus === "pending")
+  ) {
+    return pkg.scanStatus ?? status;
+  }
+  return status === "not-run" && pkg.scanStatus === "pending" ? "pending" : status;
+}
+
 async function toDashboardPackageListItem(
   ctx: DbReaderCtx,
   pkg: Doc<"packages">,
   _viewerUserId: Id<"users">,
 ): Promise<DashboardPackageListItem | null> {
   if (pkg.softDeletedAt) return null;
-  const latestRelease = pkg.latestReleaseId ? await ctx.db.get(pkg.latestReleaseId) : null;
-  const inspectorAttention = await getInspectorAttentionForRelease(ctx, pkg.latestReleaseId);
+  const release = await getDashboardRelease(ctx, pkg);
+  const scanStatus = dashboardScanStatus(pkg, release);
+  const inspectorAttention = await getInspectorAttentionForRelease(ctx, release?._id);
   return {
     _id: pkg._id,
     name: pkg.name,
@@ -1210,24 +1248,23 @@ async function toDashboardPackageListItem(
     summary: pkg.summary ?? null,
     ownerUserId: pkg.ownerUserId,
     ownerPublisherId: pkg.ownerPublisherId,
-    latestVersion: pkg.latestVersionSummary?.version ?? null,
+    latestVersion: release?.version ?? null,
     inspectorWarningCount: inspectorAttention.count,
     apiRetirements: inspectorAttention.apiRetirements,
     topInspectorFinding: inspectorAttention.topFinding,
     stats: pkg.stats,
     verification: pkg.verification,
-    scanStatus: pkg.scanStatus,
+    scanStatus,
     createdAt: pkg.createdAt,
     updatedAt: pkg.updatedAt,
-    pendingReview: pkg.scanStatus === "pending" ? true : undefined,
-    latestRelease:
-      latestRelease && !latestRelease.softDeletedAt
-        ? {
-            version: latestRelease.version,
-            createdAt: latestRelease.createdAt,
-            llmStatus: latestRelease.llmAnalysis?.status ?? null,
-          }
-        : null,
+    pendingReview: scanStatus === "pending" ? true : undefined,
+    latestRelease: release
+      ? {
+          version: release.version,
+          createdAt: release.createdAt,
+          llmStatus: release.llmAnalysis?.status ?? null,
+        }
+      : null,
   };
 }
 
@@ -2260,6 +2297,188 @@ export const getByName = query({
   },
 });
 
+async function getPendingListingPublisher(
+  ctx: DbReaderCtx,
+  pkg: Doc<"packages">,
+  handle: string,
+  viewer: Doc<"users">,
+) {
+  // Never fall back from an unavailable organization to the human who uploaded the package.
+  const publisher = pkg.ownerPublisherId
+    ? await ctx.db.get(pkg.ownerPublisherId)
+    : await getOwnerPublisher(ctx, pkg);
+  if (
+    !publisher ||
+    publisher.deletedAt !== undefined ||
+    publisher.deactivatedAt !== undefined ||
+    normalizePublisherHandle(publisher.handle) !== handle
+  )
+    return null;
+  if (publisher.kind === "user") {
+    const ownerId = publisher.linkedUserId ?? pkg.ownerUserId;
+    const owner = ownerId === viewer._id ? viewer : await ctx.db.get(ownerId);
+    if (
+      !owner ||
+      owner.deletedAt !== undefined ||
+      owner.deactivatedAt !== undefined ||
+      (!pkg.ownerPublisherId && ownerId !== pkg.ownerUserId)
+    )
+      return null;
+  } else if (!pkg.ownerPublisherId) return null;
+  if (
+    viewer.role !== "admin" &&
+    viewer.role !== "moderator" &&
+    !(await canAccessPublisherOwnerScope(ctx, {
+      publisher,
+      userId: viewer._id,
+      legacyOwnerUserId: pkg.ownerUserId,
+    }))
+  )
+    return null;
+  return publisher;
+}
+
+async function getPendingListingSummary(
+  ctx: DbReaderCtx,
+  pkg: Doc<"packages">,
+  listingPublisherId: Id<"publishers">,
+  viewer: Doc<"users">,
+) {
+  // Check the most recent submission, not the most recent *pending* row: a later
+  // publication, block or withdrawal must not resurrect a historical upload.
+  const release = await ctx.db
+    .query("packageReleases")
+    .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
+    .order("desc")
+    .first();
+  if (
+    !release ||
+    release.publicationStatus !== "pending" ||
+    release.softDeletedAt !== undefined ||
+    release.ownerDeletedAt !== undefined ||
+    isPackageBlockedFromPublic(resolvePackageReleaseScanStatus(release)) ||
+    !release.publishAttemptId
+  )
+    return null;
+  const attempt = await ctx.db.get(release.publishAttemptId);
+  if (
+    !attempt ||
+    attempt.kind !== "package" ||
+    attempt.packageId !== pkg._id ||
+    attempt.packageReleaseId !== release._id ||
+    attempt.version !== release.version ||
+    attempt.slug !== pkg.name ||
+    (!pkg.ownerPublisherId && attempt.ownerUserId !== pkg.ownerUserId) ||
+    !ACTIVE_PUBLISH_ATTEMPT_STATUSES.includes(attempt.status) ||
+    Object.values(attempt.checks).some(
+      (check) => check.status === "blocked" || check.status === "failed",
+    )
+  )
+    return null;
+  if (attempt.ownerPublisherId !== pkg.ownerPublisherId) {
+    // Staging a personal update can bind the publisher before the legacy parent does.
+    // A synthesized display publisher is not proof of a live personal link.
+    if (pkg.ownerPublisherId || attempt.ownerPublisherId !== listingPublisherId) return null;
+    const ownerPublisher = await ctx.db.get(listingPublisherId);
+    if (
+      !isLinkedPersonalPublisher(pkg.ownerUserId, ownerPublisher) ||
+      ownerPublisher?.deletedAt !== undefined ||
+      ownerPublisher?.deactivatedAt !== undefined
+    )
+      return null;
+  }
+  const metadata = pendingPackagePublicationMetadata(release);
+  if (
+    metadata.family !== pkg.family ||
+    (metadata.channel !== "official" && metadata.channel !== "community")
+  )
+    return null;
+  const latestId = getPackageTagReleaseId(pkg, "latest");
+  if (latestId) {
+    const latest = await selectPublishedPackageRelease(ctx, pkg, { releaseId: latestId });
+    if (
+      !latest ||
+      isPackageBlockedFromPublic(resolvePackageReleaseScanStatus(latest)) ||
+      comparePackageReleaseOrder(pkg.family, release, latest) <= 0
+    )
+      return null;
+  }
+  return {
+    name: pkg.name,
+    displayName: stringPendingField(metadata, "displayName") ?? pkg.displayName,
+    summary: release.summary ?? null,
+    version: release.version,
+    // Both Template outcome mailers use the active submitter’s trimmed account email.
+    isAuditEmailRecipient:
+      pkg.family === "claw" && attempt.userId === viewer._id && Boolean(viewer.email?.trim()),
+  };
+}
+
+export const getPendingListingForViewer = query({
+  args: {
+    owner: v.string(),
+    slug: v.string(),
+    routeKind: v.union(v.literal("plugin"), v.literal("template")),
+  },
+  returns: v.union(
+    v.null(),
+    v.object({
+      name: v.string(),
+      displayName: v.string(),
+      summary: v.union(v.null(), v.string()),
+      version: v.string(),
+      isAuditEmailRecipient: v.boolean(),
+      owner: v.object({
+        handle: v.string(),
+        displayName: v.union(v.null(), v.string()),
+        image: v.union(v.null(), v.string()),
+      }),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    // A local impersonation or a caller-supplied owner is not a session identity.
+    const authId = await getAuthUserId(ctx);
+    const viewerId = authId && ctx.db.normalizeId("users", authId);
+    const viewer = viewerId && (await ctx.db.get(viewerId));
+    if (!viewer || viewer.deletedAt !== undefined || viewer.deactivatedAt !== undefined)
+      return null;
+    const handle = normalizePublisherHandle(args.owner);
+    const slug = tryNormalizePackageName(args.slug);
+    if (!handle || !PUBLISHER_HANDLE_PATTERN.test(handle) || !slug || slug.includes("/"))
+      return null;
+
+    // Live exact names take precedence; an unscoped alias is valid only at its real owner.
+    const exact = await getPackageByNormalizedName(ctx, `@${handle}/${slug}`);
+    const pkg =
+      exact && exact.softDeletedAt === undefined
+        ? exact
+        : await getPackageByNormalizedName(ctx, slug);
+    if (
+      !pkg ||
+      pkg.softDeletedAt !== undefined ||
+      pkg.channel === "private" ||
+      isPackageBlockedFromPublic(pkg.scanStatus) ||
+      (args.routeKind === "template"
+        ? pkg.family !== "claw"
+        : pkg.family !== "code-plugin" && pkg.family !== "bundle-plugin")
+    )
+      return null;
+    const publisher = await getPendingListingPublisher(ctx, pkg, handle, viewer);
+    if (!publisher) return null;
+
+    const summary = await getPendingListingSummary(ctx, pkg, publisher._id, viewer);
+    if (!summary) return null;
+    return {
+      ...summary,
+      owner: {
+        handle: publisher.handle,
+        displayName: publisher.displayName ?? null,
+        image: publisher.image ?? null,
+      },
+    };
+  },
+});
+
 export const getManageContext = query({
   args: {
     name: v.string(),
@@ -2446,6 +2665,7 @@ export const getPackageInspectorValidationSummaryPublic = query({
 export const listPackageInspectorWarningsForManager = query({
   args: {
     name: v.string(),
+    version: v.optional(v.string()),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
@@ -2459,9 +2679,15 @@ export const listPackageInspectorWarningsForManager = query({
       const canManage = await viewerCanManagePackageOwner(ctx, pkg, viewerUserId);
       if (!canManage) return [];
     }
-    if (!pkg.latestReleaseId) return [];
+    let releaseId = pkg.latestReleaseId;
+    if (args.version !== undefined) {
+      const release = await getDashboardRelease(ctx, pkg);
+      if (!release || release.version !== args.version) return [];
+      releaseId = release._id;
+    }
+    if (!releaseId) return [];
     const limit = Math.max(1, Math.min(args.limit ?? 50, 100));
-    const warnings = await takeAuthorRemediationWarningsByRelease(ctx, pkg.latestReleaseId, limit);
+    const warnings = await takeAuthorRemediationWarningsByRelease(ctx, releaseId, limit);
     return warnings.map(toPublicPackageInspectorFinding);
   },
 });
@@ -2973,13 +3199,26 @@ export const getVersionSecurityByNameForViewerInternal = internalQuery({
     const publicDownloadBlocked =
       isPackageBlockedFromPublic(publicPackage.scanStatus) &&
       !(await viewerCanAccessPackageOwner(ctx, pkg, args.viewerUserId));
+    const family = toPublicPackageFamily(resolvePackageReleaseFamily(pkg.family, release));
+    // Only an unscoped Template needs its owner to address the publisher-scoped
+    // audit page; every other read keeps this install-path query owner-free.
+    const ownerHandle =
+      family === "template" && !publicPackage.name.startsWith("@")
+        ? ((
+            await getOwnerPublisher(ctx, {
+              ownerPublisherId: pkg.ownerPublisherId,
+              ownerUserId: pkg.ownerUserId,
+            })
+          )?.handle ?? null)
+        : null;
     return {
       package: {
         ...publicPackage,
-        family: toPublicPackageFamily(resolvePackageReleaseFamily(pkg.family, release)),
+        family,
         publicDownloadBlocked,
       },
       version: toPublicPackageRelease(release, pkg.family),
+      ownerHandle,
     };
   },
 });
@@ -3968,7 +4207,7 @@ async function listPackagePageImpl(
   }
   const category =
     args.family === "claw"
-      ? args.category && (isTemplateCategorySlug(args.category) || args.category === "other")
+      ? args.category && isTemplateCategoryFilterSlug(args.category)
         ? args.category
         : undefined
       : isPluginCategorySlug(args.category)
@@ -4599,7 +4838,7 @@ async function searchPackagesImpl(
   if (!queryText) return [];
   const category =
     args.family === "claw"
-      ? args.category && (isTemplateCategorySlug(args.category) || args.category === "other")
+      ? args.category && isTemplateCategoryFilterSlug(args.category)
         ? args.category
         : undefined
       : isPluginCategorySlug(args.category)
@@ -8531,10 +8770,12 @@ async function publishPackageImpl(
         scanStatus: initialScanStatus,
       }
     : undefined;
-  const icon = await resolvePackageIcon(ctx, {
-    files,
-    ...(trustedOpenClawPlugin ? { trustedSource: verification } : {}),
-  });
+  const icon = validatedTemplate
+    ? await resolveTemplatePackageIcon(ctx, { files, manifest: validatedTemplate.manifest })
+    : await resolvePackageIcon(ctx, {
+        files,
+        ...(trustedOpenClawPlugin ? { trustedSource: verification } : {}),
+      });
   const pluginManifestSummary =
     family === "claw"
       ? undefined
@@ -9001,11 +9242,10 @@ export const finalizePackagePublishAttemptInternal = internalAction({
               finalizationClaimId: claimId,
               ...trustedPublishAuthorization,
             })
-          : await runMutationRef(
-              ctx,
-              internalRefs.packages.insertReleaseInternal,
-              claim.packageInsertArgs,
-            );
+          : await runMutationRef(ctx, internalRefs.packages.insertReleaseInternal, {
+              ...(claim.packageInsertArgs as Record<string, unknown>),
+              publishAttemptId: claim.attemptId,
+            });
     } catch (error) {
       if (claim.releaseId !== undefined) {
         await releasePackagePublishAttemptFinalizationClaim(ctx, claim.attemptId, claimId, error);
@@ -10690,6 +10930,16 @@ function stringArrayPendingField(metadata: Record<string, unknown>, field: strin
     : undefined;
 }
 
+// Staged Template categories were computed when the release was staged, possibly under an
+// earlier taxonomy. Promotion applies the part of the current rule a mutation can: keep only
+// the first category when it is current. Otherwise the staged list is left as it is, because
+// a mutation cannot classify, and an untouched list still matches what a category backfill
+// expects where a substituted "other" would not.
+function promotedTemplateCategories(staged: string[] | undefined) {
+  const first = resolveDeclaredTemplateCategory(staged);
+  return first ? [first] : staged;
+}
+
 type PackageReleaseTagCleanupAssignment = {
   releaseId: Id<"packageReleases">;
   tags: string[];
@@ -10944,6 +11194,74 @@ async function schedulePackageReleaseTagCleanup(
   });
 }
 
+// Only called by a real attempt's new release insert or pending→published mutation.
+// Scheduling here commits with visibility, even if later finalization followups retry.
+async function scheduleTemplatePublishedEmail(
+  ctx: MutationCtx,
+  attemptId: Id<"publishAttempts">,
+  release: Doc<"packageReleases">,
+  publishedAt: number,
+) {
+  if (
+    !isPublishedPackageRelease(release) ||
+    isPackageBlockedFromPublic(resolvePackageReleaseScanStatus(release))
+  )
+    return;
+  const attempt = await ctx.db.get(attemptId);
+  if (
+    !attempt ||
+    attempt.kind !== "package" ||
+    attempt.status !== "finalizing" ||
+    attempt.userId !== release.createdBy ||
+    attempt.version !== release.version ||
+    (attempt.packageReleaseId && attempt.packageReleaseId !== release._id) ||
+    (release.publishAttemptId && release.publishAttemptId !== attemptId) ||
+    attempt.artifactFingerprint !==
+      (release.clawManifestSummary ? release.clawpackSha256 : release.integritySha256)
+  )
+    return;
+  const pkg = await getReadablePackageByName(ctx, attempt.slug);
+  if (!pkg || pkg.family !== "claw" || pkg._id !== release.packageId) return;
+  const user = await ctx.db.get(attempt.userId);
+  const to = user?.email?.trim();
+  if (!to || user?.deletedAt || user?.deactivatedAt) return;
+  const owner = await getOwnerPublisher(ctx, pkg);
+  const handle = normalizePublisherHandle(owner?.handle);
+  if (
+    !handle ||
+    !PUBLISHER_HANDLE_PATTERN.test(handle) ||
+    getPackageScopeOwnerMismatch(pkg.name, handle)
+  )
+    return;
+  const path = buildTemplateDetailHref(pkg.name, handle);
+  if (!path) return;
+  if (!pkg.name.startsWith("@")) {
+    // An exact scoped package takes precedence over an unscoped Template alias.
+    // Don't email a working link that actually opens a different publisher artifact.
+    const canonical = await getReadablePackageByName(ctx, `@${handle}/${pkg.name}`);
+    if (canonical && canonical._id !== pkg._id && !hasNoPublishedPackageVersions(canonical)) return;
+  }
+  // A permitted suspicious verdict, a manual approval or an absent report isn't a clean audit.
+  const auditPassed =
+    attempt.checks.trufflehog.status === "clean" &&
+    attempt.checks.clawscan.status === "clean" &&
+    normalizePackageScanStatus(release.llmAnalysis?.verdict ?? release.llmAnalysis?.status) ===
+      "clean";
+  await ctx.scheduler.runAfter(0, internal.emailsNode.sendTemplatePublicationOutcomeInternal, {
+    to,
+    attemptId,
+    outcome: "published",
+    releaseId: release._id,
+    publishedAt,
+    auditPassed,
+    // Transactional mail must not use a request, archive or publisher-supplied origin.
+    templateUrl: "https://clawhub.ai" + path,
+    packageName: pkg.name,
+    displayName: release.clawManifestSummary?.agent.name || attempt.displayName,
+    version: release.version,
+  });
+}
+
 export const publishPendingReleaseInternal = internalMutation({
   args: {
     releaseId: v.id("packageReleases"),
@@ -11142,7 +11460,9 @@ export const publishPendingReleaseInternal = internalMutation({
       summary: shouldPromoteLatest ? release.summary : pkg.summary,
       icon: shouldPromoteLatest ? release.icon : pkg.icon,
       categories: shouldPromoteLatest
-        ? stringArrayPendingField(metadata, "categories")
+        ? packageFamily === "claw"
+          ? promotedTemplateCategories(stringArrayPendingField(metadata, "categories"))
+          : stringArrayPendingField(metadata, "categories")
         : pkg.categories,
       topics: shouldPromoteLatest ? stringArrayPendingField(metadata, "topics") : pkg.topics,
       ...(shouldPromoteLatest
@@ -11181,6 +11501,9 @@ export const publishPendingReleaseInternal = internalMutation({
       updatedAt: now,
     });
     await schedulePackageReleaseTagCleanup(ctx, pkg._id, cleanupAssignments);
+    if (packageFamily === "claw" && args.publishAttemptId) {
+      await scheduleTemplatePublishedEmail(ctx, args.publishAttemptId, publishedRelease, now);
+    }
 
     return {
       ok: true as const,
@@ -11206,6 +11529,8 @@ export const insertReleaseInternal = internalMutation({
     ),
     version: v.string(),
     publicationStatus: v.optional(v.union(v.literal("pending"), v.literal("published"))),
+    // Only legacy attempts insert directly at finalization; seeds and repairs do not notify.
+    publishAttemptId: v.optional(v.id("publishAttempts")),
     changelog: v.string(),
     icon: v.optional(v.string()),
     tags: v.array(v.string()),
@@ -11661,6 +11986,10 @@ export const insertReleaseInternal = internalMutation({
       updatedAt: now,
     });
     await schedulePackageReleaseTagCleanup(ctx, pkgId, cleanupAssignments);
+    if (args.family === "claw" && args.publishAttemptId) {
+      const release = await ctx.db.get(releaseId);
+      if (release) await scheduleTemplatePublishedEmail(ctx, args.publishAttemptId, release, now);
+    }
 
     return {
       ok: true as const,

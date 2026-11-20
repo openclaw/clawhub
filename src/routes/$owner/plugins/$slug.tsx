@@ -1,12 +1,19 @@
 import { createFileRoute, notFound, redirect } from "@tanstack/react-router";
+import { GenericNotFoundPage } from "../../../components/GenericNotFoundPage";
+import {
+  isPublisherListingPath,
+  PendingPackageListing,
+} from "../../../components/PendingPackageListing";
 import {
   buildPluginDetailHref,
   packageNameFromPublisherPluginRoute,
 } from "../../../lib/pluginRoutes";
+import { buildTemplateDetailHref, normalizePublisherHandle } from "../../../lib/templateRoutes";
 import {
   loadPluginDetail,
   PluginDetailPage,
   PluginDetailPending,
+  PluginNotFound,
   pluginDetailHead,
   type PluginDetailLoaderData,
 } from "../../plugins/$name";
@@ -23,10 +30,19 @@ async function loadPublisherPluginDetail(params: {
 }): Promise<PluginDetailLoaderData> {
   const scopedName = packageNameFromParams(params);
   const scopedData = await loadPluginDetail(scopedName);
-  if (scopedData.detail.package) return scopedData;
+  if (scopedData.detail.package || scopedData.rateLimited) return scopedData;
 
-  const unscopedData = await loadPluginDetail(params.slug);
-  if (unscopedData.detail.package?.name && unscopedData.detail.owner?.handle === params.owner) {
+  // A different publisher's @openclaw/slug must not shadow this owner's unscoped plugin.
+  const owner = normalizePublisherHandle(params.owner);
+  const unscopedData = await loadPluginDetail(
+    params.slug,
+    owner === "openclaw" ? undefined : [params.slug],
+  );
+  if (unscopedData.rateLimited?.scope === "detail") return unscopedData;
+  if (
+    unscopedData.detail.package?.name &&
+    normalizePublisherHandle(unscopedData.detail.owner?.handle) === owner
+  ) {
     return unscopedData;
   }
 
@@ -37,8 +53,21 @@ export const Route = createFileRoute("/$owner/plugins/$slug")({
   beforeLoad: ({ params }) => {
     packageNameFromParams(params);
   },
-  loader: async ({ params }) => {
+  loader: async ({ params, location }) => {
     const data = await loadPublisherPluginDetail(params);
+    // Keep the existing nested audit/scanner routes independent of the listing preview.
+    const isListing = isPublisherListingPath(location.pathname);
+    const pkg = data.detail.package;
+    // Legacy /packages URLs also resolve public skill-family packages here. Templates
+    // have their own canonical page; a missing public plugin may still be in review.
+    if (isListing && data.rateLimited?.scope !== "detail") {
+      if (!pkg) throw notFound({ data: "listing" });
+      if (pkg.family === "template") {
+        const href = buildTemplateDetailHref(pkg.name, data.detail.owner?.handle);
+        if (!href) throw notFound();
+        throw redirect({ href, replace: true });
+      }
+    }
     const ownerHandle = data.detail.owner?.handle ?? params.owner;
     const packageName = data.detail.package?.name ?? packageNameFromParams(params);
     const canonicalHref = buildPluginDetailHref(packageName, { ownerHandle });
@@ -55,13 +84,40 @@ export const Route = createFileRoute("/$owner/plugins/$slug")({
   head: ({ params, loaderData }) =>
     pluginDetailHead(loaderData?.detail.package?.name ?? packageNameFromParams(params), loaderData),
   pendingComponent: PluginDetailPending,
+  notFoundComponent: PublisherPluginNotFound,
   component: PublisherPluginDetailRoute,
 });
+
+function PublisherPluginNotFound({ data }: { data?: unknown }) {
+  const params = Route.useParams();
+  if (data !== "listing") return <GenericNotFoundPage />;
+  return (
+    <PendingPackageListing
+      target={{ ...params, routeKind: "plugin" }}
+      notFound={<PluginNotFound />}
+      loading={<PluginDetailPending />}
+    />
+  );
+}
 
 function PublisherPluginDetailRoute() {
   const params = Route.useParams();
   const loaderData = Route.useLoaderData() as PluginDetailLoaderData;
-  const packageName = loaderData.detail.package?.name ?? packageNameFromParams(params);
+  const pkg = loaderData.detail.package;
+  const packageName = pkg?.name ?? packageNameFromParams(params);
 
-  return <PluginDetailPage name={packageName} loaderData={loaderData} />;
+  return (
+    <PluginDetailPage
+      name={packageName}
+      loaderData={loaderData}
+      pendingNotice={
+        pkg?.family === "code-plugin" || pkg?.family === "bundle-plugin" ? (
+          <PendingPackageListing
+            target={{ ...params, routeKind: "plugin" }}
+            publishedName={packageName}
+          />
+        ) : null
+      }
+    />
+  );
 }

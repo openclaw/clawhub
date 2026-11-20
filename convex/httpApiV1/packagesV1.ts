@@ -38,7 +38,7 @@ import {
   PublishTokenMintRequestSchema,
   parseArk,
 } from "clawhub-schema";
-import { isTemplateCategorySlug, isPluginCategorySlug } from "clawhub-schema/catalogMetadata";
+import { isPluginCategorySlug, isTemplateCategoryFilterSlug } from "clawhub-schema/catalogMetadata";
 import { PACKAGE_CATEGORY_BATCH_LIMIT } from "clawhub-schema/packageLimits";
 import { ApiRoutes } from "clawhub-schema/routes";
 import { formatSecurityAuditOverview, aggregateAuditVerdict } from "clawhub-schema/securityAudit";
@@ -343,8 +343,8 @@ function resolvePluginCategoryFilter(value: string | undefined): PluginCategoryS
 
 function resolvePackageCategoryFilter(value: string | undefined, family: string | undefined) {
   if (!value) return undefined;
-  if (family === "template")
-    return value === "other" || isTemplateCategorySlug(value) ? value : undefined;
+  // Includes the removed slugs that unrewritten listings and released clients still use.
+  if (family === "template") return isTemplateCategoryFilterSlug(value) ? value : undefined;
   return resolvePluginCategoryFilter(value);
 }
 
@@ -592,6 +592,7 @@ function toPackageReleaseSecurityResponse(params: {
   request: Request;
   pkg: PublicPackageDocLike;
   release: ReleaseLike;
+  ownerHandle?: string | null;
 }) {
   const scanStatus = resolvePackageReleaseScanStatus(params.release);
   const artifactSha256 = getPackageReleaseArtifactSha256(params.release);
@@ -601,11 +602,12 @@ function toPackageReleaseSecurityResponse(params: {
   return {
     overview: formatSecurityAuditOverview({ llmAnalysis: params.release.llmAnalysis }),
     verdict: aggregateAuditVerdict(params.release),
-    securityAuditUrl: buildPackageSecurityAuditUrl(
-      params.request,
-      params.pkg.name,
-      params.release.version,
-    ),
+    securityAuditUrl: buildPackageSecurityAuditUrl(params.request, {
+      name: params.pkg.name,
+      family: toPublicPackageFamily(params.pkg.family),
+      ownerHandle: params.ownerHandle,
+      version: params.release.version,
+    }),
     package: {
       name: params.pkg.name,
       displayName: params.pkg.displayName,
@@ -635,14 +637,31 @@ function toPackageReleaseSecurityResponse(params: {
   };
 }
 
-function buildPackageSecurityAuditUrl(request: Request, packageName: string, version: string) {
-  const [scope, scopedName] = packageName.split("/");
-  const path =
-    scope?.startsWith("@") && scopedName
-      ? `/${encodeURIComponent(scope.slice(1))}/plugins/${encodeURIComponent(scopedName)}/security-audit`
-      : `/plugins/${encodeURIComponent(packageName)}/security-audit`;
+function buildPackageSecurityAuditUrl(
+  request: Request,
+  pkg: {
+    name: string;
+    family: ReturnType<typeof toPublicPackageFamily>;
+    ownerHandle?: string | null;
+    version: string;
+  },
+) {
+  const [scope, scopedName] = pkg.name.split("/");
+  const scoped =
+    scope?.startsWith("@") && scopedName ? { owner: scope.slice(1), slug: scopedName } : null;
+  // Templates have their own publisher-scoped audit page; an unscoped Template
+  // name needs its owner handle to address it, mirroring the web detail link.
+  const templateOwner =
+    pkg.family === "template"
+      ? (scoped?.owner ?? normalizePublisherHandleInput(pkg.ownerHandle ?? undefined))
+      : undefined;
+  const path = templateOwner
+    ? `/${encodeURIComponent(templateOwner.toLowerCase())}/templates/${encodeURIComponent(scoped?.slug ?? pkg.name)}/security-audit`
+    : scoped
+      ? `/${encodeURIComponent(scoped.owner)}/plugins/${encodeURIComponent(scoped.slug)}/security-audit`
+      : `/plugins/${encodeURIComponent(pkg.name)}/security-audit`;
   const url = new URL(path, publicApiOrigin(request));
-  url.searchParams.set("version", version);
+  url.searchParams.set("version", pkg.version);
   return url.toString();
 }
 
@@ -4011,7 +4030,11 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
         version: packageSegments[1],
         viewerUserId: viewerUserId ?? undefined,
       },
-    )) as { package: PublicPackageDocLike; version: ReleaseLike } | null;
+    )) as {
+      package: PublicPackageDocLike;
+      version: ReleaseLike;
+      ownerHandle?: string | null;
+    } | null;
     if (!result) return text("Package security not found", 404, rate.headers);
     const parsed = parseArk(
       ApiV1PackageSecurityResponseSchema,
@@ -4019,6 +4042,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
         request,
         pkg: result.package,
         release: result.version,
+        ownerHandle: result.ownerHandle,
       }),
       "Package security response",
     );
