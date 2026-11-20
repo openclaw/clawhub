@@ -17,10 +17,14 @@ vi.mock("./lib/githubAuth", () => ({
     permissions: { contents: "write" },
   }),
 }));
-vi.mock("./lib/githubRepositoryDispatch", () => ({
-  getGitHubRepositoryDispatchPermission: () => ({ canDispatch: true }),
-  dispatchGitHubRepositoryEvent: vi.fn(async () => ({ ok: true })),
-}));
+vi.mock("./lib/githubRepositoryDispatch", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./lib/githubRepositoryDispatch")>();
+  return {
+    ...original,
+    getGitHubRepositoryDispatchPermission: () => ({ canDispatch: true }),
+    dispatchGitHubRepositoryEvent: vi.fn(async () => ({ ok: true })),
+  };
+});
 
 const modules = import.meta.glob("./**/*.ts");
 const NOW = 1_000_000;
