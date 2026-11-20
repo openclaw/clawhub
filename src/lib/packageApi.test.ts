@@ -921,9 +921,11 @@ describe("fetchTemplateCatalog", () => {
   });
 
   it.each([
-    { q: undefined, path: "/api/v1/packages", cursor: "pkgpage:next" },
-    { q: "  release  ", path: "/api/v1/packages/search", cursor: null },
-  ])("uses anonymous Template-only reads at $path", async ({ q, path, cursor }) => {
+    { q: undefined, category: undefined, cursor: undefined, sort: "downloads" },
+    { q: undefined, category: undefined, cursor: "pkgpage:next", sort: "downloads" },
+    { q: undefined, category: "engineering", cursor: "pkgpage:next", sort: null },
+    { q: "  release  ", category: "engineering", cursor: "pkgpage:next", sort: null },
+  ])("uses anonymous Template-only reads for %j", async ({ q, category, cursor, sort }) => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
     vi.stubEnv("VITE_CONVEX_SITE_URL", "");
     const item = { name: "@maker/release", family: "template" };
@@ -933,8 +935,8 @@ describe("fetchTemplateCatalog", () => {
 
     const result = await fetchTemplateCatalog({
       q,
-      category: "engineering",
-      cursor: "pkgpage:next",
+      category,
+      cursor,
       limit: 25,
       signal,
     });
@@ -942,11 +944,12 @@ describe("fetchTemplateCatalog", () => {
     const requestUrl = fetchMock.mock.calls[0]?.[0];
     if (typeof requestUrl !== "string") throw new Error("Expected a string request URL");
     const url = new URL(requestUrl);
-    expect(url.pathname).toBe(path);
+    expect(url.pathname).toBe(q ? "/api/v1/packages/search" : "/api/v1/packages");
     expect(url.searchParams.get("family")).toBe("template");
-    expect(url.searchParams.get("category")).toBe("engineering");
+    expect(url.searchParams.get("category")).toBe(category ?? null);
+    expect(url.searchParams.get("sort")).toBe(sort);
     expect(url.searchParams.get("q")).toBe(q?.trim() ?? null);
-    expect(url.searchParams.get("cursor")).toBe(cursor);
+    expect(url.searchParams.get("cursor")).toBe(q ? null : (cursor ?? null));
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ signal, credentials: "omit" });
     expect(result).toEqual({ items: [item], nextCursor: q ? null : "next" });
   });

@@ -393,6 +393,7 @@ export async function fetchTemplateCatalog(params: {
     );
     return { items: result?.results.map((entry) => entry.package) ?? [], nextCursor: null };
   }
+  if (!params.category) url.searchParams.set("sort", "downloads");
   if (params.cursor) url.searchParams.set("cursor", params.cursor);
   const result = await fetchJson<{
     items: PackageListItem<"template">[];
