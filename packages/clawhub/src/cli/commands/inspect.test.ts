@@ -240,6 +240,18 @@ describe("cmdInspect", () => {
     expect(httpMocks.apiRequest).not.toHaveBeenCalled();
   });
 
+  it("fails when the requested tag does not exist", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      skill: makeApiSkill({ tags: { latest: "2.0.0" } }),
+      latestVersion: { version: "2.0.0", createdAt: 3, changelog: "init" },
+      owner: null,
+    });
+
+    await expect(cmdInspect(makeGlobalOpts(), "demo", { tag: "missing" })).rejects.toThrow(
+      'Unknown tag "missing"',
+    );
+  });
+
   it("uses tag param when fetching a file", async () => {
     httpMocks.apiRequest
       .mockResolvedValueOnce({
