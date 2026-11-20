@@ -89,6 +89,15 @@ export const TEMPLATE_CATEGORY_DEFINITIONS = [
   },
 ] as const;
 
+// The browse UI uses the same icon for shared slugs across catalogs.
+const browseIcons = new Map<string, string>(
+  TEMPLATE_CATEGORY_DEFINITIONS.map(({ slug, icon }) => [slug, icon]),
+);
+
+export function catalogBrowseIcon(slug: string, fallback: string) {
+  return browseIcons.get(slug) ?? fallback;
+}
+
 export type TemplateCategorySlug = (typeof TEMPLATE_CATEGORY_DEFINITIONS)[number]["slug"];
 const TEMPLATE_CATEGORY_SLUGS = new Set<string>(
   TEMPLATE_CATEGORY_DEFINITIONS.map(({ slug }) => slug),

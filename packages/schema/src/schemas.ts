@@ -46,6 +46,15 @@ export const ApiV1SearchResponseSchema = type({
   }).array(),
 });
 
+export const ApiV1SkillCategoriesResponseSchema = type({
+  categories: type({
+    slug: "string",
+    label: "string",
+    icon: "string",
+    description: "string",
+  }).array(),
+});
+
 export const ApiV1SkillListResponseSchema = type({
   items: type({
     ownerHandle: "string",

@@ -94,7 +94,9 @@
 
 ## Browse
 
-- Skill and plugin browse paths remain separate.
+- Skill and plugin browse paths remain separate. The public skill taxonomy uses the same display
+  order, labels, and icons as the Skills directory. Category listing and search use the existing
+  public skill discovery queries, not a keyword match or a client-side filter over one page.
 - Public v1 plugin read endpoints accept the retired documented filter slugs as aliases to their
   closest controlled categories. These compatibility aliases never become stored or author-facing
   taxonomy values.

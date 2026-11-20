@@ -92,11 +92,13 @@ Client handling:
 Public read:
 
 - `GET /api/v1/search?q=...`
-  - Optional filters: `highlightedOnly=true`, `nonSuspiciousOnly=true`
+  - Optional filters: `category=<skill-category-slug>`, `highlightedOnly=true`, `nonSuspiciousOnly=true`
   - Optional mode: `mode=exact` for deterministic exact-slug matches
   - Invalid `mode` values return `400 Invalid search mode`
   - Legacy alias: `nonSuspicious=true`
+- `GET /api/v1/skills/-/categories` — browse categories in website order (`slug`, `label`, `description`, `icon`).
 - `GET /api/v1/skills?limit=&cursor=&sort=`
+  - `category`: restrict to a category slug from the endpoint above; incompatible with `prefix`. Follow `nextCursor` even for short or empty pages.
   - `sort`: `updated` (default), `recommended` (`default`), `createdAt` (`newest`), `downloads`, `stars` (`rating`), `name`, legacy install aliases `installsCurrent`/`installs`/`installsAllTime` map to `downloads`, `trending`
   - `prefix`: deterministic slug-prefix listing in ascending slug order; continue with `nextCursor`
   - Invalid `sort` values return `400`

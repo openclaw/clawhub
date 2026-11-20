@@ -124,6 +124,7 @@ describe("HTTP route rate limit defaults", () => {
   it.each([
     ["legacy download", LegacyApiRoutes.download, "downloadIp", RATE_LIMITS.download.ip],
     ["plugins export", ApiRoutes.pluginsExport, "exportIp", RATE_LIMITS.export.ip],
+    ["skill categories", ApiRoutes.skillCategories, "readIp", RATE_LIMITS.read.ip],
     [
       "package artifact download",
       "/api/v1/packages/demo/versions/1.0.0/artifact/download",

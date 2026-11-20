@@ -1,5 +1,6 @@
 import type { PluginCategorySlug, SkillCategorySlug } from "clawhub-schema";
 import {
+  catalogBrowseIcon,
   isPluginCategorySlug,
   isSkillCategorySlug,
   LEGACY_PLUGIN_CATEGORY_DEFINITIONS,
@@ -7,7 +8,6 @@ import {
   PLUGIN_CATEGORY_DEFINITIONS,
   resolveStoredSkillCategories,
   SKILL_CATEGORY_DEFINITIONS,
-  TEMPLATE_CATEGORY_DEFINITIONS,
 } from "clawhub-schema/catalogMetadata";
 
 export type SkillCategory = {
@@ -23,16 +23,11 @@ export type BrowseCategory = {
   icon: string;
 };
 
-// Match the rendered Templates taxonomy by exact slug, not by related labels or legacy aliases.
-const TEMPLATE_CATEGORY_ICONS = new Map<string, string>(
-  TEMPLATE_CATEGORY_DEFINITIONS.map(({ slug, icon }) => [slug, icon]),
-);
-
 export const SKILL_CATEGORIES: SkillCategory[] = SKILL_CATEGORY_DEFINITIONS.map(
   ({ slug, label, icon, keywords }) => ({
     slug,
     label,
-    icon: TEMPLATE_CATEGORY_ICONS.get(slug) ?? icon,
+    icon: catalogBrowseIcon(slug, icon),
     keywords: [...keywords],
   }),
 );
@@ -41,7 +36,7 @@ export const PLUGIN_CATEGORIES: BrowseCategory[] = PLUGIN_CATEGORY_DEFINITIONS.m
   ({ slug, label, icon }) => ({
     slug,
     label,
-    icon: TEMPLATE_CATEGORY_ICONS.get(slug) ?? icon,
+    icon: catalogBrowseIcon(slug, icon),
   }),
 );
 

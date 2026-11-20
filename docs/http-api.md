@@ -185,6 +185,7 @@ Query params:
 
 - `q` (required): query string
 - `limit` (optional): integer
+- `category` (optional): restrict results to a skill category slug from `GET /api/v1/skills/-/categories`; works with default and exact search.
 - `mode` (optional): `exact` for deterministic exact-slug matches
 - `highlightedOnly` (optional): `true` to filter to highlighted skills
 - `nonSuspiciousOnly` (optional): `true` to hide suspicious (`flagged.suspicious`) skills
@@ -234,6 +235,10 @@ Publisher discoverability guidance:
 - Rename aliases preserve resolution for old URLs and installs that resolve through the registry, but search ranking is based on the canonical skill metadata after the rename has indexed. Existing stats stay with the skill.
 - If a skill is unexpectedly invisible, check moderation state first with `clawhub inspect @owner/slug` while logged in before changing ranking-related metadata.
 
+### `GET /api/v1/skills/-/categories`
+
+Returns `{ "categories": [...] }` in the same display order as the Skills directory, including Other. Each entry has `slug`, `label`, `description`, and a Lucide `icon` key. This is the public taxonomy, not a count of available skills. Use the returned slug with list or search, for example `GET /api/v1/skills?category=research&limit=10` or `GET /api/v1/search?q=notes&category=research`.
+
 ### `GET /api/v1/skills`
 
 Query params:
@@ -241,6 +246,7 @@ Query params:
 - `limit` (optional): integer (1–200)
 - `cursor` (optional): pagination cursor for any non-`trending` sort
 - `sort` (optional): `updated` (default), `recommended` (alias: `default`), `createdAt` (alias: `newest`), `downloads`, `stars` (alias: `rating`), `name`, legacy install aliases `installsCurrent`/`installs`/`installsAllTime` map to `downloads`, `trending`
+- `category` (optional): filter by a canonical skill category; invalid slugs or combining `category` with `prefix` return `400`. Keep the category and sort fixed when following `nextCursor`. Bounded category reads may return a short or empty page with a continuation.
 - `prefix` (optional): literal skill-slug prefix; results use ascending slug order and require `sort=name` when `sort` is supplied
 - `nonSuspiciousOnly` (optional): `true` to hide suspicious (`flagged.suspicious`) skills
 - `nonSuspicious` (optional): legacy alias for `nonSuspiciousOnly`

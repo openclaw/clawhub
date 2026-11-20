@@ -347,6 +347,7 @@ import type * as securityScan from "../securityScan.js";
 import type * as securityScanDispatch from "../securityScanDispatch.js";
 import type * as skillCardDevSeed from "../skillCardDevSeed.js";
 import type * as skillCards from "../skillCards.js";
+import type * as skillCategoriesHttp from "../skillCategoriesHttp.js";
 import type * as skillEvaluationDispatch from "../skillEvaluationDispatch.js";
 import type * as skillEvaluations from "../skillEvaluations.js";
 import type * as skillFileReads from "../skillFileReads.js";
@@ -727,6 +728,7 @@ declare const fullApi: ApiFromModules<{
   securityScanDispatch: typeof securityScanDispatch;
   skillCardDevSeed: typeof skillCardDevSeed;
   skillCards: typeof skillCards;
+  skillCategoriesHttp: typeof skillCategoriesHttp;
   skillEvaluationDispatch: typeof skillEvaluationDispatch;
   skillEvaluations: typeof skillEvaluations;
   skillFileReads: typeof skillFileReads;
