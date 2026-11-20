@@ -64,7 +64,9 @@ vi.mock("../lib/packageApi", async (importOriginal) => ({
   fetchPackageVersion: mocks.version,
 }));
 
+const auditEmailCopy = "We’ll email you the result when the audit is complete.";
 const pending = {
+  isAuditEmailRecipient: true,
   name: "@maker/brief",
   displayName: "Private brief",
   summary: "A private summary",
@@ -177,6 +179,7 @@ it("follows legacy package and plugin redirects to a public skill without a priv
   expect(await screen.findByRole("heading", { name: "Published skill" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Copy skill install command" })).toBeTruthy();
   expect(screen.queryByText(/is under review/)).toBeNull();
+  expect(screen.queryByText(/email you the result/)).toBeNull();
   expect(mocks.pending).not.toHaveBeenCalled();
 });
 
@@ -276,7 +279,7 @@ describe.each(["plugin", "template"] as const)("canonical pending %s listing", (
     },
   );
 
-  it.each(["publisher", "visitor", "private lookup error"])(
+  it.each(["submitter", "inspecting staff", "visitor", "private lookup error"])(
     "keeps an unscoped public release and its install surface for the %s",
     async (viewer) => {
       mocks.auth.isAuthenticated = viewer !== "visitor";
@@ -299,7 +302,9 @@ describe.each(["plugin", "template"] as const)("canonical pending %s listing", (
             },
       );
       mocks.pending.mockReturnValue(
-        viewer === "private lookup error" ? new Error("offline") : { ...pending, name: "brief" },
+        viewer === "private lookup error"
+          ? new Error("offline")
+          : { ...pending, name: "brief", isAuditEmailRecipient: viewer === "submitter" },
       );
       mocks.file.mockResolvedValue(
         '---\n{"schemaVersion":1,"agent":{"id":"brief"}}\n---\n# Published instructions',
@@ -314,8 +319,11 @@ describe.each(["plugin", "template"] as const)("canonical pending %s listing", (
       expect(screen.getByRole("button", { name: /copy.*install command/i })).toBeTruthy();
       expect(screen.queryByText(pending.displayName)).toBeNull();
       expect(screen.queryByText(pending.summary)).toBeNull();
+      expect(Boolean(screen.queryByText(auditEmailCopy, { exact: false }))).toBe(
+        kind === "template" && viewer === "submitter",
+      );
       const notice = screen.queryByText("Version 1.2.0 is under review");
-      if (viewer === "publisher") {
+      if (viewer === "submitter" || viewer === "inspecting staff") {
         expect(notice).toBeTruthy();
         const publisher = screen.getByRole("link", { name: "View Maker Studio profile" });
         const tabs = screen.getByRole("tablist", {
@@ -380,6 +388,13 @@ describe.each(["plugin", "template"] as const)("canonical pending %s listing", (
     expect(screen.queryByText(/under review/)).toBeNull();
   });
 
+  it("shows the first-release notice without promising email to a nonrecipient", async () => {
+    mocks.pending.mockReturnValue({ ...pending, isAuditEmailRecipient: false });
+    render(<RouterProvider router={await listingRouter(kind)} />);
+    expect(await screen.findByText("Version 1.2.0 is under review")).toBeTruthy();
+    expect(screen.getByRole("status").textContent).not.toMatch(/email/i);
+  });
+
   it("renders just the authorized first-release preview on a public 404", async () => {
     const router = await listingRouter(kind);
     expect(router.state.matches.at(-1)?.status).toBe("notFound");
@@ -390,7 +405,8 @@ describe.each(["plugin", "template"] as const)("canonical pending %s listing", (
     expect(screen.getByText("Version 1.2.0 is under review")).toBeTruthy();
     expect(
       screen.getByText(
-        "Only the publisher and ClawHub staff can see this release. Once it’s published, anyone can view and install it.",
+        "Only the publisher and ClawHub staff can see this release. Once it’s published, anyone can view and install it." +
+          (kind === "template" ? " " + auditEmailCopy : ""),
       ),
     ).toBeTruthy();
     expect(mocks.pending).toHaveBeenCalledWith({ owner: "maker", slug: "brief", routeKind: kind });

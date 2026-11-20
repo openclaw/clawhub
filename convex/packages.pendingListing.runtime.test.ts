@@ -50,11 +50,13 @@ async function fixture(
     version: string,
     tags = ["latest"],
     stagedPublisherId = ownerPublisherId,
+    submitter = maker,
+    ownerUserId = submitter,
   ) => {
     const { packageId, releaseId } = await t.mutation(internal.packages.insertReleaseInternal, {
-      ownerUserId: maker,
+      ownerUserId,
       ownerPublisherId: stagedPublisherId,
-      actorUserId: maker,
+      actorUserId: submitter,
       name,
       family,
       displayName: "Brief " + version,
@@ -71,8 +73,8 @@ async function fixture(
     const { attemptId } = await t.mutation(
       internal.publishAttempts.createPackagePublishAttemptInternal,
       {
-        userId: maker,
-        ownerUserId: maker,
+        userId: submitter,
+        ownerUserId,
         ownerPublisherId: stagedPublisherId,
         name,
         displayName: "Brief " + version,
@@ -91,17 +93,100 @@ async function fixture(
 }
 
 it("shows only shell metadata for the publisher's first staged plugin", async () => {
-  const { t, viewer, args, stage, name } = await fixture();
+  const { t, maker, viewer, args, stage, name } = await fixture();
+  await t.run((ctx) => ctx.db.patch(maker, { email: "maker@example.test" }));
   await stage("1.0.0");
   expect(await viewer.query(listing, args)).toEqual({
     name,
     displayName: "Brief 1.0.0",
     summary: "Summary 1.0.0",
     version: "1.0.0",
+    isAuditEmailRecipient: false,
     owner: { handle: "maker", displayName: "Maker", image: null },
   });
   expect(await t.query(listing, args)).toBeNull();
   expect(await viewer.query(api.packages.getByName, { name })).toBeNull();
+});
+
+it("reports email eligibility only to the active Template submitter, never their address", async () => {
+  const { t, maker, viewer, args, stage, name, ownerPublisherId } = await fixture(
+    "claw",
+    true,
+    true,
+  );
+  const staff = await t.run(async (ctx) => {
+    await ctx.db.patch(maker, { email: " maker@example.test " });
+    const mod = await ctx.db.insert("users", { role: "moderator", email: "staff@example.test" });
+    const member = await ctx.db.insert("users", { role: "user", email: "member@example.test" });
+    await ctx.db.insert("publisherMembers", {
+      userId: member,
+      publisherId: ownerPublisherId!,
+      role: "publisher",
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    return { mod, member };
+  });
+  const first = await stage("1.0.0");
+  expect(await viewer.query(listing, args)).toEqual({
+    name,
+    displayName: "Brief 1.0.0",
+    summary: "Summary 1.0.0",
+    version: "1.0.0",
+    owner: { handle: "workshop", displayName: "Workshop", image: null },
+    isAuditEmailRecipient: true,
+  });
+  for (const subject of [staff.mod, staff.member]) {
+    expect(await t.withIdentity({ subject }).query(listing, args)).toMatchObject({
+      isAuditEmailRecipient: false,
+    });
+  }
+  await t.mutation(internal.packages.publishPendingReleaseInternal, { releaseId: first.releaseId });
+  // A different publisher submits the update, not the original uploader or package owner.
+  await t.run((ctx) =>
+    ctx.db.insert("publisherMembers", {
+      userId: staff.mod,
+      publisherId: ownerPublisherId!,
+      role: "publisher",
+      createdAt: 2,
+      updatedAt: 2,
+    }),
+  );
+  await stage("2.0.0", ["latest"], ownerPublisherId, staff.mod);
+  expect(await viewer.query(listing, args)).toMatchObject({
+    version: "2.0.0",
+    isAuditEmailRecipient: false,
+  });
+  const updateSubmitter = t.withIdentity({ subject: staff.mod });
+  expect(await updateSubmitter.query(listing, args)).toMatchObject({
+    version: "2.0.0",
+    isAuditEmailRecipient: true,
+  });
+  for (const email of [undefined, "  "]) {
+    await t.run((ctx) => ctx.db.patch(staff.mod, { email }));
+    expect(await updateSubmitter.query(listing, args)).toMatchObject({
+      isAuditEmailRecipient: false,
+    });
+  }
+  await t.run((ctx) => ctx.db.patch(staff.mod, { email: "staff@example.test", deactivatedAt: 1 }));
+  expect(await updateSubmitter.query(listing, args)).toBeNull();
+});
+
+it("notifies the actor rather than the recorded owner when an admin submits on their behalf", async () => {
+  const { t, maker, viewer, args, stage, ownerPublisherId } = await fixture("claw", true, true);
+  const actor = await t.run(async (ctx) => {
+    await ctx.db.patch(maker, { email: "owner@example.test" });
+    return ctx.db.insert("users", { role: "admin", email: "actor@example.test" });
+  });
+  const { attemptId } = await stage("1.0.0", ["latest"], ownerPublisherId, actor, maker);
+  expect(await t.run((ctx) => ctx.db.get(attemptId))).toMatchObject({
+    userId: actor,
+    ownerUserId: maker,
+  });
+  expect(await viewer.query(listing, args)).toMatchObject({ isAuditEmailRecipient: false });
+  expect(await t.withIdentity({ subject: actor }).query(listing, args)).toMatchObject({
+    isAuditEmailRecipient: true,
+  });
 });
 
 it("does not substitute a local dev impersonation for an authenticated viewer", async () => {

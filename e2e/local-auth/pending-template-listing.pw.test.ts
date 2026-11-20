@@ -117,6 +117,8 @@ async function checkPlacement(page: Page, version: string) {
   const identity = page.getByRole("main").getByRole("link", { name: /view local user profile/i });
   const notice = page.getByRole("status").filter({ has: heading });
   await expect(notice.getByText(visibilityCopy, { exact: true })).toBeVisible();
+  // The real local-user persona has no email, even when it submitted this version.
+  await expect(notice).not.toContainText(/email/i);
   const identityBox = await bounds(identity);
   const noticeBox = await bounds(notice);
   expect(noticeBox.y).toBeGreaterThanOrEqual(identityBox.y + identityBox.height);

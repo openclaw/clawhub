@@ -2342,6 +2342,7 @@ async function getPendingListingSummary(
   ctx: DbReaderCtx,
   pkg: Doc<"packages">,
   listingPublisherId: Id<"publishers">,
+  viewer: Doc<"users">,
 ) {
   // Check the most recent submission, not the most recent *pending* row: a later
   // publication, block or withdrawal must not resurrect a historical upload.
@@ -2407,6 +2408,9 @@ async function getPendingListingSummary(
     displayName: stringPendingField(metadata, "displayName") ?? pkg.displayName,
     summary: release.summary ?? null,
     version: release.version,
+    // Both Template outcome mailers use the active submitter’s trimmed account email.
+    isAuditEmailRecipient:
+      pkg.family === "claw" && attempt.userId === viewer._id && Boolean(viewer.email?.trim()),
   };
 }
 
@@ -2423,6 +2427,7 @@ export const getPendingListingForViewer = query({
       displayName: v.string(),
       summary: v.union(v.null(), v.string()),
       version: v.string(),
+      isAuditEmailRecipient: v.boolean(),
       owner: v.object({
         handle: v.string(),
         displayName: v.union(v.null(), v.string()),
@@ -2461,7 +2466,7 @@ export const getPendingListingForViewer = query({
     const publisher = await getPendingListingPublisher(ctx, pkg, handle, viewer);
     if (!publisher) return null;
 
-    const summary = await getPendingListingSummary(ctx, pkg, publisher._id);
+    const summary = await getPendingListingSummary(ctx, pkg, publisher._id, viewer);
     if (!summary) return null;
     return {
       ...summary,
