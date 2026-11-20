@@ -96,6 +96,7 @@ Public read:
   - Optional mode: `mode=exact` for deterministic exact-slug matches
   - Invalid `mode` values return `400 Invalid search mode`
   - Legacy alias: `nonSuspicious=true`
+- `GET /api/v1/trending?kind=skills` — ranked, mixed-source skill overview. This feed, native skill listings, and skill search expose optional `categories: string[]` containing canonical browse slugs; an unclassified external row has no category field.
 - `GET /api/v1/skills/-/categories` — browse categories in website order (`slug`, `label`, `description`, `icon`).
 - `GET /api/v1/skills?limit=&cursor=&sort=`
   - `category`: restrict to a category slug from the endpoint above; incompatible with `prefix`. Follow `nextCursor` even for short or empty pages.

@@ -5389,6 +5389,7 @@ async function buildPublicSkillApiListEntryFromDigest(
       slug: publicSkill.slug,
       displayName: publicSkill.displayName,
       summary: publicSkill.summary,
+      categories: resolveStoredSkillCategories(digest),
       topics: publicSkill.topics,
       tags: publicSkill.tags,
       stats: publicSkill.stats,

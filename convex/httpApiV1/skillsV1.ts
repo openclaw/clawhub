@@ -14,7 +14,7 @@ import {
   SkillVersionRevokeRequestSchema,
   parseArk,
 } from "clawhub-schema";
-import { isSkillCategorySlug } from "clawhub-schema/catalogMetadata";
+import { isSkillCategorySlug, resolveStoredSkillCategories } from "clawhub-schema/catalogMetadata";
 import { ApiRoutes } from "clawhub-schema/routes";
 import { formatSecurityAuditOverview } from "clawhub-schema/securityAudit";
 import { normalizeContentType } from "clawhub-schema/textFiles";
@@ -178,6 +178,9 @@ type ListSkillsResult = {
       slug: string;
       displayName: string;
       summary?: string;
+      categories?: string[];
+      inferredCategories?: string[];
+      inferredFromVersionId?: Id<"skillVersions">;
       topics?: string[];
       tags: Record<string, Id<"skillVersions">>;
       stats: unknown;
@@ -1615,6 +1618,7 @@ export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
       displayName: item.skill.displayName,
       summary: item.skill.summary ?? null,
       description: parsed?.description ?? null,
+      categories: resolveStoredSkillCategories(item.skill),
       topics: item.skill.topics,
       tags,
       stats: item.skill.stats,

@@ -34,6 +34,7 @@ export const ApiV1SearchResponseSchema = type({
     summary: "string|null?",
     version: "string|null?",
     score: "number",
+    categories: "string[]?",
     downloads: "number?",
     updatedAt: "number?",
     owner: type({
@@ -62,6 +63,7 @@ export const ApiV1SkillListResponseSchema = type({
     displayName: "string",
     summary: "string|null?",
     description: "string|null?",
+    categories: "string[]?",
     topics: "string[]?",
     tags: "unknown",
     stats: "unknown",

@@ -88,6 +88,7 @@ it("pages public category matches with the existing list response and scopes exa
   };
   const first = await page("category=research&limit=1");
   expect(first.items.map((i) => i.slug)).toEqual(["literature-digest"]);
+  expect(first.items[0]).toHaveProperty("categories", ["research"]);
   expect(first.nextCursor).toBeTypeOf("string");
   const second = await page(
     "category=research&limit=1&cursor=" + encodeURIComponent(first.nextCursor!),
@@ -99,10 +100,19 @@ it("pages public category matches with the existing list response and scopes exa
     "literature-digest",
     "field-notes",
   ]);
+  for (const sort of ["updated", "downloads", "trending"]) {
+    const listing = await page("sort=" + sort);
+    expect(listing.items.find((row) => row.slug === "field-notes")).toHaveProperty("categories", [
+      "knowledge",
+      "research",
+    ]);
+  }
   const search = async (category: string) =>
     (await (await t.fetch("/api/v1/search?mode=exact&q=weekly-budget&category=" + category)).json())
       .results;
-  expect(await search("finance")).toEqual([expect.objectContaining({ slug: "weekly-budget" })]);
+  expect(await search("finance")).toEqual([
+    expect.objectContaining({ slug: "weekly-budget", categories: ["finance"] }),
+  ]);
   expect(await search("research")).toEqual([]);
   expect((await t.fetch("/api/v1/skills?category=unknown")).status).toBe(400);
   expect((await t.fetch("/api/v1/skills?category=research&prefix=field")).status).toBe(400);

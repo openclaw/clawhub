@@ -7,6 +7,7 @@ import {
   buildSkillsShMirrorIdentity,
   buildUnclaimedSkillsShInstallResolution,
   buildUnclaimedSkillsShVerifyResponse,
+  getMirrorBrowseCategories,
   SKILLS_SH_UNSCANNED_LABEL,
   SKILLS_SH_UNSCANNED_STATE,
   type SkillsShMirrorDetail,
@@ -56,6 +57,21 @@ const detail: SkillsShMirrorDetail = {
 };
 
 describe("skills.sh mirror public contract", () => {
+  it("only groups mirrors with stored canonical taxonomy", () => {
+    expect(getMirrorBrowseCategories({})).toBeUndefined();
+    expect(
+      getMirrorBrowseCategories({ inferredCategories: ["uncategorized-by-upstream"] }),
+    ).toBeUndefined();
+    expect(
+      getMirrorBrowseCategories({ inferredCategories: ["other", "source-only", "research"] }),
+    ).toEqual(["research"]);
+    expect(
+      getMirrorBrowseCategories({
+        inferredCategories: ["research", "creative", "finance", "automation"],
+      }),
+    ).toBeUndefined();
+  });
+
   it("normalizes the exact colon reference", () => {
     expect(buildSkillsShMirrorIdentity(digest)?.reference).toBe(
       "skills-sh:patrick-erichsen/skills/html",

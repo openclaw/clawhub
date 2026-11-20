@@ -1,3 +1,18 @@
+import {
+  CATALOG_CATEGORY_LIMIT,
+  isSkillCategorySlug,
+  normalizeSkillCategories,
+} from "clawhub-schema/catalogMetadata";
+
+// Mirror inferences can use non-ClawHub labels. Only advertise an actual canonical match.
+export function getMirrorBrowseCategories(digest: { inferredCategories?: string[] }) {
+  const recognized = digest.inferredCategories?.filter(isSkillCategorySlug);
+  // Old/malformed mirror metadata must not make an otherwise public page unreadable.
+  if (!recognized?.length || recognized.length > CATALOG_CATEGORY_LIMIT) return undefined;
+  const categories = normalizeSkillCategories(recognized);
+  return categories.length ? categories : undefined;
+}
+
 export const SKILLS_SH_UNSCANNED_LABEL = "Not scanned by ClawHub";
 export const SKILLS_SH_UNSCANNED_STATE = "not-scanned-by-clawhub";
 export const SKILLS_SH_SCANNED_LABEL = "Scanned by ClawHub";

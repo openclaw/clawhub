@@ -51,6 +51,7 @@ import {
   normalizeSkillSearchText,
 } from "./lib/skillSearchDigest";
 import { isSearchableSkillSlugShape, normalizeSkillSlug } from "./lib/skillSlugValidator";
+import { getMirrorBrowseCategories } from "./lib/skillsShMirrorPublic";
 import { isPublicSkillsShMirrorDigest } from "./lib/skillsShMirrorPublic";
 import { getSkillsShPublicCatalogEnabledHandler } from "./rolloutCapabilities";
 
@@ -683,6 +684,7 @@ type CanonicalSkillSearchResult = {
   displayName: string;
   summary: string | null;
   icon: string | null;
+  categories?: string[];
   score: number;
   canonicalUrl: string;
   links: {
@@ -818,6 +820,7 @@ function buildNativeCanonicalResult(
     displayName: entry.skill.displayName,
     summary: entry.skill.summary ?? null,
     icon: entry.skill.icon ?? null,
+    categories: entry.skill.categories,
     score: canonicalScore(relevance),
     canonicalUrl,
     links: { canonical: canonicalUrl, source: null },
@@ -899,6 +902,7 @@ export function buildExternalCanonicalResult(
   return {
     id: `skills-sh:${digest.externalId}`,
     source: "skills-sh",
+    categories: getMirrorBrowseCategories(digest),
     relevance,
     official: false,
     featured: digest.featured ?? false,
