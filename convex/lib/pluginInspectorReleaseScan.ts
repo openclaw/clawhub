@@ -1,3 +1,5 @@
+import { isGitHubRepositoryDispatchConfigured } from "./githubRepositoryDispatch";
+
 // Plugin Inspector monitors accepted releases from GitHub Actions, never inside
 // a publish. Each accepted plugin release dispatches one targeted run of the
 // existing bulk scan workflow; the workflow's nightly sweep covers anything a
@@ -12,11 +14,6 @@ export function isPluginInspectorReleaseScanDispatchEnabled(env: NodeJS.ProcessE
   return (
     env.SECURITY_SCAN_EVENT_DISPATCH_ENABLED === "1" &&
     (!deployment || deployment === "production") &&
-    env.CLAWHUB_PREVIEW !== "1" &&
-    Boolean(
-      env.GITHUB_APP_ID?.trim() &&
-      env.GITHUB_APP_INSTALLATION_ID?.trim() &&
-      env.GITHUB_APP_PRIVATE_KEY?.trim(),
-    )
+    isGitHubRepositoryDispatchConfigured(env)
   );
 }
