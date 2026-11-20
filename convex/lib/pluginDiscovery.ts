@@ -14,7 +14,6 @@ const PINNED_PACKAGES: Partial<Record<PluginCategorySlug, readonly string[]>> = 
     "@openclaw/discord",
     "@openclaw/slack",
     "@openclaw/feishu",
-    "@openclaw/qqbot",
   ],
   models: ["@openclaw/openai-provider", "@openclaw/anthropic-provider", "@openclaw/google-plugin"],
   memory: [

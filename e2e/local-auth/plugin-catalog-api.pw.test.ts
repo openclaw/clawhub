@@ -94,7 +94,6 @@ test("plugin categories API exposes the canonical OpenClaw taxonomy", async ({ r
       "@openclaw/discord",
       "@openclaw/slack",
       "@openclaw/feishu",
-      "@openclaw/qqbot",
     ],
   });
 });
