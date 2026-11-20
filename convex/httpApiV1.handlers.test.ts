@@ -10995,9 +10995,6 @@ describe("httpApiV1 handlers", () => {
       categories: [],
     };
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {
-      if (args.category) {
-        return args.category === "channels" ? [category] : [];
-      }
       const page = args.highlightedOnly
         ? [featured]
         : args.sort === "trending"
@@ -11065,7 +11062,6 @@ describe("httpApiV1 handlers", () => {
       updatedAt: 200,
     });
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {
-      if (args.category) return [];
       const page = args.highlightedOnly
         ? [shared]
         : args.sort === "trending"

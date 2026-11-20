@@ -3,10 +3,7 @@ import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 import { internalQuery, query } from "./_generated/server";
 import { packageListScanStatusValidator } from "./lib/packageCatalogRead";
-import {
-  listCuratedPluginCategoryPage,
-  listPluginOverviewCategory,
-} from "./lib/pluginDiscoveryQueries";
+import { listCuratedPluginCategoryPage } from "./lib/pluginDiscoveryQueries";
 import { withPublicPluginArtwork } from "./lib/publicPluginArtwork";
 
 // Public browse uses the same anonymous selection as the curated HTTP route.
@@ -50,10 +47,12 @@ export const listPluginOverviewCategoryInternal = internalQuery({
     numItems: v.number(),
   },
   handler: async (ctx, args) => {
-    if (!isPluginCategorySlug(args.category)) return [];
-    return await listPluginOverviewCategory(ctx, {
+    if (!isPluginCategorySlug(args.category) || args.category === "other")
+      return { page: [], isDone: true, continueCursor: "" };
+    return await listCuratedPluginCategoryPage(ctx, {
       category: args.category,
-      numItems: args.numItems,
+      englishOnly: true,
+      paginationOpts: { cursor: null, numItems: args.numItems },
     });
   },
 });

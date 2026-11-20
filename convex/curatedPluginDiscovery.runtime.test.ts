@@ -2,6 +2,7 @@
 /* @vitest-environment edge-runtime */
 
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
+import { ApiV1PluginOverviewResponseSchema, parseArk } from "clawhub-schema";
 import { convexTest } from "convex-test";
 import { describe, expect, it, vi } from "vitest";
 vi.mock("./lib/verifiedClientIp", () => ({ getVerifiedClientIp: async () => "203.0.113.1" }));
@@ -174,6 +175,36 @@ describe("curated plugin discovery", () => {
     ]);
   });
 
+  it("still reads pre-overview curated cursors as multilingual and bound to their category", async () => {
+    const t = await setup([
+      { name: "first", downloads: 10, category: "research" },
+      { name: "second", title: "社媒数据助手", downloads: 9, category: "research" },
+    ]);
+    // The unversioned payload before preview cursors; don't use the current encoder here.
+    const cursor = btoa(
+      encodeURIComponent(
+        JSON.stringify({
+          scope: '["research",null,null,null,null,null,false]',
+          pinOffset: 0,
+          downloads: 10,
+          name: "first",
+        }),
+      ),
+    );
+    const url =
+      "/api/v1/plugins?curated=true&sort=downloads&category=research&cursor=" +
+      encodeURIComponent(cursor);
+    const response = await t.fetch(url);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ items: [{ name: "second" }], nextCursor: null });
+    await expect(
+      t.query(internal.packages.listPluginDiscoveryCategoryInternal, {
+        category: "memory",
+        paginationOpts: { cursor, numItems: 100 },
+      }),
+    ).rejects.toThrow("Invalid curated category cursor");
+  });
+
   it("resolves low-download pins before the shelf limit, then ranks community and official together", async () => {
     const t = await setup([
       ...Array.from({ length: 12 }, (_, index) => ({
@@ -184,11 +215,11 @@ describe("curated plugin discovery", () => {
       { name: "@mem0/openclaw-mem0", downloads: 2 },
       { name: "official-tail", downloads: 3, official: true },
     ]);
-    const rows = await t.query(internal.packages.listPluginOverviewCategoryInternal, {
+    const { page } = await t.query(internal.packages.listPluginOverviewCategoryInternal, {
       category: "memory",
       numItems: 8,
     });
-    expect(rows.map((row) => row.name)).toEqual([
+    expect(page.map((row) => row.name)).toEqual([
       "@honcho-ai/openclaw-honcho",
       "@mem0/openclaw-mem0",
       ...Array.from({ length: 6 }, (_, index) => `community-${index}`),
@@ -262,6 +293,69 @@ describe("curated plugin discovery", () => {
       "non-english",
       ...Array.from({ length: 10 }, (_, index) => `research-${index}`),
     ]);
+  });
+
+  it("continues a public English overview shelf without changing multilingual category browse", async () => {
+    const pin = "@honcho-ai/openclaw-honcho";
+    const t = await setup([
+      { name: pin, downloads: 0 },
+      ...Array.from({ length: 10 }, (_, i) => ({ name: `item-${9 - i}`, downloads: 10 })),
+      { name: "item-6a", downloads: 10, title: "社媒数据助手" },
+      { name: "item-7a", downloads: 10, private: true },
+      { name: "item-8a", downloads: 10, blocked: true },
+      { name: "item-8b", downloads: 10, title: "社媒数据助手" },
+      { name: "small-shelf", downloads: 1, category: "research" },
+    ]);
+    // The published v1 schema rejects unknown category fields. Older readers keep its shape.
+    const original = await (await t.fetch("/api/v1/plugins/overview")).json();
+    expect(
+      original.categories.find((category: { slug: string }) => category.slug === "memory"),
+    ).not.toHaveProperty("previewCursor");
+    const overview = await t.fetch("/api/v1/plugins/overview?previewCursors=true");
+    expect(overview.status).toBe(200);
+    const { categories, items } = parseArk(
+      ApiV1PluginOverviewResponseSchema,
+      await overview.json(),
+      "overview",
+    );
+    const firstShelf = [pin, ...Array.from({ length: 7 }, (_, i) => "item-" + i)];
+    expect(
+      items.filter((item) => item.categories?.includes("memory")).map((item) => item.name),
+    ).toEqual(firstShelf);
+    const category = (slug: string) => categories.find((entry) => entry.slug === slug);
+    expect(category("research")).not.toHaveProperty("previewCursor");
+    const cursor = category("memory")?.previewCursor;
+    expect(cursor).toEqual(expect.any(String));
+    const list = async (limit: number, after?: string) => {
+      const query = new URLSearchParams({
+        curated: "true",
+        category: "memory",
+        sort: "downloads",
+        limit: String(limit),
+      });
+      if (after) query.set("cursor", after);
+      const response = await t.fetch("/api/v1/plugins?" + query);
+      expect(response.status).toBe(200);
+      const { items: pageItems, nextCursor } = await response.json();
+      return { names: pageItems.map((item: { name: string }) => item.name), nextCursor };
+    };
+    expect(await list(100, cursor)).toEqual({
+      names: ["item-7", "item-8", "item-9"],
+      nextCursor: null,
+    });
+    const second = await list(1, cursor);
+    expect(second.names).toEqual(["item-7"]);
+    expect(second.nextCursor).toEqual(expect.any(String));
+    expect(await list(100, second.nextCursor)).toEqual({
+      names: ["item-8", "item-9"],
+      nextCursor: null,
+    });
+    const browse = await list(8);
+    expect(browse.names).toEqual(firstShelf);
+    expect(await list(100, browse.nextCursor)).toEqual({
+      names: ["item-6a", "item-7", "item-8", "item-8b", "item-9"],
+      nextCursor: null,
+    });
   });
 
   it("expires a reviewed short English listing exception when its text changes", () => {
