@@ -1816,7 +1816,7 @@ export async function cmdPackageModerationStatus(
 }
 
 type PackageAuditFinding = {
-  id: string;
+  id?: string;
   severity: string;
   message: string;
   title?: string;
@@ -1827,7 +1827,7 @@ type PackageAuditFinding = {
 };
 
 type PackageAuditScannerReport = {
-  scanner: "aig" | "skillspector" | "llm";
+  scanner: "aig" | "skillspector" | "llm" | "endor";
   stored: boolean;
   status?: string;
   issueCount?: number;
@@ -1871,51 +1871,7 @@ export async function cmdPackageAudit(
 
 function buildPackageAuditReport(
   pkg: { name: string; family: string },
-  version: {
-    version: string;
-    aigAnalysis?: {
-      status: string;
-      issueCount: number;
-      summary?: string;
-      findings: Array<{
-        ruleId: string;
-        level: string;
-        message: string;
-        title?: string;
-        description?: string;
-        remediation?: string;
-        file?: string;
-        startLine?: number;
-      }>;
-    } | null;
-    skillSpectorAnalysis?: {
-      status: string;
-      issueCount: number;
-      summary?: string;
-      issues: Array<{
-        issueId: string;
-        severity: string;
-        explanation: string;
-        file?: string;
-        startLine?: number;
-        codeSnippet?: string;
-      }>;
-    } | null;
-    llmAnalysis?: {
-      status: string;
-      verdict?: string;
-      summary?: string;
-      guidance?: string;
-      findings?: string;
-      dimensions?: Array<{
-        name: string;
-        label: string;
-        rating: string;
-        detail: string;
-      }>;
-      agenticRiskFindings?: unknown[];
-    } | null;
-  },
+  version: NonNullable<PackageVersionResponse["version"]>,
 ): PackageAuditReport {
   return {
     name: pkg.name,
@@ -1925,7 +1881,25 @@ function buildPackageAuditReport(
       aigAuditReport(version.aigAnalysis),
       skillSpectorAuditReport(version.skillSpectorAnalysis),
       llmAuditReport(version.llmAnalysis),
+      ...(pkg.family === "code-plugin" ? [endorAuditReport(version.endorAnalysis)] : []),
     ],
+  };
+}
+
+function endorAuditReport(
+  analysis: NonNullable<PackageVersionResponse["version"]>["endorAnalysis"],
+): PackageAuditScannerReport {
+  if (!analysis) return { scanner: "endor", stored: false };
+  if (analysis.status !== "completed") {
+    return { scanner: "endor", stored: true, status: analysis.status, summary: analysis.reason };
+  }
+  return {
+    scanner: "endor",
+    stored: true,
+    status: analysis.status,
+    issueCount: analysis.reachableFunctionCount,
+    shownCount: analysis.findings.length,
+    findings: analysis.findings.map(({ severity, summary }) => ({ severity, message: summary })),
   };
 }
 
@@ -2087,7 +2061,7 @@ function printPackageAudit(report: PackageAuditReport) {
       const location = finding.file
         ? ` ${finding.file}${finding.startLine ? `:${finding.startLine}` : ""}`
         : "";
-      console.log(`  ${finding.severity} ${finding.id}${location}`);
+      console.log(`  ${finding.severity}${finding.id ? ` ${finding.id}` : ""}${location}`);
       if (finding.title) console.log(`    title: ${finding.title}`);
       console.log(`    ${finding.message}`);
       if (finding.description) console.log(`    description: ${finding.description}`);
@@ -2099,6 +2073,7 @@ function printPackageAudit(report: PackageAuditReport) {
 function scannerLabel(scanner: PackageAuditScannerReport["scanner"]) {
   if (scanner === "aig") return "A.I.G";
   if (scanner === "skillspector") return "SkillSpector";
+  if (scanner === "endor") return "Endor dependency reachability";
   return "LLM judge";
 }
 

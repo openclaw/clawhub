@@ -683,6 +683,10 @@ clawhub package moderation-status @openclaw/example-plugin
   remediation. The LLM report includes the stored findings text, guidance,
   dimension details, and concern explanations. Source snippets and file
   digests are not printed.
+- Code plugins also show Endor dependency reachability. A completed report
+  shows the total reachable findings and each stored severity and summary;
+  the stored list can be shorter than the total. A failed or skipped report
+  shows its status and public reason. An absent report is marked `not stored`.
 - A scanner that was not stored is printed as `not stored`. That is not a clean
   scan. This command does not change publication or download checks.
 - Flags:

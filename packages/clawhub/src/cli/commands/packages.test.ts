@@ -1399,10 +1399,66 @@ describe("package commands", () => {
           verdict: "benign",
           summary: "No concern.",
         },
+        { scanner: "endor", stored: false },
       ],
     });
     expect(mockLog).not.toHaveBeenCalled();
   });
+
+  it("shows stored Endor findings for code plugins without leaking raw report fields", async () => {
+    const detail = {
+      package: { name: "demo", family: "code-plugin" },
+      version: {
+        version: "1.2.3",
+        endorAnalysis: {
+          status: "completed",
+          reachableFunctionCount: 2,
+          findings: [
+            { severity: "medium", summary: "Review the demo dependency.", snippet: "RAW_MARKER" },
+          ],
+          diagnostics: "RAW_MARKER",
+        },
+      },
+    };
+    httpMocks.apiRequest.mockResolvedValueOnce(detail).mockResolvedValueOnce(detail);
+    await cmdPackageAudit(makeOpts(), "demo", { version: "1.2.3" });
+    const text = mockLog.mock.calls.map(([line]) => line).join("\n");
+    expect(text).toContain(
+      "Endor dependency reachability\n  status: completed\n  findings: 1 of 2",
+    );
+    expect(text).toContain("  medium\n    Review the demo dependency.");
+    expect(text).not.toContain("RAW_MARKER");
+
+    await cmdPackageAudit(makeOpts(), "demo", { version: "1.2.3", json: true });
+    const { reports } = JSON.parse(String(mockWrite.mock.calls[0]?.[0]));
+    expect(reports).toContainEqual({
+      scanner: "endor",
+      stored: true,
+      status: "completed",
+      issueCount: 2,
+      shownCount: 1,
+      findings: [{ severity: "medium", message: "Review the demo dependency." }],
+    });
+    expect(JSON.stringify(reports)).not.toContain("RAW_MARKER");
+  });
+
+  it.each(["failed", "skipped"])(
+    "keeps the recorded Endor %s status and reason",
+    async (status) => {
+      httpMocks.apiRequest.mockResolvedValueOnce({
+        package: { name: "demo", family: "code-plugin" },
+        version: { version: "1.2.3", endorAnalysis: { status, reason: "No analysis available." } },
+      });
+      await cmdPackageAudit(makeOpts(), "demo", { version: "1.2.3", json: true });
+      const { reports } = JSON.parse(String(mockWrite.mock.calls[0]?.[0]));
+      expect(reports).toContainEqual({
+        scanner: "endor",
+        stored: true,
+        status,
+        summary: "No analysis available.",
+      });
+    },
+  );
 
   it("keeps stored explanations and omits LLM evidence snippets", async () => {
     const detail = {
