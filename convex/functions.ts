@@ -441,6 +441,13 @@ triggers.register("packageBadges", async (ctx, change) => {
 
 triggers.register("packageReleases", async (ctx, change) => {
   if (change.operation === "insert") return;
+  if (change.operation === "delete") {
+    const snapshot = await ctx.db
+      .query("templateDisplaySnapshots")
+      .withIndex("by_release", (q) => q.eq("releaseId", change.id))
+      .unique();
+    if (snapshot) await ctx.db.delete(snapshot._id);
+  }
   if (
     change.operation === "update" &&
     change.oldDoc.softDeletedAt === change.newDoc.softDeletedAt

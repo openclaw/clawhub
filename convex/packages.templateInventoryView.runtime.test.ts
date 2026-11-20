@@ -5,6 +5,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it, vi } from "vitest";
 import { npmPackFixture } from "../packages/clawhub/test/npmPack";
 import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
+import { internal } from "./_generated/api";
 import { parseClawPack, sha256Hex } from "./lib/clawpack";
 import { hashToken } from "./lib/tokens";
 import schema from "./schema";
@@ -110,6 +111,55 @@ async function fixture(options: { declaredName?: string; schemaVersion?: number 
 }
 
 describe("public Template inventory HTTP view", () => {
+  it("serves identical display metadata without touching the blob after a pinned backfill, but rechecks access and binding", async () => {
+    const { t, pkg, latest, owner } = await fixture();
+    const before = await (await t.fetch(view)).json();
+    const backfill = (sha256: string) =>
+      t.action(internal.templateDisplayBackfill.one, { name, version: "2.0.0", sha256 });
+    expect(await t.run((ctx) => ctx.db.query("templateDisplaySnapshots").first())).toBeNull();
+    expect(await backfill("b".repeat(64))).toBe("binding-changed");
+    expect(await backfill(latest.sha256)).toBe("stored");
+    expect(await backfill(latest.sha256)).toBe("already-present");
+    const saved = await t.run((ctx) =>
+      ctx.db
+        .query("templateDisplaySnapshots")
+        .withIndex("by_release", (q) => q.eq("releaseId", latest.release))
+        .unique(),
+    );
+    expect(saved?.data).toMatchObject({
+      manifestPath,
+      contents: before.templateInventory.contents,
+    });
+    expect(JSON.stringify(saved?.data)).not.toContain(marker);
+    if (!saved) throw Error("Missing verified display row");
+    // Valid bytes remain available: an inconsistent row must not trigger legacy fallback or repair.
+    await t.run((ctx) =>
+      ctx.db.patch(saved._id, { binding: { ...saved.binding, version: "stale" } }),
+    );
+    expect((await t.fetch(view)).status).toBe(422);
+    expect(await backfill(latest.sha256)).toBe("binding-changed");
+    await t.run((ctx) => ctx.db.patch(saved._id, { binding: saved.binding }));
+    // Independent storage denial: metadata still works; the normal artifact path is not authorized by it.
+    await t.run((ctx) => ctx.storage.delete(latest.file));
+    expect(await (await t.fetch(view)).json()).toEqual(before);
+    await t.run((ctx) =>
+      ctx.db.patch(latest.release, {
+        manualModeration: {
+          state: "quarantined",
+          reviewerUserId: owner,
+          reason: "changed",
+          updatedAt: 3,
+        },
+      }),
+    );
+    expect((await t.fetch(view)).ok).toBe(false);
+    await t.run((ctx) =>
+      ctx.db.patch(latest.release, { manualModeration: undefined, npmIntegrity: "sha512-other" }),
+    );
+    expect((await t.fetch(view)).status).toBe(422);
+    await t.run((ctx) => ctx.db.patch(pkg, { channel: "private" }));
+    expect((await t.fetch(view)).status).toBe(404);
+  });
   it("returns complete verified names, never bodies, for latest and historical coordinates", async () => {
     const { t, prior, latest } = await fixture();
     const ordinary = await (await t.fetch(base)).json();

@@ -258,6 +258,15 @@ import { buildDeterministicPackageZip } from "./lib/skillZip";
 import { classifyTemplateCategories } from "./lib/templateCategoryClassification";
 import { selectTemplateDetailRelease } from "./lib/templateDetailView";
 import {
+  templateDisplayBindingValidator,
+  templateDisplayDataValidator,
+} from "./lib/templateDisplayData";
+import {
+  sameTemplateDisplayBinding,
+  templateDisplayBinding,
+  writeTemplateDisplaySnapshot,
+} from "./lib/templateDisplaySnapshot";
+import {
   toStoredPackageFamily,
   toPublicPackageFamily,
   withStoredPackageFamily,
@@ -2621,6 +2630,19 @@ export const getPublicTemplateInventoryInternal = internalQuery({
     )
       return null;
     if (getPackageDownloadSecurityBlock(release)) return { blocked: true as const };
+    // Authority, exact release selection and immutable display data share the same DB snapshot.
+    // A stale row is a binding error, not permission to try alternate bytes.
+    const stored = await ctx.db
+      .query("templateDisplaySnapshots")
+      .withIndex("by_release", (q) => q.eq("releaseId", release._id))
+      .unique();
+    const projection = !stored
+      ? null
+      : stored.packageId === pkg._id &&
+          stored.schemaVersion === 1 &&
+          sameTemplateDisplayBinding(templateDisplayBinding(pkg.name, release), stored.binding)
+        ? stored.data
+        : ("invalid" as const);
     const {
       _id,
       version,
@@ -2640,6 +2662,7 @@ export const getPublicTemplateInventoryInternal = internalQuery({
       manualModeration,
     } = release;
     return {
+      projection,
       package: publicPackage,
       owner,
       tags: await readPublishedPackageTags(ctx, pkg, latestRelease),
@@ -8710,7 +8733,7 @@ async function publishPackageImpl(
     files,
     integritySha256,
     sha256hash: legacyZipSha256,
-    artifactKind: payload.artifact?.kind ?? "legacy-zip",
+    artifactKind: payload.artifact?.kind ?? ("legacy-zip" as const),
     clawpackStorageId: payload.artifact?.storageId as Id<"_storage"> | undefined,
     clawpackSha256: payload.artifact?.sha256 ?? legacyZipSha256,
     clawpackSize: payload.artifact?.size ?? legacyZipBytes.byteLength,
@@ -8734,6 +8757,14 @@ async function publishPackageImpl(
     trustedPublishTokenId: auth.kind === "github-actions" ? auth.publishToken._id : undefined,
     trustedPublishInventoryDigest: auth.kind === "github-actions" ? inventoryDigest : undefined,
   };
+  // Staged marker files support the publish pipeline, but the display view must describe
+  // the exact stored tarball. Unsupported archives retain the existing read-time behavior.
+  const displayBinding = family === "claw" ? templateDisplayBinding(name, packageInsertArgs) : null;
+  const verifiedDisplay = displayBinding
+    ? await (
+        await import("./lib/templateDisplayArchive")
+      ).readVerifiedTemplateDisplayArchive(ctx.storage, displayBinding)
+    : null;
   // This action owns only ZIPs it generates; caller uploads and adopted release archives survive.
   const storeLegacyZipIfNeeded = async () => {
     if (payload.artifact?.kind === "npm-pack" || packageInsertArgs.clawpackStorageId) {
@@ -8789,6 +8820,9 @@ async function publishPackageImpl(
       createdNewParent?: boolean;
     }>(ctx, internalRefs.packages.insertReleaseInternal, {
       ...packageInsertArgs,
+      ...(displayBinding && verifiedDisplay?.ok
+        ? { verifiedTemplateDisplay: { binding: displayBinding, data: verifiedDisplay.data } }
+        : {}),
       publicationStatus: "pending",
     }),
   );
@@ -11468,6 +11502,9 @@ export const insertReleaseInternal = internalMutation({
     categoryClassification: v.optional(pluginCategoryClassificationValidator),
     clawManifestSummary: v.optional(v.any()),
     templateInventory: packageTemplateInventoryValidator,
+    verifiedTemplateDisplay: v.optional(
+      v.object({ binding: templateDisplayBindingValidator, data: templateDisplayDataValidator }),
+    ),
     source: v.optional(v.any()),
     trustedPublishTokenId: v.optional(v.id("packagePublishTokens")),
     trustedPublishInventoryDigest: v.optional(v.string()),
@@ -11814,6 +11851,11 @@ export const insertReleaseInternal = internalMutation({
       createdAt: now,
     });
 
+    // Write once when adopting the release, not on retries or when its visibility changes.
+    if (args.family === "claw" && args.verifiedTemplateDisplay) {
+      const { binding, data } = args.verifiedTemplateDisplay;
+      await writeTemplateDisplaySnapshot(ctx, releaseId, binding, data);
+    }
     const pkg = existing ?? (await ctx.db.get(pkgId));
     if (!pkg) throw new ConvexError("Package insert failed");
     if (pendingPublication) {

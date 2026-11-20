@@ -276,6 +276,9 @@ import type * as lib_templateCategoryBackfill from "../lib/templateCategoryBackf
 import type * as lib_templateCategoryClassification from "../lib/templateCategoryClassification.js";
 import type * as lib_templateCategoryListHttpRead from "../lib/templateCategoryListHttpRead.js";
 import type * as lib_templateDetailView from "../lib/templateDetailView.js";
+import type * as lib_templateDisplayArchive from "../lib/templateDisplayArchive.js";
+import type * as lib_templateDisplayData from "../lib/templateDisplayData.js";
+import type * as lib_templateDisplaySnapshot from "../lib/templateDisplaySnapshot.js";
 import type * as lib_templatePackageHttpRead from "../lib/templatePackageHttpRead.js";
 import type * as lib_templateRankProjection from "../lib/templateRankProjection.js";
 import type * as lib_templateRankedCursor from "../lib/templateRankedCursor.js";
@@ -366,6 +369,7 @@ import type * as statsMaintenance from "../statsMaintenance.js";
 import type * as telemetry from "../telemetry.js";
 import type * as templateCatalogPage from "../templateCatalogPage.js";
 import type * as templateCatalogPageHttp from "../templateCatalogPageHttp.js";
+import type * as templateDisplayBackfill from "../templateDisplayBackfill.js";
 import type * as templateOverview from "../templateOverview.js";
 import type * as templateOverviewHttp from "../templateOverviewHttp.js";
 import type * as tokens from "../tokens.js";
@@ -648,6 +652,9 @@ declare const fullApi: ApiFromModules<{
   "lib/templateCategoryClassification": typeof lib_templateCategoryClassification;
   "lib/templateCategoryListHttpRead": typeof lib_templateCategoryListHttpRead;
   "lib/templateDetailView": typeof lib_templateDetailView;
+  "lib/templateDisplayArchive": typeof lib_templateDisplayArchive;
+  "lib/templateDisplayData": typeof lib_templateDisplayData;
+  "lib/templateDisplaySnapshot": typeof lib_templateDisplaySnapshot;
   "lib/templatePackageHttpRead": typeof lib_templatePackageHttpRead;
   "lib/templateRankProjection": typeof lib_templateRankProjection;
   "lib/templateRankedCursor": typeof lib_templateRankedCursor;
@@ -738,6 +745,7 @@ declare const fullApi: ApiFromModules<{
   telemetry: typeof telemetry;
   templateCatalogPage: typeof templateCatalogPage;
   templateCatalogPageHttp: typeof templateCatalogPageHttp;
+  templateDisplayBackfill: typeof templateDisplayBackfill;
   templateOverview: typeof templateOverview;
   templateOverviewHttp: typeof templateOverviewHttp;
   tokens: typeof tokens;

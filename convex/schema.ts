@@ -1,7 +1,6 @@
 import { authTables } from "@convex-dev/auth/server";
-import { createTemplateManifestSummarySchema } from "clawhub-schema/templateManifestSummary";
 import { defineSchema, defineTable } from "convex/server";
-import { type GenericValidator, v } from "convex/values";
+import { v } from "convex/values";
 import {
   canonicalTrendingCardValidator,
   canonicalTrendingSourceRefValidator,
@@ -63,6 +62,11 @@ import {
   skillsShMirrorSourceRowValidator,
   skillsShMirrorStoredRowValidator,
 } from "./lib/skillsShMirrorContract";
+import {
+  clawManifestSummaryValidator,
+  templateDisplayBindingValidator,
+  templateDisplayDataValidator,
+} from "./lib/templateDisplayData";
 
 export { skillSpectorAnalysisValidator } from "./lib/securityAnalysisValidators";
 
@@ -718,17 +722,14 @@ export const pluginManifestSummaryValidator = v.object({
   ),
 });
 
-const clawManifestSummaryValidator = createTemplateManifestSummarySchema<GenericValidator>({
-  literalOne: v.literal(1),
-  string: v.string(),
-  number: v.number(),
-  boolean: v.boolean(),
-  stringArray: v.array(v.string()),
-  // Convex validators cannot express string lengths; publication must validate with the shared schema.
-  boundedString: () => v.string(),
-  optional: (validator) => v.optional(validator),
-  object: (fields) => v.object(fields),
-});
+// This immutable display projection is deliberately separate from release files and mutable trust.
+const templateDisplaySnapshots = defineTable({
+  schemaVersion: v.literal(1),
+  packageId: v.id("packages"),
+  releaseId: v.id("packageReleases"),
+  binding: templateDisplayBindingValidator,
+  data: templateDisplayDataValidator,
+}).index("by_release", ["releaseId"]);
 
 const packageVerificationValidator = v.optional(
   v.object({
@@ -4214,6 +4215,7 @@ export default defineSchema({
   featuredSelections,
   packageSearchDigest,
   templateRankSequence,
+  templateDisplaySnapshots,
   packageTopicSearchDigest,
   packagePluginCategorySearchDigest,
   skillVersions,
