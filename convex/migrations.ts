@@ -92,6 +92,19 @@ export const migrations = new Migrations(components.migrations, {
   defaultBatchSize: 25,
 });
 
+// Optional acceleration only: unindexed Templates keep the authoritative legacy read.
+export const backfillTemplateRankProjection = migrations.define({
+  table: "packages",
+  batchSize: 10,
+  customRange: (q) =>
+    q.withIndex("by_family_rank_coverage", (r) =>
+      r.eq("family", "claw").eq("templateRankIndexed", undefined),
+    ),
+  migrateOne: async (ctx, pkg) => {
+    await syncPackageSearchDigestForPackageId(ctx, pkg._id);
+  },
+});
+
 // Only explicitly reviewed rows can change package metadata. Component cursors make apply resumable.
 export const applyAcceptedPluginCategoryRefreshes = migrations.define({
   table: "pluginCategoryRefreshes",

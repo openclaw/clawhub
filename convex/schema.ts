@@ -1518,6 +1518,7 @@ const skillTopicSearchDigest = defineTable({
   ]);
 
 const packages = defineTable({
+  templateRankIndexed: v.optional(v.literal(true)),
   name: v.string(),
   normalizedName: v.string(),
   displayName: v.string(),
@@ -1597,6 +1598,7 @@ const packages = defineTable({
     "stats.installs",
     "updatedAt",
   ])
+  .index("by_family_rank_coverage", ["family", "templateRankIndexed", "softDeletedAt"])
   .index("by_family_updated", ["family", "updatedAt"])
   .index("by_family_channel_updated", ["family", "channel", "updatedAt"])
   .index("by_family_official_updated", ["family", "isOfficial", "updatedAt"])
@@ -2152,10 +2154,16 @@ const packageSearchDigestSharedFields = {
   updatedAt: v.number(),
 };
 
+// Monotone, never-reused handles for frozen ranked pages; not credentials or package IDs.
+const templateRankSequence = defineTable({ high: v.number() });
+
 const packageSearchDigest = defineTable({
   ...packageSearchDigestSharedFields,
+  templateRankTicket: v.optional(v.number()),
+  templateFeaturedAt: v.optional(v.number()),
   manifestSearchTerms: v.optional(v.array(v.string())),
 })
+  .index("by_template_rank_ticket", ["templateRankTicket"])
   .index("by_package", ["packageId"])
   .index("by_active_updated", ["softDeletedAt", "updatedAt"])
   .index("by_active_channel_updated", ["softDeletedAt", "channel", "updatedAt"])
@@ -4205,6 +4213,7 @@ export default defineSchema({
   packageBadges,
   featuredSelections,
   packageSearchDigest,
+  templateRankSequence,
   packageTopicSearchDigest,
   packagePluginCategorySearchDigest,
   skillVersions,

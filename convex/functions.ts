@@ -20,6 +20,7 @@ import {
   extractPackageDigestFields,
   upsertPackageSearchDigest,
 } from "./lib/packageSearchDigest";
+import { isPackageBlockedFromPublic, resolvePackageReleaseScanStatus } from "./lib/packageSecurity";
 import { getOwnerPublisher } from "./lib/publishers";
 import {
   adjustPublisherStatsForPackageChange,
@@ -27,6 +28,7 @@ import {
 } from "./lib/publisherStats";
 import { assertRankingMetricWritesAllowed } from "./lib/rankingMetricsImportLock";
 import { deleteSkillSearchDigests, syncSkillSearchDigestForSkill } from "./lib/skillSearchDigest";
+import { syncTemplateRankProjection } from "./lib/templateRankProjection";
 
 const triggers = new Triggers<DataModel>();
 
@@ -125,6 +127,7 @@ async function syncPackageSearchDigest(
     ownerHandle: owner?.handle ?? "",
     ownerKind: owner?.kind,
   });
+  await syncTemplateRankProjection(ctx, pkg, latestRelease);
 }
 
 export async function syncPackageSearchDigestForPackageId(
@@ -424,12 +427,37 @@ triggers.register("packages", async (ctx, change) => {
   await syncPackageSearchDigest(ctx, change.newDoc);
 });
 
+triggers.register("packageBadges", async (ctx, change) => {
+  const ids = new Set(
+    [change.oldDoc, change.newDoc]
+      .filter((row) => row?.kind === "highlighted")
+      .map((row) => row!.packageId),
+  );
+  for (const id of ids) {
+    const pkg = await ctx.db.get(id);
+    if (pkg?.family === "claw") await syncPackageSearchDigest(ctx, pkg);
+  }
+});
+
 triggers.register("packageReleases", async (ctx, change) => {
   if (change.operation === "insert") return;
   if (
     change.operation === "update" &&
     change.oldDoc.softDeletedAt === change.newDoc.softDeletedAt
   ) {
+    const before =
+      isPublishedPackageRelease(change.oldDoc) &&
+      !isPackageBlockedFromPublic(resolvePackageReleaseScanStatus(change.oldDoc));
+    const after =
+      isPublishedPackageRelease(change.newDoc) &&
+      !isPackageBlockedFromPublic(resolvePackageReleaseScanStatus(change.newDoc));
+    if (before !== after || change.oldDoc.packageId !== change.newDoc.packageId) {
+      for (const id of new Set([change.oldDoc.packageId, change.newDoc.packageId])) {
+        const pkg = await ctx.db.get(id);
+        if (pkg?.family === "claw" && pkg.latestReleaseId === change.id)
+          await syncPackageSearchDigest(ctx, pkg);
+      }
+    }
     return;
   }
   const packageId =

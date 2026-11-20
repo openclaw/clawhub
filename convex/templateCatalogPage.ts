@@ -7,54 +7,117 @@ import {
   isTemplateCatalogPublisherAvailable,
   toPublicPackageListItemFromPackage,
 } from "./lib/packageCatalogRead";
-import { isPublishedPackageRelease } from "./lib/packageReleaseVisibility";
 import { extractPackageDigestFields } from "./lib/packageSearchDigest";
-import { isPackageBlockedFromPublic, resolvePackageReleaseScanStatus } from "./lib/packageSecurity";
+import { isPackageBlockedFromPublic } from "./lib/packageSecurity";
 import { compareRankedSearchKeys, rankedSearchKey, verificationRank } from "./lib/searchRanking";
 import {
   badPage,
-  tooBroad,
-  MAX_TEMPLATE_CANDIDATES,
   encodeRankedCursor,
   decodeRankedCursor,
   type RankedFilters,
+  type RankedRef,
 } from "./lib/templateRankedCursor";
+import { isRankedReleasePublic } from "./lib/templateRankProjection";
 
-// Keep independent point reads below Convex's in-flight syscall limit.
 const BATCH = 16;
+const INDEX_BATCH = 256;
 type PublisherCache = Map<Id<"publishers">, Promise<Doc<"publishers"> | null>>;
-async function eligible(
+type Fields = Pick<
+  Doc<"packageSearchDigest">,
+  | "name"
+  | "normalizedName"
+  | "family"
+  | "displayName"
+  | "runtimeId"
+  | "summary"
+  | "categories"
+  | "topics"
+  | "pluginCategoryTags"
+  | "ownerPublisherId"
+  | "stats"
+  | "channel"
+  | "scanStatus"
+  | "softDeletedAt"
+  | "verificationTier"
+  | "isOfficial"
+  | "updatedAt"
+>;
+async function rank(
   ctx: QueryCtx,
-  pkg: Doc<"packages"> | null,
+  row: Fields,
   filters: RankedFilters,
   publishers: PublisherCache,
+  featured: boolean,
 ) {
-  if (!pkg || pkg.family !== "claw" || !pkg.latestReleaseId || !pkg.ownerPublisherId) return null;
-  const digest = extractPackageDigestFields(pkg);
   if (
-    pkg.softDeletedAt !== undefined ||
-    pkg.channel === "private" ||
-    isPackageBlockedFromPublic(pkg.scanStatus) ||
-    (filters.category && !digest.categories?.includes(filters.category))
+    row.family !== "claw" ||
+    !row.stats ||
+    !row.ownerPublisherId ||
+    row.softDeletedAt !== undefined ||
+    row.channel === "private" ||
+    isPackageBlockedFromPublic(row.scanStatus) ||
+    (filters.category && !row.categories?.includes(filters.category))
   )
     return null;
-  if (!(await isTemplateCatalogPublisherAvailable(ctx, pkg, publishers))) return null;
-  const owner = await publishers.get(pkg.ownerPublisherId);
+  // Publisher ownership/liveness can change ahead of its asynchronous digest refresh.
+  if (!(await isTemplateCatalogPublisherAvailable(ctx, row, publishers))) return null;
+  const owner = await publishers.get(row.ownerPublisherId);
   const match = filters.q
     ? matchCatalogText(
         {
-          name: pkg.normalizedName,
-          displayName: pkg.displayName,
-          summary: pkg.summary,
-          runtimeId: pkg.runtimeId,
+          name: row.normalizedName,
+          displayName: row.displayName,
+          summary: row.summary,
+          runtimeId: row.runtimeId,
           ownerHandle: owner?.handle,
-          categories: digest.pluginCategoryTags,
-          topics: digest.topics,
+          categories: row.pluginCategoryTags,
+          topics: row.topics,
         },
         filters.q,
       )
     : { score: 0, rankTier: 0 };
   if (!match) return null;
+  return {
+    name: row.name,
+    official: row.isOfficial,
+    tier: verificationRank(row.verificationTier),
+    stars: row.stats.stars,
+    installs: row.stats.installs,
+    downloads: row.stats.downloads,
+    updatedAt: row.updatedAt,
+    key: rankedSearchKey(match, {
+      isOfficial: row.isOfficial,
+      featured,
+      verificationTier: row.verificationTier,
+      downloads: row.stats.downloads,
+      installs: row.stats.installs,
+    }),
+  };
+}
+type Rank = NonNullable<Awaited<ReturnType<typeof rank>>>;
+function compare(a: Rank, b: Rank, category: string) {
+  if (category) return b.installs - a.installs || a.name.localeCompare(b.name);
+  return (
+    compareRankedSearchKeys(a.key, b.key) ||
+    Number(b.official) - Number(a.official) ||
+    b.tier - a.tier ||
+    b.stars - a.stars ||
+    b.installs - a.installs ||
+    b.downloads - a.downloads ||
+    b.updatedAt - a.updatedAt ||
+    a.name.localeCompare(b.name)
+  );
+}
+async function live(
+  ctx: QueryCtx,
+  pkg: Doc<"packages"> | null,
+  filters: RankedFilters,
+  publishers: PublisherCache,
+) {
+  if (!pkg || pkg.family !== "claw" || !pkg.latestReleaseId) return null;
+  const fields = extractPackageDigestFields(pkg);
+  const order = await rank(ctx, fields, filters, publishers, false);
+  if (!order) return null;
   const [release, badge] = await Promise.all([
     ctx.db.get(pkg.latestReleaseId),
     ctx.db
@@ -62,41 +125,19 @@ async function eligible(
       .withIndex("by_package_kind", (q) => q.eq("packageId", pkg._id).eq("kind", "highlighted"))
       .unique(),
   ]);
-  if (
-    !isPublishedPackageRelease(release, pkg._id) ||
-    isPackageBlockedFromPublic(resolvePackageReleaseScanStatus(release))
-  )
-    return null;
-  const key = rankedSearchKey(match, {
-    isOfficial: pkg.isOfficial,
-    featured: Boolean(badge),
-    verificationTier: pkg.verification?.tier,
-    downloads: pkg.stats.downloads,
-    installs: pkg.stats.installs,
-  });
+  if (!release || !isRankedReleasePublic(release, pkg)) return null;
+  const boosted = badge ? await rank(ctx, fields, filters, publishers, true) : order;
+  if (!boosted) return null;
   return {
+    order: boosted,
     pkg,
-    key,
     latestVersion: release.version,
     featuredAt: badge?.at,
-    categories: digest.categories,
-    topics: digest.topics,
+    categories: fields.categories,
+    topics: fields.topics,
   };
 }
-type Candidate = NonNullable<Awaited<ReturnType<typeof eligible>>>;
-function compareRelevance(a: Candidate, b: Candidate) {
-  return (
-    compareRankedSearchKeys(a.key, b.key) ||
-    Number(b.pkg.isOfficial) - Number(a.pkg.isOfficial) ||
-    verificationRank(b.pkg.verification?.tier) - verificationRank(a.pkg.verification?.tier) ||
-    b.pkg.stats.stars - a.pkg.stats.stars ||
-    b.pkg.stats.installs - a.pkg.stats.installs ||
-    b.pkg.stats.downloads - a.pkg.stats.downloads ||
-    b.pkg.updatedAt - a.pkg.updatedAt ||
-    a.pkg.name.localeCompare(b.pkg.name)
-  );
-}
-
+type Live = NonNullable<Awaited<ReturnType<typeof live>>>;
 export const get = query({
   args: {
     q: v.optional(v.string()),
@@ -119,56 +160,110 @@ export const get = query({
       args.limit > 100
     )
       return badPage();
-    const publishers: PublisherCache = new Map();
-    const selected: Candidate[] = [];
-    let remaining: string[];
+    const owners: PublisherCache = new Map();
+    const known = new Map<RankedRef, Id<"packages">>();
+    const authorized = new Map<RankedRef, Live>();
+    let refs: RankedRef[];
     if (args.cursor !== undefined) {
-      const names = decodeRankedCursor(args.cursor, filters);
-      let index = 0;
-      while (index < names.length && selected.length < args.limit) {
-        const part = names.slice(index, index + Math.min(BATCH, args.limit - selected.length));
-        index += part.length;
-        const candidates = await Promise.all(
-          part.map(async (name) =>
-            eligible(
-              ctx,
-              await ctx.db
-                .query("packages")
-                .withIndex("by_name", (q) => q.eq("normalizedName", name))
-                .unique(),
-              filters,
-              publishers,
-            ),
-          ),
+      refs = decodeRankedCursor(args.cursor, filters);
+      // A deployed v1 cursor, or a mixed-rollout page, can still contain names.
+      // Never echo an unverified name in a new cursor, even if the client supplied it.
+      const legacy = refs.filter((ref): ref is string => typeof ref === "string");
+      for (let i = 0; i < legacy.length; i += BATCH) {
+        await Promise.all(
+          legacy.slice(i, i + BATCH).map(async (name) => {
+            const pkg = await ctx.db
+              .query("packages")
+              .withIndex("by_name", (q) => q.eq("normalizedName", name))
+              .unique();
+            const item = await live(ctx, pkg, filters, owners);
+            if (item) authorized.set(name, item);
+          }),
         );
-        for (const candidate of candidates) if (candidate) selected.push(candidate);
       }
-      remaining = names.slice(index);
+      refs = refs.filter((ref) => typeof ref === "number" || authorized.has(ref));
     } else {
-      // One family-bounded native B-tree read; unlike the general package search,
-      // these existing rows need no index bootstrap, backfill, or lexical rerun.
-      const rows = await ctx.db
-        .query("packages")
-        .withIndex("by_active_family_installs", (q) =>
-          q.eq("softDeletedAt", undefined).eq("family", "claw"),
-        )
-        .take(MAX_TEMPLATE_CANDIDATES + 1);
-      if (rows.length > MAX_TEMPLATE_CANDIDATES) return tooBroad();
-      const candidates: Candidate[] = [];
-      for (let i = 0; i < rows.length; i += BATCH) {
-        const batch = await Promise.all(
-          rows.slice(i, i + BATCH).map((pkg) => eligible(ctx, pkg, filters, publishers)),
-        );
-        for (const c of batch) if (c) candidates.push(c);
+      const ranked: { order: Rank; ref: RankedRef }[] = [];
+      // Only currently certified public rank rows have positive tickets. Chunk a native
+      // index by its unique monotone key, not by a ceiling on the entire Template family.
+      let after = 0;
+      while (true) {
+        const rows = await ctx.db
+          .query("packageSearchDigest")
+          .withIndex("by_template_rank_ticket", (q) => q.gt("templateRankTicket", after))
+          .take(INDEX_BATCH);
+        for (let i = 0; i < rows.length; i += BATCH) {
+          await Promise.all(
+            rows.slice(i, i + BATCH).map(async (row) => {
+              const ticket = row.templateRankTicket!;
+              const order = await rank(
+                ctx,
+                row,
+                filters,
+                owners,
+                row.templateFeaturedAt !== undefined,
+              );
+              if (order) {
+                ranked.push({ order, ref: ticket });
+                known.set(ticket, row.packageId);
+              }
+            }),
+          );
+        }
+        if (rows.length < INDEX_BATCH) break;
+        after = rows[rows.length - 1].templateRankTicket!;
       }
-      candidates.sort(
-        filters.category
-          ? (a, b) =>
-              b.pkg.stats.installs - a.pkg.stats.installs || a.pkg.name.localeCompare(b.pkg.name)
-          : compareRelevance,
+      // Mixed-version rollouts and imports without a digest remain complete. This range
+      // becomes empty after the optional bounded backfill; never infer publication from a version summary.
+      const gaps = ctx.db
+        .query("packages")
+        .withIndex("by_family_rank_coverage", (q) =>
+          q
+            .eq("family", "claw")
+            .eq("templateRankIndexed", undefined)
+            .eq("softDeletedAt", undefined),
+        );
+      for await (const pkg of gaps) {
+        const item = await live(ctx, pkg, filters, owners);
+        if (item) {
+          const ref = pkg.normalizedName;
+          ranked.push({ order: item.order, ref });
+          authorized.set(ref, item);
+        }
+      }
+      ranked.sort((a, b) => compare(a.order, b.order, filters.category));
+      refs = ranked.map((entry) => entry.ref);
+    }
+    const selected: Live[] = [];
+    let pos = 0;
+    while (pos < refs.length && selected.length < args.limit) {
+      const batch = refs.slice(pos, pos + Math.min(BATCH, args.limit - selected.length));
+      pos += batch.length;
+      const results = await Promise.all(
+        batch.map(async (ref) => {
+          const cached = authorized.get(ref);
+          if (cached) return cached;
+          let pkg: Doc<"packages"> | null;
+          if (typeof ref === "string")
+            pkg = await ctx.db
+              .query("packages")
+              .withIndex("by_name", (q) => q.eq("normalizedName", ref))
+              .unique();
+          else {
+            const id =
+              known.get(ref) ??
+              (
+                await ctx.db
+                  .query("packageSearchDigest")
+                  .withIndex("by_template_rank_ticket", (q) => q.eq("templateRankTicket", ref))
+                  .unique()
+              )?.packageId;
+            pkg = id ? await ctx.db.get(id) : null;
+          }
+          return live(ctx, pkg, filters, owners);
+        }),
       );
-      selected.push(...candidates.slice(0, args.limit));
-      remaining = candidates.slice(args.limit).map((c) => c.pkg.normalizedName);
+      for (const item of results) if (item) selected.push(item);
     }
     const items = [];
     for (let i = 0; i < selected.length; i += BATCH) {
@@ -184,6 +279,6 @@ export const get = query({
         )),
       );
     }
-    return { items, nextCursor: encodeRankedCursor(remaining, filters) };
+    return { items, nextCursor: encodeRankedCursor(refs.slice(pos), filters) };
   },
 });

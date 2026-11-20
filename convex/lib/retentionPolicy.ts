@@ -264,6 +264,7 @@ export const RETENTION_POLICIES = {
     retention: "Upload ticket TTL.",
   }),
   packageBadges: permanent("Curated package badges."),
+  templateRankSequence: permanent("Never reuse previously issued public discovery ticket numbers."),
   packageSearchDigest: derived("Search projection of package state.", "packages"),
   packageTopicSearchDigest: derived("Topic search projection of package state.", "packages"),
   packagePluginCategorySearchDigest: derived(

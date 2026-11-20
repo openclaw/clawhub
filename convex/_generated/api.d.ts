@@ -277,6 +277,7 @@ import type * as lib_templateCategoryClassification from "../lib/templateCategor
 import type * as lib_templateCategoryListHttpRead from "../lib/templateCategoryListHttpRead.js";
 import type * as lib_templateDetailView from "../lib/templateDetailView.js";
 import type * as lib_templatePackageHttpRead from "../lib/templatePackageHttpRead.js";
+import type * as lib_templateRankProjection from "../lib/templateRankProjection.js";
 import type * as lib_templateRankedCursor from "../lib/templateRankedCursor.js";
 import type * as lib_templateStorage from "../lib/templateStorage.js";
 import type * as lib_testSeed from "../lib/testSeed.js";
@@ -648,6 +649,7 @@ declare const fullApi: ApiFromModules<{
   "lib/templateCategoryListHttpRead": typeof lib_templateCategoryListHttpRead;
   "lib/templateDetailView": typeof lib_templateDetailView;
   "lib/templatePackageHttpRead": typeof lib_templatePackageHttpRead;
+  "lib/templateRankProjection": typeof lib_templateRankProjection;
   "lib/templateRankedCursor": typeof lib_templateRankedCursor;
   "lib/templateStorage": typeof lib_templateStorage;
   "lib/testSeed": typeof lib_testSeed;

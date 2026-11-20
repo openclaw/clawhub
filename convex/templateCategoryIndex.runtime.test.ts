@@ -3,6 +3,7 @@
 
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { convexTest } from "convex-test";
+import { deflateSync, inflateSync, strFromU8, strToU8 } from "fflate";
 import { describe, expect, it, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import schema from "./schema";
@@ -73,6 +74,58 @@ async function fixture() {
 }
 
 describe("ranked public Template pages", () => {
+  it("finds a rare published match beyond 500 unrelated legacy family rows", async () => {
+    const { t, publish } = await fixture();
+    const { packageId } = await publish("1.0.0", ["travel"], "needle");
+    await t.run(async (ctx) => {
+      const source = (await ctx.db.get(packageId))!;
+      const { _id, _creationTime, ...row } = source;
+      for (let i = 0; i < 501; i++) {
+        const name = "@template-maker/unrelated-" + i;
+        await ctx.db.insert("packages", {
+          ...row,
+          templateRankIndexed: undefined,
+          name,
+          normalizedName: name,
+          displayName: name,
+          latestReleaseId: undefined,
+        });
+      }
+    });
+    const response = await t.fetch("/api/v1/templates/catalog-page?q=needle");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      items: [{ name: "@template-maker/needle" }],
+      nextCursor: null,
+    });
+  });
+  it("does not carry a withdrawn name forward from a legacy frozen cursor", async () => {
+    const { t, publish } = await fixture();
+    await publish("1.0.0", ["travel"], "trip-first");
+    const hidden = await publish("1.0.0", ["travel"], "trip-hidden");
+    await t.run((ctx) => ctx.db.patch(hidden.releaseId, { publicationStatus: "pending" }));
+    const bytes = deflateSync(
+      strToU8(
+        JSON.stringify([
+          "trip",
+          "",
+          1,
+          ["@template-maker/trip-first", "@template-maker/trip-hidden"],
+        ]),
+      ),
+    );
+    const cursor =
+      "tr1." +
+      btoa(String.fromCharCode(...bytes))
+        .replaceAll("+", "-")
+        .replaceAll("/", "_")
+        .replaceAll("=", "");
+    const page = await t.query(api.templateCatalogPage.get, { q: "trip", limit: 1, cursor });
+    expect(page).toMatchObject({
+      items: [{ name: "@template-maker/trip-first" }],
+      nextCursor: null,
+    });
+  });
   it("finds a published legacy Template from the release pointer without a cached version summary", async () => {
     const { t, publish } = await fixture();
     const { packageId, releaseId } = await publish("1.0.0", ["travel"], "trip-legacy");
@@ -93,11 +146,18 @@ describe("ranked public Template pages", () => {
     const b = await publish("1.0.0", ["travel"], "trip-b");
     const c = await publish("1.0.0", ["travel"], "trip-c");
     const d = await publish("1.0.0", ["travel"], "trip-d");
-    const installs = (id: typeof a.packageId, n: number) =>
-      t.run(async (ctx) => {
-        const pkg = (await ctx.db.get(id))!;
-        await ctx.db.patch(id, { stats: { ...pkg.stats, installs: n } });
+    const installs = async (id: typeof a.packageId, n: number) => {
+      // Drive the actual metrics writer so popularity and its projection commit together.
+      await t.run(async (ctx) => {
+        for (let i = 0; i < n; i++)
+          await ctx.db.insert("packageStatEvents", {
+            packageId: id,
+            kind: "install",
+            occurredAt: Date.now(),
+          });
       });
+      await t.mutation(internal.packages.processPackageStatEventsInternal, { batchSize: n });
+    };
     await installs(d.packageId, 9);
     await installs(c.packageId, 8);
     const get = async (cursor?: string, q = "trip", category = "travel", limit = 1) => {
@@ -108,6 +168,13 @@ describe("ranked public Template pages", () => {
     const first = await get();
     expect(first.status).toBe(200);
     const page = await first.json();
+    // An off-page raw administrative change must never leak the name from a stale projection.
+    const packed = page.nextCursor.slice(4).replaceAll("-", "+").replaceAll("_", "/");
+    const state = JSON.parse(
+      strFromU8(inflateSync(Uint8Array.from(atob(packed), (ch) => ch.charCodeAt(0)))),
+    );
+    expect(state[3]).toHaveLength(3);
+    expect(state[3].every((ref: unknown) => typeof ref === "number")).toBe(true);
     expect(page.items.map((i: { name: string }) => i.name)).toEqual(["@template-maker/trip-d"]);
     expect(typeof page.nextCursor).toBe("string");
     expect(page.nextCursor.length).toBeLessThanOrEqual(4096);

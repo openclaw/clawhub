@@ -1,13 +1,13 @@
 import { ConvexError } from "convex/values";
 import { deflateSync, inflateSync, strFromU8, strToU8 } from "fflate";
 
-// The Gateway accepts 4096 characters; a compressed list of public canonical
-// names freezes order without server writes or a per-query result cache. It is
-// a continuation, NOT a credential. The reader must recheck every name.
-const PREFIX = "tr1.";
+// New projections contribute only ordinal tickets. Legacy names are permitted only after
+// a real package, publisher, and release read. Neither kind of reference is authority.
+const LEGACY = "tr1.";
+const CURRENT = "tr2.";
+export type RankedRef = string | number;
 const MAX_WIRE = 4096;
 const MAX_RAW = 65536;
-export const MAX_TEMPLATE_CANDIDATES = 500;
 export type RankedFilters = { q: string; category: string; limit: number };
 export function badPage(): never {
   throw new ConvexError({
@@ -27,18 +27,22 @@ function encodeBytes(bytes: Uint8Array) {
     .replaceAll("/", "_")
     .replace(/=+$/u, "");
 }
-export function encodeRankedCursor(names: string[], { q, category, limit }: RankedFilters) {
+export function encodeRankedCursor(names: RankedRef[], { q, category, limit }: RankedFilters) {
   if (!names.length) return null;
   const raw = strToU8(JSON.stringify([q, category, limit, names]));
   if (raw.length >= MAX_RAW) return tooBroad();
-  const token = PREFIX + encodeBytes(deflateSync(raw, { level: 1 }));
+  const token = CURRENT + encodeBytes(deflateSync(raw, { level: 1 }));
   if (token.length > MAX_WIRE) return tooBroad();
   return token;
 }
-export function decodeRankedCursor(raw: string, { q, category, limit }: RankedFilters): string[] {
-  if (!raw.startsWith(PREFIX) || raw.length > MAX_WIRE) return badPage();
+export function decodeRankedCursor(
+  raw: string,
+  { q, category, limit }: RankedFilters,
+): RankedRef[] {
+  const legacy = raw.startsWith(LEGACY);
+  if ((!legacy && !raw.startsWith(CURRENT)) || raw.length > MAX_WIRE) return badPage();
   try {
-    const wire = raw.slice(PREFIX.length);
+    const wire = raw.slice(CURRENT.length);
     if (!/^[A-Za-z0-9_-]+$/u.test(wire)) return badPage();
     const packed = Uint8Array.from(atob(wire.replaceAll("-", "+").replaceAll("_", "/")), (c) =>
       c.charCodeAt(0),
@@ -58,8 +62,11 @@ export function decodeRankedCursor(raw: string, { q, category, limit }: RankedFi
     if (
       !Array.isArray(names) ||
       !names.length ||
-      names.length > MAX_TEMPLATE_CANDIDATES ||
-      !names.every((n): n is string => typeof n === "string" && n.length > 0 && n.length <= 214) ||
+      !names.every(
+        (n): n is RankedRef =>
+          (typeof n === "string" && n.length > 0 && n.length <= 214) ||
+          (!legacy && typeof n === "number" && Number.isSafeInteger(n) && n > 0),
+      ) ||
       new Set(names).size !== names.length
     )
       return badPage();
