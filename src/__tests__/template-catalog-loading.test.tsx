@@ -85,17 +85,20 @@ it("keeps a word separator when the URL acknowledges the trimmed draft", async (
   expect((input as HTMLInputElement).value).toBe("daily ");
 });
 
-it("cancels an unsent draft when Back restores a different category with the same query", async () => {
-  vi.mocked(fetchTemplateCatalog).mockResolvedValue({ items: [], nextCursor: null });
-  const router = catalogRouter(["/templates?q=daily", "/templates?q=daily&category=productivity"]);
-  await act(async () => {
-    render(<RouterProvider router={router} />);
-  });
-  const input = await screen.findByRole("searchbox", { name: "Template search" });
-  fireEvent.change(input, { target: { value: "abandoned" } });
-  await act(async () => router.history.back());
-  await waitFor(() => expect((input as HTMLInputElement).value).toBe("daily"));
-  // The superseded debounce must not replace the restored history entry.
-  await act(async () => new Promise<void>((resolve) => setTimeout(resolve, 260)));
-  expect(router.state.location.search).toEqual({ q: "daily" });
-});
+it.each(["/templates?q=daily&category=productivity", "/templates?q=daily"])(
+  "cancels an unsent draft when Back leaves the history entry %s",
+  async (entry) => {
+    vi.mocked(fetchTemplateCatalog).mockResolvedValue({ items: [], nextCursor: null });
+    const router = catalogRouter(["/templates?q=daily", entry]);
+    await act(async () => {
+      render(<RouterProvider router={router} />);
+    });
+    const input = await screen.findByRole("searchbox", { name: "Template search" });
+    fireEvent.change(input, { target: { value: "abandoned" } });
+    await act(async () => router.history.back());
+    await waitFor(() => expect((input as HTMLInputElement).value).toBe("daily"));
+    // The superseded debounce must not replace the restored history entry.
+    await act(async () => new Promise<void>((resolve) => setTimeout(resolve, 260)));
+    expect(router.state.location.search).toEqual({ q: "daily" });
+  },
+);

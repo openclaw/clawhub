@@ -34,7 +34,11 @@ function TemplateCatalogLayout() {
   const navigate = Route.useNavigate();
   // Sync from the requested URL, not a matched route whose loader may finish after another keystroke.
   const requested = useLocation({
-    select: (location) => ({ href: location.href, q: parseQuery(location.search.q) }),
+    select: (location) => ({
+      index: location.state.__TSR_index,
+      href: location.href,
+      q: parseQuery(location.search.q),
+    }),
     structuralSharing: true,
   });
   const [query, setQuery] = useState(requested.q);
@@ -42,8 +46,8 @@ function TemplateCatalogLayout() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    // History can change the category without changing q. Cancel its superseded debounce,
-    // but preserve the raw draft (including word separators) when the URL acknowledges it.
+    // Back can restore even the same URL at a different history index. Cancel its superseded
+    // debounce, but keep word separators when the requested query acknowledges the raw draft.
     window.clearTimeout(timer.current);
     setQuery((draft) => (draft.trim() === requested.q ? draft : requested.q));
   }, [requested]);
