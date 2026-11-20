@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { Fragment, useEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
 import { getPluginCategoryBySlug, getSkillIconCategoryForSkill } from "../lib/categories";
 import { getCategoryIconComponent, UNRESOLVED_SKILL_CATEGORY_ICON } from "../lib/categoryIcons";
 import { MARKETPLACE_KIND_ICONS, type MarketplaceIconKind } from "../lib/marketplaceIcons";
@@ -114,25 +114,47 @@ export function MarketplaceIcon({
       aria-hidden="true"
     >
       {visibleImageUrl ? (
-        <img
-          ref={imageRef}
-          className="marketplace-icon-image"
-          src={visibleImageUrl}
-          alt=""
-          referrerPolicy="no-referrer"
-          loading="lazy"
-          decoding="async"
-          onError={() =>
-            setFailedImageUrls((failed) =>
-              failed.includes(visibleImageUrl) ? failed : [...failed, visibleImageUrl],
-            )
-          }
-        />
+        <Fragment key={kind === "template" ? visibleImageUrl : undefined}>
+          {kind === "template" ? <TemplateArtworkPlaceholder imageRef={imageRef} /> : null}
+          <img
+            ref={imageRef}
+            className="marketplace-icon-image"
+            src={visibleImageUrl}
+            alt=""
+            referrerPolicy="no-referrer"
+            loading="lazy"
+            decoding="async"
+            onError={() =>
+              setFailedImageUrls((failed) =>
+                failed.includes(visibleImageUrl) ? failed : [...failed, visibleImageUrl],
+              )
+            }
+          />
+        </Fragment>
       ) : (
         <Icon className="marketplace-icon-glyph" strokeWidth={1.8} />
       )}
     </span>
   );
+}
+
+// Keyed with the image so a new source starts pending even if the previous one loaded.
+function TemplateArtworkPlaceholder({
+  imageRef,
+}: {
+  imageRef: RefObject<HTMLImageElement | null>;
+}) {
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    const image = imageRef.current;
+    if (!image) return undefined;
+    const ready = () => setLoaded(true);
+    image.addEventListener("load", ready);
+    // A cached or server-rendered image may have fired its load event before hydration.
+    if (image.complete && image.naturalWidth > 0) ready();
+    return () => image.removeEventListener("load", ready);
+  }, [imageRef]);
+  return loaded ? null : <span className="template-artwork-skeleton" />;
 }
 
 function isHostedSkillPresentationIcon(value: string | null | undefined) {
