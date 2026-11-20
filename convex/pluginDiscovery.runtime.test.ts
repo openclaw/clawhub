@@ -90,6 +90,9 @@ it("serves a staff-featured channel on the public Featured list and overview, bu
   registerRateLimiter(t, "rateLimiterV2");
   const moderator = await t.run((ctx) => ctx.db.insert("users", { role: "moderator" }));
   const packageId = ids.find(({ name }) => name === agentMail)!.packageId;
+  const ordinarySearch = () => t.query(api.packages.searchPublic, { query: "agentmail" });
+  const before = await ordinarySearch();
+  expect(before.map((entry) => entry.package.name)).toEqual([agentMail]);
   await t.withIdentity({ subject: moderator }).mutation(api.packages.setBatch, {
     packageId,
     batch: "highlighted",
@@ -104,6 +107,8 @@ it("serves a staff-featured channel on the public Featured list and overview, bu
   );
   expect(channel).toMatchObject({ featured: true, featuredRank: 0 });
   expect(channel.trending).not.toBe(true);
+  // A manual badge must not give the channel extra recall or rank in ordinary search.
+  expect(await ordinarySearch()).toEqual(before);
 });
 
 it("keeps setup purposes out of automatic discovery and serves only allowed explicit badges", async () => {

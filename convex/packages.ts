@@ -2057,6 +2057,7 @@ async function fetchHighlightedPackageEntries(
     topic?: string;
     viewerUserId?: Id<"users">;
   },
+  selection: "explicit-featured" | "automatic",
 ) {
   const viewerUserId = args.viewerUserId;
   const membershipCache = new Map<string, Promise<boolean>>();
@@ -2073,12 +2074,9 @@ async function fetchHighlightedPackageEntries(
       .withIndex("by_package", (q) => q.eq("packageId", badge.packageId))
       .unique();
     if (!digest || digest.softDeletedAt) continue;
-    const selection =
-      digest.family === "code-plugin" || digest.family === "bundle-plugin"
-        ? "explicit-featured"
-        : "automatic";
+    const isPlugin = digest.family === "code-plugin" || digest.family === "bundle-plugin";
     if (
-      getPluginDiscoveryExclusion(digest.categories, selection) ||
+      getPluginDiscoveryExclusion(digest.categories, isPlugin ? selection : "automatic") ||
       !isEnglishPluginListing(digest)
     )
       continue;
@@ -2107,7 +2105,7 @@ async function fetchHighlightedPackagePage(
   },
 ) {
   // Badge recency owns public order, including manual additions after a published lineup.
-  const entries = await fetchHighlightedPackageEntries(ctx, args);
+  const entries = await fetchHighlightedPackageEntries(ctx, args, "explicit-featured");
   const items = await Promise.all(
     entries.map(
       async ({ digest, featuredAt }) => await toPublicPackageListItem(ctx, digest, featuredAt),
@@ -5022,11 +5020,11 @@ async function searchPackagesImpl(
     return item;
   };
   if (args.highlightedOnly) {
-    const highlightedEntries = await fetchHighlightedPackageEntries(ctx, {
-      ...args,
-      category,
-      topic,
-    });
+    const highlightedEntries = await fetchHighlightedPackageEntries(
+      ctx,
+      { ...args, category, topic },
+      "explicit-featured",
+    );
     const entries = highlightedEntries
       .filter(({ digest }) => digestMatchesFilters(digest, { ...args, category, topic }))
       .filter(({ digest }) =>
@@ -5090,7 +5088,8 @@ async function searchPackagesImpl(
   const shouldRecallOfficial =
     args.isOfficial === undefined && args.channel !== "community" && args.channel !== "private";
   const highlighted =
-    batchReads?.highlighted ?? fetchHighlightedPackageEntries(ctx, { ...args, category, topic });
+    batchReads?.highlighted ??
+    fetchHighlightedPackageEntries(ctx, { ...args, category, topic }, "automatic");
   const official =
     batchReads?.official ??
     (shouldRecallOfficial
