@@ -3,8 +3,11 @@ import {
   type TemplateDependencyInventory,
   type TemplateManifest,
 } from "clawhub-schema";
-import { TEMPLATE_CATEGORY_DEFINITIONS } from "clawhub-schema/catalogMetadata";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  getTemplateCategoryLabel,
+  resolveDeclaredTemplateCategory,
+} from "clawhub-schema/catalogMetadata";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   fetchPackageFile,
   getPackageArtifactDownloadPath,
@@ -25,6 +28,7 @@ import {
 import { useMediaQuery } from "../lib/useMediaQuery";
 import { DetailSecuritySummary, DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
 import { MarkdownPreview } from "./MarkdownPreview";
+import { PackageContentTabs } from "./PackageContentTabs";
 import { SidebarMetadata } from "./SidebarMetadata";
 import { formatOpenClawPrompt } from "./skillDetailUtils";
 import { InstallCommandCard } from "./SkillInstallSurface";
@@ -32,8 +36,6 @@ import type { LlmAnalysis } from "./SkillSecurityScanResults";
 import { UserBadge } from "./UserBadge";
 import "./template-detail.css";
 
-const tabs = ["CLAW.md", "Skills", "Automations", "Plugins", "Workspace files"] as const;
-type TemplateTab = (typeof tabs)[number];
 type Package = NonNullable<PackageDetailResponse["package"]>;
 
 export function TemplateDetailPage({
@@ -41,18 +43,17 @@ export function TemplateDetailPage({
   contents,
   fallbackOwner,
   llmAnalysis,
+  pendingNotice,
 }: {
   detail: PackageDetailResponse;
   contents: string | null;
   fallbackOwner: string;
   llmAnalysis?: LlmAnalysis | null;
+  pendingNotice?: ReactNode;
 }) {
   const pkg = detail.package!;
   const isMobileDetailLayout = useMediaQuery("(max-width: 900px)");
   const { markdown, manifest } = useMemo(() => parseTemplateDocument(contents), [contents]);
-  const [activeTab, setActiveTab] = useState<TemplateTab>("CLAW.md");
-  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const id = useId();
   const summary = pkg.templateManifestSummary;
   const inventory =
     pkg.templateInventory ?? (manifest ? templateDependencyInventory(manifest) : null);
@@ -60,9 +61,11 @@ export function TemplateDetailPage({
     () => (manifest ? templateWorkspaceContents(manifest) : null),
     [manifest],
   );
-  const categories = (pkg.categories ?? manifest?.categories ?? []).map(
-    (slug) =>
-      TEMPLATE_CATEGORY_DEFINITIONS.find((category) => category.slug === slug)?.label ?? slug,
+  // Before the registry assigns a category, show only what CLAW.md can assign: its first
+  // declared slug, and only when that is in the current taxonomy.
+  const declaredCategory = resolveDeclaredTemplateCategory(manifest?.categories);
+  const categories = (pkg.categories ?? (declaredCategory ? [declaredCategory] : [])).map(
+    getTemplateCategoryLabel,
   );
   const description = pkg.summary ?? summary?.agent.description ?? manifest?.agent.description;
   const scanStatus = pkg.scanStatus ?? "pending";
@@ -134,98 +137,55 @@ export function TemplateDetailPage({
         </header>
         <div className="template-detail-layout">
           <div className="template-detail-main">
+            {pendingNotice}
             {isMobileDetailLayout ? installSurface : null}
-            <section className="template-detail-contents" aria-label="Template contents">
-              <div className="template-detail-tabs" role="tablist" aria-label="Template contents">
-                {tabs.map((tab, index) => (
-                  <button
-                    key={tab}
-                    type="button"
-                    role="tab"
-                    id={id + "-tab-" + index}
-                    aria-controls={id + "-panel-" + index}
-                    aria-selected={activeTab === tab}
-                    tabIndex={activeTab === tab ? 0 : -1}
-                    ref={(node) => {
-                      tabRefs.current[index] = node;
-                    }}
-                    onClick={() => setActiveTab(tab)}
-                    onKeyDown={(event) => {
-                      let next = index;
-                      if (event.key === "ArrowRight") next = (index + 1) % tabs.length;
-                      else if (event.key === "ArrowLeft")
-                        next = (index + tabs.length - 1) % tabs.length;
-                      else if (event.key === "Home") next = 0;
-                      else if (event.key === "End") next = tabs.length - 1;
-                      else return;
-                      event.preventDefault();
-                      setActiveTab(tabs[next]);
-                      tabRefs.current[next]?.focus();
-                    }}
-                  >
-                    {tab}
-                  </button>
-                ))}
-              </div>
-              {tabs.map((tab, index) => (
-                <div
-                  key={tab}
-                  role="tabpanel"
-                  id={id + "-panel-" + index}
-                  aria-labelledby={id + "-tab-" + index}
-                  tabIndex={0}
-                  hidden={activeTab !== tab}
-                  className="template-detail-panel"
-                >
-                  {activeTab === tab ? (
-                    tab === "CLAW.md" ? (
-                      <>
-                        {markdown ? (
-                          <MarkdownPreview className="template-detail-markdown">
-                            {markdown}
-                          </MarkdownPreview>
-                        ) : (
-                          <ContentMessage>
-                            Template instructions are unavailable for this release.
-                          </ContentMessage>
-                        )}
-                        {!supportedManifest && contents !== null ? (
-                          <details className="template-detail-original">
-                            <summary>View original CLAW.md</summary>
-                            <pre>
-                              <code>{contents}</code>
-                            </pre>
-                          </details>
-                        ) : null}
-                      </>
-                    ) : !supportedManifest || !manifest ? (
-                      <ContentMessage>
-                        The manifest is unavailable in the current Template format. See the original
-                        CLAW.md and migration guidance before asking the publisher for a new
-                        version.
-                      </ContentMessage>
-                    ) : tab === "Skills" || tab === "Plugins" ? (
-                      <TemplatePackages
-                        inventory={inventory ?? []}
-                        kind={tab === "Skills" ? "skill" : "plugin"}
-                        workspace={
-                          (tab === "Skills"
-                            ? workspaceContents?.skills
-                            : workspaceContents?.plugins) ?? []
-                        }
-                      />
-                    ) : tab === "Automations" ? (
-                      <TemplateAutomations
-                        manifest={manifest}
-                        heartbeat={workspaceContents?.heartbeat ?? null}
-                      />
+            <PackageContentTabs
+              routeKind="template"
+              renderPanel={(tab) =>
+                tab === "CLAW.md" ? (
+                  <>
+                    {markdown ? (
+                      <MarkdownPreview className="template-detail-markdown">
+                        {markdown}
+                      </MarkdownPreview>
                     ) : (
-                      <TemplateWorkspace manifest={manifest} pkg={pkg} markdown={markdown} />
-                    )
-                  ) : null}
-                </div>
-              ))}
-            </section>
+                      <ContentMessage>
+                        Template instructions are unavailable for this release.
+                      </ContentMessage>
+                    )}
+                    {!supportedManifest && contents !== null ? (
+                      <details className="template-detail-original">
+                        <summary>View original CLAW.md</summary>
+                        <pre>
+                          <code>{contents}</code>
+                        </pre>
+                      </details>
+                    ) : null}
+                  </>
+                ) : !supportedManifest || !manifest ? (
+                  <ContentMessage>
+                    The manifest is unavailable in the current Template format. See the original
+                    CLAW.md and migration guidance before asking the publisher for a new version.
+                  </ContentMessage>
+                ) : tab === "Skills" || tab === "Plugins" ? (
+                  <TemplatePackages
+                    inventory={inventory ?? []}
+                    kind={tab === "Skills" ? "skill" : "plugin"}
+                    workspace={
+                      (tab === "Skills" ? workspaceContents?.skills : workspaceContents?.plugins) ??
+                      []
+                    }
+                  />
+                ) : tab === "Automations" ? (
+                  <TemplateAutomations
+                    manifest={manifest}
+                    heartbeat={workspaceContents?.heartbeat ?? null}
+                  />
+                ) : (
+                  <TemplateWorkspace manifest={manifest} pkg={pkg} markdown={markdown} />
+                )
+              }
+            />
           </div>
           <aside className="template-detail-metadata" aria-label="Template metadata">
             {!isMobileDetailLayout ? installSurface : null}

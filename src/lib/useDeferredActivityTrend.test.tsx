@@ -1,5 +1,6 @@
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { deferred } from "../__tests__/helpers/deferred";
 import { getPackageActivityTrendForName, getSkillActivityTrendForSlug } from "./activityTrend";
 import {
   useDeferredPackageActivityTrend,
@@ -18,15 +19,6 @@ const trend = {
 const initial = { name: "weather", endDay: 20_000, ownerHandle: "publisher" };
 type Params = { name: string | null; endDay: number; ownerHandle?: string };
 
-function deferred() {
-  let resolve!: (value: unknown) => void;
-  let reject!: (reason: Error) => void;
-  const promise = new Promise<unknown>((yes, no) => {
-    resolve = yes;
-    reject = no;
-  });
-  return { promise, resolve, reject };
-}
 async function advance(ms: number) {
   await act(async () => {
     await vi.advanceTimersByTimeAsync(ms);
@@ -95,8 +87,8 @@ describe.each([
   it.each(["resolve", "reject"] as const)(
     "ignores a stale %s after the next response",
     async (settle) => {
-      const stale = deferred();
-      const current = deferred();
+      const stale = deferred<unknown>();
+      const current = deferred<unknown>();
       query.mockReturnValueOnce(stale.promise).mockReturnValueOnce(current.promise);
       const { result, rerender } = renderHook(useTrend, { initialProps: initial });
       await advance(750);

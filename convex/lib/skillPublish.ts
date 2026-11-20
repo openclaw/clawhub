@@ -909,7 +909,7 @@ async function fetchPreviewText(
   storageId: Id<"_storage">,
 ) {
   const blob = await ctx.storage.get(storageId);
-  if (!blob) throw new Error("File missing in storage");
+  if (!blob) throw new ConvexError("File missing in storage");
   if (blob.size > MAX_ANALYZED_FILE_BYTES) return null;
   const bytes = new Uint8Array(await blob.arrayBuffer());
   return decodeUtf8Text(bytes);

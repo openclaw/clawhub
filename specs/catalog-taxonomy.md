@@ -3,6 +3,8 @@
 ## Categories
 
 - Skills, plugins, and Templates use separate controlled slug registries from `clawhub-schema`.
+- The Template category set, its one-category rule, and how removed Template slugs are still
+  read are specified in [`template-categories.md`](./template-categories.md).
 - Template package categories remain authoritative through search-digest construction. The shared
   package digest preserves their assigned Template slugs (or Other for an unassigned historical
   package); only code and bundle plugins use plugin-category normalization and plugin category

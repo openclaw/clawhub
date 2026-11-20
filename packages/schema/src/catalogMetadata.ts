@@ -22,18 +22,34 @@ export const RESERVED_CATALOG_TOPIC_SLUGS = [
 ] as const;
 const CATALOG_TOPIC_FORMAT_CONTROL_RE = /\p{Cf}/u;
 
+// Display order. Each Template has exactly one of these, or the internal "other" bucket.
+// The descriptions are the Template classifier's whole prompt for telling the ten apart.
 export const TEMPLATE_CATEGORY_DEFINITIONS = [
   {
-    slug: "personal",
-    label: "Personal",
-    icon: "user",
-    description: "Daily life, household, and personal organization.",
+    slug: "engineering",
+    label: "Engineering",
+    icon: "code-xml",
+    description: "Building software: code, reviews, repositories, releases, and debugging.",
   },
   {
-    slug: "health",
-    label: "Health",
-    icon: "heart-pulse",
-    description: "Wellness, fitness, care, and health-related planning.",
+    slug: "operations",
+    label: "Operations",
+    icon: "settings-2",
+    description:
+      "Keeping systems, services, and business processes running: monitoring, upkeep, and handoffs.",
+  },
+  {
+    slug: "household",
+    label: "Household",
+    icon: "house",
+    description: "Home, family, pets, meals, and household logistics.",
+  },
+  {
+    slug: "entertainment",
+    label: "Entertainment",
+    icon: "popcorn",
+    description:
+      "Games, music, hobbies, and learning for fun, including tutoring and language practice.",
   },
   {
     slug: "travel",
@@ -45,7 +61,7 @@ export const TEMPLATE_CATEGORY_DEFINITIONS = [
     slug: "productivity",
     label: "Productivity",
     icon: "list-todo",
-    description: "Tasks, notes, focus, and individual work planning.",
+    description: "One person's tasks, notes, focus, and planning, including a personal job search.",
   },
   {
     slug: "research",
@@ -54,46 +70,22 @@ export const TEMPLATE_CATEGORY_DEFINITIONS = [
     description: "Investigating sources and synthesizing evidence or analysis.",
   },
   {
-    slug: "engineering",
-    label: "Engineering",
-    icon: "code-xml",
-    description: "Software development, debugging, and technical systems.",
-  },
-  {
-    slug: "governance",
-    label: "Governance",
-    icon: "shield-check",
-    description: "Policy, compliance, risk, and oversight.",
-  },
-  {
-    slug: "operations",
-    label: "Operations",
-    icon: "settings-2",
-    description: "Running business processes, services, and teams.",
-  },
-  {
-    slug: "finance",
-    label: "Finance",
-    icon: "wallet-cards",
-    description: "Budgets, accounting, investments, and financial decisions.",
+    slug: "health",
+    label: "Health",
+    icon: "heart-pulse",
+    description: "Wellness, fitness, nutrition tracking, care, and health-related planning.",
   },
   {
     slug: "sales",
     label: "Sales",
     icon: "handshake",
-    description: "Customer relationships, outreach, and commercial workflows.",
+    description: "Customer relationships, outreach, marketing, and commercial workflows.",
   },
   {
     slug: "product",
     label: "Product",
     icon: "lightbulb",
-    description: "Product discovery, strategy, planning, and delivery.",
-  },
-  {
-    slug: "people",
-    label: "People",
-    icon: "users",
-    description: "Recruiting, hiring, employee support, and team development.",
+    description: "Product discovery, strategy, roadmap planning, and delivery.",
   },
 ] as const;
 
@@ -102,8 +94,52 @@ const TEMPLATE_CATEGORY_SLUGS = new Set<string>(
   TEMPLATE_CATEGORY_DEFINITIONS.map(({ slug }) => slug),
 );
 
+/** A category a Template may declare or be classified into. Excludes "other" and removed slugs. */
 export function isTemplateCategorySlug(value: string): value is TemplateCategorySlug {
   return TEMPLATE_CATEGORY_SLUGS.has(value);
+}
+
+// Removed from the taxonomy on 2026-11-18. Listings that were not rewritten then, including
+// every first-party Template, still store these, and released OpenClaw clients still request
+// them. Readers therefore keep accepting them as filters. They are not valid declarations,
+// classifier choices, overview sections, or chips.
+export const LEGACY_TEMPLATE_CATEGORY_DEFINITIONS = [
+  { slug: "personal", label: "Personal" },
+  { slug: "governance", label: "Governance" },
+  { slug: "finance", label: "Finance" },
+  { slug: "people", label: "People" },
+] as const;
+const TEMPLATE_CATEGORY_FILTER_SLUGS = new Set<string>([
+  ...TEMPLATE_CATEGORY_SLUGS,
+  INTERNAL_UNCATEGORIZED_CATEGORY,
+  ...LEGACY_TEMPLATE_CATEGORY_DEFINITIONS.map(({ slug }) => slug),
+]);
+const TEMPLATE_CATEGORY_LABELS = new Map<string, string>(
+  [...TEMPLATE_CATEGORY_DEFINITIONS, ...LEGACY_TEMPLATE_CATEGORY_DEFINITIONS].map(
+    ({ slug, label }) => [slug, label],
+  ),
+);
+
+/** A value the Template list and search endpoints accept as `category`. */
+export function isTemplateCategoryFilterSlug(value: string): boolean {
+  return TEMPLATE_CATEGORY_FILTER_SLUGS.has(value);
+}
+
+/** Display name for a stored Template category, including one stored before its removal. */
+export function getTemplateCategoryLabel(slug: string): string {
+  return TEMPLATE_CATEGORY_LABELS.get(slug) ?? slug;
+}
+
+/**
+ * The one category a `CLAW.md` assigns: its first declared slug, when that is in the current
+ * taxonomy. Later entries are ignored and never stand in for an unusable first one, so the
+ * caller classifies the Template instead.
+ */
+export function resolveDeclaredTemplateCategory(
+  declared: readonly string[] | null | undefined,
+): TemplateCategorySlug | undefined {
+  const first = declared?.[0];
+  return first !== undefined && isTemplateCategorySlug(first) ? first : undefined;
 }
 
 export const PLUGIN_CATEGORY_DEFINITIONS = [

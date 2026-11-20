@@ -66,7 +66,7 @@ agent:
   id: github-triage
   name: GitHub Triage
   description: Reviews incoming issues.
-categories: [engineering, productivity]
+categories: [engineering]
 workspace:
   files:
     - source: workspace/reference.md
@@ -87,14 +87,33 @@ Declare scheduled work under `automations`. Set `enabled: false` to create a pau
 job for onboarding; omission preserves enabled behavior. The retired `cronJobs` key
 is rejected with migration guidance. Existing archives and digests are preserved.
 
-`categories` is optional and accepts one to three distinct lowercase slugs.
-ClawHub accepts these categories for new releases: `personal`, `health`,
-`travel`, `productivity`, `research`, `engineering`, `governance`, `operations`,
-`finance`, `sales`, `product`, and `people`. Declared categories take precedence;
-ClawHub rejects unrecognized slugs. When omitted, ClawHub attempts to classify
-the Template from its manifest and documentation and uses `Other` if classification
-is unavailable. To correct an inferred category, add `categories` to `CLAW.md`
-and publish a new release.
+ClawHub lists each Template under one category. `categories` is optional; when
+present, ClawHub uses its first slug and ignores the rest. The field still
+accepts one to three distinct lowercase slugs, which is the limit OpenClaw
+enforces when it adds a Template, so existing manifests keep working. New
+manifests should declare one.
+
+| Slug            | Covers                                                                 |
+| --------------- | ---------------------------------------------------------------------- |
+| `engineering`   | Building software: code, reviews, repositories, releases, debugging    |
+| `operations`    | Keeping systems, services, and business processes running              |
+| `household`     | Home, family, pets, meals, and household logistics                     |
+| `entertainment` | Games, music, hobbies, and learning for fun, such as language practice |
+| `travel`        | Trips, itineraries, destinations, and travel logistics                 |
+| `productivity`  | One person's tasks, notes, focus, and planning, such as a job search   |
+| `research`      | Investigating sources and synthesizing evidence or analysis            |
+| `health`        | Wellness, fitness, nutrition tracking, and care                        |
+| `sales`         | Customer relationships, outreach, marketing, and commercial workflows  |
+| `product`       | Product discovery, strategy, roadmap planning, and delivery            |
+
+A category never fails a publish. If `categories` is omitted, or its first slug
+is not in this table, ClawHub classifies the Template from its manifest and
+documentation, and uses `Other` if classification is unavailable. ClawHub does
+not fall back to a later slug in the list. This includes `personal`,
+`governance`, `finance`, and `people`, which ClawHub removed on 2026-11-18: a
+manifest that still leads with one of them publishes and is classified. To
+change a Template's category, put the slug you want first in `categories` and
+publish a new release.
 
 Template packages use `openclaw.template` pointing to a safe package-relative
 `CLAW.md`. The retired `openclaw.claw` selector and JSON package manifests are
@@ -118,6 +137,12 @@ Keep native agent settings directly under `agent` in the same `CLAW.md` frontmat
 Supported groups are `groupChat`, `sandbox`, `tools`, `memory`, `heartbeat`, and
 `humanDelay`, alongside identity and purpose. `tools.profile` remains a native tool
 policy selection; bounded tool-grant and memory-consent checks still apply.
+
+`agent.model` may name one preferred model as an exact `provider/model` reference,
+such as `anthropic/claude-sonnet-4-5`. It is a preference, not a requirement:
+OpenClaw uses it when the Gateway adding the Template already has that model
+available and permitted, and otherwise keeps the Gateway's default model. A
+Template does not install a provider or supply credentials for it.
 
 ```yaml
 schemaVersion: 1
@@ -219,6 +244,19 @@ retains the exact artifact plus a non-sensitive summary and normalized dependenc
 inventory for later search and detail surfaces; downloads return those same bytes and digest, and ClawHub does
 not duplicate the full manifest into Convex storage.
 
+### Publication emails
+
+If your ClawHub account has an email address, ClawHub notifies you when a
+Template version becomes public. The receipt identifies the package and version
+and links to the Template on ClawHub.
+
+A security block is different from a scanner error. If a secret or a malicious
+verdict blocks an upload, the email explains why that version was not published.
+If a scanner cannot finish, the first two failures are silent; after the third
+consecutive failure, the notice explains that the check failed, not that the
+Template was rejected. Rescanning a version that is already public does not send
+another publication receipt. Security notices about quarantine are separate.
+
 ## Discover published Templates
 
 ClawHub exposes Templates through the existing package API:
@@ -245,8 +283,12 @@ and are not part of `templateInventory` or the summary counts.
 Projected bundled display names use the same 128-character bound as agent names.
 The complete normalized dependency inventory is limited to 256 KiB for release
 storage; this does not change the full native identity retained in the artifact.
+Each result's `categories` is an array. A Template published since 2026-11-18
+has exactly one entry; some older `@openclaw` Templates still list several.
 Use `category=other` for Templates that could not be classified. Category filters
 require `family=template`; unrecognized categories return a validation error.
+The removed slugs `personal`, `governance`, `finance`, and `people` remain valid
+filters and return the Templates that still store them.
 
 Full manifests remain in exact artifacts and are never projected through public
 release responses.

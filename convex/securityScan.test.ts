@@ -2214,6 +2214,139 @@ describe("securityScan", () => {
     ).rejects.toThrow("Forbidden");
   });
 
+  function failedPublicationDocs(clawscanSummary: string, attemptStatus = "failed") {
+    return {
+      "skills:held": {
+        _id: "skills:held",
+        slug: "held-skill",
+        displayName: "Held Skill",
+        ownerUserId: "users:owner",
+      },
+      "skillVersions:held": {
+        _id: "skillVersions:held",
+        skillId: "skills:held",
+        version: "1.0.0",
+        publicationStatus: "pending",
+        publishAttemptId: "publishAttempts:held",
+        fingerprint: "fingerprint-held",
+        files: [{ path: "SKILL.md" }],
+        createdAt: 1_700_000_000_000,
+      },
+      "publishAttempts:held": {
+        _id: "publishAttempts:held",
+        kind: "skill",
+        status: attemptStatus,
+        skillId: "skills:held",
+        skillVersionId: "skillVersions:held",
+        version: "1.0.0",
+        artifactFingerprint: "fingerprint-held",
+        checkClaimLastError: "runner /home/runner/work/_temp/clawscan-bin/clawscan exited 1",
+        checks: {
+          trufflehog: { status: "clean" },
+          clawscan: { status: "failed", summary: clawscanSummary },
+        },
+        updatedAt: 1_700_000_200_000,
+      },
+    };
+  }
+
+  it("reports failed publication checks to the owner when no scanner verdict was stored", async () => {
+    const ctx = makeStoredScanReportCtx({
+      actor: { _id: "users:owner", role: "user" },
+      docs: failedPublicationDocs(
+        "ClawScan failed before returning a verdict: judge not started: scanner skillspector failed",
+      ),
+    });
+
+    const report = await getStoredScanReportForUserInternalHandler(ctx, {
+      actorUserId: "users:owner",
+      kind: "skill",
+      name: "held-skill",
+      version: "1.0.0",
+    });
+
+    expect(report).toMatchObject({
+      ok: true,
+      status: "failed",
+      writtenBack: false,
+      artifact: { slug: "held-skill", version: "1.0.0", fileCount: 1 },
+      report: { aig: null, clawscan: null, endor: null, skillspector: null },
+      publication: {
+        stage: "checks_failed",
+        retrying: false,
+        checks: { trufflehog: "clean", clawscan: "failed" },
+        guidance: "scanner_incomplete",
+      },
+      updatedAt: 1_700_000_200_000,
+    });
+    expect(JSON.stringify(report)).not.toContain("skillspector failed");
+    expect(JSON.stringify(report)).not.toContain("/home/runner");
+    expect(JSON.stringify(report)).not.toContain("publishAttempts:held");
+  });
+
+  it("tells the owner to remove Python bytecode when that stopped the scan", async () => {
+    const ctx = makeStoredScanReportCtx({
+      actor: { _id: "users:owner", role: "user" },
+      docs: failedPublicationDocs(
+        "A.I.G 0.2.1 cannot safely inspect packaged Python bytecode; remove .pyc, .pyo, and .pyd files before publishing (CVE-2026-84809).",
+        "pending_checks",
+      ),
+    });
+
+    const report = await getStoredScanReportForUserInternalHandler(ctx, {
+      actorUserId: "users:owner",
+      kind: "skill",
+      name: "held-skill",
+      version: "1.0.0",
+    });
+
+    expect(report).toMatchObject({
+      status: "failed",
+      publication: { stage: "checks_failed", retrying: true, guidance: "remove_python_bytecode" },
+    });
+  });
+
+  it("denies failed publication reports to non-owners", async () => {
+    const ctx = makeStoredScanReportCtx({
+      actor: { _id: "users:intruder", role: "user" },
+      docs: failedPublicationDocs("ClawScan failed before returning a verdict"),
+    });
+
+    await expect(
+      getStoredScanReportForUserInternalHandler(ctx, {
+        actorUserId: "users:intruder",
+        kind: "skill",
+        name: "held-skill",
+        version: "1.0.0",
+      }),
+    ).rejects.toThrow("Forbidden");
+  });
+
+  it("still reports missing scan results when no publication check failed", async () => {
+    const docs = failedPublicationDocs("unused");
+    const ctx = makeStoredScanReportCtx({
+      actor: { _id: "users:owner", role: "user" },
+      docs: {
+        ...docs,
+        "publishAttempts:held": {
+          ...docs["publishAttempts:held"],
+          status: "pending_checks",
+          checkClaimLastError: undefined,
+          checks: { trufflehog: { status: "pending" }, clawscan: { status: "pending" } },
+        },
+      },
+    });
+
+    await expect(
+      getStoredScanReportForUserInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        kind: "skill",
+        name: "held-skill",
+        version: "1.0.0",
+      }),
+    ).rejects.toThrow("Scan results not found");
+  });
+
   it("returns stored scan reports for hidden plugin releases to platform moderators", async () => {
     const ctx = makeStoredScanReportCtx({
       actor: { _id: "users:moderator", role: "moderator" },
@@ -3324,42 +3457,57 @@ describe("securityScan", () => {
     expect(getUrl).toHaveBeenCalledWith("storage:skill");
   });
 
-  it("claims several lightweight leases in one mutation without hydrating signed URLs", async () => {
+  it("replans a contended claim instead of reporting a short queue", async () => {
     vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
-    const leases = Array.from({ length: 4 }, (_, index) => ({
+    const lease = (id: string) => ({
       ...claimedJob,
-      _id: `securityScanJobs:${index}`,
-      leaseToken: `lease-${index}`,
-    }));
-    const runMutation = vi.fn(async () => leases);
-    const runQuery = vi.fn();
+      _id: `securityScanJobs:${id}`,
+      leaseToken: id,
+    });
+    const plan = (ids: string[]) => ({
+      candidates: ids.map((id) => ({ jobId: `securityScanJobs:${id}`, tier: 0 })),
+      requiresLegacyClaim: false,
+    });
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(plan(["a", "b"]))
+      .mockResolvedValueOnce(plan(["c"]));
+    // Another worker won "b" between planning and admission.
+    const runMutation = vi
+      .fn()
+      .mockResolvedValueOnce({ jobs: [lease("a")], staleCount: 1 })
+      .mockResolvedValueOnce({ jobs: [lease("c")], staleCount: 0 });
     const getUrl = vi.fn();
 
     const result = await claimCodexScanJobLeasesHandler(
-      {
-        runMutation,
-        runQuery,
-        storage: { getUrl, generateUploadUrl: async () => "https://storage.example/report-upload" },
-      },
-      {
-        token: "worker-secret",
-        workerId: "worker-1",
-        lane: "shared",
-        limit: 4,
-      },
+      { runMutation, runQuery, storage: { getUrl } },
+      { token: "worker-secret", workerId: "worker-1", lane: "shared", limit: 2 },
     );
 
-    expect(runMutation).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        workerId: "worker-1",
-        lane: "shared",
-        limit: 4,
-      }),
-    );
-    expect(result).toEqual(leases);
-    expect(runQuery).not.toHaveBeenCalled();
+    expect(result).toEqual([lease("a"), lease("c")]);
+    expect(runQuery.mock.calls.map(([, args]) => args.limit)).toEqual([2, 1]);
+    expect(runMutation.mock.calls.map(([, args]) => args.limit)).toEqual([2, 1]);
     expect(getUrl).not.toHaveBeenCalled();
+  });
+
+  it("returns committed leases when a later claim round fails", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
+    const committed = { ...claimedJob, _id: "securityScanJobs:a", leaseToken: "a" };
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({
+        candidates: [{ jobId: "securityScanJobs:a", tier: 0 }],
+        requiresLegacyClaim: false,
+      })
+      .mockRejectedValueOnce(new Error("Server Error"));
+    const runMutation = vi.fn().mockResolvedValueOnce({ jobs: [committed], staleCount: 1 });
+
+    await expect(
+      claimCodexScanJobLeasesHandler(
+        { runMutation, runQuery, storage: { getUrl: vi.fn() } },
+        { token: "worker-secret", workerId: "worker-1", lane: "shared", limit: 2 },
+      ),
+    ).resolves.toEqual([committed]);
   });
 
   it("forwards exact Test GitHub Skill Sync job IDs to the lease mutation", async () => {

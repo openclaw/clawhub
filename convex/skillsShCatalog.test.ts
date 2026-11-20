@@ -2,6 +2,7 @@
 /* @vitest-environment edge-runtime */
 import { convexTest } from "convex-test";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { sha256Hex } from "../src/__tests__/helpers/hash";
 import { useEnvironment } from "../src/__tests__/helpers/skillsShEnvironment";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -56,15 +57,6 @@ type RunSummary = Pick<
     batchesProcessed: number;
   };
 };
-
-async function sha256Hex(value: string | Blob) {
-  const bytes =
-    typeof value === "string"
-      ? new TextEncoder().encode(value)
-      : new Uint8Array(await value.arrayBuffer());
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
 
 async function storeTestArtifact(
   t: CatalogTest,

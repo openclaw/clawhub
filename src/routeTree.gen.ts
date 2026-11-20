@@ -41,6 +41,7 @@ import { Route as PluginsPublishRouteImport } from './routes/plugins/publish'
 import { Route as PublishersIndexRouteImport } from './routes/publishers/index'
 import { Route as SkillsIndexRouteImport } from './routes/skills/index'
 import { Route as SkillsPublishRouteImport } from './routes/skills/publish'
+import { Route as TemplatesIndexRouteImport } from './routes/templates/index'
 import { Route as UHandleRouteImport } from './routes/u/$handle'
 import { Route as UserHandleRouteImport } from './routes/user/$handle'
 import { Route as UsersIndexRouteImport } from './routes/users/index'
@@ -225,6 +226,11 @@ const SkillsPublishRoute = SkillsPublishRouteImport.update({
   path: '/skills/publish',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TemplatesIndexRoute = TemplatesIndexRouteImport.update({
+  id: '/templates/',
+  path: '/templates/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const UHandleRoute = UHandleRouteImport.update({
   id: '/u/$handle',
   path: '/u/$handle',
@@ -387,6 +393,7 @@ export interface FileRoutesByFullPath {
   '/plugins/': typeof PluginsIndexRoute
   '/publishers/': typeof PublishersIndexRoute
   '/skills/': typeof SkillsIndexRoute
+  '/templates/': typeof TemplatesIndexRoute
   '/users/': typeof UsersIndexRoute
   '/$owner/$slug/security-audit': typeof OwnerSlugSecurityAuditRoute
   '/$owner/$slug/settings': typeof OwnerSlugSettingsRoute
@@ -444,6 +451,7 @@ export interface FileRoutesByTo {
   '/plugins': typeof PluginsIndexRoute
   '/publishers': typeof PublishersIndexRoute
   '/skills': typeof SkillsIndexRoute
+  '/templates': typeof TemplatesIndexRoute
   '/users': typeof UsersIndexRoute
   '/$owner/$slug/security-audit': typeof OwnerSlugSecurityAuditRoute
   '/$owner/$slug/settings': typeof OwnerSlugSettingsRoute
@@ -502,6 +510,7 @@ export interface FileRoutesById {
   '/plugins/': typeof PluginsIndexRoute
   '/publishers/': typeof PublishersIndexRoute
   '/skills/': typeof SkillsIndexRoute
+  '/templates/': typeof TemplatesIndexRoute
   '/users/': typeof UsersIndexRoute
   '/$owner/$slug/security-audit': typeof OwnerSlugSecurityAuditRoute
   '/$owner/$slug/settings': typeof OwnerSlugSettingsRoute
@@ -561,6 +570,7 @@ export interface FileRouteTypes {
     | '/plugins/'
     | '/publishers/'
     | '/skills/'
+    | '/templates/'
     | '/users/'
     | '/$owner/$slug/security-audit'
     | '/$owner/$slug/settings'
@@ -618,6 +628,7 @@ export interface FileRouteTypes {
     | '/plugins'
     | '/publishers'
     | '/skills'
+    | '/templates'
     | '/users'
     | '/$owner/$slug/security-audit'
     | '/$owner/$slug/settings'
@@ -675,6 +686,7 @@ export interface FileRouteTypes {
     | '/plugins/'
     | '/publishers/'
     | '/skills/'
+    | '/templates/'
     | '/users/'
     | '/$owner/$slug/security-audit'
     | '/$owner/$slug/settings'
@@ -733,6 +745,7 @@ export interface RootRouteChildren {
   PluginsIndexRoute: typeof PluginsIndexRoute
   PublishersIndexRoute: typeof PublishersIndexRoute
   SkillsIndexRoute: typeof SkillsIndexRoute
+  TemplatesIndexRoute: typeof TemplatesIndexRoute
   UsersIndexRoute: typeof UsersIndexRoute
   OwnerPluginsSlugRoute: typeof OwnerPluginsSlugRouteWithChildren
   OwnerSkillsSlugRoute: typeof OwnerSkillsSlugRouteWithChildren
@@ -967,6 +980,13 @@ declare module '@tanstack/react-router' {
       path: '/skills/publish'
       fullPath: '/skills/publish'
       preLoaderRoute: typeof SkillsPublishRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/templates/': {
+      id: '/templates/'
+      path: '/templates'
+      fullPath: '/templates/'
+      preLoaderRoute: typeof TemplatesIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/u/$handle': {
@@ -1243,6 +1263,7 @@ const rootRouteChildren: RootRouteChildren = {
   PluginsIndexRoute: PluginsIndexRoute,
   PublishersIndexRoute: PublishersIndexRoute,
   SkillsIndexRoute: SkillsIndexRoute,
+  TemplatesIndexRoute: TemplatesIndexRoute,
   UsersIndexRoute: UsersIndexRoute,
   OwnerPluginsSlugRoute: OwnerPluginsSlugRouteWithChildren,
   OwnerSkillsSlugRoute: OwnerSkillsSlugRouteWithChildren,

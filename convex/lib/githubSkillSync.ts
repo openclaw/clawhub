@@ -1,5 +1,6 @@
 import { ConvexError, type Infer, v } from "convex/values";
 import type { DisplayManifest, DisplayManifestStatus } from "./displayManifest";
+import { normalizeGitHubSkillKey } from "./githubSkillKey";
 import { sha256Hex } from "./hash";
 import {
   shouldPreserveSecurityScanStateForUnchangedContent,
@@ -209,7 +210,7 @@ export async function buildGitHubSkillSourceSnapshot({
     const markdown = decodeUtf8(markdownBytes);
     const frontmatter = parseFrontmatter(markdown);
     const folderName = path.split("/").filter(Boolean).at(-1) ?? "";
-    const slug = slugFromPathSegment(folderName);
+    const slug = normalizeGitHubSkillKey(folderName);
     if (!slug) continue;
     const frontmatterName = getFrontmatterValue(frontmatter, "name")?.trim();
     const frontmatterDescription = getFrontmatterValue(frontmatter, "description")?.trim();
@@ -636,7 +637,7 @@ function discoverSkillPaths(entries: Record<string, Uint8Array>) {
   for (const skillMdPath of candidates) {
     const path = parentPath(skillMdPath);
     const folderName = path.split("/").filter(Boolean).at(-1) ?? "";
-    const slug = slugFromPathSegment(folderName);
+    const slug = normalizeGitHubSkillKey(folderName);
     if (!slug) continue;
     const paths = pathsBySlug.get(slug) ?? [];
     paths.push(skillMdPath);
@@ -716,16 +717,6 @@ function parentPath(path: string) {
 
 function decodeUtf8(bytes: Uint8Array) {
   return new TextDecoder().decode(bytes);
-}
-
-function slugFromPathSegment(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[\s_]+/g, "-")
-    .replace(/[^a-z0-9-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
 }
 
 function titleizeSlug(slug: string) {

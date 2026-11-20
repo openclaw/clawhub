@@ -1,16 +1,7 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalMutation } from "./functions";
-import { RETENTION_STANDARD_BATCH_SIZE } from "./lib/retentionPolicy";
-
-const RETENTION_MAX_BATCH_SIZE = 1_000;
-
-function normalizeRetentionBatchSize(batchSize: number | undefined) {
-  const requested = Number.isFinite(batchSize)
-    ? Math.floor(batchSize ?? RETENTION_STANDARD_BATCH_SIZE)
-    : RETENTION_STANDARD_BATCH_SIZE;
-  return Math.max(1, Math.min(requested, RETENTION_MAX_BATCH_SIZE));
-}
+import { normalizeRetentionBatchSize } from "./lib/retentionPolicy";
 
 export const pruneExpiredAuthSessionsInternal = internalMutation({
   args: {

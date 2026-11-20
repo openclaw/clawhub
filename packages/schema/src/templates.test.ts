@@ -127,6 +127,29 @@ describe("Template manifest contract", () => {
     expect(result.manifest.categories).toEqual(["travel", "custom-category"]);
   });
 
+  // Every published community Template must stay republishable unchanged, so the manifest
+  // accepts lists that the registry reduces to one category or reclassifies.
+  it.each([
+    { categories: ["engineering", "operations"] },
+    { categories: ["travel", "personal"] },
+    { categories: ["personal", "productivity"] },
+    { categories: ["governance", "finance", "people"] },
+    { categories: ["made-up"] },
+  ])("accepts categories the registry will trim or reclassify $categories", ({ categories }) => {
+    const result = validateTemplateManifest({ ...fixture, categories });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.manifest.categories).toEqual(categories);
+  });
+
+  it("accepts a manifest that declares no categories", () => {
+    const { categories: _categories, ...undeclared } = { ...fixture, categories: ["travel"] };
+    const result = validateTemplateManifest(undeclared);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.manifest.categories).toBeUndefined();
+  });
+
+  // Released OpenClaw clients enforce these same structural limits when a Template is added,
+  // so the registry must not publish a manifest those clients would refuse.
   it.each([
     { categories: [] },
     { categories: ["Travel"] },
@@ -771,5 +794,31 @@ describe("Template manifest contract", () => {
         ],
       }).ok,
     ).toBe(false);
+  });
+});
+
+describe("preferred Template models", () => {
+  it.each([
+    "anthropic/claude-sonnet-4-5",
+    "openrouter/anthropic/claude-sonnet-4.5",
+    "a/" + "m".repeat(198),
+  ])("accepts a portable model preference without configuring a provider: %s", (model) => {
+    expect(validateTemplateManifest({ schemaVersion: 1, agent: { id: "writer", model } }).ok).toBe(
+      true,
+    );
+  });
+
+  it.each([
+    "",
+    "sonnet",
+    "claude-sonnet-4-5",
+    "anthropic/model@work",
+    " anthropic/model",
+    "anthropic/",
+    "a/" + "m".repeat(199),
+  ])("rejects a non-portable model preference: %s", (model) => {
+    expect(validateTemplateManifest({ schemaVersion: 1, agent: { id: "writer", model } }).ok).toBe(
+      false,
+    );
   });
 });

@@ -355,7 +355,17 @@ describe("plugins publish route", () => {
     });
   });
 
-  it("shows the submitted plugin modal with plugin identity and canonical actions", async () => {
+  it("links a newly staged first plugin release to its canonical listing", async () => {
+    publishRelease.mockResolvedValueOnce({
+      ok: true,
+      status: "pending",
+      publicationStatus: "pending",
+      packageId: "pkg:1",
+      releaseId: "rel:1",
+      attemptId: "publishAttempts:1",
+      packageName: "demo-plugin",
+      version: "1.2.3",
+    });
     useSearchMock.mockReturnValue({
       ownerHandle: "@VintageAyu",
       name: undefined,
@@ -1178,7 +1188,7 @@ describe("plugins publish route", () => {
     expect(publishRelease).not.toHaveBeenCalled();
   });
 
-  it("redirects to the dashboard after a staged plugin publish is accepted", async () => {
+  it("redirects to the dashboard for a legacy attempt-only receipt with no staged package", async () => {
     publishRelease.mockResolvedValueOnce({
       ok: true,
       status: "pending",

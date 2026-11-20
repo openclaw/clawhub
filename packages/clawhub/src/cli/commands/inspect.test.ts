@@ -20,7 +20,7 @@ vi.mock("../registry.js", () => registryMocks.moduleFactory());
 vi.mock("../authToken.js", () => authTokenMocks.moduleFactory());
 vi.mock("../ui.js", () => uiMocks.moduleFactory());
 
-const { cmdInspect, cmdVerifySkill } = await import("./inspect");
+const { cmdInspect, cmdSkillPublication, cmdVerifySkill } = await import("./inspect");
 
 const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
 const mockWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
@@ -804,5 +804,79 @@ describe("cmdVerifySkill", () => {
     await expect(
       cmdVerifySkill(makeGlobalOpts(), "demo", { version: "1.0.0", tag: "latest" }),
     ).rejects.toThrow("Use either --version or --tag");
+  });
+});
+
+describe("cmdSkillPublication", () => {
+  const held = {
+    skill: { slug: "demo", displayName: "Demo" },
+    publication: {
+      version: "2.0.0",
+      stage: "checks_failed" as const,
+      retrying: true,
+      updatedAt: 3,
+      checks: { trufflehog: "clean" as const, clawscan: "failed" as const },
+    },
+  };
+
+  it("requires an exact version before contacting the registry", async () => {
+    await expect(cmdSkillPublication(makeGlobalOpts(), "@openclaw/demo", {})).rejects.toThrow(
+      "Pass --version",
+    );
+    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
+  });
+
+  it("requires a saved login before contacting the registry", async () => {
+    authTokenMocks.getOptionalAuthToken.mockResolvedValueOnce(undefined);
+    await expect(
+      cmdSkillPublication(makeGlobalOpts(), "@openclaw/demo", { version: "2.0.0" }),
+    ).rejects.toThrow("Not logged in to this registry. Run: clawhub login");
+    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
+  });
+
+  it("prints the owner publication stage and the stored-report command", async () => {
+    authTokenMocks.getOptionalAuthToken.mockResolvedValueOnce("fixture-token");
+    httpMocks.apiRequest.mockResolvedValueOnce(held);
+
+    await cmdSkillPublication(makeGlobalOpts(), "@openclaw/demo", { version: "2.0.0" });
+
+    const request = httpMocks.apiRequest.mock.calls[0]?.[1] as { url?: string; token?: string };
+    const url = new URL(String(request?.url));
+    expect(url.pathname).toBe("/api/v1/skills/demo/versions/2.0.0/publication");
+    expect(url.searchParams.get("ownerHandle")).toBe("openclaw");
+    expect(request?.token).toBe("fixture-token");
+    expect(loggedOutput()).toContain("Publication checks failed");
+    expect(loggedOutput()).toContain("you do not need a new version");
+    expect(loggedOutput()).toContain("clawhub scan download @openclaw/demo --version 2.0.0");
+    expect(loggedOutput()).not.toContain("attempt-");
+  });
+
+  it("prints a public version without the held-upload guidance", async () => {
+    authTokenMocks.getOptionalAuthToken.mockResolvedValueOnce("fixture-token");
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      skill: { slug: "demo", displayName: "Demo" },
+      publication: { version: "1.2.3", stage: "published", retrying: false, updatedAt: 4 },
+    });
+
+    await cmdSkillPublication(makeGlobalOpts(), "demo", { version: "1.2.3" });
+
+    expect(loggedOutput()).toContain("Published");
+    expect(loggedOutput()).toContain("Publication of this version is complete.");
+    expect(loggedOutput()).toContain("Current visibility can still be restricted.");
+    expect(loggedOutput()).not.toContain("This version is public.");
+    expect(loggedOutput()).not.toContain("not public or installable");
+  });
+
+  it("writes the publication response unchanged", async () => {
+    authTokenMocks.getOptionalAuthToken.mockResolvedValueOnce("fixture-token");
+    httpMocks.apiRequest.mockResolvedValueOnce(held);
+
+    await cmdSkillPublication(makeGlobalOpts(), "@openclaw/demo", {
+      version: "2.0.0",
+      json: true,
+    });
+
+    expect(JSON.parse(String(mockWrite.mock.calls[0]?.[0]))).toEqual(held);
+    expect(mockLog).not.toHaveBeenCalled();
   });
 });
