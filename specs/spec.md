@@ -239,6 +239,12 @@ Local fixture data lives in `convex/devSeed.ts` and `fixtures/public-corpus/`.
 - Account settings: name + delete account (permanent, non-recoverable; published skills stay public).
 - Admin: user role management + badge approvals + audit log.
 
+The skill README request belongs to the current stored version. Equivalent live
+skill snapshots and publishing loading/result state must not restart it. Reuse
+SSR text (including an empty string) or errors for the matching version; reject
+late responses after leaving that version. GitHub-backed skills keep displaying
+their cached source content.
+
 Public skill-detail metadata is registered in `publicSkillPage:getBySlug` so
 reads do not initialize publishing or schema compilation. The legacy
 `skills:getBySlug` registration shares the same implementation. Preserve owner

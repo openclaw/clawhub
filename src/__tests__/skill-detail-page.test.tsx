@@ -805,6 +805,141 @@ describe("SkillDetailPage", () => {
     expect(screen.queryByText("Loading README...")).toBeNull();
   });
 
+  describe("README request ownership", () => {
+    it.each([
+      { name: "text", readme: "# Existing README", readmeError: null },
+      { name: "empty text", readme: "", readmeError: null },
+      { name: "error", readme: null, readmeError: "Stored README failure" },
+    ])("reuses SSR $name without another request", ({ readme, readmeError }) => {
+      const data = { ...makeInitialData(), readme, readmeError };
+      const { rerender } = render(<SkillDetailPage slug="weather" initialData={data} />);
+      rerender(<SkillDetailPage slug="weather" initialData={{ ...data }} />);
+      expect(getReadmeMock).not.toHaveBeenCalled();
+    });
+
+    it("starts one request when a live version arrives without SSR data", () => {
+      let result: SkillPageInitialData["result"] | undefined;
+      useQueryMock.mockImplementation((_fn: unknown, args: unknown) =>
+        args && typeof args === "object" && "slug" in args ? result : undefined,
+      );
+      const pending = deferred<{ text: string }>();
+      getReadmeMock.mockReturnValue(pending.promise);
+      const { rerender } = render(<SkillDetailPage slug="weather" />);
+      result = makeInitialData().result;
+      rerender(<SkillDetailPage slug="weather" />);
+      expect(getReadmeMock).toHaveBeenCalledExactlyOnceWith({ versionId });
+    });
+
+    it("publishes the first request after a live version arrives", async () => {
+      let result: SkillPageInitialData["result"] | undefined;
+      useQueryMock.mockImplementation((_fn: unknown, args: unknown) =>
+        args && typeof args === "object" && "slug" in args ? result : undefined,
+      );
+      const first = deferred<{ text: string }>();
+      const unexpected = deferred<{ text: string }>();
+      getReadmeMock.mockReturnValue(unexpected.promise).mockReturnValueOnce(first.promise);
+      const { rerender } = render(<SkillDetailPage slug="weather" />);
+      result = makeInitialData().result;
+      rerender(<SkillDetailPage slug="weather" />);
+      await act(async () => {
+        first.resolve({ text: "# First live README\n\nThe first request completed." });
+        await first.promise;
+      });
+      expect(await screen.findByText("The first request completed.")).toBeTruthy();
+    });
+
+    it("keeps the same pending request across equivalent skill snapshots", async () => {
+      const data = { ...makeInitialData(), readme: null };
+      const first = deferred<{ text: string }>();
+      getReadmeMock.mockReturnValue(first.promise);
+      const { rerender } = render(<SkillDetailPage slug="weather" initialData={data} />);
+      if (!data.result) throw new Error("Missing skill fixture");
+      rerender(
+        <SkillDetailPage
+          slug="weather"
+          initialData={{
+            ...data,
+            result: { ...data.result, skill: { ...data.result.skill } },
+          }}
+        />,
+      );
+      expect(getReadmeMock).toHaveBeenCalledExactlyOnceWith({ versionId });
+      await act(async () => {
+        first.resolve({ text: "# Unchanged version\n\nSame request result." });
+        await first.promise;
+      });
+      expect(await screen.findByText("Same request result.")).toBeTruthy();
+    });
+
+    it.each(["success", "failure"])(
+      "ignores a stale %s after the selected version changes",
+      async (settlement) => {
+        const data = { ...makeInitialData(), readme: null };
+        if (!data.result?.latestVersion) throw new Error("Missing version fixture");
+        const nextVersionId = "skillVersions:2" as Id<"skillVersions">;
+        const oldRead = deferred<{ text: string }>();
+        const newRead = deferred<{ text: string }>();
+        getReadmeMock.mockImplementation(({ versionId: requestedId }) =>
+          requestedId === versionId ? oldRead.promise : newRead.promise,
+        );
+        const { rerender } = render(<SkillDetailPage slug="weather" initialData={data} />);
+        rerender(
+          <SkillDetailPage
+            slug="weather"
+            initialData={{
+              ...data,
+              result: {
+                ...data.result,
+                latestVersion: { ...data.result.latestVersion, _id: nextVersionId },
+              },
+            }}
+          />,
+        );
+        await act(async () => {
+          newRead.resolve({ text: "# Current README\n\nCurrent version content." });
+          await newRead.promise;
+        });
+        expect(await screen.findByText("Current version content.")).toBeTruthy();
+        await act(async () => {
+          if (settlement === "success") oldRead.resolve({ text: "# Stale README" });
+          else oldRead.reject(new Error("Stale README failure"));
+          await oldRead.promise.catch(() => undefined);
+        });
+        expect(screen.getByText("Current version content.")).toBeTruthy();
+        expect(screen.queryByText("Stale README")).toBeNull();
+        expect(screen.queryByText("No README available")).toBeNull();
+      },
+    );
+
+    it("retires a pending request when the next skill has no stored version", async () => {
+      const data = { ...makeInitialData(), readme: null };
+      if (!data.result) throw new Error("Missing skill fixture");
+      const pending = deferred<{ text: string }>();
+      getReadmeMock.mockReturnValue(pending.promise);
+      const { rerender } = render(<SkillDetailPage slug="weather" initialData={data} />);
+      rerender(
+        <SkillDetailPage
+          slug="empty-skill"
+          initialData={{
+            ...data,
+            result: {
+              ...data.result,
+              skill: { ...data.result.skill, slug: "empty-skill" },
+              latestVersion: null,
+            },
+          }}
+        />,
+      );
+      expect(await screen.findByText("No README available")).toBeTruthy();
+      await act(async () => {
+        pending.resolve({ text: "# Retired README" });
+        await pending.promise;
+      });
+      expect(screen.queryByText("Retired README")).toBeNull();
+      expect(getReadmeMock).toHaveBeenCalledOnce();
+    });
+  });
+
   it("clears stale README content when navigating to a skill with no stored version", async () => {
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
