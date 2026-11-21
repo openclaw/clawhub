@@ -82,6 +82,8 @@ const config = {
         "bin/clawdhub.js!",
         "scripts/build.mjs!",
         "src/cli.ts!",
+        // Published compatibility entrypoint; the CLI imports its owner directly.
+        "src/cli/commands/unstar.ts!",
         "src/http.ts!",
         "src/schema/**/*.ts!",
         "vitest*.ts!",
