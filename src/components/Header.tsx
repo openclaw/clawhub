@@ -122,11 +122,17 @@ type TypeaheadItem =
       label: string;
     };
 
+type TypeaheadGroup = {
+  section: TypeaheadSection;
+  label: string;
+  items: TypeaheadItem[];
+  startIndex: number;
+};
+
 type TypeaheadSnapshot = {
   query: string;
-  skills: TypeaheadItem[];
-  plugins: TypeaheadItem[];
-  creators: TypeaheadItem[];
+  groups: TypeaheadGroup[];
+  items: TypeaheadItem[];
 };
 
 export default function Header() {
@@ -231,23 +237,28 @@ export default function Header() {
     return items;
   }, [creatorResults, hasNavSearchQuery, trimmedNavSearchQuery]);
 
-  const availableTypeaheadItems = useMemo(
-    () => [...typeaheadPluginItems, ...typeaheadSkillItems, ...typeaheadCreatorItems],
-    [typeaheadCreatorItems, typeaheadPluginItems, typeaheadSkillItems],
-  );
+  const availableTypeahead = useMemo<TypeaheadSnapshot>(() => {
+    const groups: TypeaheadGroup[] = [];
+    const items: TypeaheadItem[] = [];
+    for (const group of [
+      { section: "plugins" as const, label: "Plugins", items: typeaheadPluginItems },
+      { section: "skills" as const, label: "Skills", items: typeaheadSkillItems },
+      { section: "creators" as const, label: "Creators", items: typeaheadCreatorItems },
+    ]) {
+      if (group.items.length === 0) continue;
+      groups.push({ ...group, startIndex: items.length });
+      items.push(...group.items);
+    }
+    return { query: trimmedNavSearchQuery, groups, items };
+  }, [typeaheadCreatorItems, typeaheadPluginItems, typeaheadSkillItems, trimmedNavSearchQuery]);
   const hoveredSnapshot =
     hoveredTypeahead?.query === trimmedNavSearchQuery ? hoveredTypeahead : null;
-  const visibleSkillItems = hoveredSnapshot?.skills ?? typeaheadSkillItems;
-  const visiblePluginItems = hoveredSnapshot?.plugins ?? typeaheadPluginItems;
-  const visibleCreatorItems = hoveredSnapshot?.creators ?? typeaheadCreatorItems;
-  const typeaheadItems = useMemo(
-    () => [...visiblePluginItems, ...visibleSkillItems, ...visibleCreatorItems],
-    [visibleCreatorItems, visiblePluginItems, visibleSkillItems],
-  );
+  const visibleTypeahead = hoveredSnapshot ?? availableTypeahead;
+  const typeaheadItems = visibleTypeahead.items;
   const hasTypeaheadUpdates = Boolean(
     hoveredSnapshot &&
-    (availableTypeaheadItems.length !== typeaheadItems.length ||
-      availableTypeaheadItems.some((item, index) => item.key !== typeaheadItems[index]?.key) ||
+    (availableTypeahead.items.length !== typeaheadItems.length ||
+      availableTypeahead.items.some((item, index) => item.key !== typeaheadItems[index]?.key) ||
       pluginSearchError ||
       skillSearchError),
   );
@@ -265,12 +276,7 @@ export default function Header() {
     // Keep click targets still beneath the pointer. New groups are applied on
     // mouse leave or an explicit update, rather than moving a different link under it.
     if (typeaheadSearching && !hoveredSnapshot) {
-      setHoveredTypeahead({
-        query: trimmedNavSearchQuery,
-        skills: visibleSkillItems,
-        plugins: visiblePluginItems,
-        creators: visibleCreatorItems,
-      });
+      setHoveredTypeahead(visibleTypeahead);
     }
   };
   const releaseHoveredTypeahead = () => setHoveredTypeahead(null);
@@ -635,10 +641,7 @@ export default function Header() {
                   skillSearchError={hoveredSnapshot ? false : skillSearchError}
                   onHoverItem={holdHoveredTypeahead}
                   onSelectItem={navigateToTypeaheadItem}
-                  creatorItems={visibleCreatorItems}
-                  pluginItems={visiblePluginItems}
-                  query={trimmedNavSearchQuery}
-                  skillItems={visibleSkillItems}
+                  snapshot={visibleTypeahead}
                 />
               ) : null}
             </div>
@@ -840,10 +843,7 @@ export default function Header() {
                 skillSearchError={hoveredSnapshot ? false : skillSearchError}
                 onHoverItem={holdHoveredTypeahead}
                 onSelectItem={navigateToTypeaheadItem}
-                creatorItems={visibleCreatorItems}
-                pluginItems={visiblePluginItems}
-                query={trimmedNavSearchQuery}
-                skillItems={visibleSkillItems}
+                snapshot={visibleTypeahead}
               />
             ) : null}
           </div>
@@ -892,7 +892,6 @@ function HeaderNavTab({
 
 function SearchTypeahead({
   activeIndex,
-  creatorItems,
   loading,
   hasUpdates,
   onLeave,
@@ -901,12 +900,9 @@ function SearchTypeahead({
   skillSearchError,
   onHoverItem,
   onSelectItem,
-  pluginItems,
-  query,
-  skillItems,
+  snapshot,
 }: {
   activeIndex: number;
-  creatorItems: TypeaheadItem[];
   loading: boolean;
   hasUpdates: boolean;
   onLeave: () => void;
@@ -915,17 +911,11 @@ function SearchTypeahead({
   skillSearchError?: boolean;
   onHoverItem: (index: number) => void;
   onSelectItem: (item: TypeaheadItem) => void;
-  pluginItems: TypeaheadItem[];
-  query: string;
-  skillItems: TypeaheadItem[];
+  snapshot: TypeaheadSnapshot;
 }) {
+  const { query, groups } = snapshot;
   const hasQuery = query.length > 0;
-  const hasSkillMatches = skillItems.some((item) => item.kind === "skill");
-  const hasPluginMatches = pluginItems.some((item) => item.kind === "plugin");
-  const hasCreatorMatches = creatorItems.some((item) => item.kind === "creator");
-  const hasMatches = hasSkillMatches || hasPluginMatches || hasCreatorMatches;
-  const skillStartIndex = pluginItems.length;
-  const creatorStartIndex = skillItems.length + pluginItems.length;
+  const hasMatches = groups.length > 0;
 
   return (
     <div className="navbar-search-typeahead" id="navbar-search-typeahead" onMouseLeave={onLeave}>
@@ -965,78 +955,31 @@ function SearchTypeahead({
             role="listbox"
             aria-label="Search suggestions"
           >
-            {hasPluginMatches ? (
+            {groups.map((group) => (
               <div
+                key={group.section}
                 className="navbar-search-typeahead-section"
                 role="group"
-                aria-labelledby="navbar-search-typeahead-plugins-heading"
+                aria-labelledby={`navbar-search-typeahead-${group.section}-heading`}
               >
                 <div
-                  id="navbar-search-typeahead-plugins-heading"
+                  id={`navbar-search-typeahead-${group.section}-heading`}
                   className="navbar-search-typeahead-heading"
                 >
-                  Plugins
+                  {group.label}
                 </div>
-                {pluginItems.map((item, index) => (
+                {group.items.map((item, index) => (
                   <TypeaheadRow
                     key={item.key}
-                    active={activeIndex === index}
+                    active={activeIndex === group.startIndex + index}
                     item={item}
-                    index={index}
+                    index={group.startIndex + index}
                     onHoverItem={onHoverItem}
                     onSelectItem={onSelectItem}
                   />
                 ))}
               </div>
-            ) : null}
-            {hasSkillMatches ? (
-              <div
-                className="navbar-search-typeahead-section"
-                role="group"
-                aria-labelledby="navbar-search-typeahead-skills-heading"
-              >
-                <div
-                  id="navbar-search-typeahead-skills-heading"
-                  className="navbar-search-typeahead-heading"
-                >
-                  Skills
-                </div>
-                {skillItems.map((item, index) => (
-                  <TypeaheadRow
-                    key={item.key}
-                    active={activeIndex === skillStartIndex + index}
-                    item={item}
-                    index={skillStartIndex + index}
-                    onHoverItem={onHoverItem}
-                    onSelectItem={onSelectItem}
-                  />
-                ))}
-              </div>
-            ) : null}
-            {hasCreatorMatches ? (
-              <div
-                className="navbar-search-typeahead-section"
-                role="group"
-                aria-labelledby="navbar-search-typeahead-creators-heading"
-              >
-                <div
-                  id="navbar-search-typeahead-creators-heading"
-                  className="navbar-search-typeahead-heading"
-                >
-                  Creators
-                </div>
-                {creatorItems.map((item, index) => (
-                  <TypeaheadRow
-                    key={item.key}
-                    active={activeIndex === creatorStartIndex + index}
-                    item={item}
-                    index={creatorStartIndex + index}
-                    onHoverItem={onHoverItem}
-                    onSelectItem={onSelectItem}
-                  />
-                ))}
-              </div>
-            ) : null}
+            ))}
           </div>
         ) : null}
         {hasQuery && hasUpdates ? (
