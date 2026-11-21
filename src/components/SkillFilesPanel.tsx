@@ -9,6 +9,12 @@ import { CodeWrapToggleButton, useCodeWrapToggle } from "./CodeWrapToggle";
 import { formatBytes } from "./skillDetailUtils";
 
 type SkillFile = Doc<"skillVersions">["files"][number];
+type FilePreview = { text: string | null; size: number; sha256: string };
+type FileSelection = { path: string } & (
+  | { status: "loading"; minHeight?: number }
+  | { status: "ready"; data: FilePreview }
+  | { status: "error"; error: string }
+);
 
 type SkillFilesPanelProps = {
   versionId: Id<"skillVersions"> | null;
@@ -122,18 +128,16 @@ export function SkillFilesPanel({
   ownerHandle,
 }: SkillFilesPanelProps) {
   const getFilePreview = useAction(api.skills.getFilePreview);
-  const [selectedPath, setSelectedPath] = useState<string | null>(null);
-  const [fileContent, setFileContent] = useState<string | null>(null);
-  const [fileMeta, setFileMeta] = useState<{ size: number; sha256: string } | null>(null);
-  const [fileError, setFileError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [selection, setSelection] = useState<FileSelection | null>(null);
   const isMounted = useRef(true);
   const requestId = useRef(0);
   const fileListRef = useRef<HTMLDivElement>(null);
-  const fileCache = useRef(
-    new Map<string, { text: string | null; size: number; sha256: string }>(),
-  );
-  const [viewerMinHeight, setViewerMinHeight] = useState<number | undefined>();
+  const fileCache = useRef(new Map<string, FilePreview>());
+  const selectedPath = selection?.path ?? null;
+  const fileMeta = selection?.status === "ready" ? selection.data : null;
+  const fileContent = fileMeta?.text ?? null;
+  const fileError = selection?.status === "error" ? selection.error : null;
+  const viewerMinHeight = selection?.status === "loading" ? selection.minHeight : undefined;
   const { preRef, isWrapped, canWrap, toggleWrap } = useCodeWrapToggle(fileContent ?? "");
 
   useEffect(() => {
@@ -152,74 +156,50 @@ export function SkillFilesPanel({
 
   useEffect(() => {
     requestId.current += 1;
-
-    setSelectedPath(null);
-    setFileContent(null);
-    setFileMeta(null);
-    setFileError(null);
-    setIsLoading(false);
-    setViewerMinHeight(undefined);
-
-    if (versionId === null) return;
+    setSelection(null);
   }, [versionId]);
 
   const handleSelect = useCallback(
     (path: string) => {
       if (!versionId) return;
-      if (selectedPath === path && (isLoading || fileMeta !== null)) return;
+      if (selection?.path === path && selection.status !== "error") return;
       const cacheKey = `${versionId}:${path}`;
       const cached = fileCache.current.get(cacheKey);
 
       requestId.current += 1;
       const current = requestId.current;
-      setSelectedPath(path);
-      setFileError(null);
       if (cached) {
-        setViewerMinHeight(undefined);
-        setFileContent(cached.text);
-        setFileMeta({ size: cached.size, sha256: cached.sha256 });
-        setIsLoading(false);
+        setSelection({ path, status: "ready", data: cached });
         return;
       }
 
-      if (fileListRef.current) {
-        setViewerMinHeight(fileListRef.current.offsetHeight);
-      }
-      setFileContent(null);
-      setFileMeta(null);
-      setIsLoading(true);
+      setSelection({ path, status: "loading", minHeight: fileListRef.current?.offsetHeight });
       void getFilePreview({ versionId, path })
         .then((data) => {
           if (!isMounted.current) return;
           if (requestId.current !== current) return;
           fileCache.current.set(cacheKey, data);
-          setFileContent(data.text);
-          setFileMeta({ size: data.size, sha256: data.sha256 });
-          setIsLoading(false);
-          setViewerMinHeight(undefined);
+          setSelection({ path, status: "ready", data });
         })
         .catch((error) => {
           if (!isMounted.current) return;
           if (requestId.current !== current) return;
-          setFileError(error instanceof Error ? error.message : "Failed to load file");
-          setIsLoading(false);
-          setViewerMinHeight(undefined);
+          setSelection({
+            path,
+            status: "error",
+            error: error instanceof Error ? error.message : "Failed to load file",
+          });
         });
     },
-    [fileMeta, getFilePreview, isLoading, selectedPath, versionId],
+    [getFilePreview, selection, versionId],
   );
 
   const handleBack = () => {
     requestId.current += 1;
-    setSelectedPath(null);
-    setFileContent(null);
-    setFileMeta(null);
-    setFileError(null);
-    setIsLoading(false);
-    setViewerMinHeight(undefined);
+    setSelection(null);
   };
 
-  const isViewerLoading = isLoading && fileContent === null && fileError === null;
+  const isViewerLoading = selection?.status === "loading";
 
   const selectedFileSize =
     fileMeta?.size ?? latestFiles.find((file) => file.path === selectedPath)?.size;
