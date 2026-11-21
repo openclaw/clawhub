@@ -15,7 +15,8 @@ import { isPublicSkillDoc } from "./lib/globalStats";
 import { isOfficialPublisher, toPublicPublisherWithOfficial } from "./lib/officialPublishers";
 import { hasNoPublishedPackageVersions } from "./lib/packageReleaseVisibility";
 import { assertPackageRuntimeIdAvailable } from "./lib/packageRuntimeIdentity";
-import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
+import { upsertPackageSearchDigest } from "./lib/packageSearchDigest";
+import { extractPackageDigestFields } from "./lib/packageSearchDigestProjection";
 import { isPackageBlockedFromPublic } from "./lib/packageSecurity";
 import { toPublicPublisher } from "./lib/public";
 import {

@@ -5,7 +5,8 @@ import { convexTest } from "convex-test";
 import { expect, it, vi } from "vitest";
 import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
 import { api, internal } from "./_generated/api";
-import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
+import { upsertPackageSearchDigest } from "./lib/packageSearchDigest";
+import { extractPackageDigestFields } from "./lib/packageSearchDigestProjection";
 import schema from "./schema";
 
 // Test the anonymous catalog endpoints, not the separately tested ingress trust boundary.

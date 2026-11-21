@@ -3,11 +3,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { indexedUnique } from "../../src/__tests__/helpers/convexQuery";
 import { createPackageSeedDefaults } from "../../src/__tests__/helpers/packageSeed";
-import {
-  deletePackageSearchDigests,
-  extractPackageDigestFields,
-  upsertPackageSearchDigest,
-} from "./packageSearchDigest";
+import { deletePackageSearchDigests, upsertPackageSearchDigest } from "./packageSearchDigest";
+import { extractPackageDigestFields } from "./packageSearchDigestProjection";
 
 describe("packageSearchDigest", () => {
   it.each([

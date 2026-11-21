@@ -172,6 +172,7 @@ import type * as lib_packageSdkUsage from "../lib/packageSdkUsage.js";
 import type * as lib_packageSdkUsageContract from "../lib/packageSdkUsageContract.js";
 import type * as lib_packageSdkUsageStorage from "../lib/packageSdkUsageStorage.js";
 import type * as lib_packageSearchDigest from "../lib/packageSearchDigest.js";
+import type * as lib_packageSearchDigestProjection from "../lib/packageSearchDigestProjection.js";
 import type * as lib_packageSecurity from "../lib/packageSecurity.js";
 import type * as lib_packageStatEvents from "../lib/packageStatEvents.js";
 import type * as lib_packageViewerRead from "../lib/packageViewerRead.js";
@@ -556,6 +557,7 @@ declare const fullApi: ApiFromModules<{
   "lib/packageSdkUsageContract": typeof lib_packageSdkUsageContract;
   "lib/packageSdkUsageStorage": typeof lib_packageSdkUsageStorage;
   "lib/packageSearchDigest": typeof lib_packageSearchDigest;
+  "lib/packageSearchDigestProjection": typeof lib_packageSearchDigestProjection;
   "lib/packageSecurity": typeof lib_packageSecurity;
   "lib/packageStatEvents": typeof lib_packageStatEvents;
   "lib/packageViewerRead": typeof lib_packageViewerRead;

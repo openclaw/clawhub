@@ -20,11 +20,8 @@ import { deleteGitHubSkillScansForSkill } from "./lib/githubSkillScans";
 import { githubBackedSkillModeration as buildGitHubBackedSkillModeration } from "./lib/githubSkillSync";
 import { toDayKey } from "./lib/leaderboards";
 import { normalizePackageName } from "./lib/packageRegistry";
-import {
-  deletePackageSearchDigests,
-  extractPackageDigestFields,
-  upsertPackageSearchDigest,
-} from "./lib/packageSearchDigest";
+import { deletePackageSearchDigests, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
+import { extractPackageDigestFields } from "./lib/packageSearchDigestProjection";
 import { ensurePersonalPublisherForUser } from "./lib/publishers";
 import { recomputePublisherStats } from "./lib/publisherStats";
 import {

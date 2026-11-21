@@ -13,7 +13,8 @@ import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed"
 import { api, internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import { compareCatalogSearchEntries } from "./lib/catalogPage";
-import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
+import { upsertPackageSearchDigest } from "./lib/packageSearchDigest";
+import { extractPackageDigestFields } from "./lib/packageSearchDigestProjection";
 import { hashToken } from "./lib/tokens";
 import { PACKAGE_TRENDING_LEADERBOARD_KIND } from "./packageLeaderboards";
 import schema from "./schema";
