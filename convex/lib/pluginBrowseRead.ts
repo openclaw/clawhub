@@ -2,9 +2,9 @@ import type { PackageListItem } from "clawhub-schema";
 import {
   compareCatalogItemsForSort,
   encodePluginCatalogCursor,
-  ensureCatalogSourcePage,
   finalizeCatalogSource,
   initCatalogSource,
+  mergeCatalogSources,
 } from "./catalogPage";
 
 type PublicPluginBrowsePage = {
@@ -55,26 +55,15 @@ export async function readInitialPublicPluginPage(
     });
     return { ...result, continueCursor: result.continueCursor ?? "" };
   };
-  const items: PackageListItem[] = [];
-  while (items.length < 25) {
-    const [codeCandidate, bundleCandidate] = await Promise.all([
-      ensureCatalogSourcePage(code, 25, (cursor, count) => fetchPage("code-plugin", cursor, count)),
-      ensureCatalogSourcePage(bundle, 25, (cursor, count) =>
-        fetchPage("bundle-plugin", cursor, count),
-      ),
-    ]);
-    if (!codeCandidate && !bundleCandidate) break;
-    if (
-      !bundleCandidate ||
-      (codeCandidate && compareCatalogItemsForSort(codeCandidate, bundleCandidate, sort) <= 0)
-    ) {
-      items.push(codeCandidate!);
-      code.index += 1;
-    } else {
-      items.push(bundleCandidate);
-      bundle.index += 1;
-    }
-  }
+  const items = await mergeCatalogSources({
+    limit: 25,
+    left: { source: code, fetchPage: (cursor, count) => fetchPage("code-plugin", cursor, count) },
+    right: {
+      source: bundle,
+      fetchPage: (cursor, count) => fetchPage("bundle-plugin", cursor, count),
+    },
+    compare: (a, b) => compareCatalogItemsForSort(a, b, sort),
+  });
   const nextState = {
     codePlugins: finalizeCatalogSource(code),
     bundlePlugins: finalizeCatalogSource(bundle),

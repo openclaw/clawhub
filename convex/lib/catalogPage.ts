@@ -80,7 +80,7 @@ export function finalizeCatalogSource<T>(source: CatalogSourceState<T>): Catalog
   };
 }
 
-export async function ensureCatalogSourcePage<T>(
+async function ensureCatalogSourcePage<T>(
   source: CatalogSourceState<T>,
   pageSize: number,
   fetchPage: (cursor: string | null, pageSize: number) => Promise<CatalogPageResult<T>>,
@@ -108,6 +108,40 @@ export async function ensureCatalogSourcePage<T>(
     source.pageCursor = source.state.cursor;
     source.index = 0;
   }
+}
+
+type CatalogSourceReader<T> = {
+  source: CatalogSourceState<T>;
+  fetchPage: (cursor: string | null, pageSize: number) => Promise<CatalogPageResult<T>>;
+};
+
+export async function mergeCatalogSources<T>({
+  left,
+  right,
+  limit,
+  compare,
+}: {
+  left: CatalogSourceReader<T> | null;
+  right: CatalogSourceReader<T> | null;
+  limit: number;
+  compare: (a: T, b: T) => number;
+}): Promise<T[]> {
+  const items: T[] = [];
+  while (items.length < limit) {
+    const [leftItem, rightItem] = await Promise.all([
+      left ? ensureCatalogSourcePage(left.source, limit, left.fetchPage) : null,
+      right ? ensureCatalogSourcePage(right.source, limit, right.fetchPage) : null,
+    ]);
+    if (!leftItem && !rightItem) break;
+    if (!rightItem || (leftItem && compare(leftItem, rightItem) <= 0)) {
+      items.push(leftItem!);
+      left!.source.index += 1;
+    } else {
+      items.push(rightItem);
+      right!.source.index += 1;
+    }
+  }
+  return items;
 }
 
 export function compareCatalogItems(a: CatalogListItem, b: CatalogListItem) {
