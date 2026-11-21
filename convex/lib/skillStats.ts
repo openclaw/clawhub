@@ -1,7 +1,4 @@
-import type { Doc, Id } from "../_generated/dataModel";
-import type { MutationCtx } from "../_generated/server";
-import { toDayKey } from "./leaderboards";
-import { assertRankingMetricWritesAllowed } from "./rankingMetricsImportLock";
+import type { Doc } from "../_generated/dataModel";
 
 export function createInitialSkillStats(versions = 0) {
   return {
@@ -126,42 +123,4 @@ export function applySkillStatDeltas(skill: Doc<"skills">, deltas: SkillStatDelt
       installsAllTime: nextInstallsAllTime,
     },
   };
-}
-
-export async function bumpDailySkillStats(
-  ctx: MutationCtx,
-  params: {
-    skillId: Id<"skills">;
-    now: number;
-    downloads?: number;
-    installs?: number;
-  },
-) {
-  const downloads = params.downloads ?? 0;
-  const installs = params.installs ?? 0;
-  if (downloads === 0 && installs === 0) return;
-  assertRankingMetricWritesAllowed();
-
-  const day = toDayKey(params.now);
-  const existing = await ctx.db
-    .query("skillDailyStats")
-    .withIndex("by_skill_day", (q) => q.eq("skillId", params.skillId).eq("day", day))
-    .unique();
-
-  if (existing) {
-    await ctx.db.patch(existing._id, {
-      downloads: Math.max(0, existing.downloads + downloads),
-      installs: Math.max(0, existing.installs + installs),
-      updatedAt: params.now,
-    });
-    return;
-  }
-
-  await ctx.db.insert("skillDailyStats", {
-    skillId: params.skillId,
-    day,
-    downloads: Math.max(0, downloads),
-    installs: Math.max(0, installs),
-    updatedAt: params.now,
-  });
 }
