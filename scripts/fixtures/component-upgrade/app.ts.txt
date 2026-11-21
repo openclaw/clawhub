@@ -1,0 +1,91 @@
+import { Workpool } from "@convex-dev/workpool";
+import { makeFunctionReference } from "convex/server";
+import { ConvexError, v } from "convex/values";
+import { components } from "./_generated/api";
+import { internalAction, internalMutation, internalQuery } from "./functions";
+
+function localOnly() {
+  if (!/^http:\/\/127\.0\.0\.1:\d+$/.test(process.env.CONVEX_SITE_URL ?? ""))
+    throw new Error("Dependency fixtures require the owned local backend.");
+}
+const ref = (name: string) => makeFunctionReference(name);
+
+export const seed = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    localOnly();
+    const userId = await ctx.db.insert("users", { role: "admin", handle: "dependency-fixture" });
+    await ctx.db.insert("dependencyUpgradeGate", { started: false, released: false });
+    return { userId };
+  },
+});
+
+export const gate = internalMutation({
+  args: { started: v.optional(v.boolean()), released: v.optional(v.boolean()) },
+  handler: async (ctx, args) => {
+    localOnly();
+    const row = await ctx.db.query("dependencyUpgradeGate").unique();
+    if (!row) throw new Error("Missing fixture gate.");
+    await ctx.db.patch(row._id, args);
+  },
+});
+
+export const observeGate = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    localOnly();
+    return await ctx.db.query("dependencyUpgradeGate").unique();
+  },
+});
+
+export const failAfterGate = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    localOnly();
+    await ctx.runMutation(ref("dependencyUpgradeFixtures:gate"), { started: true });
+    const deadline = Date.now() + 180_000;
+    while (Date.now() < deadline) {
+      const state = await ctx.runQuery(ref("dependencyUpgradeFixtures:observeGate"), {});
+      if (state?.released) throw new ConvexError({ fixture: "retained-completion" });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    throw new Error("Fixture gate was not released before the deadline.");
+  },
+});
+
+export const startFailure = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    localOnly();
+    const pool = new Workpool(components.searchReports, { maxParallelism: 1 });
+    return await pool.enqueueAction(ctx, ref("dependencyUpgradeFixtures:failAfterGate"), {}, { retry: false });
+  },
+});
+
+export const enqueueReportAndPause = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    localOnly();
+    const report = await ctx.runMutation(ref("searchReports:start"), {
+      view: "recommendations", artifactKind: "plugin",
+    });
+    await ctx.runMutation(components.searchReports.config.update, { maxParallelism: 0 });
+    return report;
+  },
+});
+
+export const parallelism = internalMutation({
+  args: { value: v.union(v.literal(0), v.literal(1)) },
+  handler: async (ctx, { value }) => {
+    localOnly();
+    await ctx.runMutation(components.searchReports.config.update, { maxParallelism: value });
+  },
+});
+
+export const reportRow = internalQuery({
+  args: { reportId: v.id("searchReportRuns") },
+  handler: async (ctx, { reportId }) => {
+    localOnly();
+    return await ctx.db.get(reportId);
+  },
+});

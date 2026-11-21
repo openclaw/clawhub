@@ -1,0 +1,10 @@
+import { defineSchema, defineTable } from "convex/server";
+import { v } from "convex/values";
+import original from "./_dependencyUpgradeOriginalSchema";
+
+export * from "./_dependencyUpgradeOriginalSchema";
+
+export default defineSchema({
+  ...original.tables,
+  dependencyUpgradeGate: defineTable({ started: v.boolean(), released: v.boolean() }),
+});
