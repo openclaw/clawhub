@@ -1,11 +1,12 @@
 import { getCatalogTopicSlugs } from "clawhub-schema/catalogMetadata";
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
-import { adjustGlobalPublicPluginsCount, getPublicPluginVisibilityDelta } from "./globalStats";
+import { adjustGlobalPublicPluginsCount } from "./globalStats";
 import {
   extractPackageFacetFields,
   type PackageSearchDigestFields,
 } from "./packageSearchDigestProjection";
+import { getPublicPluginVisibilityDelta } from "./packageSecurity";
 import { hasDigestChanged, reconcileSearchDigestRows } from "./searchDigestRows";
 
 type PackagePluginCategorySearchDigestFields = ReturnType<typeof extractPackageFacetFields> & {

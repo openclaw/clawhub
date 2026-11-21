@@ -5,13 +5,13 @@ import type { QueryCtx } from "./_generated/server";
 import { action, internalMutation, internalQuery, mutation, query } from "./functions";
 import { assertAdmin, requireUser } from "./lib/access";
 import { runMutationRef, runQueryRef } from "./lib/functionRefs";
-import { isPublicSkillDoc } from "./lib/globalStats";
 import {
   NVIDIA_SKILL_EVALUATION_CONFIG,
   NVIDIA_SKILL_EVALUATION_CONFIG_KEY,
 } from "./lib/skillEvaluationConfig";
 import { skillEvaluationMetricsValidator } from "./lib/skillEvaluationMetrics";
 import { parseSkillEvaluatorResultJson } from "./lib/skillEvaluationResult";
+import { isPublicSkillDoc } from "./lib/skillSafety";
 import { requestSkillEvaluationDispatch } from "./skillEvaluationDispatch";
 
 const MAX_ATTEMPTS = 3;

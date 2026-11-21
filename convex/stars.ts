@@ -3,9 +3,9 @@ import type { Doc } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { internalMutation, mutation, query } from "./functions";
 import { getOptionalActiveAuthUserId, requireUser } from "./lib/access";
-import { isPublicSkillDoc } from "./lib/globalStats";
 import { toPublicSkill } from "./lib/public";
 import { bumpLiveHourlySkillStats, ensureHourlyStatsState } from "./lib/skillHourlyStats";
+import { isPublicSkillDoc } from "./lib/skillSafety";
 import { applySkillStatDeltas } from "./lib/skillStats";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
 

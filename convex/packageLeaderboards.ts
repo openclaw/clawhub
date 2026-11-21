@@ -9,9 +9,9 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery } from "./functions";
-import { isPublicPluginDoc } from "./lib/globalStats";
 import { packageLeaderboardEntryValidator } from "./lib/leaderboardEntry";
 import { toDayKey } from "./lib/leaderboards";
+import { isPublicPluginDoc } from "./lib/packageSecurity";
 import { isEnglishPluginListing } from "./lib/pluginDiscovery";
 import { getCompletedRolling24HourWindow } from "./lib/skillHourlyStats";
 

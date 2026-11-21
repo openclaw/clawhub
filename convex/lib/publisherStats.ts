@@ -1,7 +1,7 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
-import { isPublicSkillDoc } from "./globalStats";
 import { hasNoPublishedPackageVersions } from "./packageReleaseVisibility";
+import { isPublicSkillDoc } from "./skillSafety";
 import { readCanonicalStat } from "./skillStats";
 
 const MAX_BOUNDED_SKILL_METRICS_SCAN = 500;

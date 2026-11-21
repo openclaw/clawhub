@@ -1,6 +1,32 @@
 import type { Doc } from "../_generated/dataModel";
 import { verdictFromCodes } from "./moderationReasonCodes";
 
+type SkillVisibilityFields = Pick<
+  Doc<"skills">,
+  "softDeletedAt" | "moderationStatus" | "moderationFlags"
+> &
+  Partial<Pick<Doc<"skills">, "moderationVerdict">>;
+
+export function isPublicSkillDoc<T extends SkillVisibilityFields>(
+  skill: T | null | undefined,
+): skill is T {
+  if (!skill || skill.softDeletedAt) return false;
+  if (skill.moderationStatus && skill.moderationStatus !== "active") return false;
+  if (skill.moderationVerdict === "malicious") return false;
+  if (skill.moderationFlags?.includes("blocked.malware")) return false;
+  return true;
+}
+
+export function getPublicSkillVisibilityDelta(
+  before: SkillVisibilityFields | null | undefined,
+  after: SkillVisibilityFields | null | undefined,
+) {
+  const beforePublic = isPublicSkillDoc(before);
+  const afterPublic = isPublicSkillDoc(after);
+  if (beforePublic === afterPublic) return 0;
+  return afterPublic ? 1 : -1;
+}
+
 type SkillTransferSafetyFields = Pick<
   Doc<"skills">,
   | "moderationStatus"

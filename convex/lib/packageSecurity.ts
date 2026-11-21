@@ -6,6 +6,31 @@ import {
 
 export type PackageScanStatus = Doc<"packages">["scanStatus"];
 
+type PackageVisibilityFields = Pick<
+  Doc<"packageSearchDigest">,
+  "softDeletedAt" | "family" | "channel" | "scanStatus" | "latestVersion"
+>;
+
+export function isPublicPluginDoc<T extends PackageVisibilityFields>(
+  pkg: T | null | undefined,
+): pkg is T {
+  if (!pkg || pkg.softDeletedAt || !pkg.latestVersion) return false;
+  if (pkg.family !== "code-plugin" && pkg.family !== "bundle-plugin") return false;
+  if (pkg.channel === "private") return false;
+  if (isPackageBlockedFromPublic(pkg.scanStatus)) return false;
+  return true;
+}
+
+export function getPublicPluginVisibilityDelta(
+  before: PackageVisibilityFields | null | undefined,
+  after: PackageVisibilityFields | null | undefined,
+) {
+  const beforePublic = isPublicPluginDoc(before);
+  const afterPublic = isPublicPluginDoc(after);
+  if (beforePublic === afterPublic) return 0;
+  return afterPublic ? 1 : -1;
+}
+
 type PackageReleaseSecurityLike = Pick<
   Doc<"packageReleases">,
   "sha256hash" | "llmAnalysis" | "verification" | "staticScan" | "manualModeration"

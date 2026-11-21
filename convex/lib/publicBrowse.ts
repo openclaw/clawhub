@@ -1,13 +1,12 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
-import { isPublicSkillDoc } from "./globalStats";
 import {
   isPendingSkillModerationReason,
   isSecurityScanStatusBlockedFromPublic,
   normalizeSecurityScanStatus,
 } from "./securityScanPolicy";
 import { isPublicSkillVersionAvailableForSkill } from "./skillFileAccess";
-import { isSkillSuspicious } from "./skillSafety";
+import { isSkillSuspicious, isPublicSkillDoc } from "./skillSafety";
 
 type SkillPublicBrowseFields = Pick<
   Doc<"skills">,

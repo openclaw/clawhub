@@ -61,12 +61,7 @@ import {
   getGitHubProviderAccountId,
 } from "./lib/githubIdentity";
 import { deleteGitHubSkillScansForSkill } from "./lib/githubSkillScans";
-import {
-  adjustGlobalPublicSkillsCount,
-  getPublicSkillVisibilityDelta,
-  isPublicSkillDoc,
-  readGlobalPublicSkillsCount,
-} from "./lib/globalStats";
+import { adjustGlobalPublicSkillsCount, readGlobalPublicSkillsCount } from "./lib/globalStats";
 import {
   decodeIndexCursor as decodePublicListCursor,
   encodeIndexCursor as encodeIndexKey,
@@ -187,6 +182,8 @@ import {
   isSkillReviewFlagged,
   isSkillSuspicious,
   isSkillTransferBlockedByModeration,
+  getPublicSkillVisibilityDelta,
+  isPublicSkillDoc,
 } from "./lib/skillSafety";
 import { extractValidatedDigestFields, upsertSkillSearchDigest } from "./lib/skillSearchDigest";
 import { digestToHydratableSkill, digestToOwnerInfo } from "./lib/skillSearchDigestProjection";

@@ -4,7 +4,6 @@ import type { QueryCtx } from "./_generated/server";
 import { internalQuery } from "./functions";
 import { getSkillBadgeMap, isSkillHighlighted, isSkillOfficial } from "./lib/badges";
 import type { CurrentFeaturedArtifact } from "./lib/featuredIntelligence";
-import { isPublicSkillDoc } from "./lib/globalStats";
 import { buildSkillInstallResolution } from "./lib/installResolver";
 import { isOfficialPublisher } from "./lib/officialPublishers";
 import {
@@ -21,6 +20,7 @@ import { searchArtifactKind } from "./lib/searchInsights";
 import type { SearchCurrentResult } from "./lib/searchInsights";
 import { normalizeSecurityScanStatus } from "./lib/securityScanPolicy";
 import { isPublicSkillVersionAvailableForSkill } from "./lib/skillFileAccess";
+import { isPublicSkillDoc } from "./lib/skillSafety";
 import { isPublicSkillsShMirrorDigest } from "./lib/skillsShMirrorPublic";
 import { getSkillsShPublicCatalogEnabledHandler } from "./rolloutCapabilities";
 

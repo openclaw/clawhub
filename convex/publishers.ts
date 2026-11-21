@@ -11,7 +11,6 @@ import {
   requireUser,
 } from "./lib/access";
 import { GITHUB_ORG_MEMBERSHIP_VERIFICATION_MAX_AGE_MS } from "./lib/githubOrgMemberships";
-import { isPublicSkillDoc } from "./lib/globalStats";
 import { isOfficialPublisher, toPublicPublisherWithOfficial } from "./lib/officialPublishers";
 import { hasNoPublishedPackageVersions } from "./lib/packageReleaseVisibility";
 import { assertPackageRuntimeIdAvailable } from "./lib/packageRuntimeIdentity";
@@ -52,6 +51,7 @@ import {
   getLatestActiveReservedHandle,
   isHandleReservedForAnotherUser,
 } from "./lib/reservedHandles";
+import { isPublicSkillDoc } from "./lib/skillSafety";
 import { syncSkillSearchDigestForSkill } from "./lib/skillSearchDigest";
 import { readCanonicalStat, readPublicDownloads } from "./lib/skillStats";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";

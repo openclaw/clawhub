@@ -4,16 +4,16 @@ import type { Doc } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import { internalAction, internalMutation, internalQuery } from "./functions";
 import {
-  isPublicPluginDoc,
-  isPublicSkillDoc,
   setGlobalPublicExternalSkillsCount,
   setGlobalPublicPluginsCount,
   setGlobalPublicSkillsCount,
 } from "./lib/globalStats";
+import { isPublicPluginDoc } from "./lib/packageSecurity";
 import {
   computeRecommendationScore,
   RECOMMENDATION_SCORE_VERSION,
 } from "./lib/recommendationScore";
+import { isPublicSkillDoc } from "./lib/skillSafety";
 import { isPublicSkillsShMirrorDigest } from "./lib/skillsShMirrorPublic";
 
 const DEFAULT_BATCH_SIZE = 200;
