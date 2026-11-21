@@ -29,7 +29,7 @@
     "verify": "bun run test && bun run typecheck && bun run test:artifact"
   },
   "dependencies": {
-    "@clack/prompts": "1.8.1",
+    "@clack/prompts": "1.9.0",
     "arktype": "2.2.9",
     "commander": "15.1.0",
     "fflate": "0.8.3",
