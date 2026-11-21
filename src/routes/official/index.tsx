@@ -97,13 +97,13 @@ function OfficialIndex() {
   const navigate = Route.useNavigate();
   const result = Route.useLoaderData() as OfficialLoaderResult;
   const [query, setQuery] = useState(search.q ?? "");
-  const [publishers, setPublishers] = useState(result.page);
-  const [nextCursor, setNextCursor] = useState<string | null>(
-    result.isDone ? null : result.continueCursor,
-  );
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [{ publishers, nextCursor, isLoadingMore }, setPagination] = useState({
+    publishers: result.page,
+    nextCursor: result.isDone ? null : result.continueCursor,
+    isLoadingMore: false,
+  });
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
-  const loadMoreInFlightRef = useRef(false);
+  const loadMoreRequestRef = useRef<symbol | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchNavigateTimer = useRef<number>(0);
   const canLoadMore = Boolean(nextCursor);
@@ -111,10 +111,12 @@ function OfficialIndex() {
   useEffect(() => {
     window.clearTimeout(searchNavigateTimer.current);
     setQuery(search.q ?? "");
-    setPublishers(result.page);
-    setNextCursor(result.isDone ? null : result.continueCursor);
-    setIsLoadingMore(false);
-    loadMoreInFlightRef.current = false;
+    loadMoreRequestRef.current = null;
+    setPagination({
+      publishers: result.page,
+      nextCursor: result.isDone ? null : result.continueCursor,
+      isLoadingMore: false,
+    });
   }, [result, search.q]);
 
   useEffect(() => {
@@ -170,19 +172,26 @@ function OfficialIndex() {
   });
 
   const loadMore = useCallback(async () => {
-    if (!nextCursor || loadMoreInFlightRef.current) return;
-    loadMoreInFlightRef.current = true;
-    setIsLoadingMore(true);
+    if (!nextCursor || loadMoreRequestRef.current) return;
+    const request = Symbol();
+    loadMoreRequestRef.current = request;
+    setPagination((previous) => ({ ...previous, isLoadingMore: true }));
     try {
       const page = await loadOfficialOrganizationsPage({
         cursor: nextCursor,
         query: search.q,
       });
-      setPublishers((previous) => [...previous, ...page.page]);
-      setNextCursor(page.isDone ? null : page.continueCursor);
+      if (loadMoreRequestRef.current !== request) return;
+      setPagination((previous) => ({
+        ...previous,
+        publishers: [...previous.publishers, ...page.page],
+        nextCursor: page.isDone ? null : page.continueCursor,
+      }));
     } finally {
-      setIsLoadingMore(false);
-      loadMoreInFlightRef.current = false;
+      if (loadMoreRequestRef.current === request) {
+        loadMoreRequestRef.current = null;
+        setPagination((previous) => ({ ...previous, isLoadingMore: false }));
+      }
     }
   }, [nextCursor, search.q]);
 
