@@ -171,6 +171,29 @@ async function resolveGlobalOpts(): Promise<GlobalOpts> {
 
 const withGlobalOpts = createGlobalOptsAction(resolveGlobalOpts);
 
+function configureSkillPublish(command: Command) {
+  command
+    .argument("<path>", "Skill folder path")
+    .option("--slug <slug>", "Published skill URL name")
+    .option("--name <name>", "Display name")
+    .option("--owner <handle>", "Publish under an org/user publisher handle")
+    .option("--source-owner <handle>", "Source owner handle when migrating an existing skill")
+    .option("--migrate-owner", "Move an existing skill to the selected owner when republishing")
+    .option("--version <version>", "Explicit version (defaults to 1.0.0 or next patch)")
+    .option("--fork-of <slug[@version]>", "Mark as a fork of an existing skill")
+    .option("--changelog <text>", "Changelog text")
+    .option("--tags <tags>", "Comma-separated tags", "latest")
+    .option("--categories <slugs>", "Comma-separated category slugs")
+    .option("--topics <topics>", "Comma-separated topics")
+    .option("--dry-run", "Preview without publishing")
+    .option("--json", "Output JSON")
+    .option("--source-repo <repo>", "GitHub source repository")
+    .option("--source-commit <sha>", "GitHub source commit")
+    .option("--source-ref <ref>", "GitHub source ref")
+    .option("--source-path <path>", "Path to the skill within the source repository")
+    .action(withGlobalOpts((opts, folder, options) => cmdPublish(opts, folder, options)));
+}
+
 function isInputAllowed() {
   const globalFlags = program.opts<{ input?: boolean }>();
   return globalFlags.input !== false;
@@ -314,27 +337,9 @@ registerCommand(program, ["inspect"])
   .option("--json", "Output JSON")
   .action(withGlobalOpts((opts, slug, options) => cmdInspect(opts, slug, options)));
 
-registerCommand(program, ["publish"])
-  .description("Legacy alias: publish a skill from folder")
-  .argument("<path>", "Skill folder path")
-  .option("--slug <slug>", "Published skill URL name")
-  .option("--name <name>", "Display name")
-  .option("--owner <handle>", "Publish under an org/user publisher handle")
-  .option("--source-owner <handle>", "Source owner handle when migrating an existing skill")
-  .option("--migrate-owner", "Move an existing skill to the selected owner when republishing")
-  .option("--version <version>", "Explicit version (defaults to 1.0.0 or next patch)")
-  .option("--fork-of <slug[@version]>", "Mark as a fork of an existing skill")
-  .option("--changelog <text>", "Changelog text")
-  .option("--tags <tags>", "Comma-separated tags", "latest")
-  .option("--categories <slugs>", "Comma-separated category slugs")
-  .option("--topics <topics>", "Comma-separated topics")
-  .option("--dry-run", "Preview without publishing")
-  .option("--json", "Output JSON")
-  .option("--source-repo <repo>", "GitHub source repository")
-  .option("--source-commit <sha>", "GitHub source commit")
-  .option("--source-ref <ref>", "GitHub source ref")
-  .option("--source-path <path>", "Path to the skill within the source repository")
-  .action(withGlobalOpts((opts, folder, options) => cmdPublish(opts, folder, options)));
+configureSkillPublish(
+  registerCommand(program, ["publish"]).description("Legacy alias: publish a skill from folder"),
+);
 
 const scanCmd = registerCommand(program, ["scan"])
   .description("Run or download ClawHub scan reports")
@@ -414,27 +419,9 @@ registerCommand(program, ["unhide"])
   );
 
 const skill = registerCommandGroup(program, ["skill"]).description("Manage published skills");
-registerCommand(skill, ["skill", "publish"])
-  .description("Publish a skill from folder")
-  .argument("<path>", "Skill folder path")
-  .option("--slug <slug>", "Published skill URL name")
-  .option("--name <name>", "Display name")
-  .option("--owner <handle>", "Publish under an org/user publisher handle")
-  .option("--source-owner <handle>", "Source owner handle when migrating an existing skill")
-  .option("--migrate-owner", "Move an existing skill to the selected owner when republishing")
-  .option("--version <version>", "Explicit version (defaults to 1.0.0 or next patch)")
-  .option("--fork-of <slug[@version]>", "Mark as a fork of an existing skill")
-  .option("--changelog <text>", "Changelog text")
-  .option("--tags <tags>", "Comma-separated tags", "latest")
-  .option("--categories <slugs>", "Comma-separated category slugs")
-  .option("--topics <topics>", "Comma-separated topics")
-  .option("--dry-run", "Preview without publishing")
-  .option("--json", "Output JSON")
-  .option("--source-repo <repo>", "GitHub source repository")
-  .option("--source-commit <sha>", "GitHub source commit")
-  .option("--source-ref <ref>", "GitHub source ref")
-  .option("--source-path <path>", "Path to the skill within the source repository")
-  .action(withGlobalOpts((opts, folder, options) => cmdPublish(opts, folder, options)));
+configureSkillPublish(
+  registerCommand(skill, ["skill", "publish"]).description("Publish a skill from folder"),
+);
 
 registerCommand(skill, ["skill", "verify"])
   .description("Verify a published skill using ClawHub security evidence")
