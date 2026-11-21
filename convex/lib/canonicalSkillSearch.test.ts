@@ -1,10 +1,14 @@
 /* @vitest-environment node */
 
 import { describe, expect, it } from "vitest";
+import type { Id } from "../_generated/dataModel";
 import {
+  buildExternalCanonicalResult,
+  buildNativeCanonicalResult,
   classifyCanonicalSkillSearchMatch,
   compareCanonicalSkillSearchCandidates,
   type CanonicalSkillSearchCandidate,
+  type ExternalSkillSearchDigest,
 } from "./canonicalSkillSearch";
 
 function candidate(
@@ -138,5 +142,119 @@ describe("canonical mixed skill search ranking", () => {
       semanticScore: 0.92,
     });
     expect(semantic).toEqual({ tier: 5, lexicalScore: 0, semanticScore: 0.92 });
+  });
+});
+
+function nativeEntry(): Parameters<typeof buildNativeCanonicalResult>[0] {
+  return {
+    skill: {
+      _id: "skills:calendar" as Id<"skills">,
+      _creationTime: 1,
+      slug: "calendar",
+      displayName: "Calendar",
+      ownerUserId: "users:owner" as Id<"users">,
+      ownerPublisherId: "publishers:owner" as Id<"publishers">,
+      tags: {},
+      stats: { downloads: 9, installs: 3, stars: 2, versions: 1, comments: 0 },
+      createdAt: 1,
+      updatedAt: 2,
+    },
+    version: null,
+    ownerHandle: null,
+    owner: {
+      _id: "publishers:owner" as Id<"publishers">,
+      _creationTime: 1,
+      kind: "org",
+      handle: "calendar-org",
+      displayName: "Calendar Org",
+      bio: "Private to the full publisher profile",
+      official: true,
+    },
+    semanticScore: 0,
+  };
+}
+
+const externalDigest: ExternalSkillSearchDigest = {
+  externalId: "acme/calendar tools/calendar",
+  slug: "calendar",
+  displayName: "Calendar",
+  sourceHost: "skills.example.test",
+  lastObservedAt: 3,
+  sourceUrl: "https://skills.example.test/calendar",
+  repo: "calendar tools",
+  upstreamInstalls: 10,
+  upstreamScanners: {
+    genAgentTrustHub: { status: "unknown" },
+    socket: { status: "unknown" },
+    snyk: { status: "unknown" },
+  },
+  inferredCategories: ["source-only", "research"],
+  featured: true,
+};
+
+describe("canonical skill result projection", () => {
+  it("uses native publisher identity and omits the bio without changing the input", () => {
+    const entry = nativeEntry();
+    const result = buildNativeCanonicalResult(entry, "calendar");
+    expect(result).toMatchObject({
+      source: "clawhub",
+      canonicalUrl: "/calendar-org/skills/calendar",
+      install: { kind: "clawhub", reference: "calendar-org/calendar" },
+      official: true,
+      ownerHandle: "calendar-org",
+      downloads: 9,
+      version: null,
+      metrics: { rolling60DayInstalls: 0, bookmarks: 0, updatedAt: 2 },
+    });
+    expect(result?.native?.skill).toBe(entry.skill);
+    expect(result?.native?.owner).not.toHaveProperty("bio");
+    expect(entry.owner).toHaveProperty("bio");
+  });
+
+  it.each([true, false])(
+    "falls back to stored ownership when no handle exists (%s)",
+    (publisher) => {
+      const entry = nativeEntry();
+      entry.owner = null;
+      if (!publisher) entry.skill.ownerPublisherId = undefined;
+      entry.skill.slug = "calendar space";
+      entry.skill.installKind = "github";
+      const result = buildNativeCanonicalResult(entry, "calendar space");
+      expect(result?.canonicalUrl).toBe(
+        publisher
+          ? "/publishers%3Aowner/skills/calendar%20space"
+          : "/users%3Aowner/skills/calendar%20space",
+      );
+      expect(result?.install).toEqual({
+        kind: "github",
+        reference: "calendar space",
+        sourceUrl: null,
+      });
+      expect(result?.publisher).toBeNull();
+    },
+  );
+
+  it("preserves external provenance, encoded routes, and unknown native metrics", () => {
+    expect(buildExternalCanonicalResult(externalDigest, "calendar")).toMatchObject({
+      source: "skills-sh",
+      canonicalUrl: "/skills-sh/acme/calendar%20tools/calendar",
+      categories: ["research"],
+      featured: true,
+      official: false,
+      ownerHandle: "skills.example.test",
+      native: null,
+      install: {
+        kind: "skills-sh",
+        reference: "skills-sh:acme/calendar tools/calendar",
+        sourceUrl: externalDigest.sourceUrl,
+      },
+      sourceIdentity: { owner: null, repo: "calendar tools", lifetimeInstalls: 10 },
+      metrics: { rolling60DayInstalls: null, bookmarks: null, updatedAt: 3 },
+    });
+  });
+
+  it("does not project candidates without query relevance", () => {
+    expect(buildNativeCanonicalResult(nativeEntry(), "unrelated")).toBeNull();
+    expect(buildExternalCanonicalResult(externalDigest, "unrelated")).toBeNull();
   });
 });
