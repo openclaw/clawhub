@@ -1,18 +1,20 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalMutation } from "./functions";
+import { normalizeRetentionBatchSize } from "./lib/retentionPolicy";
 import {
   isBoundedCatalogSearchText,
   normalizeCatalogSearchQuery,
-} from "./lib/catalogSearchObservations";
-import { normalizeRetentionBatchSize } from "./lib/retentionPolicy";
+  searchArtifactKind,
+  searchInsightSource,
+} from "./lib/searchInsights";
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1_000;
 
 export const recordInternal = internalMutation({
   args: {
-    source: v.union(v.literal("clawhub-web"), v.literal("openclaw-control-ui")),
-    artifactKind: v.union(v.literal("plugin"), v.literal("skill")),
+    source: searchInsightSource,
+    artifactKind: searchArtifactKind,
     scope: v.optional(v.union(v.literal("catalog"), v.literal("shelf"))),
     normalizedQuery: v.string(),
     category: v.optional(v.string()),

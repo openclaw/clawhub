@@ -1,58 +1,16 @@
 import { internal } from "../_generated/api";
 import type { ActionCtx } from "../_generated/server";
-
-const SEARCH_SOURCES = ["clawhub-web", "openclaw-control-ui"] as const;
-type SearchSource = (typeof SEARCH_SOURCES)[number];
-export type CatalogArtifactKind = "plugin" | "skill";
-
-export function parseCatalogSearchSource(value: string | null): SearchSource | undefined {
-  return SEARCH_SOURCES.find((source) => source === value);
-}
-
-export function normalizeCatalogSearchQuery(value: string) {
-  return value.trim().replace(/\s+/gu, " ").toLowerCase();
-}
-
-export function isBoundedCatalogSearchText(query: string, category?: string, topic?: string) {
-  return (
-    query.length > 0 &&
-    query.length <= 256 &&
-    (category?.length ?? 0) <= 120 &&
-    (topic?.length ?? 0) <= 120
-  );
-}
-
-type SearchFacts = {
-  artifactKind: CatalogArtifactKind;
-  query: string;
-  category?: string;
-  topic?: string;
-  filtered: boolean;
-  officialResults: readonly boolean[];
-};
-
-export function buildCatalogSearchObservation(
-  params: SearchFacts & { source: SearchSource | undefined },
-) {
-  if (!params.source) return null;
-  const normalizedQuery = normalizeCatalogSearchQuery(params.query);
-  if (!isBoundedCatalogSearchText(normalizedQuery, params.category, params.topic)) return null;
-  return {
-    source: params.source,
-    artifactKind: params.artifactKind,
-    scope: params.filtered ? ("shelf" as const) : ("catalog" as const),
-    normalizedQuery,
-    category: params.category,
-    topic: params.topic,
-    resultCount: params.officialResults.length,
-    officialResultCount: params.officialResults.filter((official) => official === true).length,
-  };
-}
+import {
+  buildCatalogSearchObservation,
+  parseCatalogSearchSource,
+  type CatalogSearchFacts,
+  type SearchInsightSource,
+} from "./searchInsights";
 
 export async function recordCatalogSearchObservation(
-  ctx: ActionCtx,
+  ctx: Pick<ActionCtx, "runMutation">,
   request: Request,
-  facts: SearchFacts,
+  facts: CatalogSearchFacts,
 ) {
   if (request.signal.aborted) return;
   const source = parseCatalogSearchSource(new URL(request.url).searchParams.get("searchSource"));
@@ -60,8 +18,8 @@ export async function recordCatalogSearchObservation(
 }
 
 export async function recordCatalogSearchFacts(
-  ctx: ActionCtx,
-  facts: SearchFacts & { source: SearchSource | undefined },
+  ctx: Pick<ActionCtx, "runMutation">,
+  facts: CatalogSearchFacts & { source: SearchInsightSource | undefined },
 ) {
   const observation = buildCatalogSearchObservation(facts);
   if (!observation) return;
