@@ -216,4 +216,15 @@ describe("buildPublisherOgSvg", () => {
     expect(readOfficialBadgeX(svg)).toBe(1037.7);
     expect(svg).not.toContain("发布者名称测试测试测试测试测试</tspan>");
   });
+
+  it("uses the overflow layout when only the creator handle is too wide", () => {
+    const svg = buildSvg({
+      title: "Ada",
+      handleLabel: "@" + "creator".repeat(16),
+    });
+
+    expect(svg).toContain('font-size="66"');
+    expect(svg).toContain('<tspan x="447" dy="0">Ada</tspan>');
+    expect(svg).toContain('x="447" y="151"');
+  });
 });

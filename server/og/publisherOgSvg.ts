@@ -145,22 +145,6 @@ function wrapTextWithoutEllipsis(value: string, maxWidth: number, fontSize: numb
   return lines.length > 0 ? lines : [value.trim()];
 }
 
-function fitMultilineText(
-  value: string,
-  maxWidth: number,
-  maxLines: number,
-  options: { maxFontSize: number; minFontSize: number },
-) {
-  for (let fontSize = options.maxFontSize; fontSize >= options.minFontSize; fontSize -= 2) {
-    const lines = wrapTextWithoutEllipsis(value, maxWidth, fontSize);
-    if (lines.length <= maxLines) {
-      return { fontSize, lines };
-    }
-  }
-  const fontSize = options.minFontSize;
-  return { fontSize, lines: wrapTextWithoutEllipsis(value, maxWidth, fontSize) };
-}
-
 function fitMultilineTextWithDots(
   value: string,
   maxWidth: number,
@@ -297,7 +281,8 @@ export function buildPublisherOgSvg(params: PublisherOgSvgParams) {
   const normalTitleMaxWidth = params.official
     ? normalOfficialTitleMaxWidth(normalLayout.contentWidth)
     : normalLayout.contentWidth;
-  const titleNeedsOverflow = wrapTextWithoutEllipsis(rawTitle, normalTitleMaxWidth, 72).length > 1;
+  const normalTitleLines = wrapTextWithoutEllipsis(rawTitle, normalTitleMaxWidth, 72);
+  const titleNeedsOverflow = normalTitleLines.length > 1;
   const creatorNeedsOverflow =
     estimateTextWidth(params.handleLabel, 46) > normalLayout.creatorWidth;
   const usesLongLayout = titleNeedsOverflow || creatorNeedsOverflow;
@@ -320,7 +305,7 @@ export function buildPublisherOgSvg(params: PublisherOgSvgParams) {
     : layout.contentWidth;
   const title = usesLongLayout
     ? fitMultilineTextWithDots(rawTitle, titleMaxWidth, 2, 66)
-    : fitMultilineText(rawTitle, titleMaxWidth, 2, { maxFontSize: 72, minFontSize: 30 });
+    : { fontSize: 72, lines: normalTitleLines };
   const titleFontSize = title.fontSize;
   const titleLines = title.lines;
   const titleLineHeight = usesLongLayout ? 84 : Math.max(50, Math.round(titleFontSize * 0.98));
@@ -330,15 +315,7 @@ export function buildPublisherOgSvg(params: PublisherOgSvgParams) {
         `<tspan x="${layout.titleX}" dy="${index === 0 ? 0 : titleLineHeight}">${escapeXml(line)}</tspan>`,
     )
     .join("");
-  const titleY = usesLongLayout
-    ? 151
-    : hasOrganizations
-      ? titleLines.length > 1
-        ? 138
-        : 190
-      : titleLines.length > 1
-        ? 195
-        : 243;
+  const titleY = usesLongLayout ? 151 : hasOrganizations ? 190 : 243;
   const lastTitleLine = titleLines.at(-1) ?? rawTitle;
   const badgeX = estimateBadgeX(
     lastTitleLine,
