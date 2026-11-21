@@ -30,6 +30,32 @@ export function isGlobalStatsStorageNotReadyError(error: unknown) {
   );
 }
 
+async function readGlobalStatsRow(ctx: GlobalStatsReadCtx) {
+  return await ctx.db
+    .query("globalStats")
+    .withIndex("by_key", (q) => q.eq("key", GLOBAL_STATS_KEY))
+    .unique();
+}
+
+async function setNormalizedGlobalCount(
+  ctx: GlobalStatsWriteCtx,
+  field: "activeSkillsCount" | "activePluginsCount" | "activeExternalSkillsCount",
+  count: number,
+  now: number,
+) {
+  const existing = await readGlobalStatsRow(ctx);
+  if (existing) {
+    await ctx.db.patch(existing._id, { [field]: count, updatedAt: now });
+  } else {
+    await ctx.db.insert("globalStats", {
+      key: GLOBAL_STATS_KEY,
+      activeSkillsCount: 0,
+      [field]: count,
+      updatedAt: now,
+    });
+  }
+}
+
 export async function setGlobalPublicSkillsCount(
   ctx: GlobalStatsWriteCtx,
   count: number,
@@ -37,20 +63,7 @@ export async function setGlobalPublicSkillsCount(
 ) {
   const normalizedCount = Math.max(0, Math.trunc(Number.isFinite(count) ? count : 0));
   try {
-    const existing = await ctx.db
-      .query("globalStats")
-      .withIndex("by_key", (q) => q.eq("key", GLOBAL_STATS_KEY))
-      .unique();
-
-    if (existing) {
-      await ctx.db.patch(existing._id, { activeSkillsCount: normalizedCount, updatedAt: now });
-    } else {
-      await ctx.db.insert("globalStats", {
-        key: GLOBAL_STATS_KEY,
-        activeSkillsCount: normalizedCount,
-        updatedAt: now,
-      });
-    }
+    await setNormalizedGlobalCount(ctx, "activeSkillsCount", normalizedCount, now);
   } catch (error) {
     if (isGlobalStatsStorageNotReadyError(error)) return;
     throw error;
@@ -64,21 +77,7 @@ export async function setGlobalPublicPluginsCount(
 ) {
   const normalizedCount = Math.max(0, Math.trunc(Number.isFinite(count) ? count : 0));
   try {
-    const existing = await ctx.db
-      .query("globalStats")
-      .withIndex("by_key", (q) => q.eq("key", GLOBAL_STATS_KEY))
-      .unique();
-
-    if (existing) {
-      await ctx.db.patch(existing._id, { activePluginsCount: normalizedCount, updatedAt: now });
-    } else {
-      await ctx.db.insert("globalStats", {
-        key: GLOBAL_STATS_KEY,
-        activeSkillsCount: 0,
-        activePluginsCount: normalizedCount,
-        updatedAt: now,
-      });
-    }
+    await setNormalizedGlobalCount(ctx, "activePluginsCount", normalizedCount, now);
   } catch (error) {
     if (isGlobalStatsStorageNotReadyError(error)) return;
     throw error;
@@ -91,23 +90,7 @@ export async function setGlobalPublicExternalSkillsCount(
   now = Date.now(),
 ) {
   const normalizedCount = Math.max(0, Math.trunc(Number.isFinite(count) ? count : 0));
-  const existing = await ctx.db
-    .query("globalStats")
-    .withIndex("by_key", (q) => q.eq("key", GLOBAL_STATS_KEY))
-    .unique();
-  if (existing) {
-    await ctx.db.patch(existing._id, {
-      activeExternalSkillsCount: normalizedCount,
-      updatedAt: now,
-    });
-    return;
-  }
-  await ctx.db.insert("globalStats", {
-    key: GLOBAL_STATS_KEY,
-    activeSkillsCount: 0,
-    activeExternalSkillsCount: normalizedCount,
-    updatedAt: now,
-  });
+  await setNormalizedGlobalCount(ctx, "activeExternalSkillsCount", normalizedCount, now);
 }
 
 export async function adjustGlobalPublicSkillsCount(
@@ -126,10 +109,7 @@ export async function adjustGlobalPublicSkillsCount(
     | null
     | undefined;
   try {
-    existing = await ctx.db
-      .query("globalStats")
-      .withIndex("by_key", (q) => q.eq("key", GLOBAL_STATS_KEY))
-      .unique();
+    existing = await readGlobalStatsRow(ctx);
   } catch (error) {
     if (isGlobalStatsStorageNotReadyError(error)) return;
     throw error;
@@ -161,10 +141,7 @@ export async function adjustGlobalPublicPluginsCount(
     | null
     | undefined;
   try {
-    existing = await ctx.db
-      .query("globalStats")
-      .withIndex("by_key", (q) => q.eq("key", GLOBAL_STATS_KEY))
-      .unique();
+    existing = await readGlobalStatsRow(ctx);
   } catch (error) {
     if (isGlobalStatsStorageNotReadyError(error)) return;
     throw error;
@@ -178,10 +155,7 @@ export async function adjustGlobalPublicPluginsCount(
 
 export async function readGlobalPublicSkillsCount(ctx: GlobalStatsReadCtx) {
   try {
-    const stats = await ctx.db
-      .query("globalStats")
-      .withIndex("by_key", (q) => q.eq("key", GLOBAL_STATS_KEY))
-      .unique();
+    const stats = await readGlobalStatsRow(ctx);
     return stats ? stats.activeSkillsCount + (stats.activeExternalSkillsCount ?? 0) : null;
   } catch (error) {
     if (isGlobalStatsStorageNotReadyError(error)) return null;
@@ -191,10 +165,7 @@ export async function readGlobalPublicSkillsCount(ctx: GlobalStatsReadCtx) {
 
 export async function readGlobalPublicPluginsCount(ctx: GlobalStatsReadCtx) {
   try {
-    const stats = await ctx.db
-      .query("globalStats")
-      .withIndex("by_key", (q) => q.eq("key", GLOBAL_STATS_KEY))
-      .unique();
+    const stats = await readGlobalStatsRow(ctx);
     return stats?.activePluginsCount ?? null;
   } catch (error) {
     if (isGlobalStatsStorageNotReadyError(error)) return null;
