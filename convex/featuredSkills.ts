@@ -3,6 +3,7 @@ import { ConvexError, v } from "convex/values";
 import { api } from "./_generated/api";
 import { internalMutation, query } from "./functions";
 import { assertModerator } from "./lib/access";
+import { buildExternalCanonicalResult } from "./lib/canonicalSkillSearch";
 import {
   assertFeaturedCapacity,
   FEATURED_CATALOG_SIZE,
@@ -10,7 +11,6 @@ import {
 } from "./lib/featuredPolicy";
 import { buildUnclaimedSkillsShInstallResolution } from "./lib/skillsShMirrorPublic";
 import { getSkillsShPublicCatalogEnabledHandler } from "./rolloutCapabilities";
-import { buildExternalCanonicalResult } from "./search";
 import type { PublicSkillEntry } from "./skills";
 
 type ExternalFeaturedSkill = {
