@@ -192,6 +192,16 @@ function getVersionRowButton(version: string) {
   return toggle;
 }
 
+function pendingVersionMutation() {
+  let resolve!: () => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<{ ok: true }>((onResolve, onReject) => {
+    resolve = () => onResolve({ ok: true });
+    reject = onReject;
+  });
+  return { promise, resolve, reject };
+}
+
 describe("version Delete UI", () => {
   beforeEach(() => {
     useMutationMock.mockReset();
@@ -709,4 +719,211 @@ describe("version Delete UI", () => {
     expect(screen.getByRole("button", { name: "Delete version 0.9.0" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
   });
+
+  it("keeps an in-flight skill deletion when version data refreshes for the same skill", async () => {
+    const deletion = pendingVersionMutation();
+    useMutationMock.mockReturnValue(() => deletion.promise);
+    const { rerender } = renderSkillVersions();
+    fireEvent.click(screen.getByRole("button", { name: "Delete version 1.0.0" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete version" }));
+
+    rerender(makeSkillVersionsPanel({ versions: [...skillVersions] }));
+    expect(screen.getByRole("button", { name: "Delete version" }).hasAttribute("disabled")).toBe(
+      true,
+    );
+    await act(async () => deletion.resolve());
+    expect(toast.success).toHaveBeenCalledWith("Deleted version 1.0.0.");
+    expect(screen.getByRole("button", { name: "Restore version 1.0.0" })).toBeTruthy();
+  });
+
+  it.each(["resolve", "reject"])(
+    "ignores a plugin deletion that %ss after version data refreshes for the same package",
+    async (settlement) => {
+      const deletion = pendingVersionMutation();
+      useMutationMock.mockReturnValue(() => deletion.promise);
+      const onVersionDeleted = vi.fn();
+      const { rerender } = renderPluginVersions({ onVersionDeleted });
+      fireEvent.click(screen.getByRole("button", { name: "Delete version 1.0.0" }));
+      fireEvent.click(screen.getByRole("button", { name: "Delete version" }));
+      rerender(
+        <PluginVersionsPanel
+          packageName="demo-plugin"
+          versions={{ ...pluginVersions }}
+          latestVersion="2.0.0"
+          canDeleteVersions
+          onVersionDeleted={onVersionDeleted}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Delete version 1.0.0" }));
+      await act(async () => {
+        if (settlement === "resolve") deletion.resolve();
+        else deletion.reject(new Error("obsolete deletion"));
+      });
+      expectWithdrawalConfirmation("1.0.0");
+      expect(screen.getByRole("button", { name: "Delete version" }).hasAttribute("disabled")).toBe(
+        false,
+      );
+      expect(toast.success).not.toHaveBeenCalled();
+      expect(toast.error).not.toHaveBeenCalled();
+      expect(onVersionDeleted).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["skill", "plugin"])(
+    "keeps %s deletion and restoration pending independently",
+    async (kind) => {
+      const deletion = pendingVersionMutation();
+      const restoration = pendingVersionMutation();
+      useMutationMock.mockImplementation((mutation) =>
+        getFunctionName(mutation).includes("deleteOwned")
+          ? () => deletion.promise
+          : () => restoration.promise,
+      );
+      usePaginatedQueryMock.mockReturnValue({
+        results: [
+          {
+            ...skillVersions[1],
+            _id: "skillVersions:withdrawn",
+            version: "0.8.0",
+            softDeletedAt: 4,
+            ownerDeletedAt: 4,
+          },
+        ],
+        status: "Exhausted",
+        loadMore: vi.fn(),
+      });
+      if (kind === "skill") renderSkillVersions();
+      else renderPluginVersions();
+      const restoreButton = screen.getByRole("button", { name: "Restore version 0.8.0" });
+      fireEvent.click(screen.getByRole("button", { name: "Delete version 1.0.0" }));
+      fireEvent.click(screen.getByRole("button", { name: "Delete version" }));
+      fireEvent.click(restoreButton);
+      fireEvent.click(screen.getByRole("button", { name: "Restore version", hidden: true }));
+      expect(
+        screen
+          .getByRole("button", { name: "Delete version", hidden: true })
+          .hasAttribute("disabled"),
+      ).toBe(true);
+      expect(
+        screen
+          .getByRole("button", { name: "Restore version", hidden: true })
+          .hasAttribute("disabled"),
+      ).toBe(true);
+      await act(async () => restoration.resolve());
+      expect(toast.success).toHaveBeenCalledWith("Restored version 0.8.0.");
+      expect(
+        screen
+          .getByRole("button", { name: "Delete version", hidden: true })
+          .hasAttribute("disabled"),
+      ).toBe(true);
+      await act(async () => deletion.resolve());
+      expect(toast.success).toHaveBeenCalledWith("Deleted version 1.0.0.");
+      expect(toast.error).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ["skill", "resolve"],
+    ["skill", "reject"],
+    ["plugin", "resolve"],
+    ["plugin", "reject"],
+  ])("ignores a %s restoration that %ss after changing owners", async (kind, settlement) => {
+    const restoration = pendingVersionMutation();
+    useMutationMock.mockReturnValue(() => restoration.promise);
+    usePaginatedQueryMock.mockReturnValue({
+      results: [{ ...skillVersions[1], version: "0.8.0", softDeletedAt: 4, ownerDeletedAt: 4 }],
+      status: "Exhausted",
+      loadMore: vi.fn(),
+    });
+    const onVersionDeleted = vi.fn();
+    const { rerender } = render(
+      kind === "skill" ? (
+        makeSkillVersionsPanel()
+      ) : (
+        <PluginVersionsPanel
+          packageName="demo-plugin"
+          versions={pluginVersions}
+          latestVersion="2.0.0"
+          canDeleteVersions
+          onVersionDeleted={onVersionDeleted}
+        />
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Restore version 0.8.0" }));
+    fireEvent.click(screen.getByRole("button", { name: "Restore version" }));
+    rerender(
+      kind === "skill" ? (
+        makeSkillVersionsPanel({ panelSkillId: otherSkillId })
+      ) : (
+        <PluginVersionsPanel
+          packageName="other-plugin"
+          versions={otherPluginVersions}
+          latestVersion="3.0.0"
+          canDeleteVersions
+          onVersionDeleted={onVersionDeleted}
+        />
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Restore version 0.8.0" }));
+    await act(async () => {
+      if (settlement === "resolve") restoration.resolve();
+      else restoration.reject(new Error("obsolete restoration"));
+    });
+    expectRestoreConfirmation("0.8.0");
+    expect(screen.getByRole("button", { name: "Restore version" }).hasAttribute("disabled")).toBe(
+      false,
+    );
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(onVersionDeleted).not.toHaveBeenCalled();
+  });
+
+  it.each(["throw", "reject"])(
+    "retains the plugin restore snapshot when metadata refresh callbacks %s",
+    async (failure) => {
+      const restoration = pendingVersionMutation();
+      useMutationMock.mockReturnValue(() => restoration.promise);
+      usePaginatedQueryMock.mockReturnValue({
+        results: [
+          {
+            version: "0.8.0",
+            createdAt: 0,
+            changelog: "Retained release",
+            softDeletedAt: 4,
+            ownerDeletedAt: 4,
+          },
+        ],
+        status: "Exhausted",
+        loadMore: vi.fn(),
+      });
+      const onVersionDeleted = vi.fn(() => {
+        if (failure === "throw") throw new Error("metadata refresh failed");
+        return Promise.reject(new Error("metadata refresh failed"));
+      });
+      const panel = () => (
+        <PluginVersionsPanel
+          packageName="demo-plugin"
+          versions={pluginVersions}
+          latestVersion="2.0.0"
+          canDeleteVersions
+          onVersionDeleted={onVersionDeleted}
+        />
+      );
+      const { rerender } = render(panel());
+      fireEvent.click(screen.getByRole("button", { name: "Restore version 0.8.0" }));
+      fireEvent.click(screen.getByRole("button", { name: "Restore version" }));
+      usePaginatedQueryMock.mockReturnValue({
+        results: [],
+        status: "Exhausted",
+        loadMore: vi.fn(),
+      });
+      rerender(panel());
+      await act(async () => restoration.resolve());
+      expect(onVersionDeleted).toHaveBeenCalledTimes(1);
+      expect(toast.success).toHaveBeenCalledWith("Restored version 0.8.0.");
+      expect(toast.error).not.toHaveBeenCalled();
+      expect(screen.getByRole("link", { name: "Download .zip for v0.8.0" })).toBeTruthy();
+      expect(screen.queryByRole("heading", { name: "Restore version 0.8.0?" })).toBeNull();
+    },
+  );
 });

@@ -1,12 +1,11 @@
 import { useMutation, usePaginatedQuery } from "convex/react";
 import { Download } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
+import { useEffect, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import type { Id } from "../../convex/_generated/dataModel";
 import { emitAnalytics } from "../lib/analyticsEvents";
-import { getUserFacingConvexError } from "../lib/convexError";
+import { useVersionWithdrawal } from "../lib/useVersionWithdrawal";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { VersionChangelog } from "./VersionChangelog";
@@ -69,33 +68,21 @@ export function SkillVersionsPanel({
     canDeleteVersions ? { skillId } : "skip",
     { initialNumItems: 20 },
   );
-  const [deletingVersion, setDeletingVersion] = useState<Doc<"skillVersions"> | null>(null);
-  const [restoringVersion, setRestoringVersion] = useState<Doc<"skillVersions"> | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [isRestoring, setIsRestoring] = useState(false);
-  const [withdrawnVersionIds, setWithdrawnVersionIds] = useState<Set<Id<"skillVersions">>>(
-    () => new Set(),
-  );
-  const [restoredVersionIds, setRestoredVersionIds] = useState<Set<Id<"skillVersions">>>(
-    () => new Set(),
-  );
+  const withdrawal = useVersionWithdrawal({
+    deleteVersion: (versionId: Id<"skillVersions">) => deleteOwnedVersion({ versionId }),
+    restoreVersion: (versionId: Id<"skillVersions">) => restoreOwnedVersion({ versionId }),
+  });
+  const { reset: resetWithdrawal } = withdrawal;
   const [expandedVersionIds, setExpandedVersionIds] = useState<Set<string>>(() => new Set());
-  const deleteContextIdRef = useRef(0);
   const visibleVersions = mergeSkillVersions(
     versions ?? [],
     managerVersionResults as Doc<"skillVersions">[],
   );
 
   useEffect(() => {
-    deleteContextIdRef.current += 1;
-    setDeletingVersion(null);
-    setRestoringVersion(null);
-    setIsDeleting(false);
-    setIsRestoring(false);
-    setWithdrawnVersionIds(new Set());
-    setRestoredVersionIds(new Set());
+    resetWithdrawal();
     setExpandedVersionIds(new Set());
-  }, [skillId]);
+  }, [skillId, resetWithdrawal]);
 
   const toggleVersion = (versionId: string) => {
     setExpandedVersionIds((current) => {
@@ -107,54 +94,6 @@ export function SkillVersionsPanel({
       }
       return next;
     });
-  };
-
-  const handleDelete = async () => {
-    if (!deletingVersion) return;
-    const deleteContextId = deleteContextIdRef.current;
-    const version = deletingVersion;
-    setIsDeleting(true);
-    try {
-      await deleteOwnedVersion({ versionId: version._id });
-      if (deleteContextIdRef.current !== deleteContextId) return;
-      setWithdrawnVersionIds((current) => new Set(current).add(version._id));
-      setRestoredVersionIds((current) => {
-        const next = new Set(current);
-        next.delete(version._id);
-        return next;
-      });
-      toast.success(`Deleted version ${version.version}.`);
-      setDeletingVersion(null);
-    } catch (error) {
-      if (deleteContextIdRef.current !== deleteContextId) return;
-      toast.error(getUserFacingConvexError(error, "Version could not be deleted. Try again."));
-    } finally {
-      if (deleteContextIdRef.current === deleteContextId) setIsDeleting(false);
-    }
-  };
-
-  const handleRestore = async () => {
-    if (!restoringVersion) return;
-    const restoreContextId = deleteContextIdRef.current;
-    const version = restoringVersion;
-    setIsRestoring(true);
-    try {
-      await restoreOwnedVersion({ versionId: version._id });
-      if (deleteContextIdRef.current !== restoreContextId) return;
-      setWithdrawnVersionIds((current) => {
-        const next = new Set(current);
-        next.delete(version._id);
-        return next;
-      });
-      setRestoredVersionIds((current) => new Set(current).add(version._id));
-      toast.success(`Restored version ${version.version}.`);
-      setRestoringVersion(null);
-    } catch (error) {
-      if (deleteContextIdRef.current !== restoreContextId) return;
-      toast.error(getUserFacingConvexError(error, "Version could not be restored. Try again."));
-    } finally {
-      if (deleteContextIdRef.current === restoreContextId) setIsRestoring(false);
-    }
   };
 
   return (
@@ -178,9 +117,8 @@ export function SkillVersionsPanel({
               const isLatest =
                 version._id === latestVersionId || version._id === latestTaggedVersionId;
               const isWithdrawn =
-                !restoredVersionIds.has(version._id) &&
-                (withdrawnVersionIds.has(version._id) ||
-                  (version.softDeletedAt !== undefined && version.ownerDeletedAt !== undefined));
+                withdrawal.overrides.get(version._id) ??
+                (version.softDeletedAt !== undefined && version.ownerDeletedAt !== undefined);
               const isAvailable =
                 !isWithdrawn &&
                 version.softDeletedAt === undefined &&
@@ -245,7 +183,7 @@ export function SkillVersionsPanel({
                           variant="destructive"
                           size="sm"
                           aria-label={`Delete version ${version.version}`}
-                          onClick={() => setDeletingVersion(version)}
+                          onClick={() => withdrawal.requestDelete(version._id, version.version)}
                         >
                           Delete
                         </Button>
@@ -256,7 +194,7 @@ export function SkillVersionsPanel({
                           variant="outline"
                           size="sm"
                           aria-label={`Restore version ${version.version}`}
-                          onClick={() => setRestoringVersion(version)}
+                          onClick={() => withdrawal.requestRestore(version._id, version.version)}
                         >
                           Restore
                         </Button>
@@ -285,22 +223,8 @@ export function SkillVersionsPanel({
           ) : null}
         </div>
       </div>
-      <VersionDeleteDialog
-        version={deletingVersion?.version ?? null}
-        isDeleting={isDeleting}
-        onCancel={() => setDeletingVersion(null)}
-        onConfirm={() => {
-          void handleDelete();
-        }}
-      />
-      <VersionRestoreDialog
-        version={restoringVersion?.version ?? null}
-        isRestoring={isRestoring}
-        onCancel={() => setRestoringVersion(null)}
-        onConfirm={() => {
-          void handleRestore();
-        }}
-      />
+      <VersionDeleteDialog {...withdrawal.deleteDialog} />
+      <VersionRestoreDialog {...withdrawal.restoreDialog} />
     </>
   );
 }
