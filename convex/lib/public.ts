@@ -1,5 +1,5 @@
 import type { Doc } from "../_generated/dataModel";
-import { isPublicSkillDoc } from "./globalStats";
+import { isPublicSkillDoc } from "./skillSafety";
 import { readCanonicalStat, readPublicDownloads } from "./skillStats";
 
 export type PublicUser = Pick<

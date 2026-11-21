@@ -18,7 +18,6 @@ import {
   clampActivityTrendEndDay,
   getActivityTrendRangeForEndDay,
 } from "./lib/downloadTrend";
-import { isPublicSkillDoc } from "./lib/globalStats";
 import { toDayKey } from "./lib/leaderboards";
 import { hasOfficialPublisherRow } from "./lib/officialPublishers";
 import {
@@ -41,6 +40,7 @@ import {
   computeBoundedPublisherSkillMetrics,
   type PublisherSkillMetrics,
 } from "./lib/publisherStats";
+import { isPublicSkillDoc } from "./lib/skillSafety";
 import { readCanonicalStat } from "./lib/skillStats";
 
 const DEFAULT_BATCH_SIZE = 250;

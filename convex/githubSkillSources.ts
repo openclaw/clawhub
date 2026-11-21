@@ -5,7 +5,7 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, internalQuery, mutation, query } from "./functions";
 import { requireUser } from "./lib/access";
 import { deleteGitHubSkillScansForSource } from "./lib/githubSkillScans";
-import { adjustGlobalPublicSkillsCount, getPublicSkillVisibilityDelta } from "./lib/globalStats";
+import { adjustGlobalPublicSkillsCount } from "./lib/globalStats";
 import { isOfficialPublisher } from "./lib/officialPublishers";
 import { toPublicSkill } from "./lib/public";
 import {
@@ -20,6 +20,7 @@ import {
   getRuntimeRolloutCapabilities,
   isLegacyNvidiaSkillSource,
 } from "./lib/rolloutCapabilities";
+import { getPublicSkillVisibilityDelta } from "./lib/skillSafety";
 import { syncSkillSearchDigestForSkill } from "./lib/skillSearchDigest";
 
 const GITHUB_SKILL_SCAN_CLEANUP_BATCH_SIZE = 25;

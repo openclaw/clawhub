@@ -10,7 +10,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
 import { internalAction, internalMutation, internalQuery } from "./_generated/server";
 import { syncPackageSearchDigestForPackageId } from "./functions";
-import { adjustGlobalPublicSkillsCount, getPublicSkillVisibilityDelta } from "./lib/globalStats";
+import { adjustGlobalPublicSkillsCount } from "./lib/globalStats";
 import { derivePluginManifestSummary, normalizePackageName } from "./lib/packageRegistry";
 import { adjustPublisherStatsForSkillChange, recomputePublisherStats } from "./lib/publisherStats";
 import {
@@ -33,6 +33,7 @@ import {
   INSTALL_BACKFILL_CLEAN_WINDOW_READY_CURSOR_CREATION_TIME,
   INSTALL_BACKFILL_DEFAULTS,
 } from "./lib/skillInstallBackfill";
+import { getPublicSkillVisibilityDelta } from "./lib/skillSafety";
 import { syncSkillSearchDigestForSkill } from "./lib/skillSearchDigest";
 import { readCanonicalStat } from "./lib/skillStats";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";

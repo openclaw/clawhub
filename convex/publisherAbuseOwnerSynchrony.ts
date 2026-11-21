@@ -3,13 +3,13 @@ import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, internalQuery } from "./functions";
-import { isPublicSkillDoc } from "./lib/globalStats";
 import {
   detectPublisherAbuseOwnerSynchrony,
   PUBLISHER_ABUSE_OWNER_SYNCHRONY_MIN_CATALOG_COVERAGE,
   PUBLISHER_ABUSE_OWNER_SYNCHRONY_WINDOW_DAYS,
 } from "./lib/publisherAbuseOwnerSynchrony";
 import { publisherAbusePortfolioEvidenceValidator } from "./lib/publisherAbuseOwnerSynchronyContract";
+import { isPublicSkillDoc } from "./lib/skillSafety";
 
 const OWNER_CANDIDATE_PAGE_SIZE = 50;
 const OWNER_SKILL_COUNT_PAGE_SIZE = 100;

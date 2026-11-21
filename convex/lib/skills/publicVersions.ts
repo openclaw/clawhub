@@ -1,6 +1,5 @@
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { QueryCtx } from "../../_generated/server";
-import { isPublicSkillDoc } from "../globalStats";
 import { toPublicPublisher } from "../public";
 import { getOwnerPublisher } from "../publishers";
 import {
@@ -8,6 +7,7 @@ import {
   isPublicSkillVersionAvailableForSkill,
   isSkillVersionForSkill,
 } from "../skillFileAccess";
+import { isPublicSkillDoc } from "../skillSafety";
 
 export type PublicSkillVersionSelection =
   | { status: "available"; skill: Doc<"skills">; version: Doc<"skillVersions"> }

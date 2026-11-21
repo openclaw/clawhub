@@ -3,7 +3,6 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { getOptionalActiveAuthUserId } from "./access";
 import { getSkillBadgeMap } from "./badges";
-import { isPublicSkillDoc } from "./globalStats";
 import { toPublicPublisher, toPublicSkill } from "./public";
 import { canAccessPublisherOwnerScope, getOwnerPublisher } from "./publishers";
 import { selectGeneratedSkillCardFile, selectSkillCardFile } from "./skillCards";
@@ -18,7 +17,7 @@ import {
   resolvePublisherByOwnerHandle,
   type LegacyAmbiguousSkillMatch,
 } from "./skills/slugResolution";
-import { isSkillReviewFlagged } from "./skillSafety";
+import { isSkillReviewFlagged, isPublicSkillDoc } from "./skillSafety";
 
 export type PublicSkillVersionParsed = {
   license?: "MIT-0";

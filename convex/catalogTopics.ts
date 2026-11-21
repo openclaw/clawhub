@@ -7,7 +7,8 @@ import {
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import { query, type QueryCtx } from "./_generated/server";
-import { isPublicPluginDoc, isPublicSkillDoc } from "./lib/globalStats";
+import { isPublicPluginDoc } from "./lib/packageSecurity";
+import { isPublicSkillDoc } from "./lib/skillSafety";
 
 const TOP_CATEGORY_TOPIC_LIMIT = 8;
 const TOP_CATEGORY_TOPIC_SAMPLE_LIMIT = 240;

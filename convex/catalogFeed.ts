@@ -26,7 +26,6 @@ import type { QueryCtx } from "./_generated/server";
 import { isSkillHighlighted } from "./lib/badges";
 import { sha256Hex } from "./lib/clawpack";
 import { isOpenClawTemplateName, isOpenClawTemplatePublisher } from "./lib/experimentalTemplates";
-import { isPublicSkillDoc } from "./lib/globalStats";
 import { isOfficialPublisher } from "./lib/officialPublishers";
 import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
 import { isPublishedPackageRelease } from "./lib/packageReleaseVisibility";
@@ -39,6 +38,7 @@ import {
   isPublicSkillVersionAvailableForSkill,
 } from "./lib/skillFileAccess";
 import { isHostedSkillPresentationIconPath, stripPresentationEmoji } from "./lib/skillPresentation";
+import { isPublicSkillDoc } from "./lib/skillSafety";
 import { TEMPLATE_FEED_STORAGE_ID } from "./lib/templateStorage";
 
 const CATALOG_FEED_DESCRIPTION = "Official OpenClaw plugins published on ClawHub.";

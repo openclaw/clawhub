@@ -1,61 +1,10 @@
 import type { Doc } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
-import { isPackageBlockedFromPublic } from "./packageSecurity";
 
 export const GLOBAL_STATS_KEY = "default";
 
-type SkillVisibilityFields = Pick<
-  Doc<"skills">,
-  "softDeletedAt" | "moderationStatus" | "moderationFlags"
-> &
-  Partial<Pick<Doc<"skills">, "moderationVerdict">>;
-type PackageVisibilityFields = Pick<
-  Doc<"packageSearchDigest">,
-  "softDeletedAt" | "family" | "channel" | "scanStatus" | "latestVersion"
->;
-
 type GlobalStatsReadCtx = Pick<MutationCtx | QueryCtx, "db">;
 type GlobalStatsWriteCtx = Pick<MutationCtx, "db">;
-
-export function isPublicSkillDoc<T extends SkillVisibilityFields>(
-  skill: T | null | undefined,
-): skill is T {
-  if (!skill || skill.softDeletedAt) return false;
-  if (skill.moderationStatus && skill.moderationStatus !== "active") return false;
-  if (skill.moderationVerdict === "malicious") return false;
-  if (skill.moderationFlags?.includes("blocked.malware")) return false;
-  return true;
-}
-
-export function getPublicSkillVisibilityDelta(
-  before: SkillVisibilityFields | null | undefined,
-  after: SkillVisibilityFields | null | undefined,
-) {
-  const beforePublic = isPublicSkillDoc(before);
-  const afterPublic = isPublicSkillDoc(after);
-  if (beforePublic === afterPublic) return 0;
-  return afterPublic ? 1 : -1;
-}
-
-export function isPublicPluginDoc<T extends PackageVisibilityFields>(
-  pkg: T | null | undefined,
-): pkg is T {
-  if (!pkg || pkg.softDeletedAt || !pkg.latestVersion) return false;
-  if (pkg.family !== "code-plugin" && pkg.family !== "bundle-plugin") return false;
-  if (pkg.channel === "private") return false;
-  if (isPackageBlockedFromPublic(pkg.scanStatus)) return false;
-  return true;
-}
-
-export function getPublicPluginVisibilityDelta(
-  before: PackageVisibilityFields | null | undefined,
-  after: PackageVisibilityFields | null | undefined,
-) {
-  const beforePublic = isPublicPluginDoc(before);
-  const afterPublic = isPublicPluginDoc(after);
-  if (beforePublic === afterPublic) return 0;
-  return afterPublic ? 1 : -1;
-}
 
 function getErrorMessage(error: unknown) {
   if (typeof error === "string") return error;

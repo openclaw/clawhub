@@ -30,7 +30,7 @@ import {
   type GitHubSkillSourceMetadataSnapshot,
   type GitHubSkillSourceSnapshot,
 } from "./lib/githubSkillSync";
-import { adjustGlobalPublicSkillsCount, getPublicSkillVisibilityDelta } from "./lib/globalStats";
+import { adjustGlobalPublicSkillsCount } from "./lib/globalStats";
 import { sha256Hex } from "./lib/hash";
 import { Events, logErrorEvent, logEvent } from "./lib/observabilityEvents";
 import { requirePublisherRole } from "./lib/publishers";
@@ -46,6 +46,7 @@ import {
   getSkillBySlugForPublisher,
   getSkillSlugAliasBySlugForPublisher,
 } from "./lib/skills/slugResolution";
+import { getPublicSkillVisibilityDelta } from "./lib/skillSafety";
 import { chunkSkillScanRequestFiles } from "./lib/skillScanRequestFiles";
 import { syncSkillSearchDigestForSkill } from "./lib/skillSearchDigest";
 import { assertValidSkillSlug } from "./lib/skillSlugValidator";

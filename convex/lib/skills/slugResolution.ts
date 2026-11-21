@@ -1,6 +1,5 @@
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
-import { isPublicSkillDoc } from "../globalStats";
 import {
   getActiveUserByHandleOrPersonalPublisher,
   getOwnerPublisher,
@@ -8,6 +7,7 @@ import {
   getPublisherByHandle,
   normalizePublisherHandle,
 } from "../publishers";
+import { isPublicSkillDoc } from "../skillSafety";
 import { normalizeSkillSlug } from "../skillSlugValidator";
 
 type DbCtx = Pick<QueryCtx | MutationCtx, "db">;
