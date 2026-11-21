@@ -10,7 +10,6 @@ import {
   ApiRoutes,
   ApiV1PromotionsListResponseSchema,
   ApiV1PromotionWriteResponseSchema,
-  parseArk,
   type ApiV1Promotion,
 } from "../../../clawhub/src/schema/index.js";
 
@@ -62,15 +61,11 @@ export async function cmdListPromotions(
     const requestPath: string = options.all
       ? `${ApiRoutes.promotions}?status=all&limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`
       : ApiRoutes.promotions;
-    const result: unknown = await apiRequest(
+    const page = await apiRequest(
       registry,
       { method: "GET", path: requestPath, ...(token ? { token } : {}) },
       ApiV1PromotionsListResponseSchema,
     );
-    const page: {
-      promotions: ApiV1Promotion[];
-      nextCursor?: string | null;
-    } = parseArk(ApiV1PromotionsListResponseSchema, result, "Promotions response");
     promotions.push(...page.promotions);
     cursor = options.all ? (page.nextCursor ?? null) : null;
     if (cursor && seenCursors.has(cursor)) {

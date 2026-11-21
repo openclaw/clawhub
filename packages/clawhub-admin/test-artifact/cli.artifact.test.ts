@@ -175,7 +175,13 @@ describe("packed admin CLI", () => {
       consistencyNote: "Not an atomic snapshot.",
     };
     let unhideResponse: unknown = { ok: true };
+    let promotionsResponse: unknown = { promotions: [], nextCursor: null };
     const server = createServer(async (request, response) => {
+      if (request.url === "/api/v1/promotions?status=all&limit=100") {
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(JSON.stringify(promotionsResponse));
+        return;
+      }
       if (request.url === "/api/v1/admin/download-analytics") {
         requests.push({
           method: request.method,
@@ -288,6 +294,24 @@ describe("packed admin CLI", () => {
           body: { repository: "openclaw/example", workflowFilename: "publish.yml" },
         },
       ]);
+      const promotionsArgs = [
+        join(installDir, "package", "bin", "clawhub-admin.js"),
+        "--registry",
+        registry,
+        "promotions",
+        "list",
+        "--all",
+        "--json",
+      ];
+      const listedPromotions = await run(promotionsArgs);
+      expect(listedPromotions.stdout).toBe('{\n  "promotions": []\n}\n');
+      expect(listedPromotions.stderr).toBe("");
+      promotionsResponse = null;
+      await expect(run(promotionsArgs)).rejects.toMatchObject({
+        code: 1,
+        stdout: "",
+        stderr: "Error: API response: an object\n",
+      });
       const downloadArgs = [
         join(installDir, "package", "bin", "clawhub-admin.js"),
         "--registry",
