@@ -517,6 +517,123 @@ describe("Header", () => {
     expect(screen.queryByRole("status", { name: "Searching" })).toBeNull();
   });
 
+  it.each(["desktop", "mobile"])(
+    "traverses every suggestion and footer in order with wraparound (%s)",
+    (surface) => {
+      render(<Header />);
+      if (surface === "mobile") fireEvent.click(screen.getByRole("button", { name: "Search" }));
+      const input = screen.getAllByPlaceholderText("Search skills, plugins, and creators").at(-1)!;
+      fireEvent.focus(input);
+      fireEvent.change(input, { target: { value: "weather" } });
+      const rows = screen.getAllByRole("option");
+      expect(rows.map((row) => row.textContent)).toEqual([
+        expect.stringContaining("Weather Plugin"),
+        'See plugin results for "weather"',
+        expect.stringContaining("Weather Skill"),
+        'See skill results for "weather"',
+        expect.stringContaining("Local Creator"),
+        'See creator results for "weather"',
+      ]);
+      expect(input.getAttribute("aria-activedescendant")).toBe(rows[0].id);
+      for (const row of rows.slice(1)) {
+        fireEvent.keyDown(input, { key: "ArrowDown" });
+        expect(input.getAttribute("aria-activedescendant")).toBe(row.id);
+        expect(row.getAttribute("aria-selected")).toBe("true");
+      }
+      fireEvent.keyDown(input, { key: "ArrowDown" });
+      expect(input.getAttribute("aria-activedescendant")).toBe(rows[0].id);
+      fireEvent.keyDown(input, { key: "ArrowUp" });
+      expect(input.getAttribute("aria-activedescendant")).toBe(rows.at(-1)!.id);
+    },
+  );
+
+  it.each(["desktop", "mobile"])(
+    "keeps creator selection aligned when the skill group is empty (%s)",
+    (surface) => {
+      useUnifiedSearchMock.mockReturnValue({ ...defaultUnifiedSearchResult, skillResults: [] });
+      render(<Header />);
+      if (surface === "mobile") fireEvent.click(screen.getByRole("button", { name: "Search" }));
+      const input = screen.getAllByPlaceholderText("Search skills, plugins, and creators").at(-1)!;
+      fireEvent.focus(input);
+      fireEvent.change(input, { target: { value: "weather" } });
+      expect(
+        screen
+          .getAllByRole("group")
+          .filter((group) => group.className === "navbar-search-typeahead-section")
+          .map((group) => group.getAttribute("aria-labelledby")),
+      ).toEqual([
+        "navbar-search-typeahead-plugins-heading",
+        "navbar-search-typeahead-creators-heading",
+      ]);
+      fireEvent.keyDown(input, { key: "ArrowDown" });
+      fireEvent.keyDown(input, { key: "ArrowDown" });
+      const creator = screen.getByRole("option", { name: /Local Creator/ });
+      expect(input.getAttribute("aria-activedescendant")).toBe(creator.id);
+      fireEvent.keyDown(input, { key: "Enter" });
+      expect(navigateMock).toHaveBeenLastCalledWith({ to: "/local" });
+    },
+  );
+
+  it.each(["desktop", "mobile"])(
+    "drops a hovered snapshot when the query changes (%s)",
+    (surface) => {
+      useUnifiedSearchMock.mockReturnValue({
+        ...defaultUnifiedSearchResult,
+        pluginResults: [],
+        creatorResults: [],
+        isSearching: true,
+      });
+      const { rerender } = render(<Header />);
+      if (surface === "mobile") fireEvent.click(screen.getByRole("button", { name: "Search" }));
+      const input = screen.getAllByPlaceholderText("Search skills, plugins, and creators").at(-1)!;
+      fireEvent.focus(input);
+      fireEvent.change(input, { target: { value: "weather" } });
+      fireEvent.mouseEnter(screen.getByRole("option", { name: /Weather Skill/ }));
+      useUnifiedSearchMock.mockReturnValue(defaultUnifiedSearchResult);
+      rerender(<Header />);
+      expect(screen.queryByRole("option", { name: /Weather Plugin/ })).toBeNull();
+
+      fireEvent.change(input, { target: { value: "replacement" } });
+
+      expect(screen.getByRole("option", { name: /Weather Plugin/ })).toBeTruthy();
+      expect(
+        screen.getByRole("option", { name: 'See plugin results for "replacement"' }),
+      ).toBeTruthy();
+      expect(screen.queryByRole("option", { name: 'See skill results for "weather"' })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Update results" })).toBeNull();
+      expect(input.getAttribute("aria-activedescendant")).toBe(screen.getAllByRole("option")[0].id);
+    },
+  );
+
+  it("carries the held suggestion snapshot from desktop into mobile search", () => {
+    useUnifiedSearchMock.mockReturnValue({
+      ...defaultUnifiedSearchResult,
+      pluginResults: [],
+      creatorResults: [],
+      isSearching: true,
+    });
+    const { rerender } = render(<Header />);
+    const desktopInput = screen.getByPlaceholderText("Search skills, plugins, and creators");
+    fireEvent.focus(desktopInput);
+    fireEvent.change(desktopInput, { target: { value: "weather" } });
+    fireEvent.mouseEnter(screen.getByRole("option", { name: /Weather Skill/ }));
+    const activeId = desktopInput.getAttribute("aria-activedescendant");
+    useUnifiedSearchMock.mockReturnValue(defaultUnifiedSearchResult);
+    rerender(<Header />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+
+    const mobileInput = screen
+      .getAllByPlaceholderText("Search skills, plugins, and creators")
+      .at(-1)!;
+    expect(mobileInput.getAttribute("aria-activedescendant")).toBe(activeId);
+    expect(screen.getAllByRole("listbox")).toHaveLength(1);
+    expect(screen.queryByRole("option", { name: /Weather Plugin/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Update results" }));
+    expect(screen.getByRole("option", { name: /Weather Plugin/ })).toBeTruthy();
+    expect(document.activeElement).toBe(mobileInput);
+  });
+
   it.each(["keyboard", "pointer"])(
     "preserves the selected suggestion when other groups arrive (%s)",
     (method) => {
