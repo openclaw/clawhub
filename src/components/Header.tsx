@@ -175,7 +175,7 @@ export default function Header() {
     isSearching: typeaheadSearching,
     pluginSearchError,
     skillSearchError,
-  } = useUnifiedSearch(navSearchQuery, "all", {
+  } = useUnifiedSearch(navSearchQuery, {
     manualCatalogSearch: manualCatalogSearchRef.current,
     detectPluginHasMore: false,
     publishPartialResults: true,

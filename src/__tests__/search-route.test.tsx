@@ -237,13 +237,13 @@ describe("search route", () => {
 
     render(<Component />);
 
-    expect(useUnifiedSearchMock).toHaveBeenCalledWith("weather", "all", {
+    expect(useUnifiedSearchMock).toHaveBeenCalledWith("weather", {
       limits: { skills: 25, plugins: 25, creators: 25 },
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Load more" }));
 
-    expect(useUnifiedSearchMock).toHaveBeenCalledWith("weather", "all", {
+    expect(useUnifiedSearchMock).toHaveBeenCalledWith("weather", {
       limits: { skills: 50, plugins: 50, creators: 50 },
     });
   });
@@ -470,7 +470,7 @@ describe("search route", () => {
 
     render(<Component />);
 
-    expect(useUnifiedSearchMock).toHaveBeenLastCalledWith("hello", "all", {
+    expect(useUnifiedSearchMock).toHaveBeenLastCalledWith("hello", {
       limits: { skills: 25, plugins: 25, creators: 25 },
     });
   });
@@ -508,7 +508,7 @@ describe("search route", () => {
 
     render(<Component />);
 
-    expect(useUnifiedSearchMock).toHaveBeenLastCalledWith("japanese-reading-grader", "all", {
+    expect(useUnifiedSearchMock).toHaveBeenLastCalledWith("japanese-reading-grader", {
       initialData: loaderDataMock,
       limits: { skills: 25, plugins: 25, creators: 25 },
     });

@@ -117,7 +117,9 @@ describe("useUnifiedSearch", () => {
         },
       },
     ]);
-    const { result } = renderHook(() => useUnifiedSearch("weather", "skills", { debounceMs: 0 }));
+    fetchPluginCatalogMock.mockResolvedValue({ items: [], nextCursor: null });
+    convexQueryMock.mockResolvedValue({ page: [], isDone: true });
+    const { result } = renderHook(() => useUnifiedSearch("weather", { debounceMs: 0 }));
     await waitFor(() => expect(result.current.skillCount).toBe(1));
     const native = result.current.skillResults.find(isUnifiedNativeSkillResult);
     expect(native).toBeDefined();
@@ -137,7 +139,7 @@ describe("useUnifiedSearch", () => {
     convexQueryMock.mockResolvedValue({ page: [], isDone: true });
 
     const { result } = renderHook(() =>
-      useUnifiedSearch("weather", "all", { debounceMs: 0, publishPartialResults: true }),
+      useUnifiedSearch("weather", { debounceMs: 0, publishPartialResults: true }),
     );
     try {
       await waitFor(() => expect(result.current.skillCount).toBe(1));
@@ -159,7 +161,7 @@ describe("useUnifiedSearch", () => {
     searchSkillsMock.mockReturnValue(skills.promise);
     fetchPluginCatalogMock.mockResolvedValue({ items: [], nextCursor: null });
     convexQueryMock.mockResolvedValue({ page: [makeCreator("weather")], isDone: true });
-    const { result } = renderHook(() => useUnifiedSearch("weather", "all", { debounceMs: 0 }));
+    const { result } = renderHook(() => useUnifiedSearch("weather", { debounceMs: 0 }));
     await waitFor(() => expect(convexQueryMock).toHaveBeenCalledTimes(1));
     await act(async () => {});
     expect(result.current.creatorCount).toBe(0);
@@ -169,34 +171,43 @@ describe("useUnifiedSearch", () => {
     expect(result.current.creatorCount).toBe(1);
   });
 
-  it("keeps published result ordering until the replacement type settles", async () => {
+  it("keeps published result ordering until replacement limits settle for the same query", async () => {
     const skills = deferred<ReturnType<typeof makeCanonicalSkill>[]>();
     searchSkillsMock.mockResolvedValueOnce([makeCanonicalSkill("weather")]);
     searchSkillsMock.mockReturnValue(skills.promise);
     fetchPluginCatalogMock.mockResolvedValue({ items: [makePlugin("weather")], nextCursor: null });
     convexQueryMock.mockResolvedValue({ page: [makeCreator("weather")], isDone: true });
     const { result, rerender } = renderHook(
-      ({ type }: { type: "all" | "skills" }) =>
-        useUnifiedSearch("weather", type, { debounceMs: 0 }),
-      { initialProps: { type: "all" } },
+      ({ limit }) =>
+        useUnifiedSearch("weather", {
+          debounceMs: 0,
+          limits: { skills: limit, plugins: limit, creators: limit },
+        }),
+      { initialProps: { limit: 1 } },
     );
     await waitFor(() => expect(result.current.isSearching).toBe(false));
     const published = result.current.results;
     expect(published.map((entry) => entry.type)).toEqual(["plugin", "skill", "creator"]);
 
-    rerender({ type: "skills" });
+    rerender({ limit: 2 });
     try {
       await waitFor(() => expect(searchSkillsMock).toHaveBeenCalledTimes(2));
+      expect(searchSkillsMock).toHaveBeenLastCalledWith({ query: "weather", limit: 3 });
       expect(result.current.isSearching).toBe(true);
       expect(result.current.results).toBe(published);
     } finally {
       await act(async () => skills.resolve([makeCanonicalSkill("replacement")]));
     }
     await waitFor(() => expect(result.current.isSearching).toBe(false));
-    expect(result.current.results.map((entry) => entry.type)).toEqual(["skill"]);
+    expect(result.current.results.map((entry) => entry.type)).toEqual([
+      "plugin",
+      "skill",
+      "creator",
+    ]);
+    expect(result.current.skillResults[0]).toMatchObject({ skill: { slug: "replacement" } });
     expect(result.current.skillCount).toBe(1);
-    expect(result.current.pluginCount).toBe(0);
-    expect(result.current.creatorCount).toBe(0);
+    expect(result.current.pluginCount).toBe(1);
+    expect(result.current.creatorCount).toBe(1);
   });
 
   it("preserves published arrays when a pagination probe changes only hasMore", async () => {
@@ -206,9 +217,11 @@ describe("useUnifiedSearch", () => {
       nextCursor: null,
     });
     fetchPluginCatalogMock.mockReturnValueOnce(probe.promise);
-    const manualCatalogSearch = { query: "weather", consumed: {} };
+    searchSkillsMock.mockResolvedValue([]);
+    convexQueryMock.mockResolvedValue({ page: [], isDone: true });
+    const manualCatalogSearch = { query: "weather", consumed: {}, kinds: ["plugin" as const] };
     const { result } = renderHook(() =>
-      useUnifiedSearch("weather", "plugins", {
+      useUnifiedSearch("weather", {
         debounceMs: 0,
         limits: { plugins: 1 },
         manualCatalogSearch,
@@ -236,7 +249,7 @@ describe("useUnifiedSearch", () => {
     fetchPluginCatalogMock.mockResolvedValue({ items: [makePlugin("weather")], nextCursor: null });
     convexQueryMock.mockResolvedValue({ page: [makeCreator("weather")], isDone: true });
     const { result, rerender } = renderHook(
-      ({ enabled }) => useUnifiedSearch("weather", "all", { debounceMs: 0, enabled }),
+      ({ enabled }) => useUnifiedSearch("weather", { debounceMs: 0, enabled }),
       { initialProps: { enabled: true } },
     );
     await waitFor(() => expect(result.current.isSearching).toBe(false));
@@ -259,7 +272,7 @@ describe("useUnifiedSearch", () => {
     convexQueryMock.mockResolvedValue({ page: [makeCreator("weather")], isDone: true });
 
     const { result } = renderHook(() =>
-      useUnifiedSearch("weather", "all", { debounceMs: 0, publishPartialResults: true }),
+      useUnifiedSearch("weather", { debounceMs: 0, publishPartialResults: true }),
     );
     try {
       await waitFor(() => expect(result.current.creatorCount).toBe(1));
@@ -283,7 +296,7 @@ describe("useUnifiedSearch", () => {
     convexQueryMock.mockResolvedValue({ page: [], isDone: true });
 
     const { result, rerender } = renderHook(
-      ({ query }) => useUnifiedSearch(query, "all", { debounceMs: 0 }),
+      ({ query }) => useUnifiedSearch(query, { debounceMs: 0 }),
       { initialProps: { query: "old" } },
     );
     await waitFor(() => expect(searchSkillsMock).toHaveBeenCalledTimes(1));
@@ -312,7 +325,7 @@ describe("useUnifiedSearch", () => {
     convexQueryMock.mockResolvedValueOnce({ page: [], isDone: true });
     convexQueryMock.mockReturnValue(creators.promise);
     const { result, rerender } = renderHook(
-      ({ query }) => useUnifiedSearch(query, "all", { debounceMs: 0 }),
+      ({ query }) => useUnifiedSearch(query, { debounceMs: 0 }),
       { initialProps: { query: "old" } },
     );
     await waitFor(() => expect(result.current.isSearching).toBe(false));
@@ -354,7 +367,7 @@ describe("useUnifiedSearch", () => {
     };
 
     const { result } = renderHook(() =>
-      useUnifiedSearch("japanese-reading-grader", "all", {
+      useUnifiedSearch("japanese-reading-grader", {
         initialData,
         debounceMs: 0,
         limits: { skills: 25, plugins: 25, creators: 25 },
@@ -381,6 +394,64 @@ describe("useUnifiedSearch", () => {
     expect(result.current.skillHasMore).toBe(true);
   });
 
+  it.each(["query", "limits"] as const)(
+    "fetches current results when loader data has a different %s",
+    async (mismatch) => {
+      const skills = deferred<ReturnType<typeof makeCanonicalSkill>[]>();
+      searchSkillsMock.mockReturnValue(skills.promise);
+      fetchPluginCatalogMock.mockResolvedValue({ items: [], nextCursor: null });
+      convexQueryMock.mockResolvedValue({ page: [], isDone: true });
+      const initialData = {
+        query: mismatch === "query" ? "old" : "weather",
+        activeType: "all" as const,
+        limits: { skills: mismatch === "limits" ? 24 : 25, plugins: 25, creators: 25 },
+        skillResults: [{ type: "skill" as const, ...makeSkill("old") }],
+        pluginResults: [],
+        creatorResults: [],
+        skillHasMore: false,
+        pluginHasMore: false,
+        creatorHasMore: false,
+      };
+      const { result } = renderHook(() =>
+        useUnifiedSearch("weather", { debounceMs: 0, initialData }),
+      );
+      try {
+        expect(result.current.results).toEqual([]);
+        expect(result.current.isSearching).toBe(true);
+        await waitFor(() =>
+          expect(searchSkillsMock).toHaveBeenCalledWith({ query: "weather", limit: 26 }),
+        );
+      } finally {
+        await act(async () => skills.resolve([makeCanonicalSkill("current")]));
+      }
+      await waitFor(() => expect(result.current.isSearching).toBe(false));
+      expect(result.current.skillResults).toEqual([
+        expect.objectContaining({ skill: expect.objectContaining({ slug: "current" }) }),
+      ]);
+    },
+  );
+
+  it("still probes creators when every visible result limit is zero", async () => {
+    convexQueryMock.mockResolvedValue({ page: [makeCreator("weather")], isDone: true });
+    const { result } = renderHook(() =>
+      useUnifiedSearch("weather", {
+        debounceMs: 0,
+        limits: { skills: 0, plugins: 0, creators: 0 },
+      }),
+    );
+    await waitFor(() => expect(result.current.isSearching).toBe(false));
+    expect(convexQueryMock).toHaveBeenCalledTimes(1);
+    expect(convexQueryMock.mock.calls[0]?.[1]).toEqual({
+      query: "weather",
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+    expect(searchSkillsMock).not.toHaveBeenCalled();
+    expect(fetchPluginCatalogMock).not.toHaveBeenCalled();
+    expect(result.current.results).toEqual([]);
+    expect(result.current.creatorCount).toBe(0);
+    expect(result.current.creatorHasMore).toBe(true);
+  });
+
   it("requests one extra result and exposes hasMore without inflating counts", async () => {
     searchSkillsMock.mockResolvedValue([
       makeCanonicalSkill("one"),
@@ -398,7 +469,7 @@ describe("useUnifiedSearch", () => {
     });
 
     const { result } = renderHook(() =>
-      useUnifiedSearch("ghost", "all", {
+      useUnifiedSearch("ghost", {
         debounceMs: 0,
         limits: { skills: 2, plugins: 2, creators: 2 },
       }),
@@ -456,7 +527,7 @@ describe("useUnifiedSearch", () => {
     convexQueryMock.mockResolvedValue({ page: [], continueCursor: null, isDone: true });
 
     const { result } = renderHook(() =>
-      useUnifiedSearch("html", "skills", { debounceMs: 0, limits: { skills: 10 } }),
+      useUnifiedSearch("html", { debounceMs: 0, limits: { skills: 10 } }),
     );
 
     await waitFor(() => expect(result.current.skillCount).toBe(2));
@@ -477,7 +548,7 @@ describe("useUnifiedSearch", () => {
     convexQueryMock.mockResolvedValue({ page: [], continueCursor: null, isDone: true });
 
     renderHook(() =>
-      useUnifiedSearch("ghost", "all", {
+      useUnifiedSearch("ghost", {
         debounceMs: 0,
         limits: { skills: 150, plugins: 150, creators: 150 },
       }),
@@ -512,7 +583,7 @@ describe("useUnifiedSearch", () => {
     });
 
     const { result } = renderHook(() =>
-      useUnifiedSearch("ghost", "creators", {
+      useUnifiedSearch("ghost", {
         debounceMs: 0,
         limits: { creators: 150 },
       }),
