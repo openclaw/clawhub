@@ -11,6 +11,7 @@ import { fetchTemplateCatalog, isRateLimitedPackageApiError } from "../../lib/pa
 import { getClawHubSiteUrl } from "../../lib/site";
 import { buildTemplateDetailHref } from "../../lib/templateRoutes";
 import { TEMPLATE_DIRECTORY_SHARE } from "../../lib/templateShare";
+import { useLoadMoreObserver } from "../../lib/useLoadMoreObserver";
 
 type CatalogSearch = { q?: string; category?: TemplateCategorySlug };
 type CatalogPage = Awaited<ReturnType<typeof fetchTemplateCatalog>>;
@@ -92,7 +93,6 @@ function TemplateResults({
   const [loadError, setLoadError] = useState<string>();
   const [loading, setLoading] = useState(false);
   const request = useRef<AbortController | null>(null);
-  const sentinel = useRef<HTMLDivElement | null>(null);
   const page = more?.initialPage === initialPage ? more.page : initialPage;
   const cursor = page.nextCursor;
 
@@ -132,22 +132,7 @@ function TemplateResults({
     }
   }, [q, category, cursor, initialPage, page]);
 
-  useEffect(() => {
-    const target = sentinel.current;
-    if (!target || !cursor || loading || loadError || typeof IntersectionObserver === "undefined")
-      return undefined;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          observer.disconnect();
-          void loadMore();
-        }
-      },
-      { rootMargin: "200px" },
-    );
-    observer.observe(target);
-    return () => observer.disconnect();
-  }, [cursor, loading, loadError, loadMore]);
+  const sentinel = useLoadMoreObserver(Boolean(cursor) && !loading && !loadError, loadMore);
 
   const rows = page.items.flatMap((item) => {
     const href = buildTemplateDetailHref(item.name, item.ownerHandle);
