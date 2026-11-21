@@ -1,4 +1,3 @@
-import { Resvg } from "@resvg/resvg-wasm";
 import type { ApiV1PackageResponse } from "clawhub-schema";
 import { defineEventHandler, getQuery } from "h3";
 import { serverFetch } from "nitro/app";
@@ -11,13 +10,7 @@ import {
 import { normalizePublisherHandle } from "../../../src/lib/templateRoutes";
 import { getTemplateShareCopy } from "../../../src/lib/templateShare";
 import { readLimitedImageBody } from "../../og/fetchImageDataUrl";
-import {
-  ensureResvgWasm,
-  FONT_MONO,
-  FONT_SANS,
-  getFontBuffers,
-  getMarkDataUrl,
-} from "../../og/ogAssets";
+import { ensureResvgWasm, getFontBuffers, getMarkDataUrl } from "../../og/ogAssets";
 import { withOgFetchTimeout } from "../../og/ogFetchTimeout";
 import { cleanString } from "../../og/ogRequest";
 import { pngResponse } from "../../og/pngResponse";
@@ -108,23 +101,6 @@ export default defineEventHandler(async (event) => {
     mark,
     artwork,
   });
-  const renderer = new Resvg(svg, {
-    font: {
-      fontBuffers,
-      defaultFontFamily: FONT_SANS,
-      sansSerifFamily: FONT_SANS,
-      monospaceFamily: FONT_MONO,
-    },
-  });
-  try {
-    const image = renderer.render();
-    try {
-      // Copy and visibility can change without a new release: never cache immutably.
-      return pngResponse(image.asPng(), "public, max-age=3600");
-    } finally {
-      image.free();
-    }
-  } finally {
-    renderer.free();
-  }
+  // Copy and visibility can change without a new release: never cache immutably.
+  return pngResponse(svg, fontBuffers, "public, max-age=3600");
 });
