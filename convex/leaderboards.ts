@@ -6,11 +6,12 @@ import { skillLeaderboardEntryValidator } from "./lib/leaderboardEntry";
 import {
   compareTrendingEntries,
   getTrendingRange,
-  takeTopNonSuspiciousTrendingEntries,
+  type LeaderboardEntry,
   takeTopTrendingEntries,
   TRENDING_LEADERBOARD_KIND,
   TRENDING_NON_SUSPICIOUS_LEADERBOARD_KIND,
 } from "./lib/leaderboards";
+import { isSkillSuspicious } from "./lib/skillSafety";
 
 const MAX_TRENDING_LIMIT = 200;
 const KEEP_LEADERBOARD_ENTRIES = 3;
@@ -54,7 +55,16 @@ export const filterTopNonSuspiciousTrendingEntries = internalQuery({
     limit: v.number(),
   },
   handler: async (ctx, { entries, limit }) => {
-    return takeTopNonSuspiciousTrendingEntries(ctx, entries, limit);
+    const items: LeaderboardEntry[] = [];
+
+    for (const entry of entries) {
+      const skill = await ctx.db.get(entry.skillId);
+      if (!skill || skill.softDeletedAt || isSkillSuspicious(skill)) continue;
+      items.push(entry);
+      if (items.length >= limit) break;
+    }
+
+    return items;
   },
 });
 
