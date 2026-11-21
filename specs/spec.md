@@ -166,6 +166,10 @@ Local fixture data lives in `convex/devSeed.ts` and `fixtures/public-corpus/`.
 - Tag movement requires personal ownership or org owner/admin membership, records an audit event,
   and may target only an available version of the same skill.
 - Changelog is optional.
+- Skill and plugin publish previews fill an untouched changelog draft only. A manual edit,
+  including clearing the field, keeps control of that draft for the rest of the form session.
+  Changing the selected files or version invalidates pending previews and clears generated text,
+  but preserves manual text. A stale file read or preview response must not replace the current draft.
 
 ## Search
 

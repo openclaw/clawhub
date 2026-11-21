@@ -68,6 +68,7 @@ import {
   uploadFile,
 } from "../../lib/uploadUtils";
 import { useAuthStatus } from "../../lib/useAuthStatus";
+import { useChangelogPreview } from "../../lib/useChangelogPreview";
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const SKILL_PUBLISHING_GUIDE_URL = "https://docs.openclaw.ai/clawhub/skill-format";
@@ -137,7 +138,8 @@ export function Upload() {
   const [summary, setSummary] = useState("");
   const [uploadedSkillSummary, setUploadedSkillSummary] = useState<string | undefined>();
   const [acceptedLicenseTerms, setAcceptedLicenseTerms] = useState(false);
-  const [changelog, setChangelog] = useState("");
+  const { changelog, editChangelog, invalidateChangelog, startChangelogPreview } =
+    useChangelogPreview();
   const categoriesTouchedRef = useRef(false);
   const topicsTouchedRef = useRef(false);
   const summaryTouchedRef = useRef(false);
@@ -146,9 +148,6 @@ export function Upload() {
     "idle",
   );
   const [changelogSource, setChangelogSource] = useState<"auto" | "user" | null>(null);
-  const changelogTouchedRef = useRef(false);
-  const changelogRequestRef = useRef(0);
-  const changelogKeyRef = useRef<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -384,23 +383,14 @@ export function Upload() {
     setConfirmMigrateOwner(false);
   }, [ownerHandle, publisherMemberships, existing?.owner?.handle, updateSlug]);
 
-  // A generated changelog only describes the bundle it was generated from. Once
-  // the selection changes it is stale, and because the effect below skips work
-  // while the field is non-empty it would otherwise stay on screen for the rest
-  // of the session. Text the user typed is never discarded.
   useEffect(() => {
-    changelogRequestRef.current += 1;
-    changelogKeyRef.current = null;
-    if (changelogTouchedRef.current) return;
-    setChangelog("");
+    if (!invalidateChangelog()) return;
     setChangelogSource(null);
     setChangelogStatus("idle");
-  }, [normalizedPaths, trimmedSlug, trimmedVersion]);
+  }, [invalidateChangelog, normalizedPaths, trimmedSlug, trimmedVersion]);
 
   useEffect(() => {
     if (!showChangelogField) return;
-    if (changelogTouchedRef.current) return;
-    if (trimmedChangelog) return;
     if (!trimmedSlug || !SLUG_PATTERN.test(trimmedSlug)) return;
     if (!semver.valid(trimmedVersion)) return;
     if (!hasRequiredFile) return;
@@ -415,31 +405,27 @@ export function Upload() {
     // The paths are sent to the preview action, so the key has to track their
     // identity. Keying on the count alone let a swapped file reuse the key.
     const key = `${trimmedSlug}:${trimmedVersion}:${requiredFile.size}:${requiredFile.lastModified}:${normalizedPaths.join("\0")}`;
-    if (changelogKeyRef.current === key) return;
-    changelogKeyRef.current = key;
-
-    const requestId = ++changelogRequestRef.current;
-    setChangelogStatus("loading");
-
-    void readText(requiredFile)
-      .then((text) => {
-        if (changelogRequestRef.current !== requestId) return null;
-        return generateChangelogPreview({
+    const preview = startChangelogPreview(
+      key,
+      () => readText(requiredFile),
+      (text) =>
+        generateChangelogPreview({
           slug: trimmedSlug,
           version: trimmedVersion,
           readmeText: text.slice(0, 20_000),
           filePaths: normalizedPaths,
-        });
-      })
-      .then((result) => {
-        if (!result) return;
-        if (changelogRequestRef.current !== requestId) return;
-        setChangelog(result.changelog);
+        }),
+    );
+    if (!preview) return;
+    setChangelogStatus("loading");
+    void preview.promise
+      .then((applied) => {
+        if (!applied || !preview.isCurrent()) return;
         setChangelogSource("auto");
         setChangelogStatus("ready");
       })
       .catch(() => {
-        if (changelogRequestRef.current !== requestId) return;
+        if (!preview.isCurrent()) return;
         setChangelogStatus("error");
       });
   }, [
@@ -448,7 +434,7 @@ export function Upload() {
     hasRequiredFile,
     normalizedPaths,
     showChangelogField,
-    trimmedChangelog,
+    startChangelogPreview,
     trimmedSlug,
     trimmedVersion,
   ]);
@@ -1310,9 +1296,9 @@ export function Upload() {
                   rows={4}
                   value={changelog}
                   onChange={(event) => {
-                    changelogTouchedRef.current = true;
+                    editChangelog(event.target.value);
                     setChangelogSource("user");
-                    setChangelog(event.target.value);
+                    setChangelogStatus("idle");
                   }}
                   placeholder="Describe what changed in this skill..."
                 />

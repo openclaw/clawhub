@@ -52,6 +52,7 @@ import { buildReadmeAssetBaseUrl } from "../../lib/readmeAssetBaseUrl";
 import { expandFilesWithReport } from "../../lib/uploadFiles";
 import { formatPublishError, hashFile, uploadFile } from "../../lib/uploadUtils";
 import { useAuthStatus } from "../../lib/useAuthStatus";
+import { useChangelogPreview } from "../../lib/useChangelogPreview";
 
 export const Route = createFileRoute("/plugins/publish")({
   validateSearch: (search) => ({
@@ -202,10 +203,8 @@ export function PublishPluginRoute() {
   const [displayName, setDisplayName] = useState(search.displayName ?? "");
   const [ownerHandle, setOwnerHandle] = useState(search.ownerHandle ?? "");
   const [version, setVersion] = useState(search.nextVersion ?? "0.1.0");
-  const [changelog, setChangelog] = useState("");
-  const changelogTouchedRef = useRef(false);
-  const changelogRequestRef = useRef(0);
-  const changelogKeyRef = useRef<string | null>(null);
+  const { changelog, editChangelog, invalidateChangelog, startChangelogPreview } =
+    useChangelogPreview();
   const [topics, setTopics] = useState("");
   const topicsTouchedRef = useRef(false);
   const [sourceRepo, setSourceRepo] = useState(search.sourceRepo ?? "");
@@ -383,9 +382,7 @@ export function PublishPluginRoute() {
     setFiles(filtered.files);
     setPackageSourceKind(sourceKind);
     setIgnoredPaths(nextIgnoredPaths);
-    changelogRequestRef.current += 1;
-    changelogKeyRef.current = null;
-    if (!changelogTouchedRef.current) setChangelog("");
+    invalidateChangelog();
     setError(null);
     setStatus(null);
     setSubmittedPlugin(null);
@@ -408,9 +405,7 @@ export function PublishPluginRoute() {
     setIgnoredPaths([]);
     setDetectedPrefillFields([]);
     setCodePluginFieldIssues([]);
-    changelogRequestRef.current += 1;
-    changelogKeyRef.current = null;
-    if (!changelogTouchedRef.current) setChangelog("");
+    invalidateChangelog();
     // Without this reset the README warning Badge keeps showing the previous
     // package's relative-asset findings until the next pick's async scan
     // finishes — which is misleading both while no package is selected and
@@ -441,16 +436,12 @@ export function PublishPluginRoute() {
   }, [existing]);
 
   useEffect(() => {
-    changelogRequestRef.current += 1;
-    changelogKeyRef.current = null;
-    if (!changelogTouchedRef.current) setChangelog("");
-  }, [family, name, normalizedPaths, version]);
+    invalidateChangelog();
+  }, [family, invalidateChangelog, name, normalizedPaths, version]);
 
   useEffect(() => {
     if (!showChangelogField) return;
     if (isMetadataLocked) return;
-    if (changelogTouchedRef.current) return;
-    if (changelog.trim()) return;
     const packageName = name.trim();
     const packageVersion = version.trim();
     if (!packageName || !semver.valid(packageVersion)) return;
@@ -466,30 +457,20 @@ export function PublishPluginRoute() {
       readmeFile.lastModified,
       normalizedPaths.join("\0"),
     ].join(":");
-    if (changelogKeyRef.current === key) return;
-    changelogKeyRef.current = key;
-
-    const requestId = ++changelogRequestRef.current;
-    void readmeFile
-      .text()
-      .then((text) => {
-        if (changelogRequestRef.current !== requestId) return null;
-        return generateChangelogPreview({
+    const preview = startChangelogPreview(
+      key,
+      () => readmeFile.text(),
+      (text) =>
+        generateChangelogPreview({
           name: packageName,
           family,
           version: packageVersion,
           readmeText: text.slice(0, 20_000),
           filePaths: normalizedPaths,
-        });
-      })
-      .then((result) => {
-        if (!result) return;
-        if (changelogRequestRef.current !== requestId || changelogTouchedRef.current) return;
-        setChangelog(result.changelog);
-      })
-      .catch(() => {});
+        }),
+    );
+    void preview?.promise.catch(() => {});
   }, [
-    changelog,
     family,
     files,
     generateChangelogPreview,
@@ -497,6 +478,7 @@ export function PublishPluginRoute() {
     name,
     normalizedPaths,
     showChangelogField,
+    startChangelogPreview,
     version,
   ]);
 
@@ -879,9 +861,7 @@ export function PublishPluginRoute() {
                   value={changelog}
                   disabled={metadataDisabled}
                   onChange={(event) => {
-                    changelogTouchedRef.current = true;
-                    changelogRequestRef.current += 1;
-                    setChangelog(event.target.value);
+                    editChangelog(event.target.value);
                   }}
                 />
               </Card>

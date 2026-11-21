@@ -15,6 +15,8 @@
 
 - Skill reads: invalid UTF-8 in a skill file is a client error for the readme, skill card, and file text. The message stays "File is not valid UTF-8 text".
 
+- Skill publishing: keep manually edited or cleared changelogs when an earlier preview finishes generating.
+
 ## 0.27.0 - 2026-11-17
 
 - Scan reports: `clawhub scan download <skill> --version <version>` now returns a report when a skill version's publication checks failed before a verdict. It used to answer "Scan results not found". The archive says the scan failed with no safety verdict, lists the check states and whether a retry is waiting, and says to remove Python bytecode when that stopped the scan. Worker errors are not included. Plugin versions are unchanged.
