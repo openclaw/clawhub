@@ -62,6 +62,7 @@ import {
   readArtifactReportStatus,
   appendPackageModerationEventLog,
 } from "./lib/artifactModeration";
+import { setPackageFeaturedForActor } from "./lib/badgeWrites";
 import { compareCatalogSearchEntries } from "./lib/catalogPage";
 import {
   type CatalogTextMatch as PackageSearchMatch,
@@ -79,7 +80,6 @@ import {
   buildPackageInspectorValidationUrl,
 } from "./lib/emails";
 import { endorAnalysisSchema, endorAnalysisValidator } from "./lib/endorAnalysis";
-import { assertFeaturedCapacity } from "./lib/featuredPolicy";
 import { storedFilesValidator } from "./lib/fileValidators";
 import { runActionRef, runMutationRef, runQueryRef } from "./lib/functionRefs";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
@@ -830,7 +830,6 @@ function toPackageModerationQueueItem(
   };
 }
 
-type PackageBadgeKind = Doc<"packageBadges">["kind"];
 type OfficialFirstPackageCategoryCursorState = {
   phase: "official" | "community";
   cursor: string | null;
@@ -947,52 +946,6 @@ async function paginatePublishedPackageReleases(
       numItems,
       maximumRowsRead: Math.min(paginationOpts.maximumRowsRead ?? scanLimit, scanLimit),
     });
-}
-
-async function upsertPackageBadge(
-  ctx: MutationCtx,
-  pkg: Doc<"packages">,
-  kind: PackageBadgeKind,
-  userId: Id<"users">,
-  at: number,
-) {
-  const packageId = pkg._id;
-  const existing = await ctx.db
-    .query("packageBadges")
-    .withIndex("by_package_kind", (q) => q.eq("packageId", packageId).eq("kind", kind))
-    .unique();
-  if (existing) {
-    return false;
-  }
-  if (pkg.family === "code-plugin" || pkg.family === "bundle-plugin") {
-    if (getPluginDiscoveryExclusion(pkg.categories, "explicit-featured")) {
-      throw new ConvexError(
-        "Model providers and agent runtimes are excluded from Featured discovery.",
-      );
-    }
-    await assertFeaturedCapacity(ctx, "plugin");
-  }
-  await ctx.db.insert("packageBadges", {
-    packageId,
-    kind,
-    byUserId: userId,
-    at,
-  });
-  return true;
-}
-
-async function removePackageBadge(
-  ctx: MutationCtx,
-  packageId: Id<"packages">,
-  kind: PackageBadgeKind,
-) {
-  const existing = await ctx.db
-    .query("packageBadges")
-    .withIndex("by_package_kind", (q) => q.eq("packageId", packageId).eq("kind", kind))
-    .unique();
-  if (!existing) return false;
-  await ctx.db.delete(existing._id);
-  return true;
 }
 
 async function getDashboardRelease(ctx: DbReaderCtx, pkg: Doc<"packages">) {
@@ -12341,31 +12294,6 @@ export const setBatch = mutation({
     await setPackageFeaturedForActor(ctx, user, pkg, nextBatch === "highlighted");
   },
 });
-
-export async function setPackageFeaturedForActor(
-  ctx: MutationCtx,
-  actor: Doc<"users">,
-  pkg: Doc<"packages">,
-  featured: boolean,
-) {
-  const now = Date.now();
-  const changed = featured
-    ? await upsertPackageBadge(ctx, pkg, "highlighted", actor._id, now)
-    : await removePackageBadge(ctx, pkg._id, "highlighted");
-  const result = { ok: true as const, featured, packageId: pkg._id, name: pkg.name };
-  if (!changed) return result;
-
-  await ctx.db.insert("auditLogs", {
-    actorUserId: actor._id,
-    action: "package.badge.highlighted",
-    targetType: "package",
-    targetId: pkg._id,
-    metadata: { highlighted: featured },
-    createdAt: now,
-  });
-
-  return result;
-}
 
 export const setPackageFeaturedForUserInternal = internalMutation({
   args: {
