@@ -1,12 +1,8 @@
 import { useConvex } from "convex/react";
 import { useEffect, useState } from "react";
+import { api } from "../../convex/_generated/api";
 import { convexHttp } from "../convex/client";
-import {
-  getPackageActivityTrendForName,
-  getSkillActivityTrendForSlug,
-  isActivityTrend,
-  type ActivityTrend,
-} from "./activityTrend";
+import { isActivityTrend, type ActivityTrend } from "./activityTrend";
 
 const ACTIVITY_TREND_FALLBACK_DELAY_MS = 750;
 
@@ -55,10 +51,10 @@ function useDeferredActivityTrend(
           ? // Skill trends are public; a one-shot read must not wait for a live socket.
             // Packages retain the viewer-aware client for non-public packages.
             convexHttp.query(
-              getSkillActivityTrendForSlug,
+              api.skills.getActivityTrendForSlug,
               ownerHandle ? { slug: name, ownerHandle, endDay } : { slug: name, endDay },
             )
-          : convex.query(getPackageActivityTrendForName, { name, endDay });
+          : convex.query(api.packages.getActivityTrendForName, { name, endDay });
       void request.then(
         (value) => {
           if (cancelled) return;

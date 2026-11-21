@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildDownloadsTrendForPeriod, sliceMetricTrend, type MetricTrend } from "./activityTrend";
+import {
+  buildDownloadsTrendForPeriod,
+  getDownloadTrendPeriod,
+  sliceMetricTrend,
+  type DownloadTrendPeriod,
+  type MetricTrend,
+} from "./activityTrend";
 
 const sampleTrend: MetricTrend = {
   range: "daily",
@@ -25,12 +31,12 @@ describe("buildDownloadsTrendForPeriod", () => {
   it("uses all-time downloads for the all-time tab total", () => {
     const trend = buildDownloadsTrendForPeriod("all-time", sampleTrend, 9_999);
     expect(trend.total).toBe(9_999);
-    expect(trend.points).toHaveLength(30);
+    expect(trend.points).toBe(sampleTrend.points);
   });
 
   it("keeps the 30-day trend unchanged for the 30d tab", () => {
     const trend = buildDownloadsTrendForPeriod("30d", sampleTrend, 9_999);
-    expect(trend).toEqual(sampleTrend);
+    expect(trend).toBe(sampleTrend);
   });
 
   it("slices to seven days for the 7d tab", () => {
@@ -38,4 +44,16 @@ describe("buildDownloadsTrendForPeriod", () => {
     expect(trend.days).toBe(7);
     expect(trend.total).toBe(14);
   });
+
+  it.each(["", "unknown", "constructor", "__proto__"])(
+    "keeps the 30-day presentation and original trend for unknown period %j",
+    (value) => {
+      const period = value as DownloadTrendPeriod;
+      expect(getDownloadTrendPeriod(period)).toMatchObject({
+        periodLabel: "30 days",
+        ariaLabel: "Daily downloads over the last 30 days",
+      });
+      expect(buildDownloadsTrendForPeriod(period, sampleTrend, 9_999)).toBe(sampleTrend);
+    },
+  );
 });
