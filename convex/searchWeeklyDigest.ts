@@ -16,9 +16,9 @@ import {
 } from "./lib/searchDigestContract";
 import { deliverSearchDigest } from "./lib/searchDigestDelivery";
 import { buildSearchEvidenceDigest, type DigestCatalogInput } from "./lib/searchEvidenceDigest";
+import { readReport } from "./lib/searchInsightRead";
 import { searchAggregateExpiration, type SearchInsightReport } from "./lib/searchInsights";
 import { classifySearchIntent } from "./lib/searchIntentClassifier";
-import { readReport } from "./searchInsights";
 
 const DAY = 86_400_000;
 const LEASE = 5 * 60_000;

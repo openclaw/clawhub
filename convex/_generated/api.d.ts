@@ -218,6 +218,7 @@ import type * as lib_searchDigestContract from "../lib/searchDigestContract.js";
 import type * as lib_searchDigestDelivery from "../lib/searchDigestDelivery.js";
 import type * as lib_searchDigestRows from "../lib/searchDigestRows.js";
 import type * as lib_searchEvidenceDigest from "../lib/searchEvidenceDigest.js";
+import type * as lib_searchInsightRead from "../lib/searchInsightRead.js";
 import type * as lib_searchInsights from "../lib/searchInsights.js";
 import type * as lib_searchIntentClassifier from "../lib/searchIntentClassifier.js";
 import type * as lib_searchRanking from "../lib/searchRanking.js";
@@ -603,6 +604,7 @@ declare const fullApi: ApiFromModules<{
   "lib/searchDigestDelivery": typeof lib_searchDigestDelivery;
   "lib/searchDigestRows": typeof lib_searchDigestRows;
   "lib/searchEvidenceDigest": typeof lib_searchEvidenceDigest;
+  "lib/searchInsightRead": typeof lib_searchInsightRead;
   "lib/searchInsights": typeof lib_searchInsights;
   "lib/searchIntentClassifier": typeof lib_searchIntentClassifier;
   "lib/searchRanking": typeof lib_searchRanking;
