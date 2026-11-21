@@ -2,16 +2,16 @@ import type { TemplateManifest } from "clawhub-schema";
 import { ConvexError } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
-import {
-  isDecodableSkillPresentationRaster,
-  storeSkillPresentationAsset,
-} from "../skillPresentationAssets";
 import { sha256Hex } from "./hash";
 import {
   buildSkillPresentationIconPath,
   MAX_SKILL_PRESENTATION_ICON_BYTES,
   validateSkillPresentationIcon,
 } from "./skillPresentation";
+import {
+  isDecodableSkillPresentationRaster,
+  storeSkillPresentationAsset,
+} from "./skillPresentationAssetStorage";
 import { resolveTemplateAvatarArtwork } from "./templateAvatarArtwork";
 
 const PORTABLE_PACKAGE_ICON = "assets/icon.png";

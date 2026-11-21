@@ -41,6 +41,10 @@ import {
   isLegacyNvidiaSkillSource,
 } from "./lib/rolloutCapabilities";
 import { buildSkillPresentationIconPath } from "./lib/skillPresentation";
+import {
+  isDecodableSkillPresentationRaster,
+  storeSkillPresentationAsset,
+} from "./lib/skillPresentationAssetStorage";
 import { isMacJunkPath, parseFrontmatter } from "./lib/skills/skillMarkdown";
 import {
   getSkillBySlugForPublisher,
@@ -53,10 +57,6 @@ import { assertValidSkillSlug } from "./lib/skillSlugValidator";
 import { getSkillsShFixtureEnvironmentPolicy } from "./lib/skillsShCatalogEnvironment";
 import { createInitialSkillStats } from "./lib/skillStats";
 import { enqueueNvidiaSkillEvaluation } from "./skillEvaluations";
-import {
-  isDecodableSkillPresentationRaster,
-  storeSkillPresentationAsset,
-} from "./skillPresentationAssets";
 
 const DEFAULT_BRANCH = "main";
 const GITHUB_SKILL_SCAN_ACTION_LEASE_MS = 15 * 60 * 1000;

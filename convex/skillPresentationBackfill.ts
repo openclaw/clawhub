@@ -12,15 +12,15 @@ import {
   validateSkillPresentationIcon,
 } from "./lib/skillPresentation";
 import {
+  isDecodableSkillPresentationRaster,
+  storeSkillPresentationAsset,
+  type SkillPresentationContentType,
+} from "./lib/skillPresentationAssetStorage";
+import {
   preserveHistoricalHostedIcon,
   resolveHistoricalSkillPresentation,
 } from "./lib/skillPresentationBackfill";
 import { syncSkillSearchDigestForSkill } from "./lib/skillSearchDigest";
-import {
-  isDecodableSkillPresentationRaster,
-  storeSkillPresentationAsset,
-  type SkillPresentationContentType,
-} from "./skillPresentationAssets";
 
 const DEFAULT_BATCH_SIZE = 20;
 const MAX_BATCH_SIZE = 50;

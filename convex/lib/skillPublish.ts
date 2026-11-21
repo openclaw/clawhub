@@ -14,10 +14,6 @@ import semver from "semver";
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
-import {
-  isDecodableSkillPresentationRaster,
-  storeSkillPresentationAsset,
-} from "../skillPresentationAssets";
 import { isSkillHighlighted } from "./badges";
 import { generateChangelogForPublish } from "./changelog";
 import { generateEmbedding } from "./embeddings";
@@ -39,6 +35,10 @@ import {
   stripPresentationEmoji,
   validateSkillPresentationIcon,
 } from "./skillPresentation";
+import {
+  isDecodableSkillPresentationRaster,
+  storeSkillPresentationAsset,
+} from "./skillPresentationAssetStorage";
 import {
   computeQualitySignals,
   evaluateQuality,
