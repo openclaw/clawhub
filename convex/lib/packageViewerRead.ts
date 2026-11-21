@@ -6,7 +6,7 @@ import type {
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { toPublicPublisherWithOfficial } from "./officialPublishers";
-import { getPackageReleaseArtifactSha256 } from "./packageArtifacts";
+import { packageArtifactSummary } from "./packageArtifacts";
 import { getPackageByNormalizedName, viewerCanAccessPackageOwner } from "./packageCatalogRead";
 import { normalizePackageName } from "./packageRegistry";
 import { resolvePackageReleaseFamily } from "./packageReleaseFamily";
@@ -224,41 +224,6 @@ export function toPublicPluginRelease(release: Doc<"packageReleases">) {
       ...release.verification,
       sourcePath,
     },
-  };
-}
-
-export function packageArtifactSummary(
-  release: Pick<
-    Doc<"packageReleases">,
-    | "artifactKind"
-    | "clawpackSha256"
-    | "sha256hash"
-    | "clawpackSize"
-    | "clawpackFormat"
-    | "npmIntegrity"
-    | "npmShasum"
-    | "npmTarballName"
-    | "npmUnpackedSize"
-    | "npmFileCount"
-  >,
-): PackageArtifactSummary {
-  if (release.artifactKind === "npm-pack") {
-    return {
-      kind: "npm-pack",
-      sha256: getPackageReleaseArtifactSha256(release) ?? undefined,
-      size: release.clawpackSize,
-      format: release.clawpackFormat ?? "tgz",
-      npmIntegrity: release.npmIntegrity,
-      npmShasum: release.npmShasum,
-      npmTarballName: release.npmTarballName,
-      npmUnpackedSize: release.npmUnpackedSize,
-      npmFileCount: release.npmFileCount,
-    };
-  }
-  return {
-    kind: "legacy-zip",
-    sha256: getPackageReleaseArtifactSha256(release) ?? undefined,
-    format: "zip",
   };
 }
 

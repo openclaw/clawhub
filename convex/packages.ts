@@ -99,7 +99,7 @@ import {
 import { toDayKey } from "./lib/leaderboards";
 import { isOfficialPublisher } from "./lib/officialPublishers";
 import { verifyOpenClawPublishAuthorization } from "./lib/openClawPublishAuthorization";
-import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
+import { getPackageReleaseArtifactSha256, packageArtifactSummary } from "./lib/packageArtifacts";
 import {
   packageMatchesListFilters,
   toPublicPackageListItemFromPackage,
@@ -194,7 +194,6 @@ import {
   toPublicPackage,
   toPublicPackageRelease,
   toPublicPluginRelease,
-  packageArtifactSummary,
   getReadablePackageByName,
   selectPublishedPackageRelease,
   readPublishedPackageTags,
