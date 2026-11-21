@@ -174,6 +174,7 @@ describe("packed admin CLI", () => {
       eligibilityNote: "Public undeleted Templates.",
       consistencyNote: "Not an atomic snapshot.",
     };
+    let unhideResponse: unknown = { ok: true };
     const server = createServer(async (request, response) => {
       if (request.url === "/api/v1/admin/download-analytics") {
         requests.push({
@@ -212,6 +213,10 @@ describe("packed admin CLI", () => {
         body: parsed,
       });
       response.writeHead(200, { "Content-Type": "application/json" });
+      if (request.url === "/api/v1/skills/demo/undelete") {
+        response.end(JSON.stringify(unhideResponse));
+        return;
+      }
       response.end(JSON.stringify({ trustedPublisher: { ...trustedPublisher, ...parsed } }));
     });
     try {
@@ -299,6 +304,34 @@ describe("packed admin CLI", () => {
           url: "/api/v1/admin/download-analytics",
           authorization: "Bearer artifact-test-token",
           body: undefined,
+        })),
+      );
+      const unhideArgs = [
+        join(installDir, "package", "bin", "clawhub-admin.js"),
+        "--registry",
+        registry,
+        "skills",
+        "unhide",
+        "demo",
+        "--reason",
+        "review complete",
+        "--yes",
+      ];
+      const unhidden = await run(unhideArgs);
+      expect(unhidden.stdout).toBe("OK. Unhidden demo\n");
+      expect(unhidden.stderr).toBe("");
+      unhideResponse = null;
+      await expect(run(unhideArgs)).rejects.toMatchObject({
+        code: 1,
+        stdout: "",
+        stderr: expect.stringMatching(/API response: an object/),
+      });
+      expect(requests.slice(-2)).toEqual(
+        Array.from({ length: 2 }, () => ({
+          method: "POST",
+          url: "/api/v1/skills/demo/undelete",
+          authorization: "Bearer artifact-test-token",
+          body: { reason: "review complete" },
         })),
       );
     } finally {

@@ -4,7 +4,6 @@ import {
   ApiV1SkillMergeResponseSchema,
   ApiV1SkillRenameResponseSchema,
   ApiV1SkillTagResponseSchema,
-  parseArk,
 } from "../../schema/index.js";
 import { requireAuthToken } from "../authToken.js";
 import { withLoaderErrorHandling } from "../loader.js";
@@ -79,7 +78,7 @@ export async function cmdRenameSkill(
   const spinner = createCrabLoader(`Renaming ${formatSkillRef(source)} to ${newSlug}`);
 
   return await withLoaderErrorHandling(spinner, async () => {
-    const result = await apiRequest(
+    const parsed = await apiRequest(
       registry,
       {
         method: "POST",
@@ -92,7 +91,6 @@ export async function cmdRenameSkill(
       },
       ApiV1SkillRenameResponseSchema,
     );
-    const parsed = parseArk(ApiV1SkillRenameResponseSchema, result, "Rename skill response");
     spinner.succeed(`Renamed ${parsed.previousSlug} to ${parsed.slug}`);
     return parsed;
   });
@@ -128,7 +126,7 @@ export async function cmdMergeSkill(
   );
 
   return await withLoaderErrorHandling(spinner, async () => {
-    const result = await apiRequest(
+    const parsed = await apiRequest(
       registry,
       {
         method: "POST",
@@ -144,7 +142,6 @@ export async function cmdMergeSkill(
       },
       ApiV1SkillMergeResponseSchema,
     );
-    const parsed = parseArk(ApiV1SkillMergeResponseSchema, result, "Merge skill response");
     spinner.succeed(`Merged ${parsed.sourceSlug} into ${parsed.targetSlug}`);
     return parsed;
   });
@@ -180,7 +177,7 @@ export async function cmdSetSkillTag(
   );
 
   return await withLoaderErrorHandling(spinner, async () => {
-    const result = await apiRequest(
+    const parsed = await apiRequest(
       registry,
       {
         method: "POST",
@@ -193,7 +190,6 @@ export async function cmdSetSkillTag(
       },
       ApiV1SkillTagResponseSchema,
     );
-    const parsed = parseArk(ApiV1SkillTagResponseSchema, result, "Set skill tag response");
     spinner.succeed(`Set ${parsed.tag} for ${formatSkillRef(skill)} to ${parsed.version}`);
     return parsed;
   });
