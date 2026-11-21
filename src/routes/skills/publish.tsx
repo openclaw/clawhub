@@ -669,36 +669,7 @@ export function Upload() {
       toast.error(message);
       return;
     }
-    if (effectiveSlugCollision) {
-      setError(effectiveSlugCollision.message);
-      toast.error(effectiveSlugCollision.message);
-      return;
-    }
-    if (!acceptedLicenseTerms) {
-      const msg = "Accept the MIT-0 license terms to publish this skill.";
-      setError(msg);
-      toast.error(msg);
-      return;
-    }
     setError(null);
-    if (oversizedFiles.length > 0) {
-      const msg = `Each file must be 10MB or smaller: ${oversizedFileNames.join(", ")}`;
-      setError(msg);
-      toast.error(msg);
-      return;
-    }
-    if (totalBytes > MAX_PUBLISH_TOTAL_BYTES) {
-      const msg = "Total size exceeds 50MB per version.";
-      setError(msg);
-      toast.error(msg);
-      return;
-    }
-    if (!hasRequiredFile) {
-      const msg = REQUIRED_FILE_ISSUE;
-      setError(msg);
-      toast.error(msg);
-      return;
-    }
     setIsSubmitting(true);
     try {
       const uploaded = [] as Array<{

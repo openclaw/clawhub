@@ -467,6 +467,95 @@ describe("Upload route", () => {
     });
   });
 
+  it.each([
+    ["slug collision", "Slug is already taken. Choose a different slug."],
+    ["license acceptance", "Accept the MIT-0 license terms to publish this skill."],
+    ["required file", "SKILL.md is required."],
+    ["file size", "Each file must be 10MB or smaller: notes.md"],
+    ["total size", "Total file size exceeds 50MB."],
+  ])("rejects invalid %s at the form boundary before uploading", async (invalid, message) => {
+    if (invalid === "slug collision") {
+      const defaultQuery = useQueryMock.getMockImplementation();
+      useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
+        if (
+          fn &&
+          getFunctionName(fn as Parameters<typeof getFunctionName>[0]) ===
+            "skills:checkSlugAvailability"
+        ) {
+          return { available: false, reason: "taken", message, url: "/local/cool-skill" };
+        }
+        return defaultQuery?.(fn, args);
+      });
+    }
+    render(<Upload />);
+    fillValidPublishFields();
+    const files = [
+      new File(["# Skill"], invalid === "required file" ? "notes.md" : "SKILL.md", {
+        type: "text/markdown",
+      }),
+    ];
+    if (invalid === "file size") {
+      const huge = new File(["notes"], "notes.md", { type: "text/markdown" });
+      Object.defineProperty(huge, "size", { value: 10 * 1024 * 1024 + 1 });
+      files.push(huge);
+    }
+    if (invalid === "total size") {
+      for (let index = 0; index < 6; index += 1) {
+        const file = new File(["notes"], `notes-${index}.md`, { type: "text/markdown" });
+        Object.defineProperty(file, "size", { value: 9 * 1024 * 1024 });
+        files.push(file);
+      }
+    }
+    fireEvent.change(screen.getByTestId("upload-input"), { target: { files } });
+    const license = await screen.findByRole("checkbox", {
+      name: /i have the rights to publish this skill under mit-0/i,
+    });
+    if (invalid !== "license acceptance") fireEvent.click(license);
+    const submit = screen.getByRole("button", { name: /publish skill/i });
+    expect(submit.getAttribute("disabled")).not.toBeNull();
+
+    fireEvent.submit(submit.closest("form") as HTMLFormElement);
+
+    expect((await screen.findByRole("alert")).textContent).toBe(message);
+    expect(generateUploadUrl).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(publishVersion).not.toHaveBeenCalled();
+  });
+
+  it("submits prepared values when shared form validation succeeds", async () => {
+    generateUploadUrl.mockResolvedValue("https://upload.local");
+    publishVersion.mockResolvedValue(null);
+    render(<Upload />);
+    fillValidPublishFields();
+    fireEvent.change(screen.getByTestId("upload-input"), {
+      target: { files: [new File(["# Skill"], "SKILL.md", { type: "text/markdown" })] },
+    });
+    fireEvent.click(
+      await screen.findByRole("checkbox", {
+        name: /i have the rights to publish this skill under mit-0/i,
+      }),
+    );
+    const submit = screen.getByRole("button", { name: /publish skill/i });
+    await waitFor(() => expect(submit.getAttribute("disabled")).toBeNull());
+
+    fireEvent.submit(submit.closest("form") as HTMLFormElement);
+
+    await waitFor(() => expect(publishVersion).toHaveBeenCalledTimes(1));
+    expect(generateUploadUrl).toHaveBeenCalledTimes(1);
+    expect(publishVersion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ownerHandle: "local",
+        slug: "cool-skill",
+        displayName: "Cool Skill",
+        version: "1.2.3",
+        acceptLicenseTerms: true,
+        tags: ["latest"],
+        files: [expect.objectContaining({ path: "SKILL.md", storageId: "storage-id" })],
+      }),
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("extracts zip uploads and unwraps top-level folders", async () => {
     render(<Upload />);
     fillValidPublishFields();
