@@ -11,6 +11,7 @@ import {
   type AdoptionReport,
   type AdoptionArtifact,
 } from "./lib/featuredIntelligence";
+import { readReport as readSearchReport } from "./lib/searchInsightRead";
 import {
   SEARCH_DAY_MS,
   searchArtifactKind,
@@ -19,7 +20,6 @@ import {
   type SearchArtifactKind,
   type SearchInsightArgs,
 } from "./lib/searchInsights";
-import { readReport as readSearchReport } from "./searchInsights";
 
 const ADOPTION_INSPECTION_LIMIT = 100;
 const args = {
