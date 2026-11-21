@@ -23,12 +23,13 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { internalAction, internalMutation, internalQuery } from "./functions";
 import { toDayKey } from "./lib/leaderboards";
+import { assertRankingMetricWritesAllowed } from "./lib/rankingMetricsImportLock";
 import {
   bumpLiveHourlySkillStats,
   ensureHourlyStatsState,
   toHourKey,
 } from "./lib/skillHourlyStats";
-import { applySkillStatDeltas, bumpDailySkillStats } from "./lib/skillStats";
+import { applySkillStatDeltas } from "./lib/skillStats";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
 
 /**
@@ -1170,6 +1171,44 @@ const skillDeltaValidator = v.object({
   downloadEvents: v.array(v.number()),
   installNewEvents: v.array(v.number()),
 });
+
+async function bumpDailySkillStats(
+  ctx: MutationCtx,
+  params: {
+    skillId: Id<"skills">;
+    now: number;
+    downloads?: number;
+    installs?: number;
+  },
+) {
+  const downloads = params.downloads ?? 0;
+  const installs = params.installs ?? 0;
+  if (downloads === 0 && installs === 0) return;
+  assertRankingMetricWritesAllowed();
+
+  const day = toDayKey(params.now);
+  const existing = await ctx.db
+    .query("skillDailyStats")
+    .withIndex("by_skill_day", (q) => q.eq("skillId", params.skillId).eq("day", day))
+    .unique();
+
+  if (existing) {
+    await ctx.db.patch(existing._id, {
+      downloads: Math.max(0, existing.downloads + downloads),
+      installs: Math.max(0, existing.installs + installs),
+      updatedAt: params.now,
+    });
+    return;
+  }
+
+  await ctx.db.insert("skillDailyStats", {
+    skillId: params.skillId,
+    day,
+    downloads: Math.max(0, downloads),
+    installs: Math.max(0, installs),
+    updatedAt: params.now,
+  });
+}
 
 /**
  * Write aggregated daily stats and advance the cursor.
