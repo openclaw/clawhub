@@ -1,12 +1,11 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import semver from "semver";
-import { apiRequest, getHttpErrorDiagnostic, registryUrl, uploadBinary } from "../../http.js";
+import { apiRequest, getHttpErrorDiagnostic, uploadBinary } from "../../http.js";
 import {
   ApiRoutes,
   ApiUploadFileResponseSchema,
   ApiV1PublishResponseSchema,
-  ApiV1SkillResolveResponseSchema,
   ApiV1SkillUploadUrlResponseSchema,
   ApiV1WhoamiResponseSchema,
 } from "../../schema/index.js";
@@ -14,6 +13,7 @@ import { hashSkillFiles, listSkillFiles, sortSkillFilesByPath } from "../../skil
 import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
 import { resolveGitHubPublishSource } from "../githubSource.js";
 import { getRegistry } from "../registry.js";
+import { resolveSkillVersion } from "../skillResolution.js";
 import { sanitizeSlug, titleCase } from "../slug.js";
 import type { GlobalOpts } from "../types.js";
 import { createCrabLoader, fail, formatError, withTransportErrorContext } from "../ui.js";
@@ -123,13 +123,10 @@ export async function cmdPublish(
         ? explicitSourceOwnerHandle ||
           (optionalToken ? await getDefaultOwnerHandle(optionalToken) : undefined)
         : undefined;
-    const resolved = await resolveSkillVersion(
-      registry,
-      slug,
-      hashed.fingerprint,
-      ownerHandle,
-      optionalToken,
-    );
+    const params = new URLSearchParams({ slug });
+    if (ownerHandle) params.set("ownerHandle", ownerHandle);
+    params.set("hash", hashed.fingerprint);
+    const resolved = await resolveSkillVersion(registry, params, optionalToken);
     const latestVersion = resolved.latestVersion?.version ?? null;
 
     if (!explicitVersion && resolved.match && !hasExplicitCatalogMetadata) {
@@ -329,31 +326,6 @@ export async function resolveDefaultOwnerHandle(registry: string, token: string)
   const handle = whoami.user.handle?.trim().replace(/^@+/, "");
   if (!handle) fail("Unable to resolve your publisher handle. Pass --owner explicitly.");
   return handle;
-}
-
-async function resolveSkillVersion(
-  registry: string,
-  slug: string,
-  fingerprint: string,
-  ownerHandle?: string,
-  token?: string,
-) {
-  const url = registryUrl(ApiRoutes.resolve, registry);
-  url.searchParams.set("slug", slug);
-  if (ownerHandle) url.searchParams.set("ownerHandle", ownerHandle);
-  url.searchParams.set("hash", fingerprint);
-  try {
-    return await apiRequest(
-      registry,
-      { method: "GET", url: url.toString(), token },
-      ApiV1SkillResolveResponseSchema,
-    );
-  } catch (error) {
-    if (/skill not found|HTTP 404/i.test(formatError(error))) {
-      return { match: null, latestVersion: null };
-    }
-    throw error;
-  }
 }
 
 function resolveAutomaticVersion(latestVersion: string | null) {
