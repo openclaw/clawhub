@@ -174,6 +174,7 @@ import type * as lib_packageSdkUsageStorage from "../lib/packageSdkUsageStorage.
 import type * as lib_packageSearchDigest from "../lib/packageSearchDigest.js";
 import type * as lib_packageSecurity from "../lib/packageSecurity.js";
 import type * as lib_packageStatEvents from "../lib/packageStatEvents.js";
+import type * as lib_packageViewerRead from "../lib/packageViewerRead.js";
 import type * as lib_pluginApiRetirements from "../lib/pluginApiRetirements.js";
 import type * as lib_pluginBrowseRead from "../lib/pluginBrowseRead.js";
 import type * as lib_pluginBrowseSnapshot from "../lib/pluginBrowseSnapshot.js";
@@ -556,6 +557,7 @@ declare const fullApi: ApiFromModules<{
   "lib/packageSearchDigest": typeof lib_packageSearchDigest;
   "lib/packageSecurity": typeof lib_packageSecurity;
   "lib/packageStatEvents": typeof lib_packageStatEvents;
+  "lib/packageViewerRead": typeof lib_packageViewerRead;
   "lib/pluginApiRetirements": typeof lib_pluginApiRetirements;
   "lib/pluginBrowseRead": typeof lib_pluginBrowseRead;
   "lib/pluginBrowseSnapshot": typeof lib_pluginBrowseSnapshot;

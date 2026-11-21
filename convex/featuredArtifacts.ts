@@ -11,6 +11,7 @@ import {
   getPackageDownloadSecurityBlock,
   resolvePackageReleaseScanStatus,
 } from "./lib/packageSecurity";
+import { readPackageForViewer, readPackageVersionForViewer } from "./lib/packageViewerRead";
 import {
   resolvePublicBrowseVersionForSkill,
   shouldExcludeSkillFromPublicBrowse,
@@ -21,7 +22,6 @@ import type { SearchCurrentResult } from "./lib/searchInsights";
 import { normalizeSecurityScanStatus } from "./lib/securityScanPolicy";
 import { isPublicSkillVersionAvailableForSkill } from "./lib/skillFileAccess";
 import { isPublicSkillsShMirrorDigest } from "./lib/skillsShMirrorPublic";
-import { readPackageForViewer, readPackageVersionForViewer } from "./packages";
 import { getSkillsShPublicCatalogEnabledHandler } from "./rolloutCapabilities";
 
 // Search and adoption readers share this current eligibility owner. Each batch is
