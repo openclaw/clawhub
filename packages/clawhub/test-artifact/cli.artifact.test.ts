@@ -1033,6 +1033,110 @@ describe("built CLI artifact", () => {
     expect(requests.map((request) => request.path)).not.toContain("/api/cli/telemetry/install");
   });
 
+  it("emits one JSON document for mixed sync publication results", async () => {
+    const workdir = await makeTmpDir("clawhub-artifact-sync-results-");
+    const root = join(workdir, "skills");
+    const slugs = ["failed", "pending", "published", "synced"];
+    for (const slug of slugs) {
+      await mkdir(join(root, slug), { recursive: true });
+      await writeFile(join(root, slug, "SKILL.md"), `# ${slug}\n`, "utf8");
+    }
+    const publishedSlugs: string[] = [];
+    const server = createServer(async (request, response) => {
+      const url = new URL(request.url ?? "/", "http://127.0.0.1");
+      const body = await readRequestBody(request);
+      if (url.pathname === "/api/v1/resolve") {
+        writeJson(response, 200, {
+          match: url.searchParams.get("slug") === "synced" ? { version: "1.0.0" } : null,
+          latestVersion: { version: "1.0.0" },
+        });
+      } else if (url.pathname === "/api/v1/skills/-/upload-url") {
+        writeJson(response, 200, { uploadUrl: `${registry}/upload`, uploadTicket: "ticket" });
+      } else if (url.pathname === "/upload") {
+        writeJson(response, 200, { storageId: "storage" });
+      } else if (url.pathname === "/api/v1/skills") {
+        const { slug } = JSON.parse(body) as { slug: string };
+        publishedSlugs.push(slug);
+        if (slug === "failed") {
+          response.writeHead(400, { "Content-Type": "text/plain" });
+          response.end("Fixture publish rejected");
+        } else {
+          writeJson(response, 200, {
+            ok: true,
+            skillId: slug,
+            versionId: `${slug}-version`,
+            publicationStatus: slug === "pending" ? "pending" : "published",
+          });
+        }
+      } else {
+        writeJson(response, 404, { error: "Unexpected fixture request" });
+      }
+    });
+    await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+    servers.push(server);
+    const registry = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const configPath = await writeConfigWithToken(workdir, registry);
+    const result = await runNodeAsync(
+      [
+        binPath,
+        "--workdir",
+        workdir,
+        "--registry",
+        registry,
+        "--no-input",
+        "sync",
+        "--all",
+        "--owner",
+        "artifact-user",
+        "--json",
+      ],
+      { CLAWHUB_CONFIG_PATH: configPath },
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toBe("");
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed.failed).toEqual([
+      { slug: "failed", message: expect.stringContaining("Fixture publish rejected") },
+    ]);
+    expect(result.stdout).toBe(
+      `${JSON.stringify(
+        {
+          ok: false,
+          dryRun: false,
+          registry,
+          roots: [workdir, root],
+          owner: "artifact-user",
+          summary: {
+            wouldPublish: 0,
+            published: 1,
+            submitted: 1,
+            alreadySynced: 1,
+            skipped: 0,
+            failed: 1,
+          },
+          wouldPublish: [],
+          published: [{ slug: "published", folder: join(root, "published"), version: "1.0.1" }],
+          submitted: [
+            {
+              slug: "pending",
+              folder: join(root, "pending"),
+              version: "1.0.1",
+              status: "pending-publication",
+              publicationStatus: "pending",
+            },
+          ],
+          alreadySynced: [{ slug: "synced", folder: join(root, "synced"), version: "1.0.0" }],
+          skipped: [],
+          failed: parsed.failed,
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    expect(publishedSlugs).toEqual(["failed", "pending", "published"]);
+  });
+
   it("reports unknown top-level commands clearly", async () => {
     const result = runNode([binPath, "nope"]);
 

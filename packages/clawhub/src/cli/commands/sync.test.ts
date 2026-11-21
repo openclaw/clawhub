@@ -399,6 +399,117 @@ describe("cmdSync", () => {
     ]);
   });
 
+  it("writes one ordered JSON result for mixed publish outcomes before setting the exit code", async () => {
+    interactive = false;
+    const slugs = ["published", "pending", "unchanged", "rejected", "nonzero"];
+    const { findSkillFolders } = await import("../scanSkills.js");
+    mocked(findSkillFolders).mockImplementation(async (root: string) =>
+      root === "/scan"
+        ? slugs.map((slug) => ({ folder: `/scan/${slug}`, slug, displayName: slug }))
+        : [],
+    );
+    mockApiRequest.mockResolvedValue({ match: null, latestVersion: { version: "1.0.0" } });
+    mockCmdPublish.mockImplementation(
+      (_opts: unknown, _folder: unknown, options: { slug: string; version: string }) => {
+        if (options.slug === "rejected") throw new Error("Publish rejected");
+        if (options.slug === "nonzero") process.exitCode = 7;
+        return {
+          status:
+            options.slug === "pending"
+              ? "pending-publication"
+              : options.slug === "unchanged"
+                ? "unchanged"
+                : "published",
+          version: options.version,
+          ...(options.slug === "pending" ? { publicationStatus: "pending" } : {}),
+        };
+      },
+    );
+    const exitCodesAtWrite: Array<typeof process.exitCode> = [];
+    const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => {
+      exitCodesAtWrite.push(process.exitCode);
+      return true;
+    });
+    try {
+      await cmdSync(makeOpts(), { root: ["/scan"], all: true, json: true }, false);
+      expect(stdoutWrite).toHaveBeenCalledExactlyOnceWith(
+        `${JSON.stringify(
+          {
+            ok: false,
+            dryRun: false,
+            registry: "https://clawhub.ai",
+            roots: ["/work", "/work/skills", "/scan"],
+            owner: "steipete",
+            summary: {
+              wouldPublish: 0,
+              published: 1,
+              submitted: 1,
+              alreadySynced: 1,
+              skipped: 0,
+              failed: 2,
+            },
+            wouldPublish: [],
+            published: [{ slug: "published", folder: "/scan/published", version: "1.0.1" }],
+            submitted: [
+              {
+                slug: "pending",
+                folder: "/scan/pending",
+                version: "1.0.1",
+                status: "pending-publication",
+                publicationStatus: "pending",
+              },
+            ],
+            alreadySynced: [{ slug: "unchanged", folder: "/scan/unchanged", version: "1.0.1" }],
+            skipped: [],
+            failed: [
+              { slug: "rejected", message: "Publish rejected" },
+              { slug: "nonzero", message: "Publish command exited with code 7" },
+            ],
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      expect(exitCodesAtWrite).toEqual([undefined]);
+      expect(process.exitCode).toBe(1);
+    } finally {
+      stdoutWrite.mockRestore();
+    }
+  });
+
+  it("does not set the failure exit code when writing the JSON result throws", async () => {
+    interactive = false;
+    mockDefaultSkillResolution();
+    mockCmdPublish.mockRejectedValue(new Error("Publish rejected"));
+    const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => {
+      throw new Error("Cannot write JSON");
+    });
+    try {
+      await expect(
+        cmdSync(makeOpts(), { root: ["/scan"], all: true, json: true }, false),
+      ).rejects.toThrow("Cannot write JSON");
+      expect(stdoutWrite).toHaveBeenCalledTimes(1);
+      expect(process.exitCode).toBeUndefined();
+    } finally {
+      stdoutWrite.mockRestore();
+    }
+  });
+
+  it("omits an unresolved owner from dry-run JSON", async () => {
+    interactive = false;
+    mockDefaultSkillResolution();
+    const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    try {
+      await cmdSync(makeOpts(), { root: ["/scan"], all: true, dryRun: true, json: true }, false);
+      const output = String(stdoutWrite.mock.calls[0]?.[0]);
+      expect(JSON.parse(output)).not.toHaveProperty("owner");
+      expect(stdoutWrite).toHaveBeenCalledTimes(1);
+      expect(output.endsWith("\n")).toBe(true);
+    } finally {
+      stdoutWrite.mockRestore();
+    }
+  });
+
   it("does not call pending sync submissions published in human summaries", async () => {
     interactive = false;
     mockDefaultSkillResolution();

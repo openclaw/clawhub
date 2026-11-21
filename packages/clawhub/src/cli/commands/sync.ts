@@ -283,42 +283,10 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
     }
   }
 
-  if (failedUploads.length > 0) {
-    if (jsonMode) {
-      writeSyncJson(
-        buildSyncJsonOutput({
-          ok: false,
-          dryRun: false,
-          registry,
-          roots: outputRoots,
-          owner: ownerHandle,
-          duplicates: deduped.duplicates,
-          alreadySynced: [...synced.map(formatSyncedJson), ...racedNoOps],
-          wouldPublish: [],
-          published,
-          submitted,
-          failed: failedUploads,
-        }),
-      );
-      process.exitCode = 1;
-      return;
-    }
-    printSection(
-      "Failed to publish",
-      formatBulletList(
-        failedUploads.map((failure) => `${failure.slug}: ${failure.message}`),
-        20,
-      ),
-    );
-    outro(formatSyncPublishSummary({ published, submitted, selected, failedUploads }));
-    process.exitCode = 1;
-    return;
-  }
-
   if (jsonMode) {
     writeSyncJson(
       buildSyncJsonOutput({
-        ok: true,
+        ok: failedUploads.length === 0,
         dryRun: false,
         registry,
         roots: outputRoots,
@@ -328,9 +296,23 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
         wouldPublish: [],
         published,
         submitted,
-        failed: [],
+        failed: failedUploads,
       }),
     );
+    if (failedUploads.length > 0) process.exitCode = 1;
+    return;
+  }
+
+  if (failedUploads.length > 0) {
+    printSection(
+      "Failed to publish",
+      formatBulletList(
+        failedUploads.map((failure) => `${failure.slug}: ${failure.message}`),
+        20,
+      ),
+    );
+    outro(formatSyncPublishSummary({ published, submitted, selected, failedUploads }));
+    process.exitCode = 1;
     return;
   }
 
