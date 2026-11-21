@@ -49,7 +49,7 @@ import {
   digestToOwnerInfo,
   getFirstSearchToken,
   normalizeSkillSearchText,
-} from "./lib/skillSearchDigest";
+} from "./lib/skillSearchDigestProjection";
 import { isSearchableSkillSlugShape, normalizeSkillSlug } from "./lib/skillSlugValidator";
 import { getMirrorBrowseCategories } from "./lib/skillsShMirrorPublic";
 import { isPublicSkillsShMirrorDigest } from "./lib/skillsShMirrorPublic";

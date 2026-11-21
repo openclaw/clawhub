@@ -3,13 +3,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { toPublicSkill } from "./public";
 import { computeRecommendationScore, RECOMMENDATION_SCORE_VERSION } from "./recommendationScore";
+import { extractValidatedDigestFields, upsertSkillSearchDigest } from "./skillSearchDigest";
 import {
   digestToHydratableSkill,
-  extractDigestFields,
-  extractValidatedDigestFields,
   digestToOwnerInfo,
-  upsertSkillSearchDigest,
-} from "./skillSearchDigest";
+  extractDigestFields,
+} from "./skillSearchDigestProjection";
 
 function makeSkillDoc(overrides: Record<string, unknown> = {}) {
   return {

@@ -188,12 +188,8 @@ import {
   isSkillSuspicious,
   isSkillTransferBlockedByModeration,
 } from "./lib/skillSafety";
-import {
-  digestToHydratableSkill,
-  digestToOwnerInfo,
-  extractValidatedDigestFields,
-  upsertSkillSearchDigest,
-} from "./lib/skillSearchDigest";
+import { extractValidatedDigestFields, upsertSkillSearchDigest } from "./lib/skillSearchDigest";
+import { digestToHydratableSkill, digestToOwnerInfo } from "./lib/skillSearchDigestProjection";
 import { assertValidSkillSlug, normalizeSkillSlug } from "./lib/skillSlugValidator";
 import {
   createInitialSkillStats,

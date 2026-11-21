@@ -43,7 +43,7 @@ import {
 import { qualitySummaryValidator } from "./lib/skillQualityContract";
 import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
 import { computeIsSuspicious } from "./lib/skillSafety";
-import { getFirstSearchToken, getMirrorFirstSearchToken } from "./lib/skillSearchDigest";
+import { getFirstSearchToken, getMirrorFirstSearchToken } from "./lib/skillSearchDigestProjection";
 import { generateSkillSummary } from "./lib/skillSummary";
 import {
   applyArtwork,
