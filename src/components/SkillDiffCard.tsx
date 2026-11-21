@@ -43,19 +43,28 @@ type VersionOption = {
   disabled?: boolean;
 };
 
-type FileSide = "left" | "right";
-
-type SizeWarning = {
-  side: FileSide;
+type PreviewWarning = {
+  kind: "size" | "preview";
+  side: "left" | "right";
   path: string;
 };
 
-type PreviewWarning = {
-  side: FileSide;
-  path: string;
+type DiffPreview = {
+  leftText: string;
+  rightText: string;
+  isLoading: boolean;
+  error: string | null;
+  warning: PreviewWarning | null;
 };
 
 const EMPTY_DIFF_TEXT = "";
+const EMPTY_DIFF_PREVIEW: DiffPreview = {
+  leftText: EMPTY_DIFF_TEXT,
+  rightText: EMPTY_DIFF_TEXT,
+  isLoading: false,
+  error: null,
+  warning: null,
+};
 const COMPACT_DIFF_THRESHOLD = 768;
 const EMPTY_DIFF_STATS = { additions: 0, deletions: 0, hunks: 0 };
 const FILE_STATUS_LABELS = {
@@ -153,14 +162,10 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
   const [leftVersionId, setLeftVersionId] = useState<Id<"skillVersions"> | null>(null);
   const [rightVersionId, setRightVersionId] = useState<Id<"skillVersions"> | null>(null);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
-  const [leftText, setLeftText] = useState(EMPTY_DIFF_TEXT);
-  const [rightText, setRightText] = useState(EMPTY_DIFF_TEXT);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState(EMPTY_DIFF_PREVIEW);
+  const { leftText, rightText, isLoading, error, warning } = preview;
   const [monacoReady, setMonacoReady] = useState(false);
   const [monacoError, setMonacoError] = useState<string | null>(null);
-  const [sizeWarning, setSizeWarning] = useState<SizeWarning | null>(null);
-  const [previewWarning, setPreviewWarning] = useState<PreviewWarning | null>(null);
   const cacheRef = useRef(new Map<string, string | null>());
   const userSelectedViewModeRef = useRef(false);
   const diffEditorRef = useRef<MonacoDiffEditor | null>(null);
@@ -337,37 +342,27 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
 
     async function load() {
       if (!selectedItem || !leftVersionId || !rightVersionId) {
-        setLeftText(EMPTY_DIFF_TEXT);
-        setRightText(EMPTY_DIFF_TEXT);
-        setError(null);
-        setSizeWarning(null);
-        setPreviewWarning(null);
-        setIsLoading(false);
+        setPreview(EMPTY_DIFF_PREVIEW);
         return;
       }
 
-      setIsLoading(true);
-      setError(null);
-      setSizeWarning(null);
-      setPreviewWarning(null);
+      setPreview((current) => ({ ...current, isLoading: true, error: null, warning: null }));
 
       const leftFile = selectedItem.left;
       const rightFile = selectedItem.right;
-      const warnings: SizeWarning[] = [];
+      const oversizedSide =
+        leftFile && leftFile.size > MAX_DIFF_FILE_BYTES
+          ? "left"
+          : rightFile && rightFile.size > MAX_DIFF_FILE_BYTES
+            ? "right"
+            : null;
 
-      if (leftFile && leftFile.size > MAX_DIFF_FILE_BYTES) {
-        warnings.push({ side: "left", path: leftFile.path });
-      }
-      if (rightFile && rightFile.size > MAX_DIFF_FILE_BYTES) {
-        warnings.push({ side: "right", path: rightFile.path });
-      }
-
-      if (warnings.length) {
+      if (oversizedSide) {
         if (!cancelled) {
-          setSizeWarning(warnings[0]);
-          setLeftText(EMPTY_DIFF_TEXT);
-          setRightText(EMPTY_DIFF_TEXT);
-          setIsLoading(false);
+          setPreview({
+            ...EMPTY_DIFF_PREVIEW,
+            warning: { kind: "size", side: oversizedSide, path: selectedItem.path },
+          });
         }
         return;
       }
@@ -385,18 +380,21 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
               ? { side: "right" as const, path: rightFile.path }
               : null;
         if (unavailable) {
-          setPreviewWarning(unavailable);
-          setLeftText(EMPTY_DIFF_TEXT);
-          setRightText(EMPTY_DIFF_TEXT);
+          setPreview({ ...EMPTY_DIFF_PREVIEW, warning: { kind: "preview", ...unavailable } });
           return;
         }
-        setLeftText(nextLeft ?? EMPTY_DIFF_TEXT);
-        setRightText(nextRight ?? EMPTY_DIFF_TEXT);
+        setPreview({
+          ...EMPTY_DIFF_PREVIEW,
+          leftText: nextLeft ?? EMPTY_DIFF_TEXT,
+          rightText: nextRight ?? EMPTY_DIFF_TEXT,
+        });
       } catch (err) {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : "Failed to load diff");
-      } finally {
-        if (!cancelled) setIsLoading(false);
+        setPreview((current) => ({
+          ...current,
+          isLoading: false,
+          error: err instanceof Error ? err.message : "Failed to load diff",
+        }));
       }
     }
 
@@ -456,6 +454,13 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
   const selectionReady = Boolean(leftVersionId && rightVersionId);
   const fileSelected = Boolean(selectedItem);
   const diffOptions = useMemo(() => buildDiffOptions(viewMode, isCompact), [viewMode, isCompact]);
+  const previewMessage =
+    error ||
+    (warning?.kind === "preview"
+      ? `${warning.side === "left" ? "Base" : "Target"} file is download-only and cannot be compared as text: ${warning.path}`
+      : warning
+        ? `${warning.side === "left" ? "Left" : "Right"} file exceeds 200KB: ${warning.path}`
+        : null);
 
   const containerClass = variant === "card" ? "card diff-card" : "diff-card diff-card-embedded";
 
@@ -654,18 +659,8 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
           </div>
         ) : null}
         <div className="diff-view">
-          {error ? (
-            <div className="diff-empty">{error}</div>
-          ) : previewWarning ? (
-            <div className="diff-empty">
-              {previewWarning.side === "left" ? "Base" : "Target"} file is download-only and cannot
-              be compared as text: {previewWarning.path}
-            </div>
-          ) : sizeWarning ? (
-            <div className="diff-empty">
-              {sizeWarning.side === "left" ? "Left" : "Right"} file exceeds 200KB:{" "}
-              {sizeWarning.path}
-            </div>
+          {previewMessage ? (
+            <div className="diff-empty">{previewMessage}</div>
           ) : diffUnavailable ? (
             <div className="diff-empty">Publish another version to view a diff.</div>
           ) : !selectionReady ? (
