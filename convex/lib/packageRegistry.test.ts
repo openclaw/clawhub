@@ -14,7 +14,7 @@ import {
   summarizePackageForSearch,
   toConvexSafeJsonValue,
 } from "./packageRegistry";
-import { buildPackageInventoryDigest } from "./skills";
+import { buildPackageInventoryDigest } from "./skills/skillMarkdown";
 
 describe("packageRegistry", () => {
   it("still accepts a publisher-defined bundle version", () => {

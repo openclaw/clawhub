@@ -3,7 +3,7 @@
 import { type FunctionReference, getFunctionName } from "convex/server";
 import { describe, expect, it, vi } from "vitest";
 import { sha256Hex } from "./lib/clawpack";
-import { buildPackageInventoryDigest } from "./lib/skills";
+import { buildPackageInventoryDigest } from "./lib/skills/skillMarkdown";
 import { publishPackageForTrustedPublisherInternal } from "./packages";
 
 vi.mock("./lib/openClawPublishAuthorization", () => ({

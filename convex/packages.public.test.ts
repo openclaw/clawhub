@@ -13,7 +13,7 @@ import {
   computeRecommendationScore,
   RECOMMENDATION_SCORE_VERSION,
 } from "./lib/recommendationScore";
-import { buildPackageInventoryDigest } from "./lib/skills";
+import { buildPackageInventoryDigest } from "./lib/skills/skillMarkdown";
 import { buildDeterministicPackageZip } from "./lib/skillZip";
 import {
   backfillLatestPackageScanStatusInternal,

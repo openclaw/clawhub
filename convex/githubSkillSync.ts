@@ -41,7 +41,7 @@ import {
   isLegacyNvidiaSkillSource,
 } from "./lib/rolloutCapabilities";
 import { buildSkillPresentationIconPath } from "./lib/skillPresentation";
-import { isMacJunkPath, parseFrontmatter } from "./lib/skills";
+import { isMacJunkPath, parseFrontmatter } from "./lib/skills/skillMarkdown";
 import {
   getSkillBySlugForPublisher,
   getSkillSlugAliasBySlugForPublisher,

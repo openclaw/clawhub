@@ -5,7 +5,7 @@ import { convexTest } from "convex-test";
 import { expect, it } from "vitest";
 import { createActiveSkillSeedDefaults } from "../src/__tests__/helpers/activeSkillSeed";
 import { api } from "./_generated/api";
-import { hashSkillFiles } from "./lib/skills";
+import { hashSkillFiles } from "./lib/skills/fileHash";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");

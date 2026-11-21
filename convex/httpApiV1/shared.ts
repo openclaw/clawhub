@@ -12,8 +12,8 @@ import { sha256Hex } from "../lib/hash";
 import { corsHeaders, mergeHeaders, json, text } from "../lib/httpHeaders";
 import { getTransientConvexErrorKind } from "../lib/httpUtils";
 import { getPublishFileSizeError, MAX_PUBLISH_FILE_BYTES } from "../lib/publishLimits";
-import { isMacJunkPath } from "../lib/skills";
 import type { PublicSkillVersionSelection } from "../lib/skills/publicVersions";
+import { isMacJunkPath } from "../lib/skills/skillMarkdown";
 export { getPathSegments, parsePackagePathSegments } from "../lib/httpPathSegments";
 
 export { MAX_RAW_FILE_BYTES } from "../lib/storageText";

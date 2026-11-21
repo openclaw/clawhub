@@ -1,7 +1,3 @@
-import type { ParsedSkillFrontmatter } from "./frontmatterValue";
-export { getFrontmatterValue } from "./frontmatterValue";
-export type { ParsedSkillFrontmatter } from "./frontmatterValue";
-export { hashSkillFiles } from "./fileHash";
 import type {
   ClawdbotConfigSpec,
   ClawdisSkillMetadata,
@@ -9,11 +5,10 @@ import type {
   SkillInstallSpec,
 } from "clawhub-schema";
 import { ClawdisSkillMetadataSchema, parseArk } from "clawhub-schema";
+import type { ParsedSkillFrontmatter } from "./frontmatterValue";
 import { getFrontmatterMetadata } from "./skillMarkdown";
 
-// Markdown, path and embedding helpers live in ./skillMarkdown so modules that only
-// read skills do not load the metadata schema.
-export * from "./skillMarkdown";
+// Import pure skill helpers directly from their owners to avoid loading the metadata schema.
 export type { ClawdisSkillMetadata, SkillInstallSpec };
 
 export function parseClawdisMetadata(frontmatter: ParsedSkillFrontmatter) {

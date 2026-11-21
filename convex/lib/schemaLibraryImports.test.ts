@@ -7,6 +7,11 @@ import { describe, expect, it } from "vitest";
 // the function runs uncached. Constructing the ArkType schemas costs roughly 0.4 s, so modules
 // that serve reads must reach them only through `await import()` in the paths that validate.
 const READ_PATH_MODULES = [
+  "convex/githubImport.ts",
+  "convex/githubSkillSync.ts",
+  "convex/lib/githubImport.ts",
+  "convex/lib/githubSkillSync.ts",
+  "convex/lib/skillPresentationBackfill.ts",
   "convex/packageReadHttp.ts",
   "convex/packages.ts",
   "convex/publishAttempts.ts",

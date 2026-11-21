@@ -13,7 +13,8 @@ import {
   resolveSkillPresentation,
   validateSkillPresentationIcon,
 } from "./skillPresentation";
-import { getFrontmatterValue, parseFrontmatter } from "./skills";
+import { getFrontmatterValue } from "./skills/frontmatterValue";
+import { parseFrontmatter } from "./skills/skillMarkdown";
 import { createInitialSkillStats } from "./skillStats";
 
 export type { DisplayManifest, DisplayManifestStatus } from "./displayManifest";

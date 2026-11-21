@@ -29,7 +29,8 @@ import {
   RECOMMENDATION_SCORE_VERSION,
 } from "./lib/recommendationScore";
 import type { SourceBackedSkillScanStatus } from "./lib/securityScanPolicy";
-import { buildEmbeddingText, parseClawdisMetadata, parseFrontmatter } from "./lib/skills";
+import { parseClawdisMetadata } from "./lib/skills";
+import { buildEmbeddingText, parseFrontmatter } from "./lib/skills/skillMarkdown";
 import { createInitialSkillStats, readCanonicalStat } from "./lib/skillStats";
 import { assertTestSeedAllowed } from "./lib/testSeed";
 import { generateToken, hashToken } from "./lib/tokens";

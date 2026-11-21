@@ -6,7 +6,7 @@ import { strToU8, zipSync } from "fflate";
 import { afterEach, expect, it, vi } from "vitest";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { buildPackageInventoryDigest } from "./lib/skills";
+import { buildPackageInventoryDigest } from "./lib/skills/skillMarkdown";
 import { hashToken } from "./lib/tokens";
 import schema from "./schema";
 

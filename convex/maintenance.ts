@@ -41,7 +41,8 @@ import {
   type TrustTier,
 } from "./lib/skillQuality";
 import { qualitySummaryValidator } from "./lib/skillQualityContract";
-import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
+import { hashSkillFiles } from "./lib/skills/fileHash";
+import { getFrontmatterValue } from "./lib/skills/frontmatterValue";
 import { computeIsSuspicious } from "./lib/skillSafety";
 import { getFirstSearchToken, getMirrorFirstSearchToken } from "./lib/skillSearchDigestProjection";
 import { generateSkillSummary } from "./lib/skillSummary";
