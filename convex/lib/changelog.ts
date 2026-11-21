@@ -143,6 +143,38 @@ function generateFallback(
   return lines.join("\n");
 }
 
+async function generateFromPrevious(
+  ctx: Pick<ActionCtx, "storage">,
+  previous: { files: Array<FileMeta & { storageId: string }> } | null,
+  args: { slug: string; version: string; readmeText: string; files?: FileMeta[] },
+  kind: "skill" | "package" = "skill",
+): Promise<string> {
+  const readmeFile = previous?.files.find((file) => {
+    const lower = file.path.toLowerCase();
+    return kind === "package"
+      ? lower === "readme.md" || lower === "readme.mdx"
+      : lower === "skill.md" || lower === "skills.md";
+  });
+  const blob = readmeFile ? await ctx.storage.get(readmeFile.storageId as Id<"_storage">) : null;
+  const oldReadmeText = blob ? await blob.text() : null;
+  const fileDiff = previous && args.files ? summarizeFileDiff(previous.files, args.files) : null;
+  const ai = await generateWithOpenAI({
+    ...(kind === "package" ? { subjectLabel: "Package", readmeLabel: "README" } : {}),
+    slug: args.slug,
+    version: args.version,
+    oldReadme: oldReadmeText,
+    nextReadme: args.readmeText,
+    fileDiff,
+  }).catch(() => null);
+  return (
+    ai ??
+    generateFallback(
+      { oldReadme: oldReadmeText, fileDiff },
+      kind === "package" ? "README and package contents" : undefined,
+    )
+  );
+}
+
 export async function generateChangelogForPublish(
   ctx: ActionCtx,
   args: { slug: string; version: string; readmeText: string; files: FileMeta[] },
@@ -158,23 +190,7 @@ export async function generateChangelogForPublish(
           })) as Doc<"skillVersions"> | null)
         : null;
 
-    const oldReadmeText: string | null = previous
-      ? await readReadmeFromVersion(ctx, previous)
-      : null;
-    const oldFiles = previous
-      ? previous.files.map((file) => ({ path: file.path, sha256: file.sha256 }))
-      : [];
-    const fileDiff = previous ? summarizeFileDiff(oldFiles, args.files) : null;
-
-    const ai = await generateWithOpenAI({
-      slug: args.slug,
-      version: args.version,
-      oldReadme: oldReadmeText,
-      nextReadme: args.readmeText,
-      fileDiff,
-    }).catch(() => null);
-
-    return ai ?? generateFallback({ oldReadme: oldReadmeText, fileDiff });
+    return await generateFromPrevious(ctx, previous, args);
   } catch {
     return "- Updated skill.";
   }
@@ -197,29 +213,16 @@ export async function generatePackageChangelogPreview(
         })) as Doc<"packageReleases"> | null)
       : null;
 
-    const oldReadmeText: string | null = previous
-      ? await readReadmeFromPackageRelease(ctx, previous)
-      : null;
-    const fileDiff =
-      previous && args.filePaths
-        ? summarizeFileDiff(
-            previous.files.map((file) => ({ path: file.path, sha256: file.sha256 })),
-            args.filePaths.map((path) => ({ path })),
-          )
-        : null;
-
-    const ai = await generateWithOpenAI({
-      subjectLabel: "Package",
-      readmeLabel: "README",
-      slug: args.name,
-      version: args.version,
-      oldReadme: oldReadmeText,
-      nextReadme: args.readmeText,
-      fileDiff,
-    }).catch(() => null);
-
-    return (
-      ai ?? generateFallback({ oldReadme: oldReadmeText, fileDiff }, "README and package contents")
+    return await generateFromPrevious(
+      ctx,
+      previous,
+      {
+        slug: args.name,
+        version: args.version,
+        readmeText: args.readmeText,
+        files: args.filePaths?.map((path) => ({ path })),
+      },
+      "package",
     );
   } catch {
     return "- Updated package.";
@@ -240,51 +243,15 @@ export async function generateChangelogPreview(
     // The caller supplies only a version it has already authorized for file access.
     const previous = args.previous;
 
-    const oldReadmeText: string | null = previous
-      ? await readReadmeFromVersion(ctx, previous)
-      : null;
-    const fileDiff =
-      previous && args.filePaths
-        ? summarizeFileDiff(
-            previous.files.map((file) => ({ path: file.path, sha256: file.sha256 })),
-            args.filePaths.map((path) => ({ path })),
-          )
-        : null;
-
-    const ai = await generateWithOpenAI({
+    return await generateFromPrevious(ctx, previous, {
       slug: args.slug,
       version: args.version,
-      oldReadme: oldReadmeText,
-      nextReadme: args.readmeText,
-      fileDiff,
-    }).catch(() => null);
-
-    return ai ?? generateFallback({ oldReadme: oldReadmeText, fileDiff });
+      readmeText: args.readmeText,
+      files: args.filePaths?.map((path) => ({ path })),
+    });
   } catch {
     return "- Updated skill.";
   }
-}
-
-async function readReadmeFromVersion(ctx: ActionCtx, version: Doc<"skillVersions">) {
-  const readmeFile = version.files.find((file) => {
-    const lower = file.path.toLowerCase();
-    return lower === "skill.md" || lower === "skills.md";
-  });
-  if (!readmeFile) return null;
-  const blob = await ctx.storage.get(readmeFile.storageId as Id<"_storage">);
-  if (!blob) return null;
-  return blob.text();
-}
-
-async function readReadmeFromPackageRelease(ctx: ActionCtx, release: Doc<"packageReleases">) {
-  const readmeFile = release.files.find((file) => {
-    const lower = file.path.toLowerCase();
-    return lower === "readme.md" || lower === "readme.mdx";
-  });
-  if (!readmeFile) return null;
-  const blob = await ctx.storage.get(readmeFile.storageId as Id<"_storage">);
-  if (!blob) return null;
-  return blob.text();
 }
 
 export const __test = {

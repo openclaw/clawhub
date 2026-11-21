@@ -1,7 +1,13 @@
 /* @vitest-environment node */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { __test } from "./changelog";
+import type { ActionCtx } from "../_generated/server";
+import {
+  __test,
+  generateChangelogForPublish,
+  generateChangelogPreview,
+  generatePackageChangelogPreview,
+} from "./changelog";
 
 describe("changelog utils", () => {
   it("summarizes file diffs", () => {
@@ -123,5 +129,70 @@ describe("changelog utils", () => {
       await pending;
       expect(timeoutSpy).toHaveBeenCalledWith(__test.CHANGELOG_TIMEOUT_MS);
     });
+  });
+});
+
+describe("changelog preparation failures", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  it.each(
+    (["publish", "preview", "package"] as const).flatMap((flow) =>
+      (["missing", "get-error", "text-error"] as const).map((failure) => ({ flow, failure })),
+    ),
+  )("preserves $flow fallback after $failure", async ({ flow, failure }) => {
+    vi.stubEnv("OPENAI_API_KEY", "");
+    const provider = vi.fn();
+    vi.stubGlobal("fetch", provider);
+    const previous = {
+      files: [
+        {
+          path: flow === "package" ? "README.mdx" : "SKILLS.md",
+          storageId: "first-readme",
+          sha256: "first",
+        },
+        {
+          path: flow === "package" ? "README.md" : "SKILL.md",
+          storageId: "second-readme",
+          sha256: "second",
+        },
+      ],
+    };
+    const text = vi.fn(async () => {
+      throw new Error("storage text failed");
+    });
+    const get = vi.fn(async () => {
+      if (failure === "get-error") throw new Error("storage read failed");
+      return failure === "missing" ? null : { text };
+    });
+    const runQuery = vi.fn().mockResolvedValue(previous);
+    if (flow === "publish") runQuery.mockResolvedValueOnce({ latestVersionId: "previous" });
+    const ctx = { runQuery, storage: { get } } as unknown as ActionCtx;
+    const args = { slug: "fixture", version: "2.0.0", readmeText: "New README" };
+
+    const result =
+      flow === "publish"
+        ? await generateChangelogForPublish(ctx, { ...args, files: [] })
+        : flow === "preview"
+          ? await generateChangelogPreview(ctx, { ...args, previous: previous as never })
+          : await generatePackageChangelogPreview(ctx, {
+              name: args.slug,
+              version: args.version,
+              readmeText: args.readmeText,
+              latestReleaseId: "previous" as never,
+            });
+
+    expect(result).toBe(
+      failure === "missing"
+        ? "- Initial release."
+        : flow === "package"
+          ? "- Updated package."
+          : "- Updated skill.",
+    );
+    expect(get).toHaveBeenCalledExactlyOnceWith("first-readme");
+    expect(text).toHaveBeenCalledTimes(failure === "text-error" ? 1 : 0);
+    expect(provider).not.toHaveBeenCalled();
   });
 });
