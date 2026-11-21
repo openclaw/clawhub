@@ -25,7 +25,8 @@ import {
   ApiV1SkillVersionRevokeResponseSchema,
   ApiV1UnbanUserResponseSchema,
   ApiV1UserSearchResponseSchema,
-  parseArk,
+  type ApiV1SkillScanBatchResponse,
+  type ApiV1PackageScanBatchResponse,
 } from "../../../clawhub/src/schema/index.js";
 
 export async function cmdRevokeSkillVersion(
@@ -59,7 +60,7 @@ export async function cmdRevokeSkillVersion(
   const token = await requireAuthToken(registry);
   const spinner = options.json ? null : createCrabLoader(`Revoking ${slug}@${version}`);
   return await withLoaderErrorHandling(spinner, async () => {
-    const result = await apiRequest(
+    const parsed = await apiRequest(
       registry,
       {
         method: "POST",
@@ -68,11 +69,6 @@ export async function cmdRevokeSkillVersion(
         body: { state: "revoked", reason, ...(ownerHandle ? { ownerHandle } : {}) },
       },
       ApiV1SkillVersionRevokeResponseSchema,
-    );
-    const parsed = parseArk(
-      ApiV1SkillVersionRevokeResponseSchema,
-      result,
-      "Skill version revocation response",
     );
     spinner?.succeed(
       parsed.alreadyRevoked
@@ -108,7 +104,7 @@ export async function cmdBanUser(
 
   const spinner = createCrabLoader(`Banning ${resolved.label}`);
   return await withLoaderErrorHandling(spinner, async () => {
-    const result = await apiRequest(
+    const parsed = await apiRequest(
       registry,
       {
         method: "POST",
@@ -120,7 +116,6 @@ export async function cmdBanUser(
       },
       ApiV1BanUserResponseSchema,
     );
-    const parsed = parseArk(ApiV1BanUserResponseSchema, result, "Ban user response");
     if (parsed.alreadyBanned) {
       spinner.succeed(`OK. ${resolved.label} already banned`);
       return parsed;
@@ -154,7 +149,7 @@ export async function cmdUnbanUser(
 
   const spinner = createCrabLoader(`Unbanning ${resolved.label}`);
   return await withLoaderErrorHandling(spinner, async () => {
-    const result = await apiRequest(
+    const parsed = await apiRequest(
       registry,
       {
         method: "POST",
@@ -166,7 +161,6 @@ export async function cmdUnbanUser(
       },
       ApiV1UnbanUserResponseSchema,
     );
-    const parsed = parseArk(ApiV1UnbanUserResponseSchema, result, "Unban user response");
     if (parsed.alreadyUnbanned) {
       spinner.succeed(`OK. ${resolved.label} already unbanned`);
       return parsed;
@@ -212,7 +206,7 @@ export async function cmdLiftModerationHold(
     ? null
     : createCrabLoader(`Lifting moderation hold for ${resolved.label}`);
   return await withLoaderErrorHandling(spinner, async () => {
-    const result = await apiRequest(
+    const parsed = await apiRequest(
       registry,
       {
         method: "POST",
@@ -223,11 +217,6 @@ export async function cmdLiftModerationHold(
           : { handle: resolved.handle, reason },
       },
       ApiV1LiftModerationHoldResponseSchema,
-    );
-    const parsed = parseArk(
-      ApiV1LiftModerationHoldResponseSchema,
-      result,
-      "Lift moderation hold response",
     );
     spinner?.succeed(
       parsed.alreadyCleared
@@ -261,7 +250,7 @@ export async function cmdSetRole(
 
   const spinner = createCrabLoader(`Setting role for ${resolved.label}`);
   return await withLoaderErrorHandling(spinner, async () => {
-    const result = await apiRequest(
+    const parsed = await apiRequest(
       registry,
       {
         method: "POST",
@@ -273,7 +262,6 @@ export async function cmdSetRole(
       },
       ApiV1SetRoleResponseSchema,
     );
-    const parsed = parseArk(ApiV1SetRoleResponseSchema, result, "Set role response");
     spinner.succeed(`OK. ${resolved.label} is now ${parsed.role}`);
     return parsed;
   });
@@ -329,7 +317,7 @@ export async function cmdRecoverPersonalPublisher(
     ? null
     : createCrabLoader(`${dryRun ? "Planning" : "Applying"} publisher recovery for @${handle}`);
   return await withLoaderErrorHandling(spinner, async () => {
-    const result = await apiRequest(
+    const parsed = await apiRequest(
       registry,
       {
         method: "POST",
@@ -347,11 +335,6 @@ export async function cmdRecoverPersonalPublisher(
         },
       },
       ApiV1PublisherRecoveryResponseSchema,
-    );
-    const parsed = parseArk(
-      ApiV1PublisherRecoveryResponseSchema,
-      result,
-      "Publisher recovery response",
     );
     spinner?.succeed(
       parsed.recovered
@@ -392,7 +375,7 @@ export async function cmdRescanSkill(
   const token = await requireAuthToken(registry);
   const spinner = options.json ? null : createCrabLoader(`Queueing ClawScan rescan for ${slug}`);
   return await withLoaderErrorHandling(spinner, async () => {
-    const result = await apiRequest(
+    const parsed = await apiRequest(
       registry,
       {
         method: "POST",
@@ -409,7 +392,6 @@ export async function cmdRescanSkill(
       },
       ApiV1SkillScanSubmitResponseSchema,
     );
-    const parsed = parseArk(ApiV1SkillScanSubmitResponseSchema, result, "Skill rescan response");
     spinner?.succeed(
       `OK. Queued ClawScan for ${slug}${version ? `@${version}` : ""} (${parsed.alreadyQueued ? "existing job" : "new job"}).`,
     );
@@ -476,7 +458,7 @@ export async function cmdRescanAllSkills(
     const remaining = maxSkills === undefined ? batchSize : Math.max(0, maxSkills - processed);
     if (remaining === 0) break;
     const effectiveBatchSize = Math.min(batchSize, remaining);
-    const result = await apiRequest<unknown>(
+    const batch = await apiRequest<ApiV1SkillScanBatchResponse | ApiV1PackageScanBatchResponse>(
       registry,
       {
         method: "POST",
@@ -493,14 +475,6 @@ export async function cmdRescanAllSkills(
         ? ApiV1PackageScanBatchResponseSchema
         : ApiV1SkillScanBatchResponseSchema,
     );
-    const batch =
-      target === "packages"
-        ? parseArk(
-            ApiV1PackageScanBatchResponseSchema,
-            result,
-            "Bulk package rescan batch response",
-          )
-        : parseArk(ApiV1SkillScanBatchResponseSchema, result, "Bulk skill rescan batch response");
     batches += 1;
     totalQueued += batch.queued;
     totalAlreadyQueued += batch.alreadyQueued;
@@ -561,7 +535,7 @@ async function pollBulkRescanStatus(
   options: { pollIntervalMs: number; json?: boolean; batch: number; statusPath: string },
 ) {
   while (true) {
-    const result = await apiRequest(
+    const status = await apiRequest(
       registry,
       {
         method: "POST",
@@ -570,11 +544,6 @@ async function pollBulkRescanStatus(
         body: { jobIds },
       },
       ApiV1SkillScanBatchStatusResponseSchema,
-    );
-    const status = parseArk(
-      ApiV1SkillScanBatchStatusResponseSchema,
-      result,
-      "Bulk skill rescan status response",
     );
     emitBulkRescanProgress(
       { json: options.json },
@@ -679,7 +648,7 @@ export async function cmdReclassifyBan(
         `${dryRun ? "Planning" : "Applying"} ban reclassification for ${resolved.label}`,
       );
   return await withLoaderErrorHandling(spinner, async () => {
-    const result = await apiRequest(
+    const parsed = await apiRequest(
       registry,
       {
         method: "POST",
@@ -693,7 +662,6 @@ export async function cmdReclassifyBan(
       },
       ApiV1ReclassifyBanResponseSchema,
     );
-    const parsed = parseArk(ApiV1ReclassifyBanResponseSchema, result, "Reclassify ban response");
     spinner?.succeed(
       `${dryRun ? "Dry run" : "Applied"} ban reclassification for ${resolved.label}: ${parsed.previousReason ?? "none"} -> ${parsed.nextReason}${parsed.changed ? "" : " (already set)"}.`,
     );
@@ -822,12 +790,12 @@ async function searchUsers(registry: string, token: string, query: string) {
   const url = registryUrl(ApiRoutes.users, registry);
   url.searchParams.set("q", query.trim());
   url.searchParams.set("limit", "10");
-  const result = await apiRequest(
+  const parsed = await apiRequest(
     registry,
     { method: "GET", url: url.toString(), token },
     ApiV1UserSearchResponseSchema,
   );
-  return parseArk(ApiV1UserSearchResponseSchema, result, "User search response");
+  return parsed;
 }
 
 function formatUserLabel(user: UserSearchItem) {
