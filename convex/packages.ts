@@ -182,7 +182,7 @@ import {
   type SdkUsageReport,
 } from "./lib/packageSdkUsageContract";
 import { readStagedSdkUsageReport } from "./lib/packageSdkUsageStorage";
-import { extractPackageDigestFields } from "./lib/packageSearchDigest";
+import { extractPackageDigestFields } from "./lib/packageSearchDigestProjection";
 import {
   getPackageTrustReasons,
   isPackageBlockedFromPublic,

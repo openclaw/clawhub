@@ -3,7 +3,8 @@
 import { convexTest } from "convex-test";
 import { expect, it } from "vitest";
 import { api, internal } from "./_generated/api";
-import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
+import { upsertPackageSearchDigest } from "./lib/packageSearchDigest";
+import { extractPackageDigestFields } from "./lib/packageSearchDigestProjection";
 import { getPluginDiscoveryPins } from "./lib/pluginDiscovery";
 import schema from "./schema";
 

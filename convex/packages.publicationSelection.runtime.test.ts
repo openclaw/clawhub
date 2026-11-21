@@ -9,7 +9,8 @@ import { createActiveSkillSeedDefaults } from "../src/__tests__/helpers/activeSk
 import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
-import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
+import { upsertPackageSearchDigest } from "./lib/packageSearchDigest";
+import { extractPackageDigestFields } from "./lib/packageSearchDigestProjection";
 import { hashToken } from "./lib/tokens";
 import schema from "./schema";
 

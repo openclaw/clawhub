@@ -7,7 +7,7 @@ import {
   isTemplateCatalogPublisherAvailable,
   toPublicPackageListItemFromPackage,
 } from "./lib/packageCatalogRead";
-import { extractPackageDigestFields } from "./lib/packageSearchDigest";
+import { extractPackageDigestFields } from "./lib/packageSearchDigestProjection";
 import { isPackageBlockedFromPublic } from "./lib/packageSecurity";
 import { compareRankedSearchKeys, rankedSearchKey, verificationRank } from "./lib/searchRanking";
 import {

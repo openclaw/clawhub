@@ -10,7 +10,8 @@ vi.mock("./lib/verifiedClientIp", () => ({
 }));
 import { api, internal } from "./_generated/api";
 import type { PublicPackageListItem } from "./lib/packageCatalogRead";
-import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
+import { upsertPackageSearchDigest } from "./lib/packageSearchDigest";
+import { extractPackageDigestFields } from "./lib/packageSearchDigestProjection";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");

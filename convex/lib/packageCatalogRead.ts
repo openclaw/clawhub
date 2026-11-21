@@ -9,7 +9,7 @@ import { v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { isOfficialPublisher, toPublicPublisherWithOfficial } from "./officialPublishers";
-import { extractPackageDigestFields } from "./packageSearchDigest";
+import { extractPackageDigestFields } from "./packageSearchDigestProjection";
 import { isPackageBlockedFromPublic } from "./packageSecurity";
 import { toPublicPublisher } from "./public";
 import { canAccessPublisherOwnerScope, getOwnerPublisher } from "./publishers";

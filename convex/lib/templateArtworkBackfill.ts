@@ -14,7 +14,7 @@ import { sha256Hex } from "./hash";
 import { isTemplateCatalogPublisherAvailable } from "./packageCatalogRead";
 import { resolveTemplatePackageIcon } from "./packageIcons";
 import { isPublishedPackageRelease } from "./packageReleaseVisibility";
-import { extractPackageDigestFields } from "./packageSearchDigest";
+import { extractPackageDigestFields } from "./packageSearchDigestProjection";
 import { isPackageBlockedFromPublic, getPackageDownloadSecurityBlock } from "./packageSecurity";
 import { isHostedSkillPresentationIconPath } from "./skillPresentation";
 import { matchesStorageSha256 } from "./storageDigests";

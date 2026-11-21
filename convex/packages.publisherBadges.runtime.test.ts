@@ -10,7 +10,8 @@ vi.mock("./lib/verifiedClientIp", () => ({
   getVerifiedClientIp: async () => "203.0.113.1",
 }));
 import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
-import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
+import { upsertPackageSearchDigest } from "./lib/packageSearchDigest";
+import { extractPackageDigestFields } from "./lib/packageSearchDigestProjection";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");

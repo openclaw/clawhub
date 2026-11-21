@@ -15,11 +15,8 @@ import {
 import type { MutationCtx } from "./_generated/server";
 import { comparePackageReleaseOrder } from "./lib/packageReleaseFamily";
 import { isPublishedPackageRelease } from "./lib/packageReleaseVisibility";
-import {
-  deletePackageSearchDigests,
-  extractPackageDigestFields,
-  upsertPackageSearchDigest,
-} from "./lib/packageSearchDigest";
+import { deletePackageSearchDigests, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
+import { extractPackageDigestFields } from "./lib/packageSearchDigestProjection";
 import { isPackageBlockedFromPublic, resolvePackageReleaseScanStatus } from "./lib/packageSecurity";
 import { getOwnerPublisher } from "./lib/publishers";
 import {
