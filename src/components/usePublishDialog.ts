@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { captureAnalyticsOperation, emitAnalytics } from "../lib/analyticsEvents";
-import { copyText } from "./InstallCopyButton";
+import { copyText } from "../lib/clipboard";
 
 export function usePublishDialog({
   isOpen,

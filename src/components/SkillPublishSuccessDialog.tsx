@@ -6,9 +6,9 @@ import {
   captureAnalyticsOperation,
   emitAnalytics,
 } from "../lib/analyticsEvents";
+import { copyText } from "../lib/clipboard";
 import { getPublicClawHubSiteUrl } from "../lib/site";
 import { XIcon } from "./BrandIcons";
-import { copyText } from "./InstallCopyButton";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 import {
   PublishDialogFrame,
