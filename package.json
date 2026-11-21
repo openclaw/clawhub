@@ -9,7 +9,7 @@
   "type": "module",
   "scripts": {
     "admin": "bun packages/clawhub-admin/src/cli.ts",
-    "build": "bun run llms:generate && vite build && bun scripts/copy-og-assets.ts",
+    "build": "bun run llms:generate && vite build",
     "build:vercel": "bun scripts/vercel-build.ts",
     "check": "bun run lint",
     "check:peers": "bun scripts/check-peer-deps.ts",
