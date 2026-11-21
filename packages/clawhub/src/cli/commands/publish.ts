@@ -12,11 +12,11 @@ import {
 } from "../../schema/index.js";
 import { hashSkillFiles, listSkillFiles, sortSkillFilesByPath } from "../../skills.js";
 import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
+import { resolveGitHubPublishSource } from "../githubSource.js";
 import { getRegistry } from "../registry.js";
 import { sanitizeSlug, titleCase } from "../slug.js";
 import type { GlobalOpts } from "../types.js";
 import { createCrabLoader, fail, formatError, withTransportErrorContext } from "../ui.js";
-import { normalizeGitHubRepo } from "./github.js";
 
 const MAX_PUBLISH_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_PUBLISH_TOTAL_BYTES = 50 * 1024 * 1024;
@@ -490,14 +490,10 @@ function buildPublishSource(options: {
   const path = normalizeSourcePath(options.sourcePath);
   if (!rawRepo && !commit && !ref && !options.sourcePath?.trim()) return undefined;
   if (!rawRepo || !commit) fail("--source-repo and --source-commit must be provided together");
-  const repo = normalizeGitHubRepo(rawRepo);
-  if (!repo) fail("--source-repo must be a GitHub repo or URL");
+  const source = resolveGitHubPublishSource(rawRepo, commit, ref);
+  if (!source) fail("--source-repo must be a GitHub repo or URL");
   return {
-    kind: "github" as const,
-    url: `https://github.com/${repo}`,
-    repo,
-    ref: ref || commit,
-    commit,
+    ...source,
     path,
     importedAt: Date.now(),
   };

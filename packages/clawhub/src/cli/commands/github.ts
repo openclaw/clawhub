@@ -4,9 +4,9 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import type { PublishSource } from "clawhub-schema";
 import { unzipSync } from "fflate";
+import { decodeGitHubPathSegments, isGitHubHost, normalizeGitHubRepo } from "../githubSource.js";
 
 const GITHUB_API = resolveGitHubApi();
-const GITHUB_HOSTS = new Set(["github.com", "www.github.com"]);
 const ZIP_USER_AGENT = "clawhub/package-publish";
 const GITHUB_RETRY_DELAYS_MS = [250, 500];
 const GITHUB_MAX_RATE_LIMIT_DELAY_MS = 5_000;
@@ -162,30 +162,6 @@ export function resolveLocalGitInfo(folder: string): LocalGitInfo | null {
   };
 }
 
-export function normalizeGitHubRepo(value: string) {
-  const trimmed = value
-    .trim()
-    .replace(/^git\+/, "")
-    .replace(/\.git$/i, "")
-    .replace(/^git@github\.com:/i, "https://github.com/");
-  if (!trimmed) return undefined;
-
-  const shorthand = trimmed.match(/^([a-z0-9_.-]+)\/([a-z0-9_.-]+)$/i);
-  if (shorthand) return `${shorthand[1]}/${shorthand[2]}`;
-
-  try {
-    const url = new URL(trimmed);
-    if (!GITHUB_HOSTS.has(url.hostname)) return undefined;
-    const segments = decodePathSegments(url.pathname);
-    const owner = segments[0] ?? "";
-    const repo = (segments[1] ?? "").replace(/\.git$/i, "");
-    if (!owner || !repo) return undefined;
-    return `${owner}/${repo}`;
-  } catch {
-    return undefined;
-  }
-}
-
 function parseGitHubShorthand(
   input: string,
 ): Extract<ResolvedPublishSource, { kind: "github" }> | null {
@@ -225,9 +201,9 @@ async function parseGitHubUrl(
     throw new Error("Invalid GitHub URL");
   }
   if (url.protocol !== "https:") throw new Error("Only https:// GitHub URLs are supported");
-  if (!GITHUB_HOSTS.has(url.hostname)) throw new Error("Only github.com URLs are supported");
+  if (!isGitHubHost(url.hostname)) throw new Error("Only github.com URLs are supported");
 
-  const segments = decodePathSegments(url.pathname);
+  const segments = decodeGitHubPathSegments(url.pathname);
   const owner = segments[0] ?? "";
   const repo = (segments[1] ?? "").replace(/\.git$/i, "");
   if (!owner || !repo) throw new Error("GitHub URL must be /<owner>/<repo>");
@@ -288,20 +264,6 @@ function normalizePath(pathValue: string) {
     .filter(Boolean)
     .join("/")
     .replace(/^\.\/+/, "");
-}
-
-function decodePathSegments(pathname: string) {
-  return pathname
-    .split("/")
-    .map((segment) => segment.trim())
-    .filter(Boolean)
-    .map((segment) => {
-      try {
-        return decodeURIComponent(segment);
-      } catch {
-        throw new Error("Invalid GitHub URL");
-      }
-    });
 }
 
 async function resolveDefaultBranch(

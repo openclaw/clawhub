@@ -2,11 +2,11 @@ import { isAbsolute, relative } from "node:path";
 import { intro, outro } from "@clack/prompts";
 import { hashSkillFiles, readSkillOrigin } from "../../skills.js";
 import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
+import { resolveGitHubPublishSource } from "../githubSource.js";
 import { getRegistry } from "../registry.js";
 import { getFallbackSkillRoots } from "../scanSkills.js";
 import type { GlobalOpts } from "../types.js";
 import { createCrabLoader, fail, formatError, isInteractive } from "../ui.js";
-import { normalizeGitHubRepo } from "./github.js";
 import { cmdPublish, prepareSkillFilesForPublish, resolveDefaultOwnerHandle } from "./publish.js";
 import {
   buildScanRoots,
@@ -442,14 +442,10 @@ function buildSourceProvenance(
   const commit = options.sourceCommit?.trim();
   if (!rawRepo && !commit && !options.sourceRef?.trim()) return undefined;
   if (!rawRepo || !commit) fail("--source-repo and --source-commit must be provided together");
-  const repo = normalizeGitHubRepo(rawRepo);
-  if (!repo) fail("--source-repo must be a GitHub repo or URL");
+  const source = resolveGitHubPublishSource(rawRepo, commit, options.sourceRef?.trim());
+  if (!source) fail("--source-repo must be a GitHub repo or URL");
   return {
-    kind: "github" as const,
-    url: `https://github.com/${repo}`,
-    repo,
-    ref: options.sourceRef?.trim() || commit,
-    commit,
+    ...source,
     path: sourcePathForSkill(opts, skill.folder, scanRoots),
   };
 }
