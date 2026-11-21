@@ -1,5 +1,5 @@
 import { apiRequest } from "../../http.js";
-import { ApiRoutes, ApiV1DeleteResponseSchema, parseArk } from "../../schema/index.js";
+import { ApiRoutes, ApiV1DeleteResponseSchema } from "../../schema/index.js";
 import { requireAuthToken } from "../authToken.js";
 import { withLoaderErrorHandling } from "../loader.js";
 import { getRegistry } from "../registry.js";
@@ -83,7 +83,7 @@ export async function cmdDeleteSkill(
   const spinner = createCrabLoader(`${labels.progress} ${target}`);
   return await withLoaderErrorHandling(spinner, async () => {
     const body = buildBody(reason, ref.ownerHandle, version);
-    const result = await apiRequest(
+    const parsed = await apiRequest(
       registry,
       {
         method: "DELETE",
@@ -96,7 +96,6 @@ export async function cmdDeleteSkill(
       },
       ApiV1DeleteResponseSchema,
     );
-    const parsed = parseArk(ApiV1DeleteResponseSchema, result, "Delete response");
     spinner.succeed(`OK. ${labels.past} ${target}${version ? "" : formatSlugReservation(parsed)}`);
     return parsed;
   });
@@ -146,7 +145,7 @@ export async function cmdUndeleteSkill(
       ApiV1DeleteResponseSchema,
     );
     spinner.succeed(`OK. ${labels.past} ${target}`);
-    return parseArk(ApiV1DeleteResponseSchema, result, "Undelete response");
+    return result;
   });
 }
 

@@ -4,7 +4,6 @@ import {
   ApiV1TransferDecisionResponseSchema,
   ApiV1TransferListResponseSchema,
   ApiV1TransferRequestResponseSchema,
-  parseArk,
 } from "../../schema/index.js";
 import { requireAuthToken } from "../authToken.js";
 import { withLoaderErrorHandling } from "../loader.js";
@@ -121,7 +120,7 @@ export async function cmdTransferRequest(
   const spinner = createCrabLoader(`Requesting transfer of ${slug} to @${toHandle}`);
 
   return await withLoaderErrorHandling(spinner, async () => {
-    const result = await apiRequest(
+    const parsed = await apiRequest(
       registry,
       {
         ...transferRequestArgs(registry, slug, requested.ownerHandle, "", token),
@@ -131,11 +130,6 @@ export async function cmdTransferRequest(
         },
       },
       ApiV1TransferRequestResponseSchema,
-    );
-    const parsed = parseArk(
-      ApiV1TransferRequestResponseSchema,
-      result,
-      "Transfer request response",
     );
     if (parsed.transferred) {
       spinner.succeed(`Transferred ${slug} to @${parsed.toPublisherHandle ?? toHandle}`);
@@ -155,12 +149,11 @@ export async function cmdTransferList(opts: GlobalOpts, options: { outgoing?: bo
     const path = options.outgoing
       ? `${ApiRoutes.transfers}/outgoing`
       : `${ApiRoutes.transfers}/incoming`;
-    const result = await apiRequest(
+    const parsed = await apiRequest(
       registry,
       { method: "GET", path, token },
       ApiV1TransferListResponseSchema,
     );
-    const parsed = parseArk(ApiV1TransferListResponseSchema, result, "Transfer list response");
     spinner.stop();
 
     if (parsed.transfers.length === 0) {
@@ -203,12 +196,11 @@ async function runTransferDecision(
   const spinner = createCrabLoader(`${spec.progress} transfer of ${slug}`);
 
   return await withLoaderErrorHandling(spinner, async () => {
-    const result = await apiRequest(
+    const parsed = await apiRequest(
       registry,
       transferRequestArgs(registry, slug, requested.ownerHandle, `/${spec.action}`, token),
       ApiV1TransferDecisionResponseSchema,
     );
-    const parsed = parseArk(ApiV1TransferDecisionResponseSchema, result, "Transfer response");
     spinner.succeed(`${spec.success} (${slug})`);
     return parsed;
   });
