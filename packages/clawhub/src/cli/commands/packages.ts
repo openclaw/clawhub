@@ -258,7 +258,6 @@ type PackagePublishPayload = {
 
 type PackagePublishPlan = {
   folder: string;
-  cleanup?: () => Promise<void>;
   filesOnDisk: PackageFile[];
   clawpackOnDisk?: PackageFile;
   packageJson?: unknown;
@@ -946,9 +945,11 @@ export async function cmdPublishPackage(
     ? resolvePackagePublishWaitTimeout(options)
     : DEFAULT_PACKAGE_PUBLISH_WAIT_TIMEOUT_SECONDS;
 
-  let plan: PackagePublishPlan | undefined;
+  const cleanups: Array<() => Promise<void>> = [];
   try {
-    plan = await preparePackagePublishPlan(opts, sourceArg, options);
+    const plan = await preparePackagePublishPlan(opts, sourceArg, options, (cleanup) => {
+      cleanups.unshift(cleanup);
+    });
 
     if (options.categories !== undefined && plan.payload.family !== "template") {
       console.warn(
@@ -1155,7 +1156,7 @@ export async function cmdPublishPackage(
       throw error;
     }
   } finally {
-    await plan?.cleanup?.();
+    for (const cleanup of cleanups) await cleanup();
   }
 }
 
@@ -2906,6 +2907,7 @@ async function preparePackagePublishPlan(
   opts: GlobalOpts,
   sourceArg: string,
   options: PackagePublishOptions,
+  registerCleanup: (cleanup: () => Promise<void>) => void,
 ): Promise<PackagePublishPlan> {
   const githubRetryBudget = createGitHubRetryBudget();
   const resolvedSource = await resolveSourceInput(sourceArg, {
@@ -2915,26 +2917,17 @@ async function preparePackagePublishPlan(
   });
   const sourceForFetch = applyGitHubSourcePath(resolvedSource, options.sourcePath);
   let folder = sourceForFetch.kind === "local" ? sourceForFetch.path : "";
-  let cleanup: (() => Promise<void>) | undefined;
   let inferredSource: InferredPublishSource | undefined;
   let clawpackOnDisk: PackageFile | undefined;
   let parsedClawpack: ReturnType<typeof parseClawPack> | undefined;
-  const addCleanup = (next: () => Promise<void>) => {
-    const previous = cleanup;
-    cleanup = async () => {
-      await next();
-      await previous?.();
-    };
-  };
-
   if (sourceForFetch.kind === "github") {
     const fetchSpinner = options.json
       ? null
       : createCrabLoader(`Fetching ${sourceForFetch.owner}/${sourceForFetch.repo}`);
     try {
       const fetched = await fetchGitHubSource(sourceForFetch, githubRetryBudget);
+      registerCleanup(fetched.cleanup);
       folder = fetched.dir;
-      cleanup = fetched.cleanup;
       inferredSource = fetched.source;
       fetchSpinner?.stop();
     } catch (error) {
@@ -3077,28 +3070,22 @@ async function preparePackagePublishPlan(
 
   if (family === "code-plugin" && !clawpackOnDisk) {
     const packDestination = await mkdtemp(join(tmpdir(), "clawhub-clawpack-"));
-    let packed: PackedClawPack;
-    try {
-      packed = await createClawPackFromFolder({
-        sourcePath: folder,
-        packDestination,
-        cwd: opts.workdir,
-      });
-      if (packed.parsed.packageName !== name) {
-        fail(`ClawPack package name mismatch: expected ${name}, got ${packed.parsed.packageName}`);
-      }
-      if (packed.parsed.packageVersion !== version) {
-        fail(
-          `ClawPack package version mismatch: expected ${version}, got ${packed.parsed.packageVersion}`,
-        );
-      }
-    } catch (error) {
-      await rm(packDestination, { recursive: true, force: true });
-      throw error;
-    }
-    addCleanup(async () => {
+    registerCleanup(async () => {
       await rm(packDestination, { recursive: true, force: true });
     });
+    const packed = await createClawPackFromFolder({
+      sourcePath: folder,
+      packDestination,
+      cwd: opts.workdir,
+    });
+    if (packed.parsed.packageName !== name) {
+      fail(`ClawPack package name mismatch: expected ${name}, got ${packed.parsed.packageName}`);
+    }
+    if (packed.parsed.packageVersion !== version) {
+      fail(
+        `ClawPack package version mismatch: expected ${version}, got ${packed.parsed.packageVersion}`,
+      );
+    }
     clawpackOnDisk = packed.file;
     filesOnDisk = packed.parsed.entries.map((entry) => ({
       relPath: entry.path,
@@ -3137,23 +3124,17 @@ async function preparePackagePublishPlan(
         }
       : {}),
   };
-  try {
-    if (clawpackOnDisk) {
-      if (clawpackOnDisk.bytes.byteLength > MAX_PACKAGE_CLAWPACK_BYTES) {
-        fail(getClawPackSizeError(clawpackOnDisk.relPath));
-      }
-    } else {
-      assertPackageMultipartSize(JSON.stringify(payload), "files", filesOnDisk);
+  if (clawpackOnDisk) {
+    if (clawpackOnDisk.bytes.byteLength > MAX_PACKAGE_CLAWPACK_BYTES) {
+      fail(getClawPackSizeError(clawpackOnDisk.relPath));
     }
-  } catch (error) {
-    await cleanup?.();
-    throw error;
+  } else {
+    assertPackageMultipartSize(JSON.stringify(payload), "files", filesOnDisk);
   }
   const sourceLabel = describePublishSource(sourceForFetch, source, folder);
 
   return {
     folder,
-    cleanup,
     filesOnDisk,
     clawpackOnDisk,
     packageJson,
