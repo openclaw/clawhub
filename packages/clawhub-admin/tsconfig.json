@@ -10,6 +10,6 @@
     "sourceMap": true,
     "skipLibCheck": true
   },
-  "include": ["src/**/*.ts", "../clawhub/src/**/*.ts"],
+  "include": ["src/**/*.ts", "../clawhub/src/types/plugin-inspector.d.ts"],
   "exclude": ["src/**/*.test.ts", "../clawhub/src/**/*.test.ts"]
 }
