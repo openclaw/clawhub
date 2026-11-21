@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Skill diffs: release Monaco editors and text models in the correct order when switching files or leaving the diff view, preventing model-disposal errors without retaining stale models.
+
 - CLI: remove temporary package-publish directories when preparation fails, including a rejected package version. Caller-owned source directories are preserved.
 
 - CI: keep independent Testbox sessions on the same branch running when another session starts. Repeated runs for the same Testbox still cancel the earlier run.

@@ -66,6 +66,14 @@ Optional helper action:
 
 ## Monaco theming
 
+The diff view owns its native Monaco widget and both anonymous text models.
+Detach the models from the widget before disposing the widget, then dispose the
+captured models. This applies when loading another file, showing a binary/size
+warning, leaving the tab, and during React StrictMode cleanup. Keeping models
+alive after unmount is not a valid workaround: it leaks resources and can reuse
+stale text. Text, theme, and view-mode updates retain the mounted widget and pair.
+Closing the view before Monaco is ready must not create a widget later.
+
 - Define `clawhub-light` / `clawhub-dark` via `monaco.editor.defineTheme`.
 - Derive colors from CSS variables on `document.documentElement`:
   - `--surface`, `--surface-muted`, `--ink`, `--ink-soft`, `--line`, `--accent`.

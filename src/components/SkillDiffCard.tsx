@@ -1,5 +1,5 @@
 import type { DiffEditorProps, DiffOnMount, MonacoDiffEditor } from "@monaco-editor/react";
-import { DiffEditor, useMonaco } from "@monaco-editor/react";
+import { useMonaco } from "@monaco-editor/react";
 import { useAction } from "convex/react";
 import {
   AlignJustify,
@@ -26,6 +26,7 @@ import {
 import { ensureMonacoLoader } from "../lib/monacoLoader";
 import { isDarkThemeResolved, onThemeChange } from "../lib/theme";
 import { ClientOnly } from "./ClientOnly";
+import { SkillDiffEditor } from "./SkillDiffEditor";
 import { Button } from "./ui/button";
 import { Skeleton } from "./ui/skeleton";
 
@@ -673,11 +674,12 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
             <div className="diff-empty">Select a file.</div>
           ) : monacoError ? (
             <div className="diff-empty">{monacoError}</div>
-          ) : !monacoReady || isLoading ? (
+          ) : !monacoReady || !monaco || isLoading ? (
             <DiffViewerLoading />
           ) : (
             <ClientOnly fallback={<DiffViewerLoading />}>
-              <DiffEditor
+              <SkillDiffEditor
+                monaco={monaco}
                 className={`diff-monaco diff-monaco-${viewMode}`}
                 original={leftText}
                 modified={rightText}
@@ -723,7 +725,7 @@ function getMonacoThemeName() {
 function buildDiffOptions(
   viewMode: "split" | "inline",
   isCompact: boolean,
-): DiffEditorProps["options"] {
+): NonNullable<DiffEditorProps["options"]> & { readOnly: true } {
   const fontSize = isCompact ? 12 : 13;
   return {
     readOnly: true,
