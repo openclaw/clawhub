@@ -5,7 +5,7 @@ import {
   buildCatalogSearchObservation,
   normalizeCatalogSearchQuery,
   parseCatalogSearchSource,
-} from "./catalogSearchObservations";
+} from "./searchInsights";
 
 describe("plugin search observation contract", () => {
   it("accepts only the closed source enum", () => {

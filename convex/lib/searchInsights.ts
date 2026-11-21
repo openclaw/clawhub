@@ -6,9 +6,10 @@ export type SearchArtifactKind = Infer<typeof searchArtifactKind>;
 export type SearchScope = Infer<typeof searchScope>;
 export const SEARCH_DAY_MS = 86_400_000;
 export const SEARCH_INTENT_CONFIDENCE = 0.8;
+const SEARCH_SOURCES = ["clawhub-web", "openclaw-control-ui"] as const;
 export const searchInsightSource = v.union(
-  v.literal("clawhub-web"),
-  v.literal("openclaw-control-ui"),
+  v.literal(SEARCH_SOURCES[0]),
+  v.literal(SEARCH_SOURCES[1]),
 );
 export const searchIntentKind = v.union(
   v.literal("company_product"),
@@ -136,3 +137,47 @@ export type SearchCurrentResults = {
   metadataCheckedAt: number;
   rows: Array<{ query: string; results: SearchCurrentResult[] }>;
 };
+
+export function parseCatalogSearchSource(value: string | null): SearchInsightSource | undefined {
+  return SEARCH_SOURCES.find((source) => source === value);
+}
+
+export function normalizeCatalogSearchQuery(value: string) {
+  return value.trim().replace(/\s+/gu, " ").toLowerCase();
+}
+
+export function isBoundedCatalogSearchText(query: string, category?: string, topic?: string) {
+  return (
+    query.length > 0 &&
+    query.length <= 256 &&
+    (category?.length ?? 0) <= 120 &&
+    (topic?.length ?? 0) <= 120
+  );
+}
+
+export type CatalogSearchFacts = {
+  artifactKind: SearchArtifactKind;
+  query: string;
+  category?: string;
+  topic?: string;
+  filtered: boolean;
+  officialResults: readonly boolean[];
+};
+
+export function buildCatalogSearchObservation(
+  params: CatalogSearchFacts & { source: SearchInsightSource | undefined },
+) {
+  if (!params.source) return null;
+  const normalizedQuery = normalizeCatalogSearchQuery(params.query);
+  if (!isBoundedCatalogSearchText(normalizedQuery, params.category, params.topic)) return null;
+  return {
+    source: params.source,
+    artifactKind: params.artifactKind,
+    scope: params.filtered ? ("shelf" as const) : ("catalog" as const),
+    normalizedQuery,
+    category: params.category,
+    topic: params.topic,
+    resultCount: params.officialResults.length,
+    officialResultCount: params.officialResults.filter((official) => official === true).length,
+  };
+}

@@ -39,6 +39,23 @@ describe("plugin search observations", () => {
     ).rejects.toThrow();
     expect(await t.run((ctx) => ctx.db.query("pluginSearchObservations").collect())).toEqual([]);
   });
+  it("rejects legacy scope and unknown source or artifact values before persistence", async () => {
+    const t = convexTest(schema, modules);
+    for (const override of [
+      { scope: "legacy" },
+      { source: "crawler" },
+      { artifactKind: "template" },
+    ]) {
+      await expect(
+        t.mutation(internal.pluginSearchObservations.recordInternal, {
+          ...observation,
+          ...override,
+        } as never),
+      ).rejects.toThrow();
+    }
+    expect(await t.run((ctx) => ctx.db.query("pluginSearchObservations").collect())).toEqual([]);
+  });
+
   it("persists only the bounded search facts with the server observation time", async () => {
     const now = Date.UTC(2026, 8, 8, 22);
     vi.spyOn(Date, "now").mockReturnValue(now);
