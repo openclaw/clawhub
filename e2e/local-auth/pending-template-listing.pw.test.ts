@@ -166,9 +166,10 @@ test("a pending Template stays on its publisher URL without changing the public 
   try {
     const visitor = await publicContext.newPage();
     await visitor.setViewportSize({ width: 1440, height: 900 });
-    await page.goto(route);
+    const submission = route + "?view=submission";
+    await page.goto(submission);
     await expect(page.getByRole("heading", { name: displayName })).toBeVisible();
-    await expect(page).toHaveURL(new URL(route, baseURL).href);
+    await expect(page).toHaveURL(new URL(submission, baseURL).href);
     for (const [label, width, height] of sizes) {
       await page.setViewportSize({ width, height });
       await checkPlacement(page, "0.1.0");
@@ -210,6 +211,31 @@ test("a pending Template stays on its publisher URL without changing the public 
         .evaluate((image: HTMLImageElement) => image.decode());
       await capture(visitor, "visitor-not-found");
     }
+    // The hint comes from the click, not the registry: absent and pending names look identical.
+    const signIn = visitor.getByRole("main").getByRole("button", { name: "Sign in with GitHub" });
+    let signInCopy: string | undefined;
+    for (const href of [submission, route + "-missing?view=submission"]) {
+      expect((await visitor.goto(href))?.status()).toBe(404);
+      await expect(signIn).toBeVisible();
+      const copy = await visitor.getByRole("main").innerText();
+      expect(copy).not.toContain(displayName);
+      if (signInCopy === undefined) {
+        signInCopy = copy;
+        await capture(visitor, "submission-sign-in");
+      } else expect(copy).toBe(signInCopy);
+    }
+    const other = await browser.newContext({ baseURL });
+    try {
+      const wrongAccount = await other.newPage();
+      await signInAsLocalPersona(wrongAccount, "officialOrgMember");
+      for (const href of [submission, route + "-missing?view=submission"]) {
+        await wrongAccount.goto(href);
+        await expect(wrongAccount.getByRole("heading", { name: notFound })).toBeVisible();
+        await expect(wrongAccount.getByText(displayName)).toHaveCount(0);
+      }
+    } finally {
+      await other.close();
+    }
     const apiPath = registry + "/api/v1/packages/" + encodeURIComponent("@" + handle + "/" + slug);
     expect((await publicContext.request.get(apiPath)).status()).toBe(404);
     for (const suffix of [
@@ -246,7 +272,7 @@ test("a pending Template stays on its publisher URL without changing the public 
       version,
       displayName: "Hopper session planner",
     });
-    const published = await visitor.goto(update);
+    const published = await visitor.goto(update + "?view=submission");
     expect(published?.status()).toBe(200);
     await expect(
       visitor.locator("main header").getByRole("heading", { name: "Hopper", level: 1 }),

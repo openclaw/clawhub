@@ -13,6 +13,7 @@ interface SignInPromptProps {
   icon?: LucideIcon;
   action?: ReactNode;
   showAction?: boolean;
+  redirectTo?: string;
   error?: string | null;
   onDismissError?: () => void;
   className?: string;
@@ -24,6 +25,7 @@ export function SignInPrompt({
   icon: Icon = LockKeyhole,
   action,
   showAction = true,
+  redirectTo,
   error,
   onDismissError,
   className,
@@ -44,6 +46,7 @@ export function SignInPrompt({
 
   const defaultAction = (
     <SignInButton
+      redirectTo={redirectTo}
       size="sm"
       className="min-h-10 w-full shrink-0 border-[color-mix(in_srgb,var(--accent)_82%,var(--border-ui))] bg-transparent px-4 text-sm text-[color:var(--ink)] hover:not-disabled:border-[color:var(--accent)] hover:not-disabled:bg-[color-mix(in_srgb,var(--accent)_7%,transparent)] sm:w-auto"
     >

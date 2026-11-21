@@ -136,7 +136,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   latest when one exists. Do not fall back to older pending submissions after a
   block, removal or publication. Private, blocked, removed or otherwise ineligible
   records have no notice. This response never grants artifact, file, install,
-  version-history, search, public detail or shared-cache visibility.
+  version-history, search, public detail or shared-cache visibility. On a Template
+  listing, `?view=submission` requests a browser sign-in prompt when signed out
+  and no public release is visible. It grants no access and shows the same prompt
+  for a missing name. Sign-in returns to the listing, without the intent parameter.
 - Pending skill finalization must not lift `softDeletedAt`, `moderationStatus`
   `removed`, or a hidden staff hold such as security redaction, a ban, publisher
   deletion, or manual review. A first publish hidden only for

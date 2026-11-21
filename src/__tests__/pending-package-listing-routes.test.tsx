@@ -19,12 +19,14 @@ const mocks = vi.hoisted(() => ({
   auth: { isLoading: false, isAuthenticated: true },
   revision: 0,
   subscriptions: new Set<() => void>(),
+  signIn: vi.fn(),
   pending: vi.fn(),
   detail: vi.fn(),
   readme: vi.fn(),
   file: vi.fn(),
   version: vi.fn(),
 }));
+vi.mock("@convex-dev/auth/react", () => ({ useAuthActions: () => ({ signIn: mocks.signIn }) }));
 vi.mock("../lib/useAuthStatus", () => ({ useAuthStatus: () => mocks.auth }));
 vi.mock("convex/react", async (importOriginal) => {
   const { useSyncExternalStore } = await import("react");
@@ -216,6 +218,35 @@ it("redirects a legacy public Template link to its published Template page", asy
   expect(await published.text()).toContain("Published Template");
   expect(mocks.pending).not.toHaveBeenCalled();
 });
+
+it("offers sign-in only on a signed-out Template submission link and returns to the clean listing", async () => {
+  mocks.auth.isAuthenticated = false;
+  mocks.signIn.mockResolvedValue({ signingIn: true });
+  const router = makeRouter("template", false, "?view=submission&redirectTo=/dashboard#ignored");
+  await router.load();
+  render(<RouterProvider router={router} />);
+  const signIn = await screen.findByRole("button", { name: "Sign in with GitHub" });
+  expect(screen.queryByText(pending.displayName)).toBeNull();
+  expect(mocks.pending).not.toHaveBeenCalled();
+  fireEvent.click(signIn);
+  expect(mocks.signIn).toHaveBeenCalledWith("github", { redirectTo: "/maker/templates/brief" });
+});
+
+it.each([true, false])(
+  "leaves submission access to the existing private lookup (authorized: %s)",
+  async (authorized) => {
+    mocks.pending.mockReturnValue(authorized ? pending : null);
+    const router = makeRouter("template", false, "?view=submission");
+    await router.load();
+    render(<RouterProvider router={router} />);
+    expect(
+      await screen.findByRole("heading", {
+        name: authorized ? pending.displayName : "We couldn't find that page.",
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Sign in with GitHub" })).toBeNull();
+  },
+);
 
 describe.each(["plugin", "template"] as const)("canonical pending %s listing", (kind) => {
   const missing = kind === "plugin" ? "Plugin not found" : "We couldn't find that page.";
