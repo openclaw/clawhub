@@ -144,4 +144,69 @@ describe("ogAssets", () => {
       "bricolage-grotesque-latin-800-normal.woff2",
     );
   });
+
+  for (const firstName of ["getFontBuffers", "getPublisherFontBuffers"] as const) {
+    const secondName =
+      firstName === "getFontBuffers" ? "getPublisherFontBuffers" : "getFontBuffers";
+
+    it(`shares equal bytes without sharing reads (${firstName} first)`, async () => {
+      readFileMock.mockImplementation(async (input: unknown) => Buffer.from(String(input)));
+      const assets = await import("./ogAssets");
+
+      const [first, second] = await Promise.all([assets[firstName](), assets[secondName]()]);
+      expect(first).not.toBe(second);
+      expect(second[0]).toBe(first[1]);
+      expect(second[1]).toBe(first[0]);
+      for (let index = 2; index < first.length; index++) {
+        expect(second[index]).toBe(first[index]);
+      }
+      expect(await assets[firstName]()).toBe(first);
+      expect(await assets[secondName]()).toBe(second);
+      expect(readFileMock).toHaveBeenCalledTimes(12);
+    });
+
+    it(`keeps concurrent read failures independent (${firstName} first)`, async () => {
+      const failure = new Error("first font read failed");
+      readFileMock.mockImplementation(async (input: unknown) => Buffer.from(String(input)));
+      readFileMock.mockRejectedValueOnce(failure);
+      const assets = await import("./ogAssets");
+
+      const [first, second] = await Promise.allSettled([assets[firstName](), assets[secondName]()]);
+      expect(first).toEqual({ status: "rejected", reason: failure });
+      expect(second.status).toBe("fulfilled");
+      await expect(assets[firstName]()).rejects.toBe(failure);
+      if (second.status === "fulfilled") {
+        expect(await assets[secondName]()).toBe(second.value);
+      }
+      expect(readFileMock).toHaveBeenCalledTimes(12);
+    });
+
+    it(`keeps a later read failure observable (${firstName} first)`, async () => {
+      readFileMock.mockResolvedValue(Buffer.from([1]));
+      const assets = await import("./ogAssets");
+      const first = await assets[firstName]();
+      const failure = new Error("second font read failed");
+      readFileMock.mockRejectedValue(failure);
+
+      await expect(assets[secondName]()).rejects.toBe(failure);
+      await expect(assets[secondName]()).rejects.toBe(failure);
+      expect(await assets[firstName]()).toBe(first);
+      expect(readFileMock).toHaveBeenCalledTimes(12);
+    });
+
+    it(`preserves changed bytes from later reads (${firstName} first)`, async () => {
+      readFileMock.mockResolvedValue(Buffer.from([1]));
+      const assets = await import("./ogAssets");
+      const first = await assets[firstName]();
+      readFileMock.mockResolvedValue(Buffer.from([2]));
+
+      const second = await assets[secondName]();
+      for (const bytes of first) expect(bytes).toEqual(new Uint8Array([1]));
+      for (const bytes of second) {
+        expect(bytes).toEqual(new Uint8Array([2]));
+        expect(first).not.toContain(bytes);
+      }
+      expect(readFileMock).toHaveBeenCalledTimes(12);
+    });
+  }
 });
