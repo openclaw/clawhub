@@ -146,6 +146,17 @@ async function startLocalRegistry(catalogItems?: unknown[]) {
     if (bodyText) recorded.body = JSON.parse(bodyText) as unknown;
     requests.push(recorded);
 
+    if (url.pathname === "/api/v1/stars/demo") {
+      if (request.method === "POST") {
+        writeJson(response, 200, { ok: true, starred: true, alreadyStarred: false });
+        return;
+      }
+      if (request.method === "DELETE") {
+        writeJson(response, 200, { ok: true, unstarred: true, alreadyUnstarred: false });
+        return;
+      }
+    }
+
     if (url.pathname === "/api/v1/packages/%40openclaw%2Fdemo-plugin/trusted-publisher") {
       if (request.method === "POST") {
         writeJson(response, 200, { trustedPublisher: trustedPublisherFixture });
@@ -345,6 +356,69 @@ describe("built CLI artifact", () => {
       `for (const url of ${JSON.stringify(imports)}) await import(url);`,
     ]);
     expect(load.status, load.stderr).toBe(0);
+
+    const { registry, requests } = await startLocalRegistry();
+    const workdir = await makeTmpDir("clawhub-artifact-stars-");
+    const configPath = await writeConfigWithToken(workdir, registry);
+    for (const scenario of [
+      { command: "star", method: "POST", message: "OK. Starred demo" },
+      { command: "unstar", method: "DELETE", message: "OK. Unstarred demo" },
+    ]) {
+      const result = await runNodeAsync(
+        [
+          join(isolatedRoot, "bin", "clawdhub.js"),
+          "--workdir",
+          workdir,
+          "--registry",
+          registry,
+          "--no-input",
+          scenario.command,
+          "@OpenClaw/Demo",
+          "--yes",
+        ],
+        { CLAWHUB_CONFIG_PATH: configPath },
+      );
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toBe(`${scenario.message}\n`);
+      expect(result.stderr).toBe("");
+      expect(requests.slice(-1)).toEqual([
+        {
+          method: scenario.method,
+          path: "/api/v1/stars/demo?ownerHandle=openclaw",
+          authorization: "Bearer test-token",
+          ...(scenario.method === "POST" ? { body: {} } : {}),
+        },
+      ]);
+    }
+    expect(requests).toHaveLength(2);
+
+    const legacyUnstar = pathToFileURL(
+      join(isolatedRoot, "dist", "cli", "commands", "unstar.js"),
+    ).href;
+    const opts = {
+      workdir,
+      dir: join(workdir, "skills"),
+      site: registry,
+      registry,
+      registrySource: "cli",
+    };
+    const legacyResult = await runNodeAsync(
+      [
+        "--input-type=module",
+        "--eval",
+        `const { cmdUnstarSkill } = await import(${JSON.stringify(legacyUnstar)}); await cmdUnstarSkill(${JSON.stringify(opts)}, "@OpenClaw/Demo", { yes: true }, false);`,
+      ],
+      { CLAWHUB_CONFIG_PATH: configPath },
+    );
+    expect(legacyResult.status, legacyResult.stderr).toBe(0);
+    expect(legacyResult.stdout).toBe("OK. Unstarred demo\n");
+    expect(legacyResult.stderr).toBe("");
+    expect(requests).toHaveLength(3);
+    expect(requests[2]).toEqual({
+      method: "DELETE",
+      path: "/api/v1/stars/demo?ownerHandle=openclaw",
+      authorization: "Bearer test-token",
+    });
   });
 
   it("dispatches public trusted-publisher set and delete commands from built output", async () => {

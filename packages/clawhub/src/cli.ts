@@ -45,7 +45,7 @@ import {
   cmdUnpin,
   cmdUpdate,
 } from "./cli/commands/skills.js";
-import { cmdStarSkill } from "./cli/commands/star.js";
+import { cmdStarSkill, cmdUnstarSkill } from "./cli/commands/star.js";
 import { cmdSync } from "./cli/commands/sync.js";
 import {
   cmdTransferAccept,
@@ -54,7 +54,6 @@ import {
   cmdTransferReject,
   cmdTransferRequest,
 } from "./cli/commands/transfer.js";
-import { cmdUnstarSkill } from "./cli/commands/unstar.js";
 import {
   createGlobalOptsAction,
   resolveGlobalOpts as resolveGlobalOptsFromOptions,
