@@ -411,6 +411,23 @@ async function startLocalConvex(args: string[], env: NodeJS.ProcessEnv, convexUr
       process.cwd(),
       ["inherit", "inherit", "inherit", "ipc"],
     );
+    let ready = false;
+    let startupFailure: Error | undefined;
+    const failAfterReady = (message: string) => {
+      if (!ready) {
+        startupFailure = new Error(message);
+        return;
+      }
+      if (cleanupPromise) return;
+      console.error(message);
+      void cleanup().finally(() => process.exit(1));
+    };
+    child.on("message", (result: LocalConvexBootstrapResult) => {
+      if (result.status === "error") failAfterReady(result.message);
+    });
+    child.once("exit", (code, signal) =>
+      failAfterReady(`Local Convex launcher exited with ${signal ?? `code ${code}`}.`),
+    );
     try {
       await new Promise<void>((resolve, reject) => {
         child.once("error", reject);
@@ -423,6 +440,8 @@ async function startLocalConvex(args: string[], env: NodeJS.ProcessEnv, convexUr
         });
       });
       await waitUntilReachable(convexUrl, "Local Convex", child);
+      if (startupFailure) throw startupFailure;
+      ready = true;
       return;
     } catch (error) {
       await stopManagedChild(child);

@@ -136,7 +136,12 @@ backend environment, and then publishes once. Cron definitions read deployment
 environment variables during publication, so `CLAWHUB_DISABLE_CRONS=1` must be
 set before the first push. Application readiness checks never republish code,
 and no development watcher can push again while the app builds. A persistent
-launcher retains ownership of the backend process group through cleanup.
+launcher retains ownership of the backend process group through cleanup. CLI
+bootstrap only creates the isolated configuration; it may stop its backend when
+it exits. The launcher then starts the selected cached backend binary directly
+and checks `/instance_name` before reporting readiness. It does not depend on a
+backend surviving CLI cleanup, and a backend exit aborts the browser run. This
+owned test backend binds only to loopback and disables beacon/crash reporting.
 
 CI pins the local-auth backend with `PLAYWRIGHT_LOCAL_AUTH_BACKEND_VERSION`.
 Before bootstrap, it restores the versioned binary cache or downloads the Linux
