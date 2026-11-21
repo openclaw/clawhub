@@ -3,7 +3,7 @@ import { ConvexError } from "convex/values";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { parseClawPack, sha256Hex } from "./clawpack";
-import { tryNormalizePackageName } from "./packageRegistry";
+import { tryNormalizePackageName } from "./packageReadName";
 import {
   getClawPackSizeError,
   getPublishTotalSizeError,

@@ -1,6 +1,6 @@
 import { isCurrentPluginCategoryAssignment } from "clawhub-schema/pluginCategories";
 import type { Infer } from "convex/values";
-import { tryNormalizePackageName } from "./packageRegistry";
+import { tryNormalizePackageName } from "./packageReadName";
 import type { pluginCategoryReviewProvenanceValidator } from "./pluginCategoryClassificationContract";
 
 export type CategoryReviewProvenance = Infer<typeof pluginCategoryReviewProvenanceValidator>;

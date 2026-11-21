@@ -141,6 +141,7 @@ import {
   assertPackageRecoveryEligibility,
   manualPackageRecovery,
 } from "./lib/packagePublishRecovery";
+import { tryNormalizePackageName } from "./lib/packageReadName";
 import { hasMissingPackageRecommendedScore } from "./lib/packageRecommendationRead";
 import {
   assertPackageVersion,
@@ -150,10 +151,7 @@ import {
   extractCodePluginArtifacts,
   maybeParseJson,
   normalizePackageName,
-  tryNormalizePackageName,
   normalizePublishFiles,
-  readStorageText,
-  readOptionalTextFile,
   summarizePackageForSearch,
   toConvexSafeJsonValue,
 } from "./lib/packageRegistry";
@@ -272,6 +270,7 @@ import { hashSkillFiles } from "./lib/skills/fileHash";
 import { buildPackageInventoryDigest } from "./lib/skills/skillMarkdown";
 import { buildDeterministicPackageZip } from "./lib/skillZip";
 import { matchesStorageSha256 } from "./lib/storageDigests";
+import { readOptionalTextFile, readStorageText } from "./lib/storageText";
 import { classifyTemplateCategories } from "./lib/templateCategoryClassification";
 import { selectTemplateDetailRelease } from "./lib/templateDetailView";
 import {
