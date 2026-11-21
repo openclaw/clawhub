@@ -675,16 +675,6 @@ export async function cmdUpdate(
     return;
   }
 
-  let lockDirty = false;
-  const markLockDirty = () => {
-    lockDirty = true;
-  };
-  const flushLockfile = async () => {
-    if (!lockDirty) return;
-    await writeLockfile(opts.workdir, lock);
-    lockDirty = false;
-  };
-
   for (const entry of slugs) {
     const entryLock = lock.skills[entry];
     const entryRef = parseStoredSkillRefOrFail(entryLock?.sourceRef ?? entry);
@@ -799,8 +789,7 @@ export async function cmdUpdate(
               ),
               ...state,
             });
-            markLockDirty();
-            await flushLockfile();
+            await writeLockfile(opts.workdir, lock);
           }
           spinner.succeed(
             `${entry}: up to date (${formatInstallResolutionVersion(latestInstall)})`,
@@ -836,8 +825,7 @@ export async function cmdUpdate(
           ...withPinnedMetadata(targetVersion, installedAt, lock.skills[entry]),
           ...state,
         });
-        markLockDirty();
-        await flushLockfile();
+        await writeLockfile(opts.workdir, lock);
         await reportInstalledSkillsTelemetryIfEnabled({
           token,
           registry,
@@ -928,8 +916,7 @@ export async function cmdUpdate(
           resolvedOwnerHandle,
           lock.skills[entry],
         );
-        markLockDirty();
-        await flushLockfile();
+        await writeLockfile(opts.workdir, lock);
       };
 
       let latestInstall: ApiV1SkillInstallResolveResponse | null = null;
@@ -975,8 +962,7 @@ export async function cmdUpdate(
                 lock.skills[entry]?.installedAt ?? Date.now(),
                 lock.skills[entry],
               );
-              markLockDirty();
-              await flushLockfile();
+              await writeLockfile(opts.workdir, lock);
             }
             spinner.succeed(`${entry}: up to date (${formatGitHubVersion(targetVersion)})`);
             continue;
@@ -1041,8 +1027,7 @@ export async function cmdUpdate(
           resolvedOwnerHandle,
           lock.skills[entry],
         );
-        markLockDirty();
-        await flushLockfile();
+        await writeLockfile(opts.workdir, lock);
       }
 
       if (!latest) {
@@ -1102,7 +1087,6 @@ export async function cmdUpdate(
     }
   }
 
-  await flushLockfile();
   if (skippedPinned.length > 0) {
     const suffix = skippedPinned.length === 1 ? "" : "s";
     console.log(
