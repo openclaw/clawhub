@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- CLI: remove temporary package-publish directories when preparation fails, including a rejected package version. Caller-owned source directories are preserved.
+
 - CI: keep independent Testbox sessions on the same branch running when another session starts. Repeated runs for the same Testbox still cancel the earlier run.
 
 - Skill reports: a missing skill, a blank reason, and the open-report limit return "Skill not found", "Report reason required.", or "Report limit reached. Please wait for moderation before reporting more." instead of a server failure.
