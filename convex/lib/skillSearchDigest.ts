@@ -3,6 +3,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { resolvePublicBrowseVersionState } from "./publicBrowse";
 import { getOwnerPublisher } from "./publishers";
+import { hasDigestChanged, reconcileSearchDigestRows } from "./searchDigestRows";
 import { extractDigestFields, type SkillSearchDigestFields } from "./skillSearchDigestProjection";
 
 export async function extractValidatedDigestFields(
@@ -117,20 +118,13 @@ async function syncSkillTopicSearchDigests(
       },
     ]),
   );
-  for (const row of existing) {
-    const next = nextByTopic.get(row.topic);
-    if (!next) {
-      await ctx.db.delete(row._id);
-      continue;
-    }
-    if (hasDigestChanged(row, next)) {
-      await ctx.db.patch(row._id, next);
-    }
-    nextByTopic.delete(row.topic);
-  }
-  for (const next of nextByTopic.values()) {
-    await ctx.db.insert("skillTopicSearchDigest", next);
-  }
+  await reconcileSearchDigestRows(
+    ctx.db,
+    "skillTopicSearchDigest",
+    existing,
+    nextByTopic,
+    (row) => row.topic,
+  );
 }
 
 export async function deleteSkillSearchDigests(
@@ -173,18 +167,4 @@ export async function syncSkillSearchDigestForSkill(
     ownerDisplayName: owner?.displayName,
     ownerImage: owner?.image,
   });
-}
-
-/** Compare new fields against existing row. Returns true if any field differs. */
-function hasDigestChanged(
-  existing: Record<string, unknown>,
-  fields: Record<string, unknown>,
-): boolean {
-  for (const key of Object.keys(fields)) {
-    const oldVal = (existing as Record<string, unknown>)[key];
-    const newVal = (fields as Record<string, unknown>)[key];
-    if (oldVal === newVal) continue;
-    if (JSON.stringify(oldVal) !== JSON.stringify(newVal)) return true;
-  }
-  return false;
 }
