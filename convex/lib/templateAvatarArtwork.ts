@@ -3,12 +3,12 @@ import { isSafeTemplatePackagePath, portablePathKey } from "clawhub-schema/templ
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
-import { storeSkillPresentationAsset } from "../skillPresentationAssets";
 import { sha256Hex } from "./hash";
 import {
   buildSkillPresentationIconPath,
   MAX_SKILL_PRESENTATION_ICON_BYTES,
 } from "./skillPresentation";
+import { storeSkillPresentationAsset } from "./skillPresentationAssetStorage";
 
 type AvatarFormat = "png" | "jpeg" | "webp" | "gif" | "svg";
 type Artwork = { bytes: Uint8Array<ArrayBuffer>; format: AvatarFormat };
