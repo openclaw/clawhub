@@ -65,6 +65,7 @@ import {
 import { buildGitHubFolderContentHash, hashSkillFiles } from "../../skills.js";
 import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
 import { pathExists } from "../fs.js";
+import { resolveGitHubPublishSource } from "../githubSource.js";
 import { withLoaderErrorHandling } from "../loader.js";
 import { writeJsonIfRequested } from "../output.js";
 import { getRegistry } from "../registry.js";
@@ -81,7 +82,6 @@ import {
 import {
   createGitHubRetryBudget,
   fetchGitHubSource,
-  normalizeGitHubRepo,
   resolveLocalGitInfo,
   resolveSourceInput,
 } from "./github.js";
@@ -3332,20 +3332,17 @@ function buildSource(options: PackagePublishOptions, inferred?: InferredPublishS
   const rawPath = explicitPath !== undefined ? explicitPath : inferred?.path?.trim();
   if (!rawRepo && !rawCommit && !rawRef && !rawPath) return undefined;
   if (!rawRepo || !rawCommit) fail("--source-repo and --source-commit must be set together");
-  const repo = normalizeGitHubRepo(rawRepo);
-  if (!repo) fail("--source-repo must be a GitHub repo or URL");
+  const source = resolveGitHubPublishSource(rawRepo, rawCommit, rawRef);
+  if (!source) fail("--source-repo must be a GitHub repo or URL");
   const explicitRepo = options.sourceRepo?.trim();
   const url = explicitRepo
     ? explicitRepo.startsWith("http")
       ? explicitRepo
-      : `https://github.com/${repo}`
-    : inferred?.url || `https://github.com/${repo}`;
+      : source.url
+    : inferred?.url || source.url;
   return {
-    kind: "github" as const,
+    ...source,
     url,
-    repo,
-    ref: rawRef || rawCommit,
-    commit: rawCommit,
     path: rawPath || ".",
     importedAt: Date.now(),
   };
