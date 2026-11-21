@@ -112,9 +112,18 @@ export async function ensureResvgWasm() {
   await resvgInitPromise;
 }
 
+const fontBuffersByPath = new Map<string, Uint8Array>();
+
 function readFontBuffers(paths: string[]) {
   return Promise.all(paths.map((pathname) => readFile(getServerUrl(pathname)))).then((buffers) =>
-    buffers.map((buffer) => new Uint8Array(buffer)),
+    buffers.map((buffer, index) => {
+      const pathname = paths[index];
+      const cached = fontBuffersByPath.get(pathname);
+      if (cached && Buffer.compare(cached, buffer) === 0) return cached;
+      const bytes = new Uint8Array(buffer);
+      fontBuffersByPath.set(pathname, bytes);
+      return bytes;
+    }),
   );
 }
 
