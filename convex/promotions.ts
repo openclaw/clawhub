@@ -5,7 +5,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, internalQuery, mutation, query } from "./functions";
 import { assertAdmin, requireUser } from "./lib/access";
-import { tryNormalizePackageName } from "./lib/packageRegistry";
+import { tryNormalizePackageName } from "./lib/packageReadName";
 
 export type PromotionStatus = "draft" | "active" | "ended";
 

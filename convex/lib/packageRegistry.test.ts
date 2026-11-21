@@ -2,6 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import { buildGitHubFolderContentHash } from "../../packages/clawhub/src/fileInventory";
+import { tryNormalizePackageName } from "./packageReadName";
 import {
   derivePluginManifestSummary,
   ensurePluginNameMatchesPackage,
@@ -12,7 +13,6 @@ import {
   normalizePublishFiles,
   summarizePackageForSearch,
   toConvexSafeJsonValue,
-  tryNormalizePackageName,
 } from "./packageRegistry";
 import { buildPackageInventoryDigest } from "./skills";
 

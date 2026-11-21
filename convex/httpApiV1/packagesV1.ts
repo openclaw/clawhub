@@ -89,6 +89,7 @@ import {
   readPackageVersionForRequest,
   resolvePackageTags,
 } from "../lib/packageHttpRead";
+import { tryNormalizePackageName } from "../lib/packageReadName";
 import {
   toPackageMetadataResponse,
   toPackageVersionResponse,
@@ -96,7 +97,6 @@ import {
   type PublicPackageDocLike,
   type ReleaseLike,
 } from "../lib/packageReadProjection";
-import { tryNormalizePackageName } from "../lib/packageRegistry";
 import { toPackageReleaseSecurityResponse } from "../lib/packageReleaseSecurityResponse";
 import { getPackageDownloadSecurityBlock } from "../lib/packageSecurity";
 import { readInitialPublicPluginPage } from "../lib/pluginBrowseRead";

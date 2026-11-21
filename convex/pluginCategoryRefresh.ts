@@ -13,7 +13,6 @@ import { sha256Hex } from "./lib/clawpack";
 import {
   derivePluginManifestSummary,
   maybeParseJson,
-  readStorageText,
   REAL_BUNDLE_MANIFESTS,
 } from "./lib/packageRegistry";
 import {
@@ -31,6 +30,7 @@ import {
   validateCategoryCorrections,
   validateCategoryPackageNames,
 } from "./lib/pluginCategoryReview";
+import { readStorageText } from "./lib/storageText";
 import { pluginManifestSummaryValidator } from "./schema";
 
 const bundledAssignments = new Map(
