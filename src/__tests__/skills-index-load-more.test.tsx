@@ -54,7 +54,7 @@ vi.mock("../../src/convex/client", () => ({
   },
 }));
 
-describe("SkillsIndex load-more observer", () => {
+describe("SkillsIndex manual load more", () => {
   beforeEach(() => {
     resetConvexReactMocks();
     navigateMock.mockReset();
