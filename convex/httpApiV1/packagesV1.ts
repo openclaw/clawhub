@@ -54,9 +54,9 @@ import {
   compareCatalogItemsForSort,
   compareCatalogSearchEntries,
   encodePluginCatalogCursor,
-  ensureCatalogSourcePage,
   finalizeCatalogSource,
   initCatalogSource,
+  mergeCatalogSources,
   type CatalogSourceCursorState,
   type PackagePageCursorState,
   type PluginCatalogCursorState,
@@ -1284,12 +1284,11 @@ async function listPackages(
     const unifiedListSort = recommendedFallback ?? effectiveSort;
     const packageSource = initCatalogSource<CatalogListItem>(decodedCursor.packages);
     const skillSource = initCatalogSource<CatalogListItem>(decodedCursor.skills);
-    const pageSize = limit;
-    const items: CatalogListItem[] = [];
-
-    while (items.length < limit) {
-      const [packageCandidate, skillCandidate] = await Promise.all([
-        ensureCatalogSourcePage(packageSource, pageSize, async (pageCursor, numItems) => {
+    const items = await mergeCatalogSources({
+      limit,
+      left: {
+        source: packageSource,
+        fetchPage: async (pageCursor, numItems) => {
           const result = await runQueryRef<{
             page: CatalogListItem[];
             isDone: boolean;
@@ -1311,8 +1310,11 @@ async function listPackages(
             isDone: result.isDone,
             continueCursor: result.continueCursor ?? "",
           };
-        }),
-        ensureCatalogSourcePage(skillSource, pageSize, async (pageCursor, numItems) => {
+        },
+      },
+      right: {
+        source: skillSource,
+        fetchPage: async (pageCursor, numItems) => {
           const result = await runQueryRef<{
             page: CatalogListItem[];
             isDone: boolean;
@@ -1330,22 +1332,10 @@ async function listPackages(
             isDone: result.isDone,
             continueCursor: result.continueCursor ?? "",
           };
-        }),
-      ]);
-
-      if (!packageCandidate && !skillCandidate) break;
-      if (
-        !skillCandidate ||
-        (packageCandidate &&
-          compareCatalogItemsForSort(packageCandidate, skillCandidate, unifiedListSort) <= 0)
-      ) {
-        items.push(packageCandidate!);
-        packageSource.index += 1;
-      } else {
-        items.push(skillCandidate);
-        skillSource.index += 1;
-      }
-    }
+        },
+      },
+      compare: (a, b) => compareCatalogItemsForSort(a, b, unifiedListSort),
+    });
 
     const nextState = {
       packages: finalizeCatalogSource(packageSource),
@@ -1485,8 +1475,6 @@ async function listPackages(
             : undefined))
         : undefined;
     const pluginListSort = recommendedFallback ?? effectiveSort;
-    const pageSize = limit;
-    const items: CatalogListItem[] = [];
     const fetchPluginPage = async (
       pluginFamily: "code-plugin" | "bundle-plugin",
       pageCursor: string | null,
@@ -1516,40 +1504,26 @@ async function listPackages(
       };
     };
 
-    while (items.length < limit) {
-      const [codePluginCandidate, bundlePluginCandidate] = await Promise.all([
-        options.pluginFamilies.includes("code-plugin")
-          ? ensureCatalogSourcePage(codePluginSource, pageSize, (pageCursor, numItems) =>
+    const items = await mergeCatalogSources({
+      limit,
+      left: options.pluginFamilies.includes("code-plugin")
+        ? {
+            source: codePluginSource,
+            fetchPage: (pageCursor, numItems) =>
               fetchPluginPage("code-plugin", pageCursor, numItems),
-            )
-          : Promise.resolve(null),
-        options.pluginFamilies.includes("bundle-plugin")
-          ? ensureCatalogSourcePage(bundlePluginSource, pageSize, (pageCursor, numItems) =>
+          }
+        : null,
+      right: options.pluginFamilies.includes("bundle-plugin")
+        ? {
+            source: bundlePluginSource,
+            fetchPage: (pageCursor, numItems) =>
               fetchPluginPage("bundle-plugin", pageCursor, numItems),
-            )
-          : Promise.resolve(null),
-      ]);
-
-      if (!codePluginCandidate && !bundlePluginCandidate) break;
-      if (
-        !bundlePluginCandidate ||
-        (codePluginCandidate &&
-          ((officialFirst.value
-            ? Number(bundlePluginCandidate.isOfficial) - Number(codePluginCandidate.isOfficial)
-            : 0) ||
-            compareCatalogItemsForSort(
-              codePluginCandidate,
-              bundlePluginCandidate,
-              pluginListSort,
-            )) <= 0)
-      ) {
-        items.push(codePluginCandidate!);
-        codePluginSource.index += 1;
-      } else {
-        items.push(bundlePluginCandidate);
-        bundlePluginSource.index += 1;
-      }
-    }
+          }
+        : null,
+      compare: (a, b) =>
+        (officialFirst.value ? Number(b.isOfficial) - Number(a.isOfficial) : 0) ||
+        compareCatalogItemsForSort(a, b, pluginListSort),
+    });
 
     const nextState = {
       codePlugins: finalizeCatalogSource(codePluginSource),
