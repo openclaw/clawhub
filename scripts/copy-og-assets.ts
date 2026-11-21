@@ -1,6 +1,5 @@
 import { copyFile, mkdir, stat } from "node:fs/promises";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import { OG_FONT_PATHS } from "../server/og/ogAssets";
 
 async function resolveExistingPath(candidates: string[]) {
@@ -88,8 +87,4 @@ export async function copyOgAssets() {
       await copyFile(source, target);
     }
   }
-}
-
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  await copyOgAssets();
 }
