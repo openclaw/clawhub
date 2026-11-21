@@ -4,7 +4,7 @@ import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { inferSkillCategories, resolveSkillCategories } from "clawhub-schema/catalogMetadata";
 import { useAction, useMutation, useQueries, useQuery, type RequestForQueries } from "convex/react";
 import { ArrowLeft, TriangleAlert, Upload } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
@@ -237,10 +237,12 @@ export function SkillDetailPage({
     | Array<{ publisher: { _id: Id<"publishers"> }; role: string }>
     | undefined;
 
-  const [readme, setReadme] = useState<string | null>(initialData?.readme ?? null);
-  const [readmeError, setReadmeError] = useState<string | null>(initialData?.readmeError ?? null);
-  const [loadedReadmeVersionId, setLoadedReadmeVersionId] = useState<Id<"skillVersions"> | null>(
-    initialResult?.latestVersion?._id ?? null,
+  const [{ text: readme, error: readmeError }, setReadmeResult] = useState({
+    text: initialData?.readme ?? null,
+    error: initialData?.readmeError ?? null,
+  });
+  const loadedReadmeVersionId = useRef<Id<"skillVersions"> | null>(
+    readme !== null || readmeError !== null ? (initialResult?.latestVersion?._id ?? null) : null,
   );
   const [skillCard, setSkillCard] = useState<string | null>(null);
   const [skillCardError, setSkillCardError] = useState<string | null>(null);
@@ -261,6 +263,7 @@ export function SkillDetailPage({
 
   const isLoadingSkill = result === undefined;
   const skill = result?.skill;
+  const hasSkill = Boolean(skill);
   const owner = result?.owner ?? null;
   const latestVersion = (result?.latestVersion ?? null) as SkillDetailVersion | null;
   const latestVersionId = latestVersion?._id ?? null;
@@ -595,53 +598,36 @@ export function SkillDetailPage({
 
   useEffect(() => {
     let cancelled = false;
-    if (!skill) {
-      return () => {
-        cancelled = true;
-      };
-    }
+    if (!hasSkill) return undefined;
     if (!latestVersionId) {
-      setReadme(null);
-      setReadmeError(isGitHubBackedSkill ? null : "No SKILL.md available");
-      setLoadedReadmeVersionId(null);
-      return () => {
-        cancelled = true;
-      };
+      setReadmeResult({ text: null, error: isGitHubBackedSkill ? null : "No SKILL.md available" });
+      loadedReadmeVersionId.current = null;
+      return undefined;
     }
-    if (
-      latestVersionId &&
-      !(loadedReadmeVersionId === latestVersionId && (readme !== null || readmeError !== null))
-    ) {
-      setReadme(null);
-      setReadmeError(null);
-      setLoadedReadmeVersionId(latestVersionId);
+    if (loadedReadmeVersionId.current === latestVersionId) return undefined;
 
-      void getReadme({ versionId: latestVersionId })
-        .then((data) => {
-          if (cancelled) return;
-          setReadme(data.text);
-          setLoadedReadmeVersionId(latestVersionId);
-        })
-        .catch((error) => {
-          if (cancelled) return;
-          setReadmeError(error instanceof Error ? error.message : "Failed to load README");
-          setReadme(null);
-          setLoadedReadmeVersionId(latestVersionId);
+    // Published results must not restart and cancel their own request.
+    loadedReadmeVersionId.current = null;
+    setReadmeResult({ text: null, error: null });
+    void getReadme({ versionId: latestVersionId })
+      .then((data) => {
+        if (cancelled) return;
+        loadedReadmeVersionId.current = latestVersionId;
+        setReadmeResult({ text: data.text, error: null });
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        loadedReadmeVersionId.current = latestVersionId;
+        setReadmeResult({
+          text: null,
+          error: error instanceof Error ? error.message : "Failed to load README",
         });
-    }
+      });
 
     return () => {
       cancelled = true;
     };
-  }, [
-    getReadme,
-    isGitHubBackedSkill,
-    latestVersionId,
-    loadedReadmeVersionId,
-    readme,
-    readmeError,
-    skill,
-  ]);
+  }, [getReadme, hasSkill, isGitHubBackedSkill, latestVersionId]);
 
   useEffect(() => {
     let cancelled = false;
