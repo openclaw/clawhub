@@ -505,12 +505,23 @@ describe("built CLI artifact", () => {
 
       expect(result.status).toBe(0);
       expect(result.stderr).toBe("");
-      expect(JSON.parse(result.stdout)).toMatchObject({
-        status: "would-publish",
-        slug: "changed-skill",
-        version: "1.2.4",
-        latestVersion: "1.2.3",
-      });
+      expect(result.stdout).toBe(
+        `${JSON.stringify(
+          {
+            ok: true,
+            status: "would-publish",
+            slug: "changed-skill",
+            displayName: "Changed Skill",
+            folder: skillDir,
+            version: "1.2.4",
+            latestVersion: "1.2.3",
+            fileCount: 1,
+            fingerprint: "f5fde5e036293b04bcc2ba33a6d35ee187e18bc2691b03041c2f0139eb598945",
+          },
+          null,
+          2,
+        )}\n`,
+      );
       expect(requests.map((request) => request.method)).toEqual(["GET"]);
       expect(requests[0]?.path).toMatch(/^\/api\/v1\/resolve\?slug=changed-skill&hash=/);
     },
@@ -539,12 +550,23 @@ describe("built CLI artifact", () => {
 
       expect(result.status).toBe(0);
       expect(result.stderr).toBe("");
-      expect(JSON.parse(result.stdout)).toMatchObject({
-        status: "would-publish",
-        slug: "new-skill",
-        version: "1.0.0",
-        latestVersion: null,
-      });
+      expect(result.stdout).toBe(
+        `${JSON.stringify(
+          {
+            ok: true,
+            status: "would-publish",
+            slug: "new-skill",
+            displayName: "New Skill",
+            folder: skillDir,
+            version: "1.0.0",
+            latestVersion: null,
+            fileCount: 1,
+            fingerprint: "0b4e27097fb1a45461556163336bbd629421383f9c6d76191825a6f44c893060",
+          },
+          null,
+          2,
+        )}\n`,
+      );
     },
   );
 
@@ -1019,17 +1041,55 @@ describe("built CLI artifact", () => {
 
     expect(result.status).toBe(0);
     expect(result.stderr).toBe("");
-    const parsed = JSON.parse(result.stdout) as {
-      ok: boolean;
-      summary: { wouldPublish: number; alreadySynced: number };
-      wouldPublish: Array<{ slug: string; version: string; status: string }>;
-    };
-    expect(parsed.ok).toBe(true);
-    expect(parsed.summary).toMatchObject({ wouldPublish: 2, alreadySynced: 1 });
-    expect(parsed.wouldPublish.map((entry) => [entry.slug, entry.version, entry.status])).toEqual([
-      ["changed-skill", "1.2.4", "update"],
-      ["new-skill", "1.0.0", "new"],
-    ]);
+    expect(result.stdout).toBe(
+      `${JSON.stringify(
+        {
+          ok: true,
+          dryRun: true,
+          registry,
+          roots: [workdir, root],
+          summary: {
+            wouldPublish: 2,
+            published: 0,
+            submitted: 0,
+            alreadySynced: 1,
+            skipped: 0,
+            failed: 0,
+          },
+          wouldPublish: [
+            {
+              slug: "changed-skill",
+              displayName: "Changed Skill",
+              folder: join(root, "changed-skill"),
+              status: "update",
+              version: "1.2.4",
+              latestVersion: "1.2.3",
+              fileCount: 1,
+              fingerprint: "57c82c2242d086f6c58bba3808cb4c57238fdc602485f23b8405f03d480606f5",
+            },
+            {
+              slug: "new-skill",
+              displayName: "New Skill",
+              folder: join(root, "new-skill"),
+              status: "new",
+              version: "1.0.0",
+              latestVersion: null,
+              fileCount: 1,
+              fingerprint: "05f9244a4580ffeab845d772886c7a0b74bfd12fff748455ddc6c194918f8a37",
+            },
+          ],
+          published: [],
+          submitted: [],
+          alreadySynced: [
+            { slug: "synced-skill", folder: join(root, "synced-skill"), version: "1.0.0" },
+          ],
+          skipped: [],
+          failed: [],
+        },
+        null,
+        2,
+      )}\n`,
+    );
     expect(requests.map((request) => request.path)).not.toContain("/api/cli/telemetry/install");
   });
 

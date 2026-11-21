@@ -3,11 +3,10 @@ import { isAbsolute, resolve } from "node:path";
 import { isCancel, multiselect } from "@clack/prompts";
 import semver from "semver";
 import { resolveHome } from "../../homedir.js";
-import { apiRequest } from "../../http.js";
-import { ApiRoutes, ApiV1SkillResolveResponseSchema } from "../../schema/index.js";
 import { findSkillFolders, type SkillFolder } from "../scanSkills.js";
+import { resolveSkillVersion } from "../skillResolution.js";
 import type { GlobalOpts } from "../types.js";
-import { fail, formatError } from "../ui.js";
+import { fail } from "../ui.js";
 import type { Candidate, LocalSkill } from "./syncTypes.js";
 
 export function buildScanRoots(opts: GlobalOpts, extraRoots: string[] | undefined) {
@@ -53,39 +52,23 @@ export async function checkRegistrySyncState(
   ownerHandle?: string,
   token?: string,
 ): Promise<Candidate> {
-  try {
-    const params = new URLSearchParams({
-      slug: skill.slug,
-      hash: skill.fingerprint,
-    });
-    if (ownerHandle) params.set("ownerHandle", ownerHandle);
-    const resolved = await apiRequest(
-      registry,
-      {
-        method: "GET",
-        path: `${ApiRoutes.resolve}?${params.toString()}`,
-        token,
-      },
-      ApiV1SkillResolveResponseSchema,
-    );
-    const latestVersion = resolved.latestVersion?.version ?? null;
-    const matchVersion = resolved.match?.version ?? null;
-    if (!latestVersion) {
-      return { ...skill, status: "new", matchVersion: null, latestVersion: null };
-    }
-    return {
-      ...skill,
-      status: matchVersion ? "synced" : "update",
-      matchVersion,
-      latestVersion,
-    };
-  } catch (error) {
-    const message = formatError(error);
-    if (/skill not found/i.test(message) || /HTTP 404/i.test(message)) {
-      return { ...skill, status: "new", matchVersion: null, latestVersion: null };
-    }
-    throw error;
+  const params = new URLSearchParams({
+    slug: skill.slug,
+    hash: skill.fingerprint,
+  });
+  if (ownerHandle) params.set("ownerHandle", ownerHandle);
+  const resolved = await resolveSkillVersion(registry, params, token);
+  const latestVersion = resolved.latestVersion?.version ?? null;
+  const matchVersion = resolved.match?.version ?? null;
+  if (!latestVersion) {
+    return { ...skill, status: "new", matchVersion: null, latestVersion: null };
   }
+  return {
+    ...skill,
+    status: matchVersion ? "synced" : "update",
+    matchVersion,
+    latestVersion,
+  };
 }
 
 export async function scanRootsWithLabels(roots: string[]) {
