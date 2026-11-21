@@ -212,55 +212,50 @@ const TOPIC_CANONICAL_LABELS = new Map([
   ["youtube", "YouTube"],
 ]);
 
-const STRONG_CONTRACT_VALUE_KEYS = new Set([
-  "speechProviders",
-  "realtimeTranscriptionProviders",
-  "realtimeVoiceProviders",
-  "voiceProviders",
-  "mediaUnderstandingProviders",
-  "transcriptSourceProviders",
-  "documentExtractors",
-  "imageGenerationProviders",
-  "videoGenerationProviders",
-  "musicGenerationProviders",
-  "webContentExtractors",
-  "webFetchProviders",
-  "webSearchProviders",
-  "webSearch",
-  "embeddingProviders",
-  "memoryEmbeddingProviders",
-  "memoryCorpusSupplements",
-  "externalAuthProviders",
-]);
+const CONTRACT_CLASSIFICATIONS = [
+  ["tools", "tools"],
+  ["commands", "tools", "CLI"],
+  ["mcpServers", "tools", "MCP"],
+  ["cli", "tools"],
+  ["speechProviders", "voice", "Text-to-Speech", true],
+  ["realtimeTranscriptionProviders", "voice", "Speech-to-Text", true],
+  ["realtimeVoiceProviders", "voice", "Voice Calls", true],
+  ["voiceProviders", "voice", "Voice", true],
+  ["mediaUnderstandingProviders", "media", "Media Understanding", true],
+  ["transcriptSourceProviders", "media", "Transcription", true],
+  ["documentExtractors", "media", "Document Extraction", true],
+  ["imageGenerationProviders", "media", "Image Generation", true],
+  ["videoGenerationProviders", "media", "Video Generation", true],
+  ["musicGenerationProviders", "media", "Music Generation", true],
+  ["webContentExtractors", "web", "Web Extraction", true],
+  ["webFetchProviders", "web", "Web Fetch", true],
+  ["webSearchProviders", "web", "Web Search", true],
+  ["webSearch", "web", "Web Search", true],
+  ["embeddingProviders", "memory", "Embeddings", true],
+  ["memoryEmbeddingProviders", "memory", "Embeddings", true],
+  ["memoryCorpusSupplements", "memory", "Knowledge Retrieval", true],
+  ["externalAuthProviders", "security", "Authentication", true],
+  ["trustedToolPolicies", "security", "Policy Enforcement"],
+  ["migrationProviders", "gateway", "Migrations"],
+  ["gatewayMethodDispatch", "gateway", "Gateway Extensions"],
+  ["routes", "gateway", "Routing"],
+  ["embeddedExtensionFactories", "runtime"],
+  ["agentToolResultMiddleware", "runtime", "Middleware"],
+  ["hooks", "runtime", "Hooks"],
+];
 
-const CONTRACT_TOPIC_LABELS = {
-  commands: "CLI",
-  mcpServers: "MCP",
-  speechProviders: "Text-to-Speech",
-  realtimeTranscriptionProviders: "Speech-to-Text",
-  realtimeVoiceProviders: "Voice Calls",
-  voiceProviders: "Voice",
-  mediaUnderstandingProviders: "Media Understanding",
-  transcriptSourceProviders: "Transcription",
-  documentExtractors: "Document Extraction",
-  imageGenerationProviders: "Image Generation",
-  videoGenerationProviders: "Video Generation",
-  musicGenerationProviders: "Music Generation",
-  webContentExtractors: "Web Extraction",
-  webFetchProviders: "Web Fetch",
-  webSearchProviders: "Web Search",
-  webSearch: "Web Search",
-  embeddingProviders: "Embeddings",
-  memoryEmbeddingProviders: "Embeddings",
-  memoryCorpusSupplements: "Knowledge Retrieval",
-  externalAuthProviders: "Authentication",
-  trustedToolPolicies: "Policy Enforcement",
-  migrationProviders: "Migrations",
-  gatewayMethodDispatch: "Gateway Extensions",
-  routes: "Routing",
-  agentToolResultMiddleware: "Middleware",
-  hooks: "Hooks",
-};
+const CONTRACT_CATEGORY = Object.fromEntries(
+  CONTRACT_CLASSIFICATIONS.map(([key, category]) => [key, category]),
+);
+const CONTRACT_TOPIC_LABELS = Object.fromEntries(
+  CONTRACT_CLASSIFICATIONS.filter(([, , topic]) => topic !== undefined).map(([key, , topic]) => [
+    key,
+    topic,
+  ]),
+);
+const STRONG_CONTRACT_VALUE_KEYS = new Set(
+  CONTRACT_CLASSIFICATIONS.filter(([, , , strong]) => strong).map(([key]) => key),
+);
 
 const PLUGIN_CATEGORY_PRIORITY = {
   memory: 1000,
@@ -274,45 +269,6 @@ const PLUGIN_CATEGORY_PRIORITY = {
   security: 670,
   runtime: 660,
   tools: 650,
-};
-
-const CONTRACT_CATEGORY = {
-  tools: "tools",
-  commands: "tools",
-  mcpServers: "tools",
-  cli: "tools",
-
-  speechProviders: "voice",
-  realtimeTranscriptionProviders: "voice",
-  realtimeVoiceProviders: "voice",
-  voiceProviders: "voice",
-
-  mediaUnderstandingProviders: "media",
-  transcriptSourceProviders: "media",
-  documentExtractors: "media",
-  imageGenerationProviders: "media",
-  videoGenerationProviders: "media",
-  musicGenerationProviders: "media",
-
-  webContentExtractors: "web",
-  webFetchProviders: "web",
-  webSearchProviders: "web",
-  webSearch: "web",
-
-  embeddingProviders: "memory",
-  memoryEmbeddingProviders: "memory",
-  memoryCorpusSupplements: "memory",
-
-  externalAuthProviders: "security",
-  trustedToolPolicies: "security",
-
-  migrationProviders: "gateway",
-  gatewayMethodDispatch: "gateway",
-  routes: "gateway",
-
-  embeddedExtensionFactories: "runtime",
-  agentToolResultMiddleware: "runtime",
-  hooks: "runtime",
 };
 
 const PLUGIN_KIND_CATEGORY = {
