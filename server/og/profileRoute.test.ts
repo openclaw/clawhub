@@ -14,6 +14,7 @@ const getPublisherFontBuffersMock = vi.fn();
 const buildPublisherOgSvgMock = vi.fn();
 const renderAsPngMock = vi.fn();
 const freeMock = vi.fn();
+const imageFreeMock = vi.fn();
 const resvgCtorMock = vi.fn();
 
 class ResvgMockClass {
@@ -22,7 +23,7 @@ class ResvgMockClass {
   }
 
   render() {
-    return { asPng: renderAsPngMock };
+    return { asPng: renderAsPngMock, free: imageFreeMock };
   }
 
   free() {
@@ -80,6 +81,7 @@ beforeEach(() => {
   buildPublisherOgSvgMock.mockReset();
   renderAsPngMock.mockReset();
   freeMock.mockReset();
+  imageFreeMock.mockReset();
   resvgCtorMock.mockReset();
 
   getClawHubLogoDataUrlMock.mockResolvedValue("data:image/png;base64,TE9HTw==");

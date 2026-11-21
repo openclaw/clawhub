@@ -13,6 +13,7 @@ const getFontBuffersMock = vi.fn();
 const buildPluginOgSvgMock = vi.fn();
 const renderAsPngMock = vi.fn();
 const freeMock = vi.fn();
+const imageFreeMock = vi.fn();
 const resvgCtorMock = vi.fn();
 
 class ResvgMockClass {
@@ -21,7 +22,7 @@ class ResvgMockClass {
   }
 
   render() {
-    return { asPng: renderAsPngMock };
+    return { asPng: renderAsPngMock, free: imageFreeMock };
   }
 
   free() {
@@ -73,6 +74,7 @@ beforeEach(() => {
   buildPluginOgSvgMock.mockReset();
   renderAsPngMock.mockReset();
   freeMock.mockReset();
+  imageFreeMock.mockReset();
   resvgCtorMock.mockReset();
 
   getMarkDataUrlMock.mockResolvedValue("data:image/png;base64,AAA=");

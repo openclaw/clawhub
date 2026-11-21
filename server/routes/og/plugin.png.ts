@@ -1,12 +1,9 @@
-import { Resvg } from "@resvg/resvg-wasm";
 import { defineEventHandler, getQuery, getRequestHost, setHeader } from "h3";
 import { fetchImageDataUrl } from "../../og/fetchImageDataUrl";
 import { fetchPluginOgMeta } from "../../og/fetchPluginOgMeta";
 import { resolveOgDownloadsDisplay } from "../../og/formatOgStats";
 import {
   ensureResvgWasm,
-  FONT_MONO,
-  FONT_SANS,
   getFontBuffers,
   getMarkDataUrl,
   getWatermarkDataUrl,
@@ -96,16 +93,5 @@ export default defineEventHandler(async (event) => {
     ],
   });
 
-  const resvg = new Resvg(svg, {
-    fitTo: { mode: "width", value: 1200 },
-    font: {
-      fontBuffers,
-      defaultFontFamily: FONT_SANS,
-      sansSerifFamily: FONT_SANS,
-      monospaceFamily: FONT_MONO,
-    },
-  });
-  const png = resvg.render().asPng();
-  resvg.free();
-  return pngResponse(png, cacheKey);
+  return pngResponse(svg, fontBuffers, cacheKey, { mode: "width", value: 1200 });
 });

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Link previews: release the rendered image and renderer after PNG generation, including when rendering fails.
+
 - Browser tests: start the local preview on `PLAYWRIGHT_PORT` so custom-port runs probe the same server they launch.
 
 - Developer workers: keep shutdown handling with the worker runner when it loads environment files, so an unrelated worktree handler cannot exit first.

@@ -1,16 +1,9 @@
-import { Resvg } from "@resvg/resvg-wasm";
 import { defineEventHandler, getQuery, setHeader } from "h3";
 import { fetchImageDataUrl, fetchPublisherProfileImageDataUrl } from "../../og/fetchImageDataUrl";
 import { fetchPublisherOgMeta } from "../../og/fetchPublisherOgMeta";
 import { readOgDownloadsQuery, resolveOgDownloadsDisplay } from "../../og/formatOgStats";
 import { normalizeOgLogoDataUrl } from "../../og/normalizeLogoDataUrl";
-import {
-  ensureResvgWasm,
-  FONT_MONO,
-  FONT_SANS,
-  getClawHubLogoDataUrl,
-  getPublisherFontBuffers,
-} from "../../og/ogAssets";
+import { ensureResvgWasm, getClawHubLogoDataUrl, getPublisherFontBuffers } from "../../og/ogAssets";
 import { cleanString } from "../../og/ogRequest";
 import { pngResponse } from "../../og/pngResponse";
 import { buildPublisherOgSvg } from "../../og/publisherOgSvg";
@@ -124,16 +117,5 @@ export default defineEventHandler(async (event) => {
     stats: [buildOgDownloadsStat(resolveOgDownloadsDisplay(statsQuery, meta?.stats.downloads))],
   });
 
-  const resvg = new Resvg(svg, {
-    fitTo: { mode: "width", value: 1200 },
-    font: {
-      fontBuffers,
-      defaultFontFamily: FONT_SANS,
-      sansSerifFamily: FONT_SANS,
-      monospaceFamily: FONT_MONO,
-    },
-  });
-  const png = resvg.render().asPng();
-  resvg.free();
-  return pngResponse(png, "public, max-age=3600");
+  return pngResponse(svg, fontBuffers, "public, max-age=3600", { mode: "width", value: 1200 });
 });
