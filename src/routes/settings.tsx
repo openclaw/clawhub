@@ -42,7 +42,6 @@ import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { EmptyState } from "../components/EmptyState";
-import { copyText } from "../components/InstallCopyButton";
 import { MarketplaceIcon } from "../components/MarketplaceIcon";
 import { SignInPrompt } from "../components/SignInPrompt";
 import { SettingsSkeleton } from "../components/skeletons/ProtectedPageSkeletons";
@@ -70,6 +69,7 @@ import {
 import { Separator } from "../components/ui/separator";
 import { Textarea } from "../components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "../components/ui/toggle-group";
+import { copyText } from "../lib/clipboard";
 import { getUserFacingConvexError } from "../lib/convexError";
 import { useThemeMode } from "../lib/theme";
 import { timeAgo } from "../lib/timeAgo";

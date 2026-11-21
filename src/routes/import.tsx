@@ -35,7 +35,6 @@ import {
   CatalogMetadataFields,
   parseCatalogTopicsInput,
 } from "../components/CatalogMetadataFields";
-import { copyText } from "../components/InstallCopyButton";
 import { Container } from "../components/layout/Container";
 import { SignInPrompt } from "../components/SignInPrompt";
 import { ImportGitHubSkeleton } from "../components/skeletons/ProtectedPageSkeletons";
@@ -44,6 +43,7 @@ import { Card, CardContent, CardTitle } from "../components/ui/card";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../components/ui/tooltip";
+import { copyText } from "../lib/clipboard";
 import { getUserFacingConvexError } from "../lib/convexError";
 import { getClawHubSiteUrl, getPublicClawHubSiteUrl, SITE_NAME } from "../lib/site";
 import { getPublicSlugCollision } from "../lib/slugCollision";
