@@ -1,18 +1,17 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import type {
+  PackageAigAnalysis as AigAnalysis,
+  PackageSkillSpectorAnalysis as SkillSpectorAnalysis,
+} from "clawhub-schema";
 import { unzipSync } from "fflate";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildSecurityAuditExportEntries,
   buildSecurityAuditExportZip,
 } from "../lib/securityAuditExport";
+import { getSkillSpectorIssueCount, type LlmAnalysis } from "./securityAuditModel";
 import { SecurityAuditPage } from "./SecurityAuditPage";
-import {
-  getSkillSpectorIssueCount,
-  SkillSpectorFindings,
-  type AigAnalysis,
-  type LlmAnalysis,
-  type SkillSpectorAnalysis,
-} from "./SkillSecurityScanResults";
+import { SkillSpectorFindings } from "./SkillSecurityScanResults";
 
 const clawScanAnalysis: LlmAnalysis = {
   status: "suspicious",

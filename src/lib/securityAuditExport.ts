@@ -1,10 +1,10 @@
-import type { PackageEndorAnalysis } from "clawhub-schema";
-import { strToU8, zipSync } from "fflate";
 import type {
-  AigAnalysis,
-  LlmAnalysis,
-  SkillSpectorAnalysis,
-} from "../components/SkillSecurityScanResults";
+  PackageEndorAnalysis,
+  PackageAigAnalysis as AigAnalysis,
+  PackageSkillSpectorAnalysis as SkillSpectorAnalysis,
+} from "clawhub-schema";
+import { strToU8, zipSync } from "fflate";
+import type { LlmAnalysis } from "../components/securityAuditModel";
 
 type SecurityAuditExportEntity = {
   kind: "skill" | "plugin" | "template";

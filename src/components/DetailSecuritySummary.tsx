@@ -1,7 +1,12 @@
 import { Info } from "lucide-react";
 import { useId } from "react";
-import { aggregateAuditVerdict, SECURITY_AUDIT_SUBTEXT } from "./securityAuditModel";
-import { getScanStatusInfo, type LlmAnalysis } from "./SkillSecurityScanResults";
+import {
+  aggregateAuditVerdict,
+  SECURITY_AUDIT_SUBTEXT,
+  getScanStatusInfo,
+  auditVerdictMeterLevel,
+  type LlmAnalysis,
+} from "./securityAuditModel";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 
 type DetailSecuritySummaryProps = {
@@ -10,23 +15,6 @@ type DetailSecuritySummaryProps = {
   githubScanStatus?: string | null;
   description?: string;
 };
-
-export function auditVerdictMeterLevel(status: string) {
-  switch (status.toLowerCase()) {
-    case "malicious":
-      return 1;
-    case "warn":
-    case "warning":
-    case "suspicious":
-    case "review":
-      return 2;
-    case "benign":
-    case "clean":
-      return 3;
-    default:
-      return 0;
-  }
-}
 
 export function DetailSecuritySummary({
   auditHref,

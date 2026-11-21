@@ -13,10 +13,9 @@ import {
   skillArtifactStatus,
   type ArtifactDisplayStatus,
 } from "../artifacts/artifactStatus";
-import { auditVerdictMeterLevel } from "../DetailSecuritySummary";
 import { MarketplaceIcon } from "../MarketplaceIcon";
+import { auditVerdictMeterLevel, getScanStatusInfo } from "../securityAuditModel";
 import { buildSkillHref } from "../skillDetailUtils";
-import { getScanStatusInfo } from "../SkillSecurityScanResults";
 import { skillVisibilityStatus } from "./artifactStatusLabels";
 import { CatalogRowMenu } from "./CatalogRowMenu";
 import type {

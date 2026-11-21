@@ -3,8 +3,21 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { DetailSecuritySummary } from "./DetailSecuritySummary";
+import { auditVerdictMeterLevel, getScanStatusInfo } from "./securityAuditModel";
 
 describe("DetailSecuritySummary", () => {
+  it.each([
+    ["critical", "Critical"],
+    ["high", "High"],
+  ])("keeps the %s badge distinct from the verdict meter", (status, label) => {
+    expect(getScanStatusInfo(status)).toEqual({
+      label,
+      className: "scan-status-malicious",
+      badgeVariant: "destructive",
+    });
+    expect(auditVerdictMeterLevel(status)).toBe(0);
+  });
+
   it("shows the audit verdict and full audit link in the compact sidebar row", () => {
     render(
       <DetailSecuritySummary
