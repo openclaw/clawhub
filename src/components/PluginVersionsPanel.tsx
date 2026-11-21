@@ -2,12 +2,11 @@ import type { ApiV1PackageVersionListResponse } from "clawhub-schema";
 import { useMutation, usePaginatedQuery } from "convex/react";
 import { Download } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import { emitAnalytics } from "../lib/analyticsEvents";
-import { getUserFacingConvexError } from "../lib/convexError";
 import { fetchPackageVersions } from "../lib/packageApi";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
+import { useVersionWithdrawal } from "../lib/useVersionWithdrawal";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { VersionChangelog } from "./VersionChangelog";
@@ -81,17 +80,34 @@ export function PluginVersionsPanel({
   const [nextCursor, setNextCursor] = useState(versions?.nextCursor ?? null);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
-  const [deletingVersion, setDeletingVersion] = useState<string | null>(null);
-  const [restoringVersion, setRestoringVersion] = useState<string | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [isRestoring, setIsRestoring] = useState(false);
-  const [withdrawnVersions, setWithdrawnVersions] = useState<Set<string>>(() => new Set());
-  const [restoredVersions, setRestoredVersions] = useState<Set<string>>(() => new Set());
   const [expandedVersions, setExpandedVersions] = useState<Set<string>>(() => new Set());
   const loadMoreInFlightRef = useRef(false);
   const loadMoreAbortControllerRef = useRef<AbortController | null>(null);
   const requestGenerationRef = useRef(0);
   const visibleReleases = mergePluginVersions(releases, managerVersions);
+
+  const refreshMetadata = () => {
+    void (async () => {
+      try {
+        await onVersionDeleted?.();
+      } catch {
+        // Local visibility already reflects the change; a later route refresh can retry metadata.
+      }
+    })();
+  };
+  const withdrawal = useVersionWithdrawal({
+    deleteVersion: (version: string) => deleteOwnedRelease({ name: packageName, version }),
+    restoreVersion: (version: string) => restoreOwnedRelease({ name: packageName, version }),
+    onChanged: refreshMetadata,
+    onRestored: (version) => {
+      // The completion callback retains the release list from the confirming render.
+      const restoredRelease = visibleReleases.find((release) => release.version === version);
+      if (restoredRelease) {
+        setReleases((current) => mergePluginVersions(current, [restoredRelease]));
+      }
+    },
+  });
+  const { reset: resetWithdrawal } = withdrawal;
 
   useEffect(() => {
     loadMoreAbortControllerRef.current?.abort();
@@ -101,15 +117,10 @@ export function PluginVersionsPanel({
     setNextCursor(versions?.nextCursor ?? null);
     setIsLoadingMore(false);
     setLoadMoreError(null);
-    setDeletingVersion(null);
-    setRestoringVersion(null);
-    setIsDeleting(false);
-    setIsRestoring(false);
-    setWithdrawnVersions(new Set());
-    setRestoredVersions(new Set());
+    resetWithdrawal();
     setExpandedVersions(new Set());
     return () => loadMoreAbortControllerRef.current?.abort();
-  }, [packageName, versions]);
+  }, [packageName, versions, resetWithdrawal]);
 
   const toggleVersion = (version: string) => {
     setExpandedVersions((current) => {
@@ -155,72 +166,6 @@ export function PluginVersionsPanel({
           loadMoreAbortControllerRef.current = null;
         }
       }
-    }
-  };
-
-  const handleDelete = async () => {
-    if (!deletingVersion) return;
-    const requestGeneration = requestGenerationRef.current;
-    const version = deletingVersion;
-    setIsDeleting(true);
-    try {
-      await deleteOwnedRelease({ name: packageName, version });
-      if (requestGeneration !== requestGenerationRef.current) return;
-      setWithdrawnVersions((current) => new Set(current).add(version));
-      setRestoredVersions((current) => {
-        const next = new Set(current);
-        next.delete(version);
-        return next;
-      });
-      toast.success(`Deleted version ${version}.`);
-      setDeletingVersion(null);
-      void (async () => {
-        try {
-          await onVersionDeleted?.();
-        } catch {
-          // The deleted row is already removed locally; a later route refresh can retry metadata.
-        }
-      })();
-    } catch (error) {
-      if (requestGeneration !== requestGenerationRef.current) return;
-      toast.error(getUserFacingConvexError(error, "Version could not be deleted. Try again."));
-    } finally {
-      if (requestGeneration === requestGenerationRef.current) setIsDeleting(false);
-    }
-  };
-
-  const handleRestore = async () => {
-    if (!restoringVersion) return;
-    const requestGeneration = requestGenerationRef.current;
-    const version = restoringVersion;
-    const restoredRelease = visibleReleases.find((release) => release.version === version);
-    setIsRestoring(true);
-    try {
-      await restoreOwnedRelease({ name: packageName, version });
-      if (requestGeneration !== requestGenerationRef.current) return;
-      setWithdrawnVersions((current) => {
-        const next = new Set(current);
-        next.delete(version);
-        return next;
-      });
-      setRestoredVersions((current) => new Set(current).add(version));
-      if (restoredRelease) {
-        setReleases((current) => mergePluginVersions(current, [restoredRelease]));
-      }
-      toast.success(`Restored version ${version}.`);
-      setRestoringVersion(null);
-      void (async () => {
-        try {
-          await onVersionDeleted?.();
-        } catch {
-          // Local state already reflects the restore; a later route refresh can retry metadata.
-        }
-      })();
-    } catch (error) {
-      if (requestGeneration !== requestGenerationRef.current) return;
-      toast.error(getUserFacingConvexError(error, "Version could not be restored. Try again."));
-    } finally {
-      if (requestGeneration === requestGenerationRef.current) setIsRestoring(false);
     }
   };
 
@@ -274,9 +219,8 @@ export function PluginVersionsPanel({
                 const hasLatestTag = release.distTags?.includes("latest");
                 const isLatest = release.version === latestVersion || hasLatestTag;
                 const isWithdrawn =
-                  !restoredVersions.has(release.version) &&
-                  (withdrawnVersions.has(release.version) ||
-                    (release.softDeletedAt !== undefined && release.ownerDeletedAt !== undefined));
+                  withdrawal.overrides.get(release.version) ??
+                  (release.softDeletedAt !== undefined && release.ownerDeletedAt !== undefined);
                 const isExpanded = expandedVersions.has(release.version);
                 const changelogId = `version-changelog-${release.version}`;
                 return (
@@ -345,7 +289,9 @@ export function PluginVersionsPanel({
                             variant="destructive"
                             size="sm"
                             aria-label={`Delete version ${release.version}`}
-                            onClick={() => setDeletingVersion(release.version)}
+                            onClick={() =>
+                              withdrawal.requestDelete(release.version, release.version)
+                            }
                           >
                             Delete
                           </Button>
@@ -356,7 +302,9 @@ export function PluginVersionsPanel({
                             variant="outline"
                             size="sm"
                             aria-label={`Restore version ${release.version}`}
-                            onClick={() => setRestoringVersion(release.version)}
+                            onClick={() =>
+                              withdrawal.requestRestore(release.version, release.version)
+                            }
                           >
                             Restore
                           </Button>
@@ -396,22 +344,8 @@ export function PluginVersionsPanel({
           </div>
         )}
       </div>
-      <VersionDeleteDialog
-        version={deletingVersion}
-        isDeleting={isDeleting}
-        onCancel={() => setDeletingVersion(null)}
-        onConfirm={() => {
-          void handleDelete();
-        }}
-      />
-      <VersionRestoreDialog
-        version={restoringVersion}
-        isRestoring={isRestoring}
-        onCancel={() => setRestoringVersion(null)}
-        onConfirm={() => {
-          void handleRestore();
-        }}
-      />
+      <VersionDeleteDialog {...withdrawal.deleteDialog} />
+      <VersionRestoreDialog {...withdrawal.restoreDialog} />
     </>
   );
 }
