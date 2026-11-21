@@ -1,12 +1,9 @@
 import { ConvexError } from "convex/values";
 import { internal } from "../_generated/api";
 import type { ActionCtx } from "../_generated/server";
-import {
-  collectFeaturedEvidence,
-  renderFeaturedEvidence,
-  type FeaturedEvidence,
-} from "../featuredIntelligence";
+import { collectFeaturedEvidence } from "../featuredIntelligence";
 import { readReport } from "../searchInsights";
+import { renderFeaturedEvidence, type FeaturedEvidence } from "./featuredIntelligence";
 import type { SearchCurrentResult, SearchInsightReport } from "./searchInsights";
 import type { ReportRequest } from "./searchReportContract";
 

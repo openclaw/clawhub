@@ -5,12 +5,11 @@ import type { ActionCtx } from "./_generated/server";
 import { action, internalAction, internalQuery } from "./functions";
 import { assertModerator, requireUserFromAction } from "./lib/access";
 import {
-  recommendFeatured,
+  renderFeaturedEvidence,
+  type FeaturedIntelligenceReport,
+  type FeaturedEvidence,
+  type AdoptionReport,
   type AdoptionArtifact,
-  type AdoptionSummary,
-  type CurrentFeaturedArtifact,
-  type EditorialSelection,
-  type RecommendationArtifact,
 } from "./lib/featuredIntelligence";
 import {
   SEARCH_DAY_MS,
@@ -19,7 +18,6 @@ import {
   searchScope,
   type SearchArtifactKind,
   type SearchInsightArgs,
-  type SearchInsightReport,
 } from "./lib/searchInsights";
 import { readReport as readSearchReport } from "./searchInsights";
 
@@ -33,13 +31,6 @@ const args = {
   limit: v.optional(v.number()),
 };
 
-export type FeaturedIntelligenceReport = {
-  searchReport: SearchInsightReport;
-  recommendations: ReturnType<typeof recommendFeatured>;
-  adoption: AdoptionSummary;
-  metadataCheckedAt: number | null;
-};
-
 export const get = action({
   args,
   handler: async (ctx, input): Promise<FeaturedIntelligenceReport> => {
@@ -50,16 +41,6 @@ export const get = action({
 });
 
 export const getInternal = internalAction({ args, handler: readReport });
-
-export type FeaturedEvidence = {
-  searchReport: SearchInsightReport;
-  currentFeatured: CurrentFeaturedArtifact[];
-  adoption: AdoptionReport;
-  metadataCheckedAt: number;
-  editorial: EditorialSelection;
-  editorialArtifacts: RecommendationArtifact[];
-  currentEditorialRevision: number;
-};
 
 async function readReport(
   ctx: ActionCtx,
@@ -104,36 +85,6 @@ export async function collectFeaturedEvidence(
     ),
   };
 }
-
-export function renderFeaturedEvidence(
-  evidence: FeaturedEvidence,
-  limit: number,
-): FeaturedIntelligenceReport {
-  const { searchReport, currentFeatured, adoption, metadataCheckedAt } = evidence;
-  return {
-    searchReport,
-    recommendations: recommendFeatured({
-      artifactKind: searchReport.artifactKind,
-      editorial: evidence.editorial,
-      editorialArtifacts: evidence.editorialArtifacts,
-      currentEditorialRevision: evidence.currentEditorialRevision,
-      rows: searchReport.rows,
-      adoption: adoption.artifacts,
-      window: searchReport.window,
-      coverage: searchReport.coverage,
-      limit,
-      currentFeatured,
-    }),
-    adoption: adoption.summary,
-    metadataCheckedAt,
-  };
-}
-
-export type AdoptionReport = {
-  summary: AdoptionSummary;
-  artifacts: AdoptionArtifact[];
-  metadataCheckedAt: number;
-};
 
 const MONTHLY_RANKING_VERSION = "featured-installs-30d-v1";
 type InstallTotal = {

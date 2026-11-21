@@ -2,9 +2,9 @@ import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { renderFeaturedEvidence } from "./featuredIntelligence";
 import { internalMutation, internalQuery, mutation, query } from "./functions";
 import { assertModerator, requireUser } from "./lib/access";
+import { renderFeaturedEvidence } from "./lib/featuredIntelligence";
 import { FEATURED_CATALOG_SIZE } from "./lib/featuredPolicy";
 import {
   FEATURED_EDITORIAL_SLOTS,

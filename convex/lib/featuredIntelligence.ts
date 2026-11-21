@@ -4,6 +4,7 @@ import {
   FEATURED_EDITORIAL_SLOTS,
   type EditorialSelection as EditorialItem,
 } from "./featuredSelections";
+import type { SearchInsightReport } from "./searchInsights";
 export type RecommendationArtifact = {
   id: string;
   artifactKind: "plugin" | "skill";
@@ -306,3 +307,50 @@ export function recommendFeatured(params: {
     excluded,
   };
 }
+
+export type FeaturedIntelligenceReport = {
+  searchReport: SearchInsightReport;
+  recommendations: ReturnType<typeof recommendFeatured>;
+  adoption: AdoptionSummary;
+  metadataCheckedAt: number | null;
+};
+
+export type FeaturedEvidence = {
+  searchReport: SearchInsightReport;
+  currentFeatured: CurrentFeaturedArtifact[];
+  adoption: AdoptionReport;
+  metadataCheckedAt: number;
+  editorial: EditorialSelection;
+  editorialArtifacts: RecommendationArtifact[];
+  currentEditorialRevision: number;
+};
+
+export function renderFeaturedEvidence(
+  evidence: FeaturedEvidence,
+  limit: number,
+): FeaturedIntelligenceReport {
+  const { searchReport, currentFeatured, adoption, metadataCheckedAt } = evidence;
+  return {
+    searchReport,
+    recommendations: recommendFeatured({
+      artifactKind: searchReport.artifactKind,
+      editorial: evidence.editorial,
+      editorialArtifacts: evidence.editorialArtifacts,
+      currentEditorialRevision: evidence.currentEditorialRevision,
+      rows: searchReport.rows,
+      adoption: adoption.artifacts,
+      window: searchReport.window,
+      coverage: searchReport.coverage,
+      limit,
+      currentFeatured,
+    }),
+    adoption: adoption.summary,
+    metadataCheckedAt,
+  };
+}
+
+export type AdoptionReport = {
+  summary: AdoptionSummary;
+  artifacts: AdoptionArtifact[];
+  metadataCheckedAt: number;
+};
