@@ -76,6 +76,7 @@ import type * as lib_apiTokenAuth from "../lib/apiTokenAuth.js";
 import type * as lib_applicationModelPolicy from "../lib/applicationModelPolicy.js";
 import type * as lib_archiveManifest from "../lib/archiveManifest.js";
 import type * as lib_artifactModeration from "../lib/artifactModeration.js";
+import type * as lib_badgeWrites from "../lib/badgeWrites.js";
 import type * as lib_badges from "../lib/badges.js";
 import type * as lib_batching from "../lib/batching.js";
 import type * as lib_bundlePaths from "../lib/bundlePaths.js";
@@ -461,6 +462,7 @@ declare const fullApi: ApiFromModules<{
   "lib/applicationModelPolicy": typeof lib_applicationModelPolicy;
   "lib/archiveManifest": typeof lib_archiveManifest;
   "lib/artifactModeration": typeof lib_artifactModeration;
+  "lib/badgeWrites": typeof lib_badgeWrites;
   "lib/badges": typeof lib_badges;
   "lib/batching": typeof lib_batching;
   "lib/bundlePaths": typeof lib_bundlePaths;

@@ -41,6 +41,7 @@ import {
   appendSkillModerationEventLog,
 } from "./lib/artifactModeration";
 import { getSkillBadgeMap, getSkillBadgeMaps, isSkillHighlighted } from "./lib/badges";
+import { upsertSkillBadge, removeSkillBadge, setSkillFeaturedForActor } from "./lib/badgeWrites";
 import { scheduleNextBatchIfNeeded } from "./lib/batching";
 import {
   type CatalogTextMatch as SkillCatalogSearchMatch,
@@ -54,7 +55,6 @@ import {
   getActivityTrendRangeForEndDay,
 } from "./lib/downloadTrend";
 import { embeddingVisibilityFor } from "./lib/embeddingVisibility";
-import { assertFeaturedCapacity } from "./lib/featuredPolicy";
 import { storedFilesValidator } from "./lib/fileValidators";
 import {
   canHealSkillOwnershipByGitHubProviderAccountId,
@@ -156,11 +156,7 @@ import {
   readSkillPublicationProgress,
   readSkillVersionPublicationProgress,
 } from "./lib/skillPublicationProgress";
-import {
-  publishVersionForUser,
-  queueHighlightedWebhook,
-  type SkillPublishResult,
-} from "./lib/skillPublish";
+import { publishVersionForUser, type SkillPublishResult } from "./lib/skillPublish";
 import {
   qualityAssessmentValidator,
   type StoredQualityAssessment,
@@ -1691,8 +1687,6 @@ type DashboardSkillListItem = {
   updatedAt: number;
 };
 
-type BadgeKind = Doc<"skillBadges">["kind"];
-
 async function buildPublicSkillEntries(
   ctx: QueryCtx,
   skills: HydratableSkill[],
@@ -2038,56 +2032,6 @@ async function loadHighlightedSkills(ctx: QueryCtx, limit: number) {
   }
 
   return skills;
-}
-
-async function upsertSkillBadge(
-  ctx: MutationCtx,
-  skillId: Id<"skills">,
-  kind: BadgeKind,
-  userId: Id<"users">,
-  at: number,
-) {
-  const existing = await ctx.db
-    .query("skillBadges")
-    .withIndex("by_skill_kind", (q) => q.eq("skillId", skillId).eq("kind", kind))
-    .unique();
-  if (existing) {
-    await ctx.db.patch(existing._id, { byUserId: userId, at });
-  } else {
-    if (kind === "highlighted") await assertFeaturedCapacity(ctx, "skill");
-    await ctx.db.insert("skillBadges", {
-      skillId,
-      kind,
-      byUserId: userId,
-      at,
-    });
-  }
-  // Keep denormalized badges field on skill doc in sync
-  const skill = await ctx.db.get(skillId);
-  if (skill) {
-    await ctx.db.patch(skillId, {
-      badges: {
-        ...(skill.badges as Record<string, unknown> | undefined),
-        [kind]: { byUserId: userId, at },
-      },
-    });
-  }
-}
-
-async function removeSkillBadge(ctx: MutationCtx, skillId: Id<"skills">, kind: BadgeKind) {
-  const existing = await ctx.db
-    .query("skillBadges")
-    .withIndex("by_skill_kind", (q) => q.eq("skillId", skillId).eq("kind", kind))
-    .unique();
-  if (existing) {
-    await ctx.db.delete(existing._id);
-  }
-  // Keep denormalized badges field on skill doc in sync
-  const skill = await ctx.db.get(skillId);
-  if (skill) {
-    const { [kind]: _, ...remainingBadges } = (skill.badges ?? {}) as Record<string, unknown>;
-    await ctx.db.patch(skillId, { badges: remainingBadges });
-  }
 }
 
 export const getGitHubScanForAudit = query({
@@ -8839,48 +8783,6 @@ export const setBatch = mutation({
     await setSkillFeaturedForActor(ctx, user, skill, nextBatch);
   },
 });
-
-export async function setSkillFeaturedForActor(
-  ctx: MutationCtx,
-  actor: Doc<"users">,
-  skill: Doc<"skills">,
-  nextBatch: string | undefined,
-  notify = true,
-) {
-  const existingBadges = await getSkillBadgeMap(ctx, skill._id);
-  const previousHighlighted = isSkillHighlighted({ badges: existingBadges });
-  const featured = nextBatch === "highlighted";
-  const result = { ok: true as const, featured, skillId: skill._id, slug: skill.slug };
-  // Keeping a selection must preserve its timestamp, ordering and notifications.
-  if (featured && previousHighlighted) return result;
-  if (!featured && !previousHighlighted && nextBatch === skill.batch) return result;
-  const now = Date.now();
-
-  if (featured) {
-    await upsertSkillBadge(ctx, skill._id, "highlighted", actor._id, now);
-  } else {
-    await removeSkillBadge(ctx, skill._id, "highlighted");
-  }
-
-  await ctx.db.patch(skill._id, {
-    batch: nextBatch,
-    updatedAt: now,
-  });
-  await ctx.db.insert("auditLogs", {
-    actorUserId: actor._id,
-    action: "badge.highlighted",
-    targetType: "skill",
-    targetId: skill._id,
-    metadata: { highlighted: featured },
-    createdAt: now,
-  });
-
-  if (featured && !previousHighlighted && notify) {
-    await queueHighlightedWebhook(ctx, skill._id);
-  }
-
-  return result;
-}
 
 export const setSkillFeaturedForUserInternal = internalMutation({
   args: {

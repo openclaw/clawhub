@@ -4,6 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, internalQuery, mutation, query } from "./functions";
 import { assertModerator, requireUser } from "./lib/access";
+import { setPackageFeaturedForActor, setSkillFeaturedForActor } from "./lib/badgeWrites";
 import { renderFeaturedEvidence } from "./lib/featuredIntelligence";
 import { FEATURED_CATALOG_SIZE } from "./lib/featuredPolicy";
 import {
@@ -14,8 +15,6 @@ import {
   type EditorialSelection,
 } from "./lib/featuredSelections";
 import { searchArtifactKind, type SearchCurrentResult } from "./lib/searchInsights";
-import { setPackageFeaturedForActor } from "./packages";
-import { setSkillFeaturedForActor } from "./skills";
 
 type Kind = "plugin" | "skill";
 type SelectionState = {

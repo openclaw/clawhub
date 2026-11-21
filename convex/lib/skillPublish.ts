@@ -13,12 +13,12 @@ import { ConvexError } from "convex/values";
 import semver from "semver";
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
-import type { ActionCtx, MutationCtx } from "../_generated/server";
+import type { ActionCtx } from "../_generated/server";
 import {
   isDecodableSkillPresentationRaster,
   storeSkillPresentationAsset,
 } from "../skillPresentationAssets";
-import { getSkillBadgeMap, isSkillHighlighted } from "./badges";
+import { isSkillHighlighted } from "./badges";
 import { generateChangelogForPublish } from "./changelog";
 import { generateEmbedding } from "./embeddings";
 import { requireGitHubAccountAge } from "./githubAccount";
@@ -835,29 +835,6 @@ export const __test = {
   buildSkillPublishAttemptIdempotencyKey,
   hostDirectSkillPresentationIcon,
 };
-
-export async function queueHighlightedWebhook(ctx: MutationCtx, skillId: Id<"skills">) {
-  const skill = await ctx.db.get(skillId);
-  if (!skill) return;
-  const owner = await ctx.db.get(skill.ownerUserId);
-  const latestVersion = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
-
-  const badges = await getSkillBadgeMap(ctx, skillId);
-  const payload: WebhookSkillPayload = {
-    slug: skill.slug,
-    displayName: skill.displayName,
-    summary: skill.summary ?? undefined,
-    version: latestVersion?.version ?? undefined,
-    ownerHandle: owner?.handle ?? owner?.name ?? undefined,
-    highlighted: isSkillHighlighted({ badges }),
-    tags: Object.keys(skill.tags ?? {}),
-  };
-
-  await ctx.scheduler.runAfter(0, internal.webhooks.sendDiscordWebhook, {
-    event: "skill.highlighted",
-    skill: payload,
-  });
-}
 
 async function hostDirectSkillPresentationIcon(
   ctx: Pick<ActionCtx, "runAction" | "runMutation" | "runQuery" | "storage">,
