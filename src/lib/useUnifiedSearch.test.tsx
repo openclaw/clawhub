@@ -106,6 +106,30 @@ describe("useUnifiedSearch", () => {
     convexQueryMock.mockReset();
   });
 
+  it("retains native creation time and optional version count beyond the row fields", async () => {
+    const source = makeCanonicalSkill("weather");
+    searchSkillsMock.mockResolvedValue([
+      {
+        ...source,
+        native: {
+          ...source.native,
+          skill: { ...source.native.skill, stats: { ...source.native.skill.stats, versions: 3 } },
+        },
+      },
+    ]);
+    const { result } = renderHook(() => useUnifiedSearch("weather", "skills", { debounceMs: 0 }));
+    await waitFor(() => expect(result.current.skillCount).toBe(1));
+    const native = result.current.skillResults.find(isUnifiedNativeSkillResult);
+    expect(native).toBeDefined();
+    if (!native) throw new Error("native skill missing");
+    const createdAt: number = native.skill.createdAt;
+    const versions: number | undefined = native.skill.stats.versions;
+    const icon: string | undefined = native.skill.icon;
+    expect(createdAt).toBe(1);
+    expect(versions).toBe(3);
+    expect(icon).toBeUndefined();
+  });
+
   it("shows ready skill matches while plugin search is still pending", async () => {
     const plugins = deferred<{ items: ReturnType<typeof makePlugin>[]; nextCursor: null }>();
     searchSkillsMock.mockResolvedValue([makeCanonicalSkill("weather")]);

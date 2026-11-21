@@ -5,7 +5,7 @@ import { getSkillBadges } from "../lib/badges";
 import { getSkillCategoriesForSkill } from "../lib/categories";
 import { formatCompactStat } from "../lib/numberFormat";
 import { presentationTitle } from "../lib/presentationTitle";
-import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
+import type { PublicPublisher, SkillListItemData } from "../lib/publicUser";
 import { timeAgo } from "../lib/timeAgo";
 import { PUBLIC_CATALOG_NAME_PREVIEW_LENGTH, truncateText } from "../lib/truncateText";
 import { CatalogTopicList } from "./CatalogTopicList";
@@ -14,13 +14,14 @@ import { OfficialBadge } from "./OfficialBadge";
 import { Badge } from "./ui/badge";
 
 type SkillListItemProps = {
-  skill: PublicSkill;
   ownerHandle?: string | null;
   owner?: PublicPublisher | null;
-  href?: string;
   showOfficialBadge?: boolean;
   showIcon?: boolean;
-};
+} & (
+  | { skill: SkillListItemData; href: string }
+  | { skill: SkillListItemData & { ownerUserId: string }; href?: undefined }
+);
 
 export function SkillListItem({
   skill,
@@ -49,7 +50,7 @@ export function SkillListItem({
       onClick={() =>
         emitAnalytics("select_content", {
           content_type: "skill",
-          content_id: publicAnalyticsContentId("skill", String(skill._id)),
+          content_id: publicAnalyticsContentId("skill", skill._id),
           ui_location: "catalog",
         })
       }

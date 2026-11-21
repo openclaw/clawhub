@@ -54,6 +54,19 @@ const basePlugin = {
 };
 
 describe("PublishedItemCard", () => {
+  it.each([
+    { downloads: 0, installs: 8, expected: "0" },
+    { downloads: undefined, installs: 8, expected: "8" },
+    { downloads: undefined, installs: undefined, expected: "0" },
+  ])(
+    "preserves download precedence with $downloads downloads and $installs installs",
+    ({ downloads, installs, expected }) => {
+      render(<PublishedItemCard item={{ ...baseSkill, downloads, installs, icon: null }} />);
+      expect(screen.getByText(expected)).toBeTruthy();
+      expect(screen.getByRole("link").getAttribute("href")).toBe(baseSkill.href);
+    },
+  );
+
   it("renders downloads", () => {
     render(<PublishedItemCard item={{ ...baseSkill, icon: null }} />);
 

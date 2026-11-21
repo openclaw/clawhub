@@ -4,7 +4,7 @@ import { api } from "../../convex/_generated/api";
 import { convexHttp } from "../convex/client";
 import { consumeManualCatalogSearch, type ManualCatalogSearch } from "./manualCatalogSearch";
 import { fetchPluginCatalog, type PackageListItem } from "./packageApi";
-import type { PublicPublisher, PublicPublisherListItem } from "./publicUser";
+import type { PublicPublisher, PublicPublisherListItem, SkillListItemData } from "./publicUser";
 import { fetchSkillSearch } from "./skillSearchApi";
 import {
   toSkillsShSearchResult,
@@ -19,21 +19,10 @@ const MAX_CREATOR_SEARCH_LIMIT = 50;
 
 type UnifiedNativeSkillResult = {
   type: "skill";
-  skill: {
-    _id: string;
-    slug: string;
-    displayName: string;
-    summary?: string | null;
-    icon?: string;
-    categories?: string[] | null;
-    inferredCategories?: string[] | null;
-    latestVersionId?: string | null;
-    inferredFromVersionId?: string | null;
+  skill: SkillListItemData & {
     ownerUserId: string;
-    ownerPublisherId?: string | null;
-    stats: { downloads: number; stars: number; versions?: number };
-    updatedAt: number;
     createdAt: number;
+    stats: SkillListItemData["stats"] & { versions?: number };
   };
   ownerHandle: string | null;
   owner?: PublicPublisher | null;
