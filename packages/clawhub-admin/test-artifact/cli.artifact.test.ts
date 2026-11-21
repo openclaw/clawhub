@@ -51,6 +51,55 @@ describe("packed admin CLI", () => {
     const tarballPath = join(packDir, filename!);
     execFileSync("tar", ["-xzf", tarballPath, "-C", installDir]);
 
+    const artifactRoot = join(installDir, "package", "dist");
+    const retainedModules = [
+      "clawhub-admin/src/cli",
+      "clawhub-admin/src/scanAssignments",
+      "clawhub/src/cli/commands/packages",
+      "clawhub/src/schema/index",
+      ...[
+        "ark",
+        "openclawContract",
+        "packageShared",
+        "packageUploadLimits",
+        "pluginInput",
+        "schemaShared",
+        "templateAgent",
+        "templateBundled",
+        "templateManifestSummary",
+        "templatePackage",
+        "templatePaths",
+        "templates",
+        "textFiles",
+      ].map((name) => `clawhub/src/schema/${name}`),
+    ];
+    const unrelatedModules = [
+      "cli",
+      "cli/commands/inspect",
+      "cli/commands/ownership",
+      "cli/commands/publish",
+      "cli/commands/publishers",
+      "cli/commands/scan",
+      "cli/commands/star",
+      "cli/commands/sync",
+      "cli/commands/syncHelpers",
+      "cli/commands/syncTypes",
+      "cli/commands/transfer",
+      "cli/commands/unstar",
+      "cli/scanSkills",
+      "cli/skillResolution",
+    ];
+    for (const extension of [".js", ".d.ts", ".js.map"]) {
+      for (const module of retainedModules) {
+        await expect(readFile(join(artifactRoot, `${module}${extension}`))).resolves.toBeTruthy();
+      }
+      for (const module of unrelatedModules) {
+        await expect(
+          readFile(join(artifactRoot, "clawhub", "src", `${module}${extension}`)),
+        ).rejects.toMatchObject({ code: "ENOENT" });
+      }
+    }
+
     const result = spawnSync(
       process.execPath,
       [join(installDir, "package", "bin", "clawhub-admin.js"), "--help"],

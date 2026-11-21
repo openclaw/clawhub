@@ -8,9 +8,10 @@ read_when:
 # CLI schema artifact boundary
 
 The registry owns the canonical implementations in `packages/schema/src`.
-The CLI reuses nine canonical modules: `ark`, `openclawContract`, `packageShared`,
-`packageUploadLimits`, `pluginInput`, `schemaShared`, `templatePackage`, `templates`,
-and `textFiles`. Their CLI source modules forward to the canonical built `dist`
+The CLI reuses thirteen canonical modules: `ark`, `openclawContract`, `packageShared`,
+`packageUploadLimits`, `pluginInput`, `schemaShared`, `templateAgent`, `templateBundled`,
+`templateManifestSummary`, `templatePackage`, `templatePaths`, `templates`, and
+`textFiles`. Their CLI source modules forward to the canonical built `dist`
 modules so source tests and typechecks do not require a second implementation or a
 wider TypeScript source root.
 
@@ -29,7 +30,14 @@ existing `dist/clawhub/src/schema/*` paths. The published artifact must contain 
 workspace-relative forwarders or dependency on the private `clawhub-schema`
 package. The CLI bin path and `dist/cli.js` remain unchanged.
 
-Only the nine modules above are copied. The registry and CLI have distinct
+The private admin package compiles all of its own source modules and follows their
+imports into the public CLI. It explicitly includes the Plugin Inspector ambient
+declaration because imported package commands need it for typechecking. Do not
+include every public CLI source as an admin compilation root: unrelated public
+commands should not enter the admin artifact. Keep the admin bin path, emitted
+module paths, and copied canonical schema artifacts unchanged.
+
+Only the thirteen modules above are copied. The registry and CLI have distinct
 `packages`, `schemas`, and other contracts; do not copy the entire schema
 package to remove those differences.
 
@@ -55,6 +63,6 @@ workspace checkout. Do not embed absolute build-machine paths.
 Validate changes with registry and CLI conformance cases, schema/CLI typechecks,
 and the packed-artifact test. The latter extracts a real local npm pack into a
 temporary directory, supplies only declared runtime dependencies, and loads the
-CLI plus all nine schema modules without a sibling schema package. Retain the
+CLI plus all thirteen schema modules without a sibling schema package. Retain the
 admin CLI's existing packed-artifact test too. This is
 artifact validation, not an npm publication.
