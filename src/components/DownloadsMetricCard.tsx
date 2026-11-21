@@ -1,8 +1,8 @@
 import { useState, type ReactNode } from "react";
 import {
   buildDownloadsTrendForPeriod,
-  getDownloadTrendAriaLabel,
-  getDownloadTrendPeriodLabel,
+  DOWNLOAD_TREND_PERIODS,
+  getDownloadTrendPeriod,
   type DownloadTrendPeriod,
   type MetricTrend,
 } from "../lib/activityTrend";
@@ -10,12 +10,6 @@ import { formatCompactStat } from "../lib/numberFormat";
 import { cn } from "../lib/utils";
 import { ActivityMetricLabel } from "./ActivityMetricLabel";
 import { MetricTrendCard, MetricTrendCardSkeleton } from "./MetricTrendCard";
-
-const DOWNLOAD_PERIODS: Array<{ id: DownloadTrendPeriod; label: string }> = [
-  { id: "all-time", label: "All time" },
-  { id: "30d", label: "30d" },
-  { id: "7d", label: "7d" },
-];
 
 type DownloadsSidebarMetricBlock = {
   key?: string;
@@ -33,7 +27,7 @@ function DownloadsMetricPeriodTabs({
 }) {
   return (
     <div className="downloads-metric-tabs" role="tablist" aria-label="Download period">
-      {DOWNLOAD_PERIODS.map((tab) => (
+      {DOWNLOAD_TREND_PERIODS.map((tab) => (
         <button
           key={tab.id}
           type="button"
@@ -83,6 +77,7 @@ export function useDownloadsSidebarMetricBlock({
   }
 
   const trend = buildDownloadsTrendForPeriod(period, activityTrend, allTimeDownloads);
+  const { ariaLabel, periodLabel } = getDownloadTrendPeriod(period);
 
   return {
     key: "download-trend",
@@ -95,8 +90,8 @@ export function useDownloadsSidebarMetricBlock({
     value: (
       <MetricTrendCard
         trend={trend}
-        ariaLabel={getDownloadTrendAriaLabel(period)}
-        periodLabel={getDownloadTrendPeriodLabel(period)}
+        ariaLabel={ariaLabel}
+        periodLabel={periodLabel}
         unitLabel="download"
         hideIdlePeriodLabel
       />

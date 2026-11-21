@@ -1,5 +1,3 @@
-import { api } from "../../convex/_generated/api";
-
 export type MetricTrendPoint = {
   day: number;
   value: number;
@@ -15,9 +13,6 @@ export type MetricTrend = {
 export type ActivityTrend = {
   downloads: MetricTrend;
 };
-
-export const getSkillActivityTrendForSlug = api.skills.getActivityTrendForSlug;
-export const getPackageActivityTrendForName = api.packages.getActivityTrendForName;
 
 const DAY_MS = 86_400_000;
 
@@ -48,7 +43,32 @@ export function isActivityTrend(value: unknown): value is ActivityTrend {
   return isRecord(value) && isMetricTrend(value.downloads);
 }
 
-export type DownloadTrendPeriod = "all-time" | "30d" | "7d";
+export const DOWNLOAD_TREND_PERIODS = [
+  {
+    id: "all-time",
+    label: "All time",
+    periodLabel: "All time",
+    ariaLabel: "Recent daily downloads with all-time total",
+  },
+  {
+    id: "30d",
+    label: "30d",
+    periodLabel: "30 days",
+    ariaLabel: "Daily downloads over the last 30 days",
+  },
+  {
+    id: "7d",
+    label: "7d",
+    periodLabel: "7 days",
+    ariaLabel: "Daily downloads over the last 7 days",
+  },
+] as const;
+
+export type DownloadTrendPeriod = (typeof DOWNLOAD_TREND_PERIODS)[number]["id"];
+
+export function getDownloadTrendPeriod(period: DownloadTrendPeriod) {
+  return DOWNLOAD_TREND_PERIODS.find((option) => option.id === period) ?? DOWNLOAD_TREND_PERIODS[1];
+}
 
 export function sliceMetricTrend(trend: MetricTrend, lastDays: number): MetricTrend {
   const safeDays = Math.max(1, Math.min(Math.trunc(lastDays), trend.points.length));
@@ -74,31 +94,5 @@ export function buildDownloadsTrendForPeriod(
       return { ...activityTrend, total: Math.max(0, Math.trunc(allTimeDownloads)) };
     default:
       return activityTrend;
-  }
-}
-
-export function getDownloadTrendPeriodLabel(period: DownloadTrendPeriod): string {
-  switch (period) {
-    case "all-time":
-      return "All time";
-    case "30d":
-      return "30 days";
-    case "7d":
-      return "7 days";
-    default:
-      return "30 days";
-  }
-}
-
-export function getDownloadTrendAriaLabel(period: DownloadTrendPeriod): string {
-  switch (period) {
-    case "all-time":
-      return "Recent daily downloads with all-time total";
-    case "30d":
-      return "Daily downloads over the last 30 days";
-    case "7d":
-      return "Daily downloads over the last 7 days";
-    default:
-      return "Daily downloads over the last 30 days";
   }
 }
