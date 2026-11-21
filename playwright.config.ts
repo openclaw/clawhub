@@ -22,7 +22,7 @@ export default defineConfig({
   webServer: process.env.PLAYWRIGHT_BASE_URL
     ? undefined
     : {
-        command: "HOST=127.0.0.1 PORT=4173 bun .output/server/index.mjs",
+        command: `HOST=127.0.0.1 PORT=${port} bun .output/server/index.mjs`,
         url: previewReadyURL,
         reuseExistingServer: !process.env.CI,
         stdout: "ignore",
