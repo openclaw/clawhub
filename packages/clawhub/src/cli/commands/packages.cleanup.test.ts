@@ -133,7 +133,11 @@ describe("package publish resource ownership", () => {
       }
       expect(resources.created).toHaveLength(outcome === "preparation failure" ? 1 : 2);
       for (const path of resources.created) await expect(access(path)).rejects.toThrow();
-      expect(resources.removed).toEqual(resources.created.toReversed());
+      expect(resources.removed).toEqual(
+        outcome === "preparation failure"
+          ? [resources.created[0]]
+          : [resources.created[1], resources.created[0]],
+      );
       await expect(access(join(workdir, "keep.txt"))).resolves.toBeUndefined();
     },
   );
