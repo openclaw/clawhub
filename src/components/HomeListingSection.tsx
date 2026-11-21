@@ -212,18 +212,7 @@ function createInitialListingCache(initialListing: HomeListingInitialData | null
       categorySlugs: initialListing.categorySlugs,
       fetchLimit: initialListing.fetchLimit,
     }),
-    initialListing.kind === "skills"
-      ? {
-          kind: "skills",
-          items: initialListing.items,
-          hasMore: initialListing.hasMore,
-          trendingState: initialListing.trendingState,
-        }
-      : {
-          kind: "plugins",
-          items: initialListing.items,
-          hasMore: initialListing.hasMore,
-        },
+    initialListing,
   );
   return cache;
 }
@@ -332,27 +321,32 @@ export function HomeListingSection({
       categorySlugs,
       fetchLimit,
     });
-    const cached = listingCache.get(cacheKey);
-    if (cached) {
-      if (cached.kind === "skills") {
-        setSkills(cached.items);
-        setTrendingState(cached.trendingState);
+    const controller = new AbortController();
+    const publishListing = (entry: HomeListingCacheEntry) => {
+      if (controller.signal.aborted) return;
+      listingCache.set(cacheKey, entry);
+      if (entry.kind === "skills") {
+        setSkills(entry.items);
+        setTrendingState(entry.trendingState);
         if (tab === "trending") {
-          const unavailable = cached.trendingState === "unavailable";
+          const unavailable = entry.trendingState === "unavailable";
           setCanonicalTrendingUnavailable(unavailable);
           if (unavailable) setTab("featured");
         }
       } else {
-        setPlugins(cached.items);
+        setPlugins(entry.items);
         setTrendingState(undefined);
       }
-      setListingHasMore(cached.hasMore);
+      setListingHasMore(entry.hasMore);
       setStatus("idle");
+    };
+    const cached = listingCache.get(cacheKey);
+    if (cached) {
+      publishListing(cached);
       setLoadingMore(false);
       return undefined;
     }
 
-    const controller = new AbortController();
     // "Load more" only grows fetchLimit: keep the existing rows mounted and
     // append, instead of swapping in the skeleton (which collapses height and
     // throws away the scroll position).
@@ -366,36 +360,21 @@ export function HomeListingSection({
 
     const load =
       kind === "skills"
-        ? fetchSkillListing(tab, categorySlugs, fetchLimit, controller.signal).then((result) => {
-            if (controller.signal.aborted) return;
-            listingCache.set(cacheKey, {
+        ? fetchSkillListing(tab, categorySlugs, fetchLimit, controller.signal).then((result) =>
+            publishListing({
               kind: "skills",
               items: result.page,
               hasMore: result.hasMore,
               trendingState: result.trendingState,
-            });
-            setSkills(result.page);
-            setTrendingState(result.trendingState);
-            if (tab === "trending") {
-              const unavailable = result.trendingState === "unavailable";
-              setCanonicalTrendingUnavailable(unavailable);
-              if (unavailable) setTab("featured");
-            }
-            setListingHasMore(result.hasMore);
-            setStatus("idle");
-          })
-        : fetchPluginListing(tab, categorySlugs, fetchLimit, controller.signal).then((result) => {
-            if (controller.signal.aborted) return;
-            listingCache.set(cacheKey, {
+            }),
+          )
+        : fetchPluginListing(tab, categorySlugs, fetchLimit, controller.signal).then((result) =>
+            publishListing({
               kind: "plugins",
               items: result.items,
               hasMore: result.hasMore,
-            });
-            setPlugins(result.items);
-            setTrendingState(undefined);
-            setListingHasMore(result.hasMore);
-            setStatus("idle");
-          });
+            }),
+          );
 
     load
       .catch(() => {

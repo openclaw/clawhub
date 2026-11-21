@@ -1,6 +1,6 @@
 /* @vitest-environment jsdom */
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const navigateMock = vi.fn();
@@ -968,6 +968,68 @@ describe("HomeListingSection", () => {
     });
     expect(fetchPluginCatalogMock).toHaveBeenCalledTimes(1);
   });
+
+  it.each(["skills", "plugins"] as const)(
+    "does not publish or cache an abandoned %s listing response",
+    async (kind) => {
+      const listingResult = (name: string) =>
+        kind === "skills"
+          ? {
+              page: [
+                {
+                  skill: {
+                    _id: `skills:${name}`,
+                    slug: name,
+                    displayName: name,
+                    summary: "Listing response.",
+                    stats: { downloads: 1 },
+                  },
+                  ownerHandle: "builder",
+                },
+              ],
+              nextCursor: null,
+            }
+          : {
+              items: [{ ...featuredPlugin, name, displayName: name }],
+              nextCursor: null,
+            };
+      let resolveAbandoned!: (value: ReturnType<typeof listingResult>) => void;
+      const abandoned = new Promise<ReturnType<typeof listingResult>>((resolve) => {
+        resolveAbandoned = resolve;
+      });
+      const fetchListing = kind === "skills" ? convexQueryMock : fetchPluginCatalogMock;
+      fetchListing
+        .mockReturnValueOnce(abandoned)
+        .mockResolvedValueOnce(listingResult("Fresh listing"));
+
+      render(
+        <HomeListingSection
+          initialListing={
+            kind === "skills"
+              ? { ...initialPluginListing(), kind: "skills", items: [] }
+              : initialPluginListing()
+          }
+        />,
+      );
+      fireEvent.click(screen.getByRole("tab", { name: "Official" }));
+      await waitFor(() => expect(fetchListing).toHaveBeenCalledTimes(1));
+
+      fireEvent.click(screen.getByRole("tab", { name: "Featured" }));
+      await act(async () => {
+        resolveAbandoned(listingResult("Abandoned listing"));
+        await abandoned;
+      });
+      expect(screen.queryByText("Abandoned listing")).toBeNull();
+      expect(screen.getByRole("tab", { name: "Featured" }).getAttribute("aria-selected")).toBe(
+        "true",
+      );
+
+      fireEvent.click(screen.getByRole("tab", { name: "Official" }));
+      expect(await screen.findByText("Fresh listing")).toBeTruthy();
+      expect(fetchListing).toHaveBeenCalledTimes(2);
+      expect(screen.queryByText("Abandoned listing")).toBeNull();
+    },
+  );
 
   it("uses the skills cursor when loading beyond the first page", async () => {
     const firstSkill = {
