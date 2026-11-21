@@ -5,8 +5,7 @@ import { readFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isCodexWorkerExecutionAllowed, localCodexWorkerOptInReason } from "./codex-worker-guard";
-import { parseEnv } from "./dev-worktree";
-import { numberFrom } from "./lib/scriptConfig";
+import { numberFrom, parseEnv } from "./lib/scriptConfig";
 
 type DevWorkerId = "security-scan" | "skill-card";
 

@@ -12,7 +12,6 @@ import {
   isLocalConvexUrl,
   isRunningPid,
   parseArgs,
-  parseEnv,
   shouldSeedLocalData,
   shouldStartDevWorkers,
 } from "./dev-worktree";
@@ -28,22 +27,6 @@ describe("dev-worktree helpers", () => {
     expect(config).toContain(
       '[aliases]\ndev = "wt --yes hook pre-start && bun scripts/dev-worktree.ts --detach --seed --port',
     );
-  });
-
-  it("parses env files without treating inline comments as values", () => {
-    expect(
-      parseEnv(`
-        CONVEX_DEPLOYMENT=local:local-amantus-clawdhub # team: amantus, project: clawdhub
-        SITE_URL=http://localhost:3000
-        HASH_VALUE=abc#123
-        QUOTED_HASH="value # kept"
-      `),
-    ).toEqual({
-      CONVEX_DEPLOYMENT: "local:local-amantus-clawdhub",
-      SITE_URL: "http://localhost:3000",
-      HASH_VALUE: "abc#123",
-      QUOTED_HASH: "value # kept",
-    });
   });
 
   it("uses only the local checkout env unless an env file is explicit", () => {

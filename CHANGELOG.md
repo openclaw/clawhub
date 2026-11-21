@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Developer workers: keep shutdown handling with the worker runner when it loads environment files, so an unrelated worktree handler cannot exit first.
+
 - Skill diffs: release Monaco editors and text models in the correct order when switching files or leaving the diff view, preventing model-disposal errors without retaining stale models.
 
 - CLI: remove temporary package-publish directories when preparation fails, including a rejected package version. Caller-owned source directories are preserved.

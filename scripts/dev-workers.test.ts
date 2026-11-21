@@ -1,5 +1,6 @@
 /* @vitest-environment node */
 
+import { spawnSync } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -19,6 +20,35 @@ const tempDirs = createTestTempDirectories("clawhub-dev-workers-test-");
 afterEach(tempDirs.cleanup);
 
 describe("dev-workers", () => {
+  it("leaves shutdown handlers to the process importing worker helpers", () => {
+    const result = spawnSync(
+      "bun",
+      [
+        "--eval",
+        `
+          const signals = ["SIGINT", "SIGTERM"];
+          const before = signals.map((signal) => process.listenerCount(signal));
+          await import(${JSON.stringify(new URL("./dev-workers.ts", import.meta.url).href)});
+          const after = signals.map((signal) => process.listenerCount(signal));
+          process.once("SIGTERM", () => {
+            console.log(JSON.stringify({ before, after, handled: true }));
+            process.exit(0);
+          });
+          process.kill(process.pid, "SIGTERM");
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          throw new Error("Self-signal was not delivered");
+        `,
+      ],
+      { encoding: "utf8", timeout: 10_000 },
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe("");
+    const output = JSON.parse(result.stdout);
+    expect(output.after).toEqual(output.before);
+    expect(output.handled).toBe(true);
+  });
+
   it("parses worker selection and polling options", () => {
     const options = parseArgs([
       "--once",
