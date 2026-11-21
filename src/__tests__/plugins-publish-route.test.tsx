@@ -1,6 +1,6 @@
 /* @vitest-environment jsdom */
 
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { DocsLinks } from "clawhub-schema";
 import { getFunctionName } from "convex/server";
 import { createElement } from "react";
@@ -643,7 +643,10 @@ describe("plugins publish route", () => {
     });
   });
 
-  it("does not let a stale package changelog preview overwrite manual text", async () => {
+  it.each([
+    { description: "manual text", draft: "Manual release notes." },
+    { description: "a manually cleared draft", draft: "" },
+  ])("does not let a stale package changelog preview overwrite $description", async ({ draft }) => {
     useSearchMock.mockReturnValue({
       ownerHandle: "vintageayu",
       name: "demo-plugin",
@@ -680,11 +683,12 @@ describe("plugins publish route", () => {
       "Describe what changed in this release...",
     ) as HTMLTextAreaElement;
     fireEvent.change(changelog, { target: { value: "Manual release notes." } });
-    resolvePreview?.({ changelog: "- Stale generated text." });
-
-    await waitFor(() => {
-      expect(changelog.value).toBe("Manual release notes.");
+    if (draft === "") fireEvent.change(changelog, { target: { value: "" } });
+    await act(async () => {
+      resolvePreview?.({ changelog: "- Stale generated text." });
     });
+
+    expect(changelog.value).toBe(draft);
   });
 
   it("does not apply a package changelog preview after preview inputs change", async () => {

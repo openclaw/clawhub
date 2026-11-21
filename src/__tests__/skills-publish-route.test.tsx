@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { getFunctionName } from "convex/server";
 import { strToU8, zipSync } from "fflate";
 import type { ReactNode } from "react";
@@ -1217,6 +1217,56 @@ describe("Upload route", () => {
       2,
       expect.objectContaining({ filePaths: ["SKILL.md", "scripts/beta.sh"] }),
     );
+  });
+
+  it.each([
+    { description: "a manual edit", draft: "Manual release notes." },
+    { description: "clearing a manual draft", draft: "" },
+  ])("keeps $description when a pending changelog preview resolves", async ({ draft }) => {
+    useSearchMock.mockReturnValue({ updateSlug: "changelog-manual-skill" });
+    useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
+      if (name === "skills:getBySlug") {
+        return {
+          skill: { slug: "changelog-manual-skill", displayName: "Changelog Manual Skill" },
+          latestVersion: { version: "1.0.0" },
+          owner: { handle: "alice", displayName: "Alice" },
+        };
+      }
+      if (name === "publishers:listMine") return [];
+      return null;
+    });
+    let resolvePreview: ((value: { changelog: string }) => void) | undefined;
+    generateChangelogPreview.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePreview = resolve;
+        }),
+    );
+
+    render(<Upload />);
+
+    const readme = new File(
+      ["---\nname: changelog-manual-skill\n---\n# Changelog Manual Skill"],
+      "SKILL.md",
+      { type: "text/markdown" },
+    );
+    fireEvent.change(screen.getByTestId("upload-input"), { target: { files: [readme] } });
+    await waitFor(() => {
+      expect(generateChangelogPreview).toHaveBeenCalledTimes(1);
+    });
+
+    const changelog = screen.getByPlaceholderText(
+      "Describe what changed in this skill...",
+    ) as HTMLTextAreaElement;
+    fireEvent.change(changelog, { target: { value: "Manual release notes." } });
+    if (draft === "") fireEvent.change(changelog, { target: { value: "" } });
+    await act(async () => {
+      resolvePreview?.({ changelog: "- Stale generated text." });
+    });
+
+    expect(changelog.value).toBe(draft);
   });
 
   it("keeps a manually written changelog when the file set changes", async () => {
