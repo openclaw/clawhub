@@ -1,7 +1,12 @@
 /* @vitest-environment node */
 
 import { expect, it } from "vitest";
-import { recommendFeatured, type RecommendationArtifact } from "./featuredIntelligence";
+import {
+  recommendFeatured,
+  renderFeaturedEvidence,
+  type FeaturedEvidence,
+  type RecommendationArtifact,
+} from "./featuredIntelligence";
 
 const artifact = (id: string): RecommendationArtifact => ({
   id,
@@ -198,4 +203,66 @@ it("retains bounded query context without changing install selection or mistakin
     recommendFeatured({ ...base, adoption: [{ artifact: candidate, evidence: adoption(0) }] })
       .lineup.proposed,
   ).toEqual([]);
+});
+
+it("preserves saved report metadata and the full lineup when limiting candidate cards", () => {
+  const entries = [artifact("plugin:first"), artifact("plugin:second")];
+  const evidence: FeaturedEvidence = {
+    searchReport: {
+      artifactKind: "plugin",
+      scope: null,
+      window: { ...window, startPrevious7d: 0 },
+      source: null,
+      generatedAt: 2_000,
+      metadataCheckedAt: 1_500,
+      currentMetadataStatus: "available",
+      coverage: { ...coverage, gapStart: null, gapEnd: null },
+      totalQueries: 0,
+      totalSearches7d: 0,
+      sources7d: { "clawhub-web": 0, "openclaw-control-ui": 0 },
+      truncated: false,
+      classificationStatus: "unavailable",
+      classificationRun: null,
+      rows: [],
+    },
+    currentFeatured: [],
+    adoption: {
+      summary: {
+        status: "available",
+        generatedAt: 2_000,
+        collectionStartedAt: 1_000,
+        periodStart: 500,
+        periodStart7d: 1_000,
+        periodEnd: 2_000,
+        snapshotId: "fixture",
+        rankingVersion: "featured-installs-30d-v1",
+        totalItems: 2,
+        inspectedItems: 2,
+        truncated: false,
+        scannedRows: 2,
+        importedRows: 0,
+        importDatasetVersions: [],
+      },
+      artifacts: entries.map((entry, index) => ({
+        artifact: entry,
+        evidence: adoption(20 - index),
+      })),
+      metadataCheckedAt: 2_000,
+    },
+    metadataCheckedAt: 0,
+    editorial: { revision: 2, items: [] },
+    editorialArtifacts: [],
+    currentEditorialRevision: 3,
+  };
+
+  const report = renderFeaturedEvidence(evidence, 1);
+
+  expect(report.searchReport).toBe(evidence.searchReport);
+  expect(report.adoption).toBe(evidence.adoption.summary);
+  expect(report.metadataCheckedAt).toBe(0);
+  expect(report.recommendations.candidates.map((entry) => entry.id)).toEqual([entries[0].id]);
+  expect(report.recommendations.lineup.proposed.map((entry) => entry.id)).toEqual(
+    entries.map((entry) => entry.id),
+  );
+  expect(report.recommendations.lineup.staleEditorial).toBe(true);
 });
