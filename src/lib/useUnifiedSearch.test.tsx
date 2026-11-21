@@ -145,6 +145,89 @@ describe("useUnifiedSearch", () => {
     expect(result.current.creatorCount).toBe(1);
   });
 
+  it("keeps published result ordering until the replacement type settles", async () => {
+    const skills = deferred<ReturnType<typeof makeCanonicalSkill>[]>();
+    searchSkillsMock.mockResolvedValueOnce([makeCanonicalSkill("weather")]);
+    searchSkillsMock.mockReturnValue(skills.promise);
+    fetchPluginCatalogMock.mockResolvedValue({ items: [makePlugin("weather")], nextCursor: null });
+    convexQueryMock.mockResolvedValue({ page: [makeCreator("weather")], isDone: true });
+    const { result, rerender } = renderHook(
+      ({ type }: { type: "all" | "skills" }) =>
+        useUnifiedSearch("weather", type, { debounceMs: 0 }),
+      { initialProps: { type: "all" } },
+    );
+    await waitFor(() => expect(result.current.isSearching).toBe(false));
+    const published = result.current.results;
+    expect(published.map((entry) => entry.type)).toEqual(["plugin", "skill", "creator"]);
+
+    rerender({ type: "skills" });
+    try {
+      await waitFor(() => expect(searchSkillsMock).toHaveBeenCalledTimes(2));
+      expect(result.current.isSearching).toBe(true);
+      expect(result.current.results).toBe(published);
+    } finally {
+      await act(async () => skills.resolve([makeCanonicalSkill("replacement")]));
+    }
+    await waitFor(() => expect(result.current.isSearching).toBe(false));
+    expect(result.current.results.map((entry) => entry.type)).toEqual(["skill"]);
+    expect(result.current.skillCount).toBe(1);
+    expect(result.current.pluginCount).toBe(0);
+    expect(result.current.creatorCount).toBe(0);
+  });
+
+  it("preserves published arrays when a pagination probe changes only hasMore", async () => {
+    const probe = deferred<{ items: ReturnType<typeof makePlugin>[]; nextCursor: null }>();
+    fetchPluginCatalogMock.mockResolvedValueOnce({
+      items: [makePlugin("weather")],
+      nextCursor: null,
+    });
+    fetchPluginCatalogMock.mockReturnValueOnce(probe.promise);
+    const manualCatalogSearch = { query: "weather", consumed: {} };
+    const { result } = renderHook(() =>
+      useUnifiedSearch("weather", "plugins", {
+        debounceMs: 0,
+        limits: { plugins: 1 },
+        manualCatalogSearch,
+      }),
+    );
+    await waitFor(() => expect(result.current.isSearching).toBe(false));
+    const published = result.current.results;
+    const plugins = result.current.pluginResults;
+    expect(result.current.pluginHasMore).toBe(false);
+    try {
+      expect(fetchPluginCatalogMock).toHaveBeenCalledTimes(2);
+    } finally {
+      await act(async () =>
+        probe.resolve({ items: [makePlugin("weather"), makePlugin("extra")], nextCursor: null }),
+      );
+    }
+    await waitFor(() => expect(result.current.pluginHasMore).toBe(true));
+    expect(result.current.results).toBe(published);
+    expect(result.current.pluginResults).toBe(plugins);
+    expect(result.current.pluginCount).toBe(1);
+  });
+
+  it("clears every published group and count when search is disabled", async () => {
+    searchSkillsMock.mockResolvedValue([makeCanonicalSkill("weather")]);
+    fetchPluginCatalogMock.mockResolvedValue({ items: [makePlugin("weather")], nextCursor: null });
+    convexQueryMock.mockResolvedValue({ page: [makeCreator("weather")], isDone: true });
+    const { result, rerender } = renderHook(
+      ({ enabled }) => useUnifiedSearch("weather", "all", { debounceMs: 0, enabled }),
+      { initialProps: { enabled: true } },
+    );
+    await waitFor(() => expect(result.current.isSearching).toBe(false));
+    expect(result.current.results).toHaveLength(3);
+    rerender({ enabled: false });
+    expect(result.current.results).toEqual([]);
+    expect(result.current.skillResults).toEqual([]);
+    expect(result.current.pluginResults).toEqual([]);
+    expect(result.current.creatorResults).toEqual([]);
+    expect(result.current.skillCount).toBe(0);
+    expect(result.current.pluginCount).toBe(0);
+    expect(result.current.creatorCount).toBe(0);
+    expect(result.current.isSearching).toBe(false);
+  });
+
   it("keeps ready matches when another result type fails later", async () => {
     const skills = deferred<ReturnType<typeof makeCanonicalSkill>[]>();
     searchSkillsMock.mockReturnValue(skills.promise);
@@ -260,6 +343,9 @@ describe("useUnifiedSearch", () => {
         .map((entry) => entry.skill.slug),
     ).toEqual(["japanese-reading-grader"]);
     expect(result.current.results.map((entry) => entry.type)).toEqual(["skill"]);
+    expect(result.current.skillCount).toBe(result.current.skillResults.length);
+    expect(result.current.pluginCount).toBe(result.current.pluginResults.length);
+    expect(result.current.creatorCount).toBe(result.current.creatorResults.length);
     expect(result.current.skillHasMore).toBe(true);
 
     await waitFor(() => {
