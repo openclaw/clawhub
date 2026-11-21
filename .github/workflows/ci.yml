@@ -117,6 +117,9 @@ jobs:
           CLAWHUB_CI_TEST_OBSERVATIONS: "1"
         run: bun run ci:unit
 
+      - name: Offline dependency compatibility
+        run: bun run test:dependency-compat
+
       - name: Upload test observations
         if: ${{ always() }}
         continue-on-error: true

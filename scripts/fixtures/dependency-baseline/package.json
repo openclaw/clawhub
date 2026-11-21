@@ -1,0 +1,13 @@
+{
+  "name": "clawhub-dependency-baseline",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@convex-dev/workpool": "0.4.15",
+    "@vercel/oidc": "4.0.8",
+    "convex": "1.49.0"
+  },
+  "overrides": {
+    "xdg-app-paths": "5.5.1"
+  }
+}
