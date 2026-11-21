@@ -76,6 +76,7 @@ import { corsHeaders, mergeHeaders } from "../lib/httpHeaders";
 import { applyRateLimit } from "../lib/httpRateLimit";
 import { verifyOpenClawPublishAuthorization } from "../lib/openClawPublishAuthorization";
 import { streamClawPackRelease } from "../lib/packageArchiveHttp";
+import { toReleaseArtifact } from "../lib/packageArtifacts";
 import {
   assertClawPackPublicationIdentity,
   buildPackagePublishRequestFromClawPack,
@@ -93,7 +94,6 @@ import { tryNormalizePackageName } from "../lib/packageReadName";
 import {
   toPackageMetadataResponse,
   toPackageVersionResponse,
-  toReleaseArtifact,
   type PublicPackageDocLike,
   type ReleaseLike,
 } from "../lib/packageReadProjection";
@@ -4494,7 +4494,6 @@ export async function npmMirrorGetHandler(ctx: ActionCtx, request: Request) {
 
   const versions = Object.fromEntries(
     releases.map((release) => {
-      const artifact = toReleaseArtifact(release, detail.package!.name);
       const urls = releaseArtifactUrls(request, detail.package!.name, release);
       return [
         release.version,
@@ -4505,8 +4504,8 @@ export async function npmMirrorGetHandler(ctx: ActionCtx, request: Request) {
           dependencies: packageJsonDependencies(release.extractedPackageJson),
           dist: {
             tarball: urls.tarballUrl,
-            integrity: artifact.npmIntegrity,
-            shasum: artifact.npmShasum,
+            integrity: release.npmIntegrity,
+            shasum: release.npmShasum,
           },
         },
       ];

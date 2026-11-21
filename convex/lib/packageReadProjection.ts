@@ -1,4 +1,5 @@
 import type { Doc, Id } from "../_generated/dataModel";
+import { toReleaseArtifact } from "./packageArtifacts";
 import { resolvePackageReleaseScanStatus } from "./packageSecurity";
 import type { PublicPublisher } from "./public";
 
@@ -69,34 +70,6 @@ export type PublicPackageDocLike = {
   createdAt: number;
   updatedAt: number;
 };
-
-export function toReleaseArtifact(release: ReleaseLike, packageName?: string) {
-  if (release.artifactKind === "npm-pack") {
-    return {
-      kind: "npm-pack" as const,
-      sha256: release.clawpackSha256,
-      size: release.clawpackSize,
-      format: release.clawpackFormat ?? "tgz",
-      npmIntegrity: release.npmIntegrity,
-      npmShasum: release.npmShasum,
-      npmTarballName: release.npmTarballName,
-      npmUnpackedSize: release.npmUnpackedSize,
-      npmFileCount: release.npmFileCount,
-    };
-  }
-  const sha256 = release.sha256hash;
-  return {
-    kind: "legacy-zip" as const,
-    ...(sha256 ? { sha256 } : {}),
-    ...(release.clawpackSize !== undefined ? { size: release.clawpackSize } : {}),
-    format: "zip",
-    source: "clawhub" as const,
-    artifactKind: "legacy-zip" as const,
-    ...(sha256 ? { artifactSha256: sha256 } : {}),
-    packageName,
-    version: release.version,
-  };
-}
 
 export function toPackageVersionResponse(release: ReleaseLike, packageName: string) {
   const scanStatus = resolvePackageReleaseScanStatus(release);
