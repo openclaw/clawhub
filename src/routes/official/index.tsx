@@ -15,6 +15,7 @@ import { Button } from "../../components/ui/button";
 import { convexHttp } from "../../convex/client";
 import type { PublicPublisherListItem } from "../../lib/publicUser";
 import { getClawHubSiteUrl, SITE_NAME } from "../../lib/site";
+import { useLoadMoreObserver } from "../../lib/useLoadMoreObserver";
 
 type OfficialSearchState = {
   q?: string;
@@ -102,7 +103,6 @@ function OfficialIndex() {
     nextCursor: result.isDone ? null : result.continueCursor,
     isLoadingMore: false,
   });
-  const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const loadMoreRequestRef = useRef<symbol | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchNavigateTimer = useRef<number>(0);
@@ -195,22 +195,7 @@ function OfficialIndex() {
     }
   }, [nextCursor, search.q]);
 
-  useEffect(() => {
-    if (!canLoadMore || typeof IntersectionObserver === "undefined") return () => {};
-    const target = loadMoreRef.current;
-    if (!target) return () => {};
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          observer.disconnect();
-          void loadMore();
-        }
-      },
-      { rootMargin: "200px" },
-    );
-    observer.observe(target);
-    return () => observer.disconnect();
-  }, [canLoadMore, loadMore]);
+  const loadMoreRef = useLoadMoreObserver(canLoadMore, loadMore);
 
   return (
     <main className="browse-page browse-page-borderless-header official-browse-page">

@@ -30,6 +30,7 @@ import {
 } from "../../lib/packageApi";
 import { useAnalyticsSearchResults } from "../../lib/useAnalyticsSearchResults";
 import { useBrowseTopicSearch } from "../../lib/useBrowseTopicSearch";
+import { useLoadMoreObserver } from "../../lib/useLoadMoreObserver";
 
 type VisiblePluginSort = "recommended" | "updated" | "downloads" | "trending";
 type PluginSort = VisiblePluginSort | "relevance";
@@ -362,7 +363,6 @@ function PluginsIndex() {
   const [query, setQuery] = useState(search.q ?? "");
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const loadMoreInFlightRef = useRef(false);
   const loadMoreAbortControllerRef = useRef<AbortController | null>(null);
   const searchNavigateTimer = useRef<number>(0);
@@ -559,22 +559,7 @@ function PluginsIndex() {
     }
   }, [initialLoaderData, nextCursor, search.category, search.q, search.sort, search.topic]);
 
-  useEffect(() => {
-    if (!canLoadMore || typeof IntersectionObserver === "undefined") return () => {};
-    const target = loadMoreRef.current;
-    if (!target) return () => {};
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          observer.disconnect();
-          void loadMore();
-        }
-      },
-      { rootMargin: "200px" },
-    );
-    observer.observe(target);
-    return () => observer.disconnect();
-  }, [canLoadMore, loadMore]);
+  const loadMoreRef = useLoadMoreObserver(canLoadMore, loadMore);
 
   return (
     <main className="browse-page browse-page-borderless-header plugins-browse-page catalog-browse-page">

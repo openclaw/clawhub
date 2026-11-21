@@ -4,13 +4,19 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { Route } from "../routes/official/index";
 
-const { queryMock, observerCallbacks } = vi.hoisted(() => ({
+const { queryMock, observerCallbacks, observers } = vi.hoisted(() => ({
   queryMock: vi.fn(),
   observerCallbacks: [] as IntersectionObserverCallback[],
+  observers: [] as Array<{
+    callback: IntersectionObserverCallback;
+    options?: IntersectionObserverInit;
+    observe: ReturnType<typeof vi.fn>;
+    disconnect: ReturnType<typeof vi.fn>;
+  }>,
 }));
 
 vi.mock("../convex/client", () => ({
@@ -54,17 +60,62 @@ function officialRouter() {
 beforeEach(() => {
   queryMock.mockReset();
   observerCallbacks.length = 0;
+  observers.length = 0;
   vi.stubGlobal("scrollTo", vi.fn());
   vi.stubGlobal(
     "IntersectionObserver",
     class {
-      constructor(callback: IntersectionObserverCallback) {
+      observe = vi.fn();
+      disconnect = vi.fn();
+      constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
         observerCallbacks.push(callback);
+        observers.push({ callback, options, observe: this.observe, disconnect: this.disconnect });
       }
-      observe() {}
-      disconnect() {}
     },
   );
+});
+
+it("disconnects before observed loading and rearms the same target for the next page", async () => {
+  const nextPage = pendingPage();
+  const order: string[] = [];
+  queryMock.mockImplementation((_reference, args) => {
+    if (args.paginationOpts.cursor) {
+      order.push("load");
+      return nextPage.promise;
+    }
+    return Promise.resolve(page("first", "next"));
+  });
+  const rendered = render(<RouterProvider router={officialRouter()} />);
+  await screen.findByText("first");
+  const first = observers.at(-1)!;
+  const target = first.observe.mock.calls[0]?.[0];
+  expect(target).toBe(screen.getByRole("button", { name: "Load more" }).parentElement);
+  expect(first.options).toEqual({ rootMargin: "200px" });
+  first.disconnect.mockImplementation(() => order.push("disconnect"));
+
+  await act(async () =>
+    first.callback(
+      [{ isIntersecting: false } as IntersectionObserverEntry],
+      {} as IntersectionObserver,
+    ),
+  );
+  expect(order).toEqual([]);
+  await act(async () =>
+    first.callback(
+      [{ isIntersecting: false }, { isIntersecting: true }] as IntersectionObserverEntry[],
+      {} as IntersectionObserver,
+    ),
+  );
+  expect(order.slice(0, 2)).toEqual(["disconnect", "load"]);
+  expect(queryMock).toHaveBeenCalledTimes(2);
+  await act(async () => nextPage.resolve(page("second", "last")));
+  await screen.findByText("second");
+  await waitFor(() => expect(observers).toHaveLength(2));
+  const second = observers[1];
+  expect(second.observe).toHaveBeenCalledWith(target);
+  expect(first.disconnect).toHaveBeenCalledTimes(2);
+  rendered.unmount();
+  expect(second.disconnect).toHaveBeenCalledTimes(1);
 });
 
 it("keeps the same official route input when search loads a new first page", async () => {
