@@ -1,6 +1,4 @@
-import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { LeaderboardEntry } from "./leaderboardEntry";
-import { isSkillSuspicious } from "./skillSafety";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 export const TRENDING_DAYS = 7;
@@ -21,23 +19,6 @@ export function getTrendingRange(now: number) {
 
 export function takeTopTrendingEntries(entries: LeaderboardEntry[], limit: number) {
   return topN(entries, limit, compareTrendingEntries).sort((a, b) => compareTrendingEntries(b, a));
-}
-
-export async function takeTopNonSuspiciousTrendingEntries(
-  ctx: QueryCtx | MutationCtx,
-  entries: LeaderboardEntry[],
-  limit: number,
-) {
-  const items: LeaderboardEntry[] = [];
-
-  for (const entry of entries) {
-    const skill = await ctx.db.get(entry.skillId);
-    if (!skill || skill.softDeletedAt || isSkillSuspicious(skill)) continue;
-    items.push(entry);
-    if (items.length >= limit) break;
-  }
-
-  return items;
 }
 
 export function compareTrendingEntries(a: LeaderboardEntry, b: LeaderboardEntry) {
