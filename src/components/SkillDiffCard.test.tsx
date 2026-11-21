@@ -1,12 +1,13 @@
 /* @vitest-environment jsdom */
 import type { Monaco } from "@monaco-editor/react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useEffect } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { SkillDiffCard, cssColor4ToHex } from "./SkillDiffCard";
 
 const getFilePreviewMock = vi.fn();
+const ensureMonacoLoaderMock = vi.fn();
 let diffEditorMounts = 0;
 let diffEditorUnmounts = 0;
 // oxlint-disable-next-line typescript/no-redundant-type-constituents -- Monaco resolves to any via @monaco-editor/react types
@@ -17,18 +18,21 @@ vi.mock("convex/react", () => ({
 }));
 
 vi.mock("../lib/monacoLoader", () => ({
-  ensureMonacoLoader: () => Promise.resolve(),
+  ensureMonacoLoader: () => ensureMonacoLoaderMock(),
 }));
 
 vi.mock("@monaco-editor/react", () => ({
-  DiffEditor: ({
+  useMonaco: () => monacoInstanceMock,
+}));
+
+vi.mock("./SkillDiffEditor", () => ({
+  SkillDiffEditor: ({
     className,
     options,
   }: {
     className?: string;
     options?: { renderSideBySide?: boolean; useInlineViewWhenSpaceIsLimited?: boolean };
   }) => <MockDiffEditor className={className} options={options} />,
-  useMonaco: () => monacoInstanceMock,
 }));
 
 function MockDiffEditor({
@@ -92,13 +96,40 @@ describe("SkillDiffCard", () => {
   beforeEach(() => {
     getFilePreviewMock.mockReset();
     getFilePreviewMock.mockResolvedValue({ text: "content" });
+    ensureMonacoLoaderMock.mockReset();
+    ensureMonacoLoaderMock.mockResolvedValue(undefined);
     diffEditorMounts = 0;
     diffEditorUnmounts = 0;
-    monacoInstanceMock = null;
+    monacoInstanceMock = {
+      editor: { defineTheme: vi.fn(), setTheme: vi.fn() },
+    } as unknown as Monaco;
     document.documentElement.removeAttribute("data-theme-resolved");
     for (const property of ["--oc-bg-elevated", "--oc-text-primary", "--oc-text-secondary"]) {
       document.documentElement.style.removeProperty(property);
     }
+  });
+
+  it("does not mount an editor if the card closes before Monaco initialization completes", async () => {
+    installMatchMedia(false);
+    let finishLoading!: () => void;
+    ensureMonacoLoaderMock.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishLoading = resolve;
+      }),
+    );
+    monacoInstanceMock = null;
+    const { unmount } = render(
+      <SkillDiffCard
+        skill={skill}
+        versions={[makeVersion("left", "1.0.0"), makeVersion("right", "1.1.0")]}
+      />,
+    );
+    expect(screen.getByRole("status", { name: "Loading diff" })).toBeTruthy();
+    unmount();
+    await act(async () => {
+      finishLoading();
+    });
+    expect(diffEditorMounts).toBe(0);
   });
 
   it("defaults to inline mode on narrow screens", async () => {
