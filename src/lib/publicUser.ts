@@ -1,6 +1,24 @@
-import type { PublicPublisher } from "../../convex/lib/public";
+import type { PublicPublisher, PublicSkill } from "../../convex/lib/public";
 
 export type { PublicPublisher, PublicSkill, PublicUser } from "../../convex/lib/public";
+
+export type SkillListItemData = {
+  _id: string;
+  slug: string;
+  displayName: string;
+  summary?: string | null;
+  icon?: string;
+  ownerUserId?: string;
+  ownerPublisherId?: string | null;
+  categories?: string[] | null;
+  inferredCategories?: string[] | null;
+  latestVersionId?: string | null;
+  inferredFromVersionId?: string | null;
+  topics?: string[];
+  badges?: PublicSkill["badges"] | null;
+  stats: Pick<PublicSkill["stats"], "downloads" | "stars">;
+  updatedAt: number;
+};
 
 type PublicPublisherStats = {
   skills: number;

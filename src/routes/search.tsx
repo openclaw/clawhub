@@ -15,7 +15,6 @@ import {
   takeManualCatalogSearch,
   type ManualCatalogSearch,
 } from "../lib/manualCatalogSearch";
-import type { PublicSkill } from "../lib/publicUser";
 import type { CanonicalSkillSearchResult } from "../lib/skillsShCatalog";
 import { useAnalyticsSearchResults } from "../lib/useAnalyticsSearchResults";
 import {
@@ -457,8 +456,9 @@ function CreatorResultsList({ results }: { results: UnifiedCreatorResult[] }) {
 
 function SkillResultRow({ result }: { result: UnifiedSkillResult }) {
   if (result.type === "skills-sh") return <SkillsShListItem result={result.result} />;
-  const skill = result.skill as unknown as PublicSkill;
-  return <SkillListItem skill={skill} ownerHandle={result.ownerHandle} owner={result.owner} />;
+  return (
+    <SkillListItem skill={result.skill} ownerHandle={result.ownerHandle} owner={result.owner} />
+  );
 }
 
 function skillResultKey(result: UnifiedSkillResult) {

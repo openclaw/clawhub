@@ -9,6 +9,7 @@ const useMutationMock = vi.fn();
 const useAuthStatusMock = vi.fn();
 const useAuthActionsMock = vi.fn();
 const navigateMock = vi.fn();
+const searchMock = vi.fn();
 
 vi.mock("convex/react", () => ({
   useQuery: (...args: unknown[]) => useQueryMock(...args),
@@ -31,9 +32,21 @@ vi.mock("@tanstack/react-router", async () => {
     createFileRoute: () => (options: unknown) => ({
       ...(options as Record<string, unknown>),
       useNavigate: () => navigateMock,
-      useSearch: () => ({}),
+      useSearch: () => searchMock(),
     }),
-    Link: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>,
+    Link: ({
+      children,
+      to,
+      className,
+    }: {
+      children: ReactNode;
+      to: string;
+      className?: string;
+    }) => (
+      <a href={to} className={className}>
+        {children}
+      </a>
+    ),
   };
 });
 
@@ -67,6 +80,7 @@ describe("Stars", () => {
     useAuthStatusMock.mockReset();
     useAuthActionsMock.mockReset();
     navigateMock.mockReset();
+    searchMock.mockReturnValue({});
     useMutationMock.mockReturnValue(toggleStarMock);
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: true,
@@ -148,6 +162,22 @@ describe("Stars", () => {
     const unstarBtn = screen.getByLabelText("Unbookmark Test Skill");
     fireEvent.click(unstarBtn);
 
+    expect(toggleStarMock).toHaveBeenCalledWith({ skillId: "skill_1" });
+  });
+
+  it("preserves skill links and unbookmark identity in list view", () => {
+    searchMock.mockReturnValue({ view: "list" });
+    useQueryMock.mockReturnValue([
+      makeSkill({ _id: "skill_1", slug: "test-skill", displayName: "Test Skill" }),
+    ]);
+
+    render(<Stars />);
+
+    expect(screen.getByRole("link", { name: /Test Skill/ }).getAttribute("href")).toBe(
+      "/user_123/test-skill",
+    );
+    expect(document.querySelector(".skill-list-item")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Unbookmark Test Skill" }));
     expect(toggleStarMock).toHaveBeenCalledWith({ skillId: "skill_1" });
   });
 });

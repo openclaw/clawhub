@@ -60,7 +60,7 @@ import type {
   PublicPublisherCatalogDisplay,
   PublicPublisherCatalogItem,
   PublicPublisherProfileItem,
-  PublicSkill,
+  SkillListItemData,
 } from "../../lib/publicUser";
 import { readPublicDownloadCount } from "../../lib/publicUser";
 import { isAdmin } from "../../lib/roles";
@@ -1251,32 +1251,24 @@ export function parsePluginCatalogRoute(item: PublicPublisherCatalogItem): {
   return { name: decodeURIComponent(pluginSegment) };
 }
 
-export function catalogItemToPublicSkill(item: PublicPublisherCatalogItem): PublicSkill {
+function catalogItemToSkillListItem(item: PublicPublisherCatalogItem): SkillListItemData {
   return {
-    _id: item._id as Id<"skills">,
-    _creationTime: item.updatedAt,
+    _id: item._id,
     slug: parseCatalogItemSlug(item),
     displayName: item.displayName,
     summary: item.summary ?? undefined,
     icon: item.icon ?? undefined,
-    ownerUserId: "users:unknown" as Id<"users">,
     categories: item.categories,
     inferredCategories: item.inferredCategories,
-    latestVersionId: item.latestVersionId as Id<"skillVersions"> | undefined,
-    inferredFromVersionId: item.inferredFromVersionId as Id<"skillVersions"> | undefined,
+    latestVersionId: item.latestVersionId,
+    inferredFromVersionId: item.inferredFromVersionId,
     topics: item.topics,
     badges: item.isOfficial ? { official: { byUserId: "users:system" as Id<"users">, at: 0 } } : {},
     stats: {
       downloads: readPublicDownloadCount(item),
       stars: item.stars,
-      versions: 0,
-      comments: 0,
-      installs: item.installs ?? 0,
     },
-    isSuspicious: false,
-    createdAt: item.updatedAt,
     updatedAt: item.updatedAt,
-    tags: {},
   };
 }
 
@@ -1324,6 +1316,6 @@ export function PublishedItemCard({
     );
   }
 
-  const skill = catalogItemToPublicSkill(item);
+  const skill = catalogItemToSkillListItem(item);
   return <SkillListItem skill={skill} href={item.href} showOfficialBadge={showOfficialBadge} />;
 }
