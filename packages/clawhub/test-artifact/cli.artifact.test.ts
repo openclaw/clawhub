@@ -31,6 +31,8 @@ const repoRoot = resolve(packageRoot, "..", "..");
 const binPath = join(packageRoot, "bin", "clawdhub.js");
 const distCliPath = join(packageRoot, "dist", "cli.js");
 
+const skillPublishCommands = [{ command: ["skill", "publish"] }, { command: ["publish"] }];
+
 const tempDirs: string[] = [];
 const servers: Server[] = [];
 
@@ -467,77 +469,84 @@ describe("built CLI artifact", () => {
     expect(result.stdout.trim()).toBe(packageJson.version);
   });
 
-  it("documents automatic skill publish versions without a bump flag", () => {
-    const result = runNode([binPath, "skill", "publish", "--help"]);
+  it.each(skillPublishCommands)(
+    "documents automatic skill publish versions without a bump flag ($command)",
+    ({ command }) => {
+      const result = runNode([binPath, ...command, "--help"]);
 
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain("--version <version>");
-    expect(result.stdout).toContain("--dry-run");
-    expect(result.stdout).toContain("--json");
-    expect(result.stdout).not.toContain("--bump");
-  });
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("--version <version>");
+      expect(result.stdout).toContain("--dry-run");
+      expect(result.stdout).toContain("--json");
+      expect(result.stdout).not.toContain("--bump");
+    },
+  );
 
-  it("resolves the next patch version in skill publish dry-run json mode", async () => {
-    const { registry, requests } = await startLocalRegistry();
-    const workdir = await makeTmpDir("clawhub-artifact-skill-publish-");
-    const skillDir = join(workdir, "changed-skill");
-    await mkdir(skillDir, { recursive: true });
-    await writeFile(join(skillDir, "SKILL.md"), "# Changed skill\n", "utf8");
+  it.each(skillPublishCommands)(
+    "resolves the next patch version in skill publish dry-run json mode ($command)",
+    async ({ command }) => {
+      const { registry, requests } = await startLocalRegistry();
+      const workdir = await makeTmpDir("clawhub-artifact-skill-publish-");
+      const skillDir = join(workdir, "changed-skill");
+      await mkdir(skillDir, { recursive: true });
+      await writeFile(join(skillDir, "SKILL.md"), "# Changed skill\n", "utf8");
 
-    const result = await runNodeAsync([
-      binPath,
-      "--workdir",
-      workdir,
-      "--registry",
-      registry,
-      "skill",
-      "publish",
-      "changed-skill",
-      "--dry-run",
-      "--json",
-    ]);
+      const result = await runNodeAsync([
+        binPath,
+        "--workdir",
+        workdir,
+        "--registry",
+        registry,
+        ...command,
+        "changed-skill",
+        "--dry-run",
+        "--json",
+      ]);
 
-    expect(result.status).toBe(0);
-    expect(result.stderr).toBe("");
-    expect(JSON.parse(result.stdout)).toMatchObject({
-      status: "would-publish",
-      slug: "changed-skill",
-      version: "1.2.4",
-      latestVersion: "1.2.3",
-    });
-    expect(requests.map((request) => request.method)).toEqual(["GET"]);
-    expect(requests[0]?.path).toMatch(/^\/api\/v1\/resolve\?slug=changed-skill&hash=/);
-  });
+      expect(result.status).toBe(0);
+      expect(result.stderr).toBe("");
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        status: "would-publish",
+        slug: "changed-skill",
+        version: "1.2.4",
+        latestVersion: "1.2.3",
+      });
+      expect(requests.map((request) => request.method)).toEqual(["GET"]);
+      expect(requests[0]?.path).toMatch(/^\/api\/v1\/resolve\?slug=changed-skill&hash=/);
+    },
+  );
 
-  it("defaults a new skill to 1.0.0 when the resolver returns 404", async () => {
-    const { registry } = await startLocalRegistry();
-    const workdir = await makeTmpDir("clawhub-artifact-new-skill-publish-");
-    const skillDir = join(workdir, "new-skill");
-    await mkdir(skillDir, { recursive: true });
-    await writeFile(join(skillDir, "SKILL.md"), "# New skill\n", "utf8");
+  it.each(skillPublishCommands)(
+    "defaults a new skill to 1.0.0 when the resolver returns 404 ($command)",
+    async ({ command }) => {
+      const { registry } = await startLocalRegistry();
+      const workdir = await makeTmpDir("clawhub-artifact-new-skill-publish-");
+      const skillDir = join(workdir, "new-skill");
+      await mkdir(skillDir, { recursive: true });
+      await writeFile(join(skillDir, "SKILL.md"), "# New skill\n", "utf8");
 
-    const result = await runNodeAsync([
-      binPath,
-      "--workdir",
-      workdir,
-      "--registry",
-      registry,
-      "skill",
-      "publish",
-      "new-skill",
-      "--dry-run",
-      "--json",
-    ]);
+      const result = await runNodeAsync([
+        binPath,
+        "--workdir",
+        workdir,
+        "--registry",
+        registry,
+        ...command,
+        "new-skill",
+        "--dry-run",
+        "--json",
+      ]);
 
-    expect(result.status).toBe(0);
-    expect(result.stderr).toBe("");
-    expect(JSON.parse(result.stdout)).toMatchObject({
-      status: "would-publish",
-      slug: "new-skill",
-      version: "1.0.0",
-      latestVersion: null,
-    });
-  });
+      expect(result.status).toBe(0);
+      expect(result.stderr).toBe("");
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        status: "would-publish",
+        slug: "new-skill",
+        version: "1.0.0",
+        latestVersion: null,
+      });
+    },
+  );
 
   it("runs help from the published bin entrypoint", async () => {
     const result = runNode([binPath, "--help"]);
