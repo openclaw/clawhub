@@ -32,7 +32,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadWorkflow } from "../src/__tests__/helpers/githubWorkflowExpression";
 import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { sha256Hex } from "./lib/clawpack";
+import { sha256Hex } from "./lib/hash";
 import { PLUGIN_INSPECTOR_RELEASE_SCAN_EVENT } from "./lib/pluginInspectorReleaseScan";
 import { hashToken } from "./lib/tokens";
 import schema from "./schema";

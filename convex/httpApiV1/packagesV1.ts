@@ -64,7 +64,7 @@ import {
   type UnifiedCatalogCursorState,
 } from "../lib/catalogPage";
 import { recordCatalogSearchObservation } from "../lib/catalogSearchObservations";
-import { parseClawPack, sha256Base64, sha256Hex } from "../lib/clawpack";
+import { parseClawPack, sha256Base64 } from "../lib/clawpack";
 import { areDownloadMetricsPaused } from "../lib/downloadMetricsSwitch";
 import { runActionRef, runMutationRef, runQueryRef } from "../lib/functionRefs";
 import {
@@ -72,6 +72,7 @@ import {
   GitHubActionsOidcJwksUnavailableError,
   verifyGitHubActionsTrustedPublishJwt,
 } from "../lib/githubActionsOidc";
+import { sha256Hex } from "../lib/hash";
 import { corsHeaders, mergeHeaders } from "../lib/httpHeaders";
 import { applyRateLimit } from "../lib/httpRateLimit";
 import { verifyOpenClawPublishAuthorization } from "../lib/openClawPublishAuthorization";

@@ -9,7 +9,7 @@ import type { Doc } from "./_generated/dataModel";
 import { internalAction, internalQuery, type ActionCtx, type QueryCtx } from "./_generated/server";
 import { internalMutation } from "./functions";
 import bundledInventory from "./lib/bundledPluginCategoryAssignments.json";
-import { sha256Hex } from "./lib/clawpack";
+import { sha256Hex } from "./lib/hash";
 import {
   derivePluginManifestSummary,
   maybeParseJson,

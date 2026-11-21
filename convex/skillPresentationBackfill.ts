@@ -3,7 +3,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import { internalAction, internalMutation, internalQuery } from "./_generated/server";
-import { sha256Hex } from "./lib/clawpack";
+import { sha256Hex } from "./lib/hash";
 import {
   MAX_SKILL_PRESENTATION_YAML_BYTES,
   OPENAI_SKILL_PRESENTATION_PATH,

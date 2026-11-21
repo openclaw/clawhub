@@ -6,7 +6,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it, vi } from "vitest";
 import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
 import { api, internal } from "./_generated/api";
-import { sha256Hex } from "./lib/clawpack";
+import { sha256Hex } from "./lib/hash";
 import { hashToken } from "./lib/tokens";
 import schema from "./schema";
 

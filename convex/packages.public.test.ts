@@ -6,7 +6,7 @@ import { convexToJson, jsonToConvex, type Value } from "convex/values";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { indexedUnique, orderedTake } from "../src/__tests__/helpers/convexQuery";
-import { sha256Hex } from "./lib/clawpack";
+import { sha256Hex } from "./lib/hash";
 import { verifyOpenClawPublishAuthorization } from "./lib/openClawPublishAuthorization";
 import { MAX_PUBLISH_FILE_BYTES } from "./lib/publishLimits";
 import {

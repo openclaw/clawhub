@@ -7,7 +7,7 @@ import {
 } from "clawhub-schema";
 import type { Doc } from "./_generated/dataModel";
 import { internalMutation } from "./functions";
-import { sha256Hex } from "./lib/clawpack";
+import { sha256Hex } from "./lib/hash";
 import { isPromotionActive } from "./promotions";
 
 // Feed snapshots are immutable bytes (see specs/hosted-catalog-feed.md), so a

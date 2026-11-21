@@ -1,7 +1,7 @@
 /* @vitest-environment node */
 import { getFunctionName } from "convex/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { sha256Hex } from "./clawpack";
+import { sha256Hex } from "./hash";
 import {
   bundledPluginIconSourceUrl,
   resolvePackageIcon,

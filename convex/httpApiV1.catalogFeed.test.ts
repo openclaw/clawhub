@@ -3,7 +3,7 @@ import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { internal } from "./_generated/api";
 import { getLatestPublication } from "./catalogFeed";
 import { catalogTemplatesFeedV1Handler, catalogFeedV1Handler } from "./httpApiV1/catalogFeedV1";
-import { sha256Hex } from "./lib/clawpack";
+import { sha256Hex } from "./lib/hash";
 
 type QueryCtx = {
   runQuery: ReturnType<typeof vi.fn>;

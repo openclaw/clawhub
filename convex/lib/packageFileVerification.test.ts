@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { deferred } from "../../src/__tests__/helpers/deferred";
 import type { ActionCtx } from "../_generated/server";
-import { sha256Hex } from "./clawpack";
+import { sha256Hex } from "./hash";
 import { verifyPublishFileStorageMetadata } from "./packageFileVerification";
 
 function files(count: number) {

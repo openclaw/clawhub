@@ -1,5 +1,4 @@
 import { toHex } from "./hash";
-export { sha256Hex } from "./hash";
 export { ClawPackTarLimitError } from "../../packages/clawhub/src/clawpack";
 import { parseClawPack as parseClawPackContents } from "../../packages/clawhub/src/clawpack";
 

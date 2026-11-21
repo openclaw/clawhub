@@ -7,7 +7,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { action, internalAction, internalQuery, type ActionCtx } from "./_generated/server";
 import { internalMutation } from "./functions";
 import { assertAdmin, requireUserFromAction } from "./lib/access";
-import { sha256Hex } from "./lib/clawpack";
+import { sha256Hex } from "./lib/hash";
 import { buildManagedMcpBundle } from "./lib/managedMcpBundle";
 import type { McpPublicInspection } from "./lib/mcpPublicInspection";
 import { getPublisherByHandle, requirePublisherRole } from "./lib/publishers";
