@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- CI: keep independent Testbox sessions on the same branch running when another session starts. Repeated runs for the same Testbox still cancel the earlier run.
+
 - Skill reports: a missing skill, a blank reason, and the open-report limit return "Skill not found", "Report reason required.", or "Report limit reached. Please wait for moderation before reporting more." instead of a server failure.
 
 - Templates: the package security API now links a Template release to its Template security-audit page (`/<publisher>/templates/<name>/security-audit`). It used to return the plugin audit address, so OpenClaw opened a Template's audit under `/plugins/`. Plugin links are unchanged.
