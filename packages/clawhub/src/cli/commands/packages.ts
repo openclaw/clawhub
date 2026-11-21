@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import mime from "mime";
 import semver from "semver";
 import { parseClawPack } from "../../clawpack.js";
+import { buildGitHubFolderContentHash, hashFileInventory } from "../../fileInventory.js";
 import {
   apiRequest,
   apiRequestForm,
@@ -62,7 +63,6 @@ import {
   validateOpenClawExternalCodePluginPackageContents,
   validateOpenClawExternalCodePluginPackageJson,
 } from "../../schema/index.js";
-import { buildGitHubFolderContentHash, hashSkillFiles } from "../../skills.js";
 import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
 import { pathExists } from "../fs.js";
 import { resolveGitHubPublishSource } from "../githubSource.js";
@@ -998,7 +998,7 @@ export async function cmdPublishPackage(
       const trustedToolingBoundary =
         runtime.revalidateTrustedTooling !== undefined ||
         Boolean(process.env.TRUSTED_TOOLING_IDENTITY_JSON?.trim());
-      const inventoryDigest = buildGitHubFolderContentHash(hashSkillFiles(plan.filesOnDisk).files);
+      const inventoryDigest = buildGitHubFolderContentHash(hashFileInventory(plan.filesOnDisk));
       let resolvedPublishToken = await resolvePackagePublishToken({
         registry,
         packageName: plan.payload.name,

@@ -3,6 +3,7 @@ import { access, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promi
 import { dirname, join } from "node:path";
 import { unzipSync } from "fflate";
 import mime from "mime";
+import { hashFileInventory } from "./fileInventory.js";
 import { forEachPublishFile } from "./publishFiles.js";
 import { type Lockfile, LockfileSchema, parseArk } from "./schema/index.js";
 
@@ -127,10 +128,6 @@ export async function listSkillFiles(root: string, limits?: SkillFileLimits): Pr
   );
 }
 
-export function sha256Hex(bytes: Uint8Array) {
-  return createHash("sha256").update(bytes).digest("hex");
-}
-
 export function buildSkillFingerprint(files: Array<{ path: string; sha256: string }>) {
   const normalized = files
     .filter((file) => Boolean(file.path) && Boolean(file.sha256))
@@ -141,22 +138,8 @@ export function buildSkillFingerprint(files: Array<{ path: string; sha256: strin
 }
 
 export function hashSkillFiles(files: Array<{ relPath: string; bytes: Uint8Array }>) {
-  const hashed = files.map((file) => ({
-    path: file.relPath,
-    sha256: sha256Hex(file.bytes),
-    size: file.bytes.byteLength,
-  }));
+  const hashed = hashFileInventory(files);
   return { files: hashed, fingerprint: buildSkillFingerprint(hashed) };
-}
-
-export function buildGitHubFolderContentHash(
-  files: Array<{ path: string; sha256: string; size: number }>,
-) {
-  const payload = [...files]
-    .sort((left, right) => left.path.localeCompare(right.path))
-    .map((file) => `${file.path}\0${file.size}\0${file.sha256.toLowerCase()}`)
-    .join("\n");
-  return createHash("sha256").update(payload).digest("hex");
 }
 
 export async function readLockfile(workdir: string): Promise<Lockfile> {

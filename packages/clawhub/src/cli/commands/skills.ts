@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, rename, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import semver from "semver";
+import { buildGitHubFolderContentHash } from "../../fileInventory.js";
 import { apiRequest, downloadZip, fetchBinary, registryUrl } from "../../http.js";
 import {
   ApiRoutes,
@@ -19,7 +20,6 @@ import {
   type SkillReportStatus,
 } from "../../schema/index.js";
 import {
-  buildGitHubFolderContentHash,
   extractGitHubZipPathToDir,
   extractZipToDir,
   hashSkillFiles,

@@ -10,6 +10,7 @@ import {
   createUiModuleMocks,
   makeGlobalOpts as makeOpts,
 } from "../../../test/cliCommandTestKit.js";
+import { buildGitHubFolderContentHash } from "../../fileInventory.js";
 import { ApiRoutes, LegacyApiRoutes } from "../../schema/index.js";
 import * as skillStore from "../../skills.js";
 
@@ -534,7 +535,7 @@ describe("cmdUpdate", () => {
     const previousCommit = "a".repeat(40);
     const nextCommit = "b".repeat(40);
     const installedFiles = [{ path: "SKILL.md", sha256: "c".repeat(64), size: 1 }];
-    const contentHash = skillStore.buildGitHubFolderContentHash(installedFiles);
+    const contentHash = buildGitHubFolderContentHash(installedFiles);
     mockGetOptionalAuthToken.mockResolvedValue("tkn");
     mockApiRequest
       .mockResolvedValueOnce({
@@ -662,7 +663,7 @@ describe("cmdUpdate", () => {
     const previousCommit = "a".repeat(40);
     const nextCommit = "b".repeat(40);
     const installedFiles = [{ path: "SKILL.md", sha256: "c".repeat(64), size: 1 }];
-    const contentHash = skillStore.buildGitHubFolderContentHash(installedFiles);
+    const contentHash = buildGitHubFolderContentHash(installedFiles);
     mockGetOptionalAuthToken.mockResolvedValue("tkn");
     mockApiRequest
       .mockResolvedValueOnce({
@@ -799,7 +800,7 @@ describe("cmdUpdate", () => {
     const sourceRef = "skills-sh:patrick-erichsen/skills/html";
     const commit = "a".repeat(40);
     const installedFiles = [{ path: "SKILL.md", sha256: "c".repeat(64), size: 1 }];
-    const contentHash = skillStore.buildGitHubFolderContentHash(installedFiles);
+    const contentHash = buildGitHubFolderContentHash(installedFiles);
     mockGetOptionalAuthToken.mockResolvedValue("tkn");
     mockApiRequest.mockResolvedValueOnce({
       ok: true,
@@ -1803,7 +1804,7 @@ describe("cmdInstall", () => {
     const sourceRef = "skills-sh:patrick-erichsen/skills/html";
     const commit = "a".repeat(40);
     const installedFiles = [{ path: "SKILL.md", sha256: "b".repeat(64), size: 1 }];
-    const contentHash = skillStore.buildGitHubFolderContentHash(installedFiles);
+    const contentHash = buildGitHubFolderContentHash(installedFiles);
     mockGetOptionalAuthToken.mockResolvedValue("tkn");
     mockApiRequest
       .mockResolvedValueOnce({
@@ -2016,7 +2017,7 @@ describe("cmdInstall", () => {
     const sourceRef = "skills-sh:patrick-erichsen/skills/html";
     const commit = "a".repeat(40);
     const installedFiles = [{ path: "SKILL.md", sha256: "b".repeat(64), size: 1 }];
-    const contentHash = skillStore.buildGitHubFolderContentHash(installedFiles);
+    const contentHash = buildGitHubFolderContentHash(installedFiles);
     mockGetOptionalAuthToken.mockResolvedValue("tkn");
     mockApiRequest
       .mockResolvedValueOnce({

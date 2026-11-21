@@ -14,7 +14,6 @@ import {
   listSkillFiles,
   readLockfile,
   readSkillOrigin,
-  sha256Hex,
   writeLockfile,
   writeSkillOrigin,
 } from "./skills";
@@ -236,8 +235,8 @@ describe("skills", () => {
       { relPath: "a.txt", bytes: strToU8("a") },
     ]);
     const expected = buildSkillFingerprint([
-      { path: "a.txt", sha256: sha256Hex(strToU8("a")) },
-      { path: "b.txt", sha256: sha256Hex(strToU8("b")) },
+      { path: "a.txt", sha256: "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb" },
+      { path: "b.txt", sha256: "3e23e8160039594a33894f6564e1b1348bbd7a0088d42c4acb73eeaed59c009d" },
     ]);
     expect(fingerprint).toBe(expected);
   });
@@ -245,10 +244,16 @@ describe("skills", () => {
   it("builds fingerprints from valid entries only", () => {
     const fingerprint = buildSkillFingerprint([
       { path: "", sha256: "" },
-      { path: "valid.txt", sha256: sha256Hex(strToU8("ok")) },
+      {
+        path: "valid.txt",
+        sha256: "2689367b205c16ce32ed4200942b8b8b1e262dfc70d9bc9fbc77c49699a4f1df",
+      },
     ]);
     const expected = buildSkillFingerprint([
-      { path: "valid.txt", sha256: sha256Hex(strToU8("ok")) },
+      {
+        path: "valid.txt",
+        sha256: "2689367b205c16ce32ed4200942b8b8b1e262dfc70d9bc9fbc77c49699a4f1df",
+      },
     ]);
     expect(fingerprint).toBe(expected);
   });

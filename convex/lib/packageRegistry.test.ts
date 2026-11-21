@@ -1,7 +1,7 @@
 /* @vitest-environment node */
 
 import { describe, expect, it } from "vitest";
-import { buildGitHubFolderContentHash } from "../../packages/clawhub/src/skills";
+import { buildGitHubFolderContentHash } from "../../packages/clawhub/src/fileInventory";
 import {
   derivePluginManifestSummary,
   ensurePluginNameMatchesPackage,
