@@ -2,10 +2,11 @@ import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
 import { defaultUrlTransform } from "react-markdown";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
+import { isSkillInstallTab, type DetailTab, type SkillDetailTab } from "../lib/skillDetailTabs";
 import { resolveSkillReadmeHref } from "../lib/skillReadmeLinks";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { SkillCardPreview } from "./SkillCardPreview";
-import { buildSkillInstallTabs, type SkillInstallTabId } from "./SkillInstallCard";
+import { SkillInstallPanel } from "./SkillInstallCard";
 import { SkillVersionsPanel } from "./SkillVersionsPanel";
 import { Skeleton } from "./ui/skeleton";
 
@@ -36,15 +37,6 @@ function SkillTabSkeleton() {
 
 type SkillFile = Doc<"skillVersions">["files"][number];
 
-export type DetailTab =
-  | "readme"
-  | "skill-card"
-  | "evaluation"
-  | "files"
-  | "compare"
-  | "versions"
-  | SkillInstallTabId;
-
 type SkillDetailTabsProps = {
   activeTab: DetailTab;
   setActiveTab: (tab: DetailTab) => void;
@@ -54,7 +46,7 @@ type SkillDetailTabsProps = {
   isPendingPublication?: boolean;
   skillCardContent: string | null;
   skillCardError: string | null;
-  hasSkillCard: boolean;
+  tabs: SkillDetailTab[];
   latestFiles: SkillFile[];
   latestVersionId: Id<"skillVersions"> | null;
   latestVersion?: string | null;
@@ -80,7 +72,7 @@ export function SkillDetailTabs({
   isPendingPublication = false,
   skillCardContent,
   skillCardError,
-  hasSkillCard,
+  tabs,
   latestFiles,
   latestVersionId,
   latestVersion,
@@ -98,9 +90,8 @@ export function SkillDetailTabs({
 }: SkillDetailTabsProps) {
   const resolveReadmeHref =
     readmeHrefResolver ?? ((href: string) => resolveSkillReadmeHref(href, skill.slug, ownerHandle));
-  const installTabs = buildSkillInstallTabs({ clawdis, osLabels });
-  const activeInstallTab = installTabs.find((tab) => tab.id === activeTab);
-  const compareEnabled = showArchiveTabs && (versions?.length ?? 0) > 1;
+  const activeInstallTab =
+    isSkillInstallTab(activeTab) && tabs.some((tab) => tab.id === activeTab) ? activeTab : null;
   const [isReadmeExpanded, setIsReadmeExpanded] = useState(false);
   const readmeLineCount = useMemo(
     () => readmeContent?.split(/\r\n|\n|\r/).length ?? 0,
@@ -129,94 +120,15 @@ export function SkillDetailTabs({
     });
   };
 
+  const prefetchCompare = () => {
+    onCompareIntent();
+    void import("./SkillDiffCard");
+  };
+
   return (
     <div className="tab-card detail-mobile-tabs skill-detail-tabs-card">
       <div className="tab-header" role="tablist" aria-label="Skill detail tabs">
-        <button
-          id="skill-tab-readme"
-          className={`tab-button${activeTab === "readme" ? " is-active" : ""}`}
-          type="button"
-          role="tab"
-          aria-selected={activeTab === "readme"}
-          aria-controls="skill-tabpanel-readme"
-          onClick={() => selectTab("readme")}
-        >
-          SKILL.md
-        </button>
-        {evaluationContent ? (
-          <button
-            id="skill-tab-evaluation"
-            className={`tab-button${activeTab === "evaluation" ? " is-active" : ""}`}
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "evaluation"}
-            aria-controls="skill-tabpanel-evaluation"
-            onClick={() => selectTab("evaluation")}
-          >
-            Evals
-          </button>
-        ) : null}
-        {hasSkillCard ? (
-          <button
-            id="skill-tab-skill-card"
-            className={`tab-button${activeTab === "skill-card" ? " is-active" : ""}`}
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "skill-card"}
-            aria-controls="skill-tabpanel-skill-card"
-            onClick={() => selectTab("skill-card")}
-          >
-            Skill Card
-          </button>
-        ) : null}
-        {showArchiveTabs ? (
-          <button
-            id="skill-tab-files"
-            className={`tab-button${activeTab === "files" ? " is-active" : ""}`}
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "files"}
-            aria-controls="skill-tabpanel-files"
-            onClick={() => selectTab("files")}
-          >
-            Files
-          </button>
-        ) : null}
-        {compareEnabled ? (
-          <button
-            id="skill-tab-compare"
-            className={`tab-button${activeTab === "compare" ? " is-active" : ""}`}
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "compare"}
-            aria-controls="skill-tabpanel-compare"
-            onClick={() => selectTab("compare")}
-            onMouseEnter={() => {
-              onCompareIntent();
-              void import("./SkillDiffCard");
-            }}
-            onFocus={() => {
-              onCompareIntent();
-              void import("./SkillDiffCard");
-            }}
-          >
-            Diff
-          </button>
-        ) : null}
-        {showArchiveTabs ? (
-          <button
-            id="skill-tab-versions"
-            className={`tab-button${activeTab === "versions" ? " is-active" : ""}`}
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "versions"}
-            aria-controls="skill-tabpanel-versions"
-            onClick={() => selectTab("versions")}
-          >
-            Versions
-          </button>
-        ) : null}
-        {installTabs.map((tab) => (
+        {tabs.map((tab) => (
           <button
             key={tab.id}
             id={`skill-tab-${tab.id}`}
@@ -226,6 +138,8 @@ export function SkillDetailTabs({
             aria-selected={activeTab === tab.id}
             aria-controls={`skill-tabpanel-${tab.id}`}
             onClick={() => selectTab(tab.id)}
+            onMouseEnter={tab.id === "compare" ? prefetchCompare : undefined}
+            onFocus={tab.id === "compare" ? prefetchCompare : undefined}
           >
             {tab.label}
           </button>
@@ -394,10 +308,10 @@ export function SkillDetailTabs({
         <div
           className="tab-body skill-install-tabs"
           role="tabpanel"
-          id={`skill-tabpanel-${activeInstallTab.id}`}
-          aria-labelledby={`skill-tab-${activeInstallTab.id}`}
+          id={`skill-tabpanel-${activeInstallTab}`}
+          aria-labelledby={`skill-tab-${activeInstallTab}`}
         >
-          {activeInstallTab.panel}
+          <SkillInstallPanel tab={activeInstallTab} clawdis={clawdis} osLabels={osLabels} />
         </div>
       ) : null}
     </div>

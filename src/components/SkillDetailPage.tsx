@@ -22,6 +22,7 @@ import { hasPostPublishSearch } from "../lib/postPublishSearch";
 import { canManageSkill, isModerator } from "../lib/roles";
 import { handleSignInError } from "../lib/signInError";
 import { skillCardLoadKey } from "../lib/skillCards";
+import { buildSkillDetailTabs, type DetailTab } from "../lib/skillDetailTabs";
 import type { SkillBySlugResult, SkillPageInitialData } from "../lib/skillPage";
 import { resolveGitHubSkillReadmeHref } from "../lib/skillReadmeLinks";
 import { clearAuthError } from "../lib/useAuthError";
@@ -32,7 +33,7 @@ import { DetailSecuritySummary } from "./DetailSecuritySummary";
 import { GenericNotFoundPage } from "./GenericNotFoundPage";
 import { SkillDetailSkeleton } from "./skeletons/SkillDetailSkeleton";
 import { SkillDetailPageView } from "./SkillDetailPageView";
-import { SkillDetailTabs, type DetailTab } from "./SkillDetailTabs";
+import { SkillDetailTabs } from "./SkillDetailTabs";
 import {
   buildSkillHref,
   formatConfigSnippet,
@@ -41,7 +42,6 @@ import {
   stripFrontmatter,
 } from "./skillDetailUtils";
 import { SkillEvaluationReport, type SkillEvaluationResult } from "./SkillEvaluationReport";
-import { buildSkillInstallTabs } from "./SkillInstallCard";
 import { SkillOwnershipPanel } from "./SkillOwnershipPanel";
 import { SkillPublishSuccessDialog } from "./SkillPublishSuccessDialog";
 import { SkillRelatedSection, type RelatedSkillEntry } from "./SkillRelatedSection";
@@ -577,16 +577,19 @@ export function SkillDetailPage({
   // Set of tab IDs that are currently rendered — used to validate hash-driven
   // navigation so stale bookmarks fall back to readme rather than leaving the
   // content pane blank.
-  const validTabIds = useMemo<Set<DetailTab>>(() => {
-    const installTabs = buildSkillInstallTabs({ clawdis, osLabels });
-    const baseTabs: DetailTab[] = isGitHubBackedSkill
-      ? ["readme"]
-      : ["readme", "files", "versions"];
-    if (hasSkillCard) baseTabs.splice(1, 0, "skill-card");
-    if (skillEvaluation) baseTabs.push("evaluation");
-    if (!isGitHubBackedSkill && (versions?.length ?? 0) > 1) baseTabs.push("compare");
-    return new Set([...baseTabs, ...installTabs.map((t) => t.id)]);
-  }, [clawdis, hasSkillCard, isGitHubBackedSkill, osLabels, skillEvaluation, versions]);
+  const detailTabs = useMemo(
+    () =>
+      buildSkillDetailTabs({
+        hasSkillCard,
+        hasEvaluation: Boolean(skillEvaluation),
+        showArchiveTabs: !isGitHubBackedSkill,
+        versionCount: versions?.length ?? 0,
+        clawdis,
+        osLabels,
+      }),
+    [clawdis, hasSkillCard, isGitHubBackedSkill, osLabels, skillEvaluation, versions],
+  );
+  const validTabIds = useMemo(() => new Set(detailTabs.map((tab) => tab.id)), [detailTabs]);
 
   useEffect(() => {
     setActiveTab((prev) => {
@@ -990,7 +993,7 @@ export function SkillDetailPage({
         isPendingPublication={isPendingPublication}
         skillCardContent={displayedSkillCard}
         skillCardError={displayedSkillCardError}
-        hasSkillCard={hasSkillCard}
+        tabs={detailTabs}
         latestFiles={latestFiles}
         latestVersionId={latestVersion?._id ?? null}
         latestVersion={latestVersion?.version ?? null}
