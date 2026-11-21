@@ -72,3 +72,34 @@ describe("schema validation library imports", () => {
     expect(chain?.[0]).toBe("convex/httpApiV1/packagesV1.ts");
   }, 60_000);
 });
+
+const HASH_ONLY_MODULES = [
+  "convex/catalogFeed.ts",
+  "convex/managedMcp.ts",
+  "convex/pluginCategoryRefresh.ts",
+  "convex/promotionsFeed.ts",
+  "convex/skillPresentationBackfill.ts",
+  "convex/lib/packageClawpackPublish.ts",
+];
+
+describe("hash-only archive imports", () => {
+  it.each(HASH_ONLY_MODULES)(
+    "%s does not statically import the archive parser",
+    async (entry) => {
+      const chain = await staticImportChainTo(
+        entry,
+        (file) => file === "packages/clawhub/src/clawpack.ts",
+      );
+      expect(chain, `static import chain: ${chain?.join(" -> ")}`).toBeNull();
+    },
+    60_000,
+  );
+
+  it("detects an archive parsing consumer", async () => {
+    const chain = await staticImportChainTo(
+      "convex/lib/templateDisplayArchive.ts",
+      (file) => file === "packages/clawhub/src/clawpack.ts",
+    );
+    expect(chain?.[0]).toBe("convex/lib/templateDisplayArchive.ts");
+  }, 60_000);
+});

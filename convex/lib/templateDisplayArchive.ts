@@ -4,7 +4,8 @@ import {
   TEMPLATE_BOOTSTRAP_FILE_NAMES,
 } from "clawhub-schema/templatePackage";
 import type { ActionCtx } from "../_generated/server";
-import { ClawPackTarLimitError, parseClawPack, sha256Hex } from "./clawpack";
+import { ClawPackTarLimitError, parseClawPack } from "./clawpack";
+import { sha256Hex } from "./hash";
 import {
   MAX_TEMPLATE_DISPLAY_ARCHIVE_BYTES,
   MAX_TEMPLATE_DISPLAY_DATA_BYTES,

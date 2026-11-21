@@ -7,7 +7,8 @@ import { describe, expect, it, vi } from "vitest";
 import { npmPackFixture } from "../packages/clawhub/test/npmPack";
 import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
 import { internal } from "./_generated/api";
-import { parseClawPack, sha256Hex } from "./lib/clawpack";
+import { parseClawPack } from "./lib/clawpack";
+import { sha256Hex } from "./lib/hash";
 import { hashToken } from "./lib/tokens";
 import schema from "./schema";
 

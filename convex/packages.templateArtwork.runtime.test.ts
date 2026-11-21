@@ -6,7 +6,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { npmPackFixture } from "../packages/clawhub/test/npmPack";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { sha256Hex } from "./lib/clawpack";
+import { sha256Hex } from "./lib/hash";
 import { hashToken } from "./lib/tokens";
 import schema from "./schema";
 

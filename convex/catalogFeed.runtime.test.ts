@@ -10,7 +10,7 @@ vi.mock("./lib/verifiedClientIp", () => ({
   getVerifiedClientIp: async () => "203.0.113.1",
 }));
 import { internal } from "./_generated/api";
-import { sha256Hex } from "./lib/clawpack";
+import { sha256Hex } from "./lib/hash";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");

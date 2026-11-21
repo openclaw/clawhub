@@ -2,7 +2,8 @@ import type { PackagePublishMetadata, ServerPackagePublishRequest } from "clawhu
 import { ConvexError } from "convex/values";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
-import { parseClawPack, sha256Hex } from "./clawpack";
+import type { parseClawPack } from "./clawpack";
+import { sha256Hex } from "./hash";
 import { tryNormalizePackageName } from "./packageReadName";
 import {
   getClawPackSizeError,

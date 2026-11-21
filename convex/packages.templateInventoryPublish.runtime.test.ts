@@ -5,7 +5,8 @@ import { afterEach, expect, it, vi } from "vitest";
 import { npmPackFixture } from "../packages/clawhub/test/npmPack";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { parseClawPack, sha256Hex } from "./lib/clawpack";
+import { parseClawPack } from "./lib/clawpack";
+import { sha256Hex } from "./lib/hash";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");

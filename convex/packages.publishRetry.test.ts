@@ -2,7 +2,7 @@
 
 import { type FunctionReference, getFunctionName } from "convex/server";
 import { describe, expect, it, vi } from "vitest";
-import { sha256Hex } from "./lib/clawpack";
+import { sha256Hex } from "./lib/hash";
 import { buildPackageInventoryDigest } from "./lib/skills/skillMarkdown";
 import { publishPackageForTrustedPublisherInternal } from "./packages";
 

@@ -64,7 +64,7 @@ const {
 } = await import("./lib/githubActionsOidc");
 const { verifyOpenClawPublishAuthorization } = await import("./lib/openClawPublishAuthorization");
 const { buildBundleFingerprint } = await import("./lib/skillCards");
-const { sha256Hex } = await import("./lib/clawpack");
+const { sha256Hex } = await import("./lib/hash");
 const { publishVersionForUser } = await import("./skills");
 const { contentDispositionAttachment } = await import("./httpApiV1/shared");
 const { __handlers } = await import("./httpApiV1");
