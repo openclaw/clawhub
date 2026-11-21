@@ -5,7 +5,8 @@ import {
   stripPresentationEmoji,
   type OpenAiSkillPresentation,
 } from "./skillPresentation";
-import { getFrontmatterMetadata, getFrontmatterValue } from "./skills";
+import { getFrontmatterValue } from "./skills/frontmatterValue";
+import { getFrontmatterMetadata } from "./skills/skillMarkdown";
 
 export function resolveHistoricalSkillPresentation(args: {
   slug: string;

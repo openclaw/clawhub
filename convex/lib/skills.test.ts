@@ -1,17 +1,17 @@
 /* @vitest-environment node */
 
 import { describe, expect, it } from "vitest";
+import { parseClawdisMetadata } from "./skills";
+import { hashSkillFiles } from "./skills/fileHash";
+import { getFrontmatterValue } from "./skills/frontmatterValue";
 import {
   buildEmbeddingText,
   getFrontmatterMetadata,
-  getFrontmatterValue,
-  hashSkillFiles,
   isMacJunkPath,
-  parseClawdisMetadata,
   parseFrontmatter,
   parseSkillMarkdown,
   sanitizePath,
-} from "./skills";
+} from "./skills/skillMarkdown";
 
 describe("skills utils", () => {
   it("parses frontmatter", () => {

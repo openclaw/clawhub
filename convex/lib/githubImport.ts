@@ -2,7 +2,7 @@ import { ConvexError } from "convex/values";
 import { zipSync } from "fflate";
 import semver from "semver";
 import { fetchGitHubApi } from "./githubImportApi";
-import { parseFrontmatter } from "./skills";
+import { parseFrontmatter } from "./skills/skillMarkdown";
 
 export type GitHubImportUrl = {
   owner: string;

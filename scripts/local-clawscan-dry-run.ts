@@ -18,12 +18,9 @@ import {
   type LlmEvalResponse,
   type SkillEvalContext,
 } from "../convex/lib/securityPrompt";
-import {
-  getFrontmatterMetadata,
-  getFrontmatterValue,
-  parseClawdisMetadata,
-  parseFrontmatter,
-} from "../convex/lib/skills";
+import { parseClawdisMetadata } from "../convex/lib/skills";
+import { getFrontmatterValue } from "../convex/lib/skills/frontmatterValue";
+import { getFrontmatterMetadata, parseFrontmatter } from "../convex/lib/skills/skillMarkdown";
 import { parseClawPack } from "../packages/clawhub/src/clawpack";
 
 export type LocalClawScanDryRunEnv = Record<string, string | undefined>;

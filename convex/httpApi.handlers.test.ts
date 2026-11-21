@@ -20,7 +20,7 @@ const { getOptionalApiTokenUser, requireApiTokenUser, requirePackagePublishAuth 
   await import("./lib/apiTokenAuth");
 const { publishVersionForUser } = await import("./skills");
 const { __handlers } = await import("./httpApi");
-const { hashSkillFiles } = await import("./lib/skills");
+const { hashSkillFiles } = await import("./lib/skills/fileHash");
 
 function makeCtx(partial: Record<string, unknown>) {
   const partialRunMutation =

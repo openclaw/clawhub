@@ -12,7 +12,8 @@ import {
   SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT,
   type SkillEvalContext,
 } from "./securityPrompt";
-import { parseClawdisMetadata, parseFrontmatter } from "./skills";
+import { parseClawdisMetadata } from "./skills";
+import { parseFrontmatter } from "./skills/skillMarkdown";
 
 const baseCtx: SkillEvalContext = {
   slug: "wallet-sync",

@@ -1421,7 +1421,7 @@ describe("skill search digest moderation verdict backfill", () => {
 
 describe("maintenance fingerprint backfill", () => {
   it("backfills fingerprint field and inserts index entry", async () => {
-    const { hashSkillFiles } = await import("./lib/skills");
+    const { hashSkillFiles } = await import("./lib/skills/fileHash");
     const expected = await hashSkillFiles([{ path: "SKILL.md", sha256: "abc" }]);
 
     const runQuery = vi.fn().mockResolvedValue({
@@ -1489,7 +1489,7 @@ describe("maintenance fingerprint backfill", () => {
   });
 
   it("patches missing version fingerprint without touching correct entries", async () => {
-    const { hashSkillFiles } = await import("./lib/skills");
+    const { hashSkillFiles } = await import("./lib/skills/fileHash");
     const expected = await hashSkillFiles([{ path: "SKILL.md", sha256: "abc" }]);
 
     const runQuery = vi.fn().mockResolvedValue({
@@ -1527,7 +1527,7 @@ describe("maintenance fingerprint backfill", () => {
   });
 
   it("replaces mismatched fingerprint entries", async () => {
-    const { hashSkillFiles } = await import("./lib/skills");
+    const { hashSkillFiles } = await import("./lib/skills/fileHash");
     const expected = await hashSkillFiles([{ path: "SKILL.md", sha256: "abc" }]);
 
     const runQuery = vi.fn().mockResolvedValue({
@@ -1563,7 +1563,7 @@ describe("maintenance fingerprint backfill", () => {
   });
 
   it("ignores generated Skill Cards and bundle fingerprints for source backfills", async () => {
-    const { hashSkillFiles } = await import("./lib/skills");
+    const { hashSkillFiles } = await import("./lib/skills/fileHash");
     const sourceFingerprint = await hashSkillFiles([{ path: "SKILL.md", sha256: "abc" }]);
     const bundleFingerprint = await hashSkillFiles([
       { path: "SKILL.md", sha256: "abc" },

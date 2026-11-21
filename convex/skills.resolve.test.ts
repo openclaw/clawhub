@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
-import { hashSkillFiles } from "./lib/skills";
+import { hashSkillFiles } from "./lib/skills/fileHash";
 import { resolveVersionByHash } from "./skills";
 
 vi.mock("@convex-dev/auth/server", () => ({

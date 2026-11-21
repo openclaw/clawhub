@@ -1,10 +1,6 @@
-import {
-  getFrontmatterMetadata,
-  getFrontmatterValue,
-  type ParsedSkillFrontmatter,
-  parseClawdisMetadata,
-  parseFrontmatter,
-} from "./skills";
+import { parseClawdisMetadata } from "./skills";
+import { getFrontmatterValue, type ParsedSkillFrontmatter } from "./skills/frontmatterValue";
+import { getFrontmatterMetadata, parseFrontmatter } from "./skills/skillMarkdown";
 
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
 

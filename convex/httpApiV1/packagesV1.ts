@@ -116,8 +116,8 @@ import {
   getPublicSkillVersionDownloadBlock,
   getSkillFileModerationInfoFromSkill,
 } from "../lib/skillFileAccess";
-import { isMacJunkPath } from "../lib/skills";
 import type { PublicSkillVersionSelection } from "../lib/skills/publicVersions";
+import { isMacJunkPath } from "../lib/skills/skillMarkdown";
 import {
   buildDeterministicPackageZip,
   buildMergedExportZip,

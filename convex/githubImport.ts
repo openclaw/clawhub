@@ -23,7 +23,7 @@ import {
 import { fetchGitHubApi } from "./lib/githubImportApi";
 import { sha256Hex } from "./lib/hash";
 import { publishVersionForUser } from "./lib/skillPublish";
-import { isMacJunkPath, sanitizePath } from "./lib/skills";
+import { isMacJunkPath, sanitizePath } from "./lib/skills/skillMarkdown";
 
 const MAX_SELECTED_BYTES = 50 * 1024 * 1024;
 const MAX_UNZIPPED_BYTES = 80 * 1024 * 1024;
