@@ -254,6 +254,60 @@ describe("SkillDetailPage", () => {
     vi.useRealTimers();
   });
 
+  it.each(["#card", "#skill-card"])("opens the generated card alias %s", async (hash) => {
+    window.location.hash = hash;
+    getSkillCardMock.mockResolvedValue({ text: "# Generated card" });
+    const initialData = makeInitialData();
+    initialData.result!.latestVersion = makeWeatherVersion({
+      generatedSkillCard: { path: "skill-card.md", size: 20, storageId, sha256: "card" },
+    } as Partial<Doc<"skillVersions">>);
+    render(<SkillDetailPage slug="weather" initialData={initialData} />);
+    await waitFor(() =>
+      expect(
+        getDesktopSkillTabs()
+          .getByRole("tab", { name: "Skill Card" })
+          .getAttribute("aria-selected"),
+      ).toBe("true"),
+    );
+    expect(await screen.findByRole("heading", { name: "Generated card" })).toBeTruthy();
+  });
+
+  it.each(["#diff", "#compare"])(
+    "opens comparison alias %s only once versions make it available",
+    async (hash) => {
+      window.location.hash = hash;
+      let releases: Doc<"skillVersions">[] | undefined;
+      useQueryMock.mockImplementation((query: unknown, args: unknown) => {
+        if (args === "skip") return undefined;
+        return getFunctionName(query as never) === "skills:listVersions" ? releases : undefined;
+      });
+      const initialData = makeInitialData();
+      const { rerender } = render(<SkillDetailPage slug="weather" initialData={initialData} />);
+      expect(getDesktopSkillTabs().queryByRole("tab", { name: "Diff" })).toBeNull();
+      releases = [
+        makeWeatherVersion(),
+        makeWeatherVersion({ _id: "skillVersions:2" as Id<"skillVersions"> }),
+      ];
+      rerender(<SkillDetailPage slug="weather" initialData={initialData} />);
+      await waitFor(() =>
+        expect(
+          getDesktopSkillTabs().getByRole("tab", { name: "Diff" }).getAttribute("aria-selected"),
+        ).toBe("true"),
+      );
+    },
+  );
+
+  it.each(["#unknown", "#runtime", "#skill-card"])(
+    "keeps unavailable hash %s on README",
+    (hash) => {
+      window.location.hash = hash;
+      render(<SkillDetailPage slug="weather" initialData={makeInitialData()} />);
+      expect(
+        getDesktopSkillTabs().getByRole("tab", { name: "SKILL.md" }).getAttribute("aria-selected"),
+      ).toBe("true");
+    },
+  );
+
   it("shows a loading indicator while loading", () => {
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;

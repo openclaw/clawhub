@@ -2,10 +2,30 @@
 
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { ClawdisSkillMetadata } from "clawhub-schema";
-import { useState } from "react";
+import { useState, type ComponentProps } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Doc } from "../../convex/_generated/dataModel";
-import { SkillDetailTabs, type DetailTab } from "./SkillDetailTabs";
+import { buildSkillDetailTabs, type DetailTab } from "../lib/skillDetailTabs";
+import { SkillDetailTabs as SkillDetailTabsView } from "./SkillDetailTabs";
+
+function SkillDetailTabs({
+  hasSkillCard,
+  ...props
+}: Omit<ComponentProps<typeof SkillDetailTabsView>, "tabs"> & { hasSkillCard: boolean }) {
+  return (
+    <SkillDetailTabsView
+      {...props}
+      tabs={buildSkillDetailTabs({
+        hasSkillCard,
+        hasEvaluation: Boolean(props.evaluationContent),
+        showArchiveTabs: props.showArchiveTabs ?? true,
+        versionCount: props.versions?.length ?? 0,
+        clawdis: props.clawdis,
+        osLabels: props.osLabels,
+      })}
+    />
+  );
+}
 
 const useMutationMock = vi.fn();
 
@@ -453,5 +473,115 @@ describe("SkillDetailTabs evaluation tab", () => {
       "Native SkillEvaluator report",
     );
     expect(screen.getByRole("tab", { name: "SKILL.md" })).toBeTruthy();
+  });
+});
+
+function tabContractProps(overrides: Partial<ComponentProps<typeof SkillDetailTabs>> = {}) {
+  return {
+    activeTab: "readme" as const,
+    setActiveTab: vi.fn(),
+    onCompareIntent: vi.fn(),
+    readmeContent: "# Tab contract",
+    readmeError: null,
+    skillCardContent: null,
+    skillCardError: null,
+    hasSkillCard: false,
+    latestFiles: [],
+    latestVersionId: null,
+    skill: { slug: "tab-contract", tags: {} } as Doc<"skills">,
+    diffVersions: undefined,
+    versions: undefined,
+    nixPlugin: false,
+    clawdis: undefined,
+    osLabels: [],
+    ...overrides,
+  };
+}
+
+describe("skill detail tab contracts", () => {
+  it("keeps the complete header order and stable panel identifiers", () => {
+    const props = tabContractProps({
+      hasSkillCard: true,
+      evaluationContent: <p>Evaluation result</p>,
+      versions: [{}, {}] as Doc<"skillVersions">[],
+      clawdis: {
+        requires: { bins: ["tool"] },
+        dependencies: [{ name: "tool" }],
+        install: [{ kind: "brew", formula: "tool" }],
+        links: { homepage: "https://example.com" },
+      } as ClawdisSkillMetadata,
+    });
+    render(<SkillDetailTabs {...props} />);
+    const tabs = within(screen.getByRole("tablist")).getAllByRole("tab");
+    expect(tabs.map((tab) => [tab.textContent, tab.id, tab.getAttribute("aria-controls")])).toEqual(
+      [
+        ["readme", "SKILL.md"],
+        ["evaluation", "Evals"],
+        ["skill-card", "Skill Card"],
+        ["files", "Files"],
+        ["compare", "Diff"],
+        ["versions", "Versions"],
+        ["runtime", "Requirements"],
+        ["dependencies", "Dependencies"],
+        ["install", "Install"],
+        ["links", "Links"],
+      ].map(([id, label]) => [label, `skill-tab-${id}`, `skill-tabpanel-${id}`]),
+    );
+    expect(screen.queryByText("Evaluation result")).toBeNull();
+    const compare = screen.getByRole("tab", { name: "Diff" });
+    fireEvent.mouseEnter(compare);
+    fireEvent.focus(compare);
+    expect(props.onCompareIntent).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("tabpanel", { name: "Diff" })).toBeNull();
+  });
+
+  it.each([
+    [{ requires: { bins: [" "] } }, "Requirements"],
+    [{ primaryEnv: " " }, "Requirements"],
+    [{ envVars: [{ name: " " }] }, "Requirements"],
+    [{ dependencies: [{}] }, "Dependencies"],
+    [{ install: [{}] }, "Install"],
+    [{ links: { homepage: " " } }, "Links"],
+  ])("retains raw declared metadata presence for %j", (clawdis, label) => {
+    render(<SkillDetailTabs {...tabContractProps({ clawdis: clawdis as ClawdisSkillMetadata })} />);
+    expect(screen.getByRole("tab", { name: label as string })).toBeTruthy();
+  });
+
+  it("retains an OS-only runtime tab even without a metadata object", () => {
+    render(
+      <SkillDetailTabs {...tabContractProps({ activeTab: "runtime", osLabels: ["macOS"] })} />,
+    );
+    expect(screen.getByRole("tab", { name: "Requirements" })).toBeTruthy();
+    expect(screen.getByRole("tabpanel", { name: "Requirements" }).textContent).toBe("");
+  });
+
+  it("keeps a selected comparison panel while its header is unavailable", () => {
+    render(<SkillDetailTabs {...tabContractProps({ activeTab: "compare", versions: [] })} />);
+    expect(screen.queryByRole("tab", { name: "Diff" })).toBeNull();
+    expect(document.getElementById("skill-tabpanel-compare")).toBeTruthy();
+    expect(screen.getByRole("status", { name: "Loading tab content" })).toBeTruthy();
+  });
+
+  it("updates the hash without losing the current query or scroll position", () => {
+    window.history.replaceState(null, "", "/maker/skills/tab-contract?q=kept");
+    const frame = vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      callback(0);
+      return 1;
+    });
+    const scroll = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    try {
+      const props = tabContractProps({ versions: [{}, {}] as Doc<"skillVersions">[] });
+      render(<SkillDetailTabs {...props} />);
+      fireEvent.click(screen.getByRole("tab", { name: "Diff" }));
+      expect(props.setActiveTab).toHaveBeenCalledWith("compare");
+      expect(window.location.pathname + window.location.search + window.location.hash).toBe(
+        "/maker/skills/tab-contract?q=kept#diff",
+      );
+      expect(scroll).toHaveBeenCalledWith(window.scrollX, window.scrollY);
+    } finally {
+      frame.mockRestore();
+      scroll.mockRestore();
+      window.history.replaceState(null, "", "/");
+    }
   });
 });

@@ -1,18 +1,11 @@
 import type { ClawdisSkillMetadata } from "clawhub-schema";
 import type { ReactNode } from "react";
+import type { SkillInstallTabId } from "../lib/skillDetailTabs";
 import { formatInstallCommand, formatInstallLabel } from "./skillDetailUtils";
 
 type SkillInstallCardProps = {
   clawdis: ClawdisSkillMetadata | undefined;
   osLabels: string[];
-};
-
-export type SkillInstallTabId = "runtime" | "dependencies" | "install" | "links";
-
-type SkillInstallTab = {
-  id: SkillInstallTabId;
-  label: string;
-  panel: ReactNode;
 };
 
 type EnvVarDeclaration = NonNullable<ClawdisSkillMetadata["envVars"]>[number];
@@ -324,67 +317,21 @@ function LinksPanel({ links }: { links: SkillLinks }) {
   );
 }
 
-export function buildSkillInstallTabs({
+export function SkillInstallPanel({
+  tab,
   clawdis,
   osLabels,
-}: SkillInstallCardProps): SkillInstallTab[] {
-  const requirements = clawdis?.requires;
-  const installSpecs = clawdis?.install ?? [];
-  const envVars = clawdis?.envVars ?? [];
-  const dependencies = clawdis?.dependencies ?? [];
-  const links = clawdis?.links;
-  const hasRuntimeRequirements = Boolean(
-    osLabels.length ||
-    requirements?.bins?.length ||
-    requirements?.anyBins?.length ||
-    requirements?.env?.length ||
-    requirements?.config?.length ||
-    clawdis?.primaryEnv ||
-    envVars.length,
-  );
-  const hasInstallSpecs = installSpecs.length > 0;
-  const hasDependencies = dependencies.length > 0;
-  const hasLinks = Boolean(
-    links?.homepage || links?.repository || links?.documentation || links?.changelog,
-  );
-
-  if (!hasRuntimeRequirements && !hasInstallSpecs && !hasDependencies && !hasLinks) {
-    return [];
+}: SkillInstallCardProps & { tab: SkillInstallTabId }) {
+  switch (tab) {
+    case "runtime":
+      return clawdis ? <RuntimeRequirementsPanel clawdis={clawdis} osLabels={osLabels} /> : null;
+    case "dependencies":
+      return <DependenciesPanel dependencies={clawdis?.dependencies ?? []} />;
+    case "install":
+      return <InstallSpecsPanel installSpecs={clawdis?.install ?? []} />;
+    case "links":
+      return clawdis?.links ? <LinksPanel links={clawdis.links} /> : null;
+    default:
+      return null;
   }
-
-  const tabs: SkillInstallTab[] = [];
-
-  if (hasRuntimeRequirements) {
-    tabs.push({
-      id: "runtime",
-      label: "Requirements",
-      panel: clawdis ? <RuntimeRequirementsPanel clawdis={clawdis} osLabels={osLabels} /> : null,
-    });
-  }
-
-  if (hasDependencies) {
-    tabs.push({
-      id: "dependencies",
-      label: "Dependencies",
-      panel: <DependenciesPanel dependencies={dependencies} />,
-    });
-  }
-
-  if (hasInstallSpecs) {
-    tabs.push({
-      id: "install",
-      label: "Install",
-      panel: <InstallSpecsPanel installSpecs={installSpecs} />,
-    });
-  }
-
-  if (hasLinks) {
-    tabs.push({
-      id: "links",
-      label: "Links",
-      panel: links ? <LinksPanel links={links} /> : null,
-    });
-  }
-
-  return tabs;
 }
