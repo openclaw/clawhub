@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import type { PackageSkillSpectorAnalysis as SkillSpectorAnalysis } from "clawhub-schema";
 import { useQuery } from "convex/react";
 import { ChevronRight, EyeOff, Hammer, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -13,7 +14,6 @@ import { timeAgo } from "../../lib/timeAgo";
 import { InstallCopyButton } from "../InstallCopyButton";
 import { PluginApiRetirementNotice } from "../PluginApiRetirementNotice";
 import { SkillSpectorAuditPanel } from "../SecurityAuditPage";
-import type { SkillSpectorAnalysis } from "../SkillSecurityScanResults";
 import type { DashboardAttentionItem } from "./types";
 
 const ATTENTION_STRIP_LIMIT = 5;

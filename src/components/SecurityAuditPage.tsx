@@ -1,4 +1,9 @@
-import type { PackageEndorAnalysis } from "clawhub-schema";
+import type {
+  PackageEndorAnalysis,
+  PackageAigAnalysis as AigAnalysis,
+  PackageSkillSpectorAnalysis as SkillSpectorAnalysis,
+  PackageSkillSpectorIssue as SkillSpectorIssue,
+} from "clawhub-schema";
 import { getSecurityAuditOverviewCopy } from "clawhub-schema/securityAudit";
 import { ArrowLeft, Check, Clock, Download, Info, RefreshCw, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -18,19 +23,12 @@ import {
   getAuditScannerOrder,
   getLatestAuditCheckedAt,
   type AuditScannerKind,
+  type LlmAnalysis,
+  getSkillSpectorIssueCount,
+  getSkillSpectorOverviewCopy,
 } from "./securityAuditModel";
 import { SidebarMetadata } from "./SidebarMetadata";
-import {
-  getSkillSpectorOverviewCopy,
-  getSkillSpectorIssueCount,
-  hasSkillSpectorFindings,
-  ScanResultBadge,
-  SkillSpectorFindings,
-  type AigAnalysis,
-  type LlmAnalysis,
-  type SkillSpectorAnalysis,
-  type SkillSpectorIssue,
-} from "./SkillSecurityScanResults";
+import { ScanResultBadge, SkillSpectorFindings } from "./SkillSecurityScanResults";
 import { Button } from "./ui/button";
 import { Skeleton } from "./ui/skeleton";
 
@@ -797,8 +795,8 @@ function SkillSpectorSection(props: SecurityAuditPageProps) {
     props.entity,
     analysis?.issues ?? EMPTY_SKILLSPECTOR_ISSUES,
   );
-  const hasFindings = analysis ? hasSkillSpectorFindings(analysis) : false;
   const issueCount = getSkillSpectorIssueCount(analysis);
+  const hasFindings = issueCount > 0;
   const storedIssueCount = analysis?.issues.length ?? 0;
   const hasHiddenFindings = issueCount > storedIssueCount;
   const findingsTitle = issueCount > 0 ? `Findings (${issueCount})` : "Findings";

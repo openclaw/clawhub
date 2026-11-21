@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { LlmAnalysis } from "../../../components/SkillSecurityScanResults";
+import type { LlmAnalysis } from "../../../components/securityAuditModel";
 import { TemplateDetailPage } from "../../../components/TemplateDetailPage";
 import type { PackageDetailResponse } from "../../../lib/packageApi";
 import { getTemplateManifestPath, parseTemplateDocument } from "../../../lib/templateDetail";

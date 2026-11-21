@@ -1,13 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { getClawScanDisplayStatus } from "clawhub-schema/securityAudit";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import { MarketplaceIcon } from "../components/MarketplaceIcon";
-import {
-  getClawScanDisplayStatus,
-  getScanStatusInfo,
-  ScanResultBadge,
-  type LlmAnalysis,
-} from "../components/SkillSecurityScanResults";
+import type { LlmAnalysis } from "../components/securityAuditModel";
+import { ScanResultBadge } from "../components/SkillSecurityScanResults";
 import { convexHttp } from "../convex/client";
 import {
   PLUGIN_NAV_ICON,
@@ -305,10 +302,9 @@ function AuditTableRow({ row }: { row: AuditRow }) {
 }
 
 function AuditSignalCell({ status }: { status: string }) {
-  const info = getScanStatusInfo(status);
   return (
     <div role="cell" className="audits-signal-cell">
-      <ScanResultBadge status={status} label={info.label} />
+      <ScanResultBadge status={status} />
     </div>
   );
 }
