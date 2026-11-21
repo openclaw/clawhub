@@ -53,7 +53,7 @@ import {
   digestToOwnerInfo,
   getFirstSearchToken,
   normalizeSkillSearchText,
-} from "./lib/skillSearchDigest";
+} from "./lib/skillSearchDigestProjection";
 import { isSearchableSkillSlugShape, normalizeSkillSlug } from "./lib/skillSlugValidator";
 import { isPublicSkillsShMirrorDigest } from "./lib/skillsShMirrorPublic";
 import { getSkillsShPublicCatalogEnabledHandler } from "./rolloutCapabilities";

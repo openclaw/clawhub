@@ -3,7 +3,7 @@
 import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { internal } from "./_generated/api";
-import { getFirstSearchToken } from "./lib/skillSearchDigest";
+import { getFirstSearchToken } from "./lib/skillSearchDigestProjection";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");

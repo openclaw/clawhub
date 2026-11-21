@@ -7,7 +7,7 @@ import { useEnvironment } from "../src/__tests__/helpers/skillsShEnvironment";
 import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import canarySkillMarkdown from "./fixtures/patrick-html-canary-SKILL.txt?raw";
-import { extractDigestFields } from "./lib/skillSearchDigest";
+import { extractDigestFields } from "./lib/skillSearchDigestProjection";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");

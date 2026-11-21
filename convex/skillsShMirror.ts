@@ -9,7 +9,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, internalQuery } from "./functions";
 import { toHex } from "./lib/hash";
-import { getMirrorFirstSearchToken } from "./lib/skillSearchDigest";
+import { getMirrorFirstSearchToken } from "./lib/skillSearchDigestProjection";
 import { assertSkillsShMirrorEnvironmentAllowed } from "./lib/skillsShCatalogEnvironment";
 import { getSkillsShMirrorClassificationState } from "./lib/skillsShMirrorClassification";
 import {

@@ -251,6 +251,7 @@ import type * as lib_skillQualityContract from "../lib/skillQualityContract.js";
 import type * as lib_skillSafety from "../lib/skillSafety.js";
 import type * as lib_skillScanRequestFiles from "../lib/skillScanRequestFiles.js";
 import type * as lib_skillSearchDigest from "../lib/skillSearchDigest.js";
+import type * as lib_skillSearchDigestProjection from "../lib/skillSearchDigestProjection.js";
 import type * as lib_skillSlugValidator from "../lib/skillSlugValidator.js";
 import type * as lib_skillSpectorEvidence from "../lib/skillSpectorEvidence.js";
 import type * as lib_skillStats from "../lib/skillStats.js";
@@ -632,6 +633,7 @@ declare const fullApi: ApiFromModules<{
   "lib/skillSafety": typeof lib_skillSafety;
   "lib/skillScanRequestFiles": typeof lib_skillScanRequestFiles;
   "lib/skillSearchDigest": typeof lib_skillSearchDigest;
+  "lib/skillSearchDigestProjection": typeof lib_skillSearchDigestProjection;
   "lib/skillSlugValidator": typeof lib_skillSlugValidator;
   "lib/skillSpectorEvidence": typeof lib_skillSpectorEvidence;
   "lib/skillStats": typeof lib_skillStats;
