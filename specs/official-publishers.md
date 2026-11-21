@@ -29,3 +29,11 @@ The same policy signal appears in several places:
 
 `trustedPublisher` is an internal automated-publish permission. It does not make
 a publisher or package Official.
+
+## Directory pagination
+
+The Official directory keeps the current search's rows, cursor, and loading state
+together. A new first page invalidates any earlier pagination request. Only the
+current request may append rows, replace the cursor, or clear the loading state;
+a late response must not mix searches or unlock another request. Manual loading
+and the intersection observer share the same in-flight request fence.
