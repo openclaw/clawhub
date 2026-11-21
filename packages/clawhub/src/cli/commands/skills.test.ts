@@ -1649,6 +1649,38 @@ describe("cmdUpdate", () => {
     const secondRequestOrder = mockApiRequest.mock.invocationCallOrder[1];
     expect(writeOrder).toBeLessThan(secondRequestOrder);
   });
+
+  it("does not advance past a failed lockfile write during update --all", async () => {
+    mockApiRequest.mockResolvedValue({
+      latestVersion: { version: "2.0.0" },
+      moderation: null,
+    });
+    mockDownloadZip.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    vi.mocked(readLockfile).mockResolvedValue({
+      version: 1,
+      skills: {
+        first: { version: "1.0.0", installedAt: 111 },
+        second: { version: "1.0.0", installedAt: 222 },
+      },
+    });
+    const writeError = new Error("Lockfile write failed");
+    vi.mocked(writeLockfile).mockRejectedValueOnce(writeError);
+
+    await expect(cmdUpdate(makeOpts(), undefined, { all: true }, false)).rejects.toBe(writeError);
+
+    expect(writeLockfile).toHaveBeenCalledExactlyOnceWith("/work", {
+      version: 1,
+      skills: {
+        first: { version: "2.0.0", installedAt: expect.any(Number) },
+        second: { version: "1.0.0", installedAt: 222 },
+      },
+    });
+    expect(writeSkillOrigin).toHaveBeenCalledOnce();
+    expect(mockApiRequest).toHaveBeenCalledOnce();
+    expect(mockDownloadZip).toHaveBeenCalledOnce();
+    expect(mockSpinner.succeed).not.toHaveBeenCalled();
+    expect(mockSpinner.fail).toHaveBeenCalledExactlyOnceWith("Lockfile write failed");
+  });
 });
 
 describe("pin commands", () => {
