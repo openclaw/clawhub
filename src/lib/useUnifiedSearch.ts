@@ -57,13 +57,13 @@ type UnifiedResult = UnifiedSkillResult | UnifiedPluginResult | UnifiedCreatorRe
 
 type PublishedSearchResults = {
   query: string;
-  activeType: UnifiedSearchType;
   skillResults: UnifiedSkillResult[];
   pluginResults: UnifiedPluginResult[];
   creatorResults: UnifiedCreatorResult[];
 };
 
 export type UnifiedSearchInitialData = PublishedSearchResults & {
+  activeType: "all";
   limits: {
     skills: number;
     plugins: number;
@@ -89,25 +89,6 @@ type UnifiedSearchOptions = {
   };
 };
 
-function mergeUnifiedResults(
-  activeType: UnifiedSearchType,
-  skillResults: UnifiedSkillResult[],
-  pluginResults: UnifiedPluginResult[],
-  creatorResults: UnifiedCreatorResult[],
-) {
-  const merged: UnifiedResult[] = [];
-  if (activeType === "all") {
-    merged.push(...pluginResults, ...skillResults, ...creatorResults);
-  } else if (activeType === "skills") {
-    merged.push(...skillResults);
-  } else if (activeType === "plugins") {
-    merged.push(...pluginResults);
-  } else {
-    merged.push(...creatorResults);
-  }
-  return merged;
-}
-
 type CanonicalNativeResult = CanonicalSkillSearchResult & {
   source: "clawhub";
   native: {
@@ -131,11 +112,7 @@ export function toUnifiedSkillResult(entry: CanonicalSkillSearchResult): Unified
   };
 }
 
-export function useUnifiedSearch(
-  query: string,
-  activeType: UnifiedSearchType,
-  options: UnifiedSearchOptions = {},
-) {
+export function useUnifiedSearch(query: string, options: UnifiedSearchOptions = {}) {
   const searchSkills = useAction(api.search.searchSkills);
   const requestRef = useRef(0);
   const debounceMs = options.debounceMs ?? 300;
@@ -158,7 +135,7 @@ export function useUnifiedSearch(
   const matchedInitialData =
     initialData &&
     initialData.query === trimmedQuery &&
-    initialData.activeType === activeType &&
+    initialData.activeType === "all" &&
     initialData.limits.skills === skillLimit &&
     initialData.limits.plugins === pluginLimit &&
     initialData.limits.creators === creatorLimit
@@ -166,20 +143,17 @@ export function useUnifiedSearch(
       : null;
   const [publishedResults, setPublishedResults] = useState<PublishedSearchResults>(() => ({
     query: trimmedQuery,
-    activeType,
     skillResults: matchedInitialData?.skillResults ?? [],
     pluginResults: matchedInitialData?.pluginResults ?? [],
     creatorResults: matchedInitialData?.creatorResults ?? [],
   }));
   const hasCurrentResults = publishedResults.query === trimmedQuery;
-  const results = useMemo(
-    () =>
-      mergeUnifiedResults(
-        publishedResults.activeType,
-        publishedResults.skillResults,
-        publishedResults.pluginResults,
-        publishedResults.creatorResults,
-      ),
+  const results = useMemo<UnifiedResult[]>(
+    () => [
+      ...publishedResults.pluginResults,
+      ...publishedResults.skillResults,
+      ...publishedResults.creatorResults,
+    ],
     [publishedResults],
   );
   const [skillHasMore, setSkillHasMore] = useState(() => matchedInitialData?.skillHasMore ?? false);
@@ -199,7 +173,6 @@ export function useUnifiedSearch(
     if (!matchedInitialData) return;
     setPublishedResults({
       query: matchedInitialData.query,
-      activeType,
       skillResults: matchedInitialData.skillResults,
       pluginResults: matchedInitialData.pluginResults,
       creatorResults: matchedInitialData.creatorResults,
@@ -208,7 +181,7 @@ export function useUnifiedSearch(
     setPluginHasMore(matchedInitialData.pluginHasMore);
     setCreatorHasMore(matchedInitialData.creatorHasMore);
     setIsSearching(false);
-  }, [activeType, matchedInitialData]);
+  }, [matchedInitialData]);
 
   useEffect(() => {
     if (!enabled || !trimmedQuery) {
@@ -228,16 +201,7 @@ export function useUnifiedSearch(
       return () => {};
     }
 
-    const shouldFetchSkills =
-      (activeType === "all" || activeType === "skills") && !matchedInitialData;
-    const shouldFetchPlugins = activeType === "all" || activeType === "plugins";
-    const shouldFetchCreators = activeType === "all" || activeType === "creators";
-
-    if (!shouldFetchSkills && !shouldFetchPlugins && !shouldFetchCreators) {
-      requestRef.current += 1;
-      setIsSearching(false);
-      return () => {};
-    }
+    const shouldFetchSkills = !matchedInitialData;
 
     requestRef.current += 1;
     const requestId = requestRef.current;
@@ -273,7 +237,7 @@ export function useUnifiedSearch(
               : searchSkills({ query: trimmedQuery, limit: skillLimit + 1 });
           }
 
-          if (shouldFetchPlugins && pluginLimit > 0) {
+          if (pluginLimit > 0) {
             isManualPluginSearch = consumeManualCatalogSearch(
               manualCatalogSearch,
               "plugin",
@@ -287,12 +251,10 @@ export function useUnifiedSearch(
             });
           }
 
-          if (shouldFetchCreators) {
-            promises[2] = convexHttp.query(api.publishers.listPublicPage, {
-              query: trimmedQuery,
-              paginationOpts: { cursor: null, numItems: creatorRequestLimit },
-            });
-          }
+          promises[2] = convexHttp.query(api.publishers.listPublicPage, {
+            query: trimmedQuery,
+            paginationOpts: { cursor: null, numItems: creatorRequestLimit },
+          });
 
           // Publish independent result types as they settle. Keep loading true
           // until all finish, and never mix responses from different queries.
@@ -304,7 +266,7 @@ export function useUnifiedSearch(
           let pluginMatches: UnifiedPluginResult[] = [];
           const publishSettledResults = () => {
             if (requestId !== requestRef.current) return;
-            setPluginSearchError(shouldFetchPlugins && settled[1].status === "rejected");
+            setPluginSearchError(settled[1].status === "rejected");
             setSkillSearchError(shouldFetchSkills && settled[0].status === "rejected");
 
             const skillsRaw = settled[0].status === "fulfilled" ? settled[0].value : null;
@@ -347,7 +309,6 @@ export function useUnifiedSearch(
             );
             setPublishedResults({
               query: trimmedQuery,
-              activeType,
               skillResults: nextSkillResults,
               pluginResults: nextPluginResults,
               creatorResults: nextCreatorResults,
@@ -397,7 +358,6 @@ export function useUnifiedSearch(
           if (requestId === requestRef.current) {
             setPublishedResults({
               query: trimmedQuery,
-              activeType,
               skillResults: [],
               pluginResults: [],
               creatorResults: [],
@@ -421,7 +381,6 @@ export function useUnifiedSearch(
     };
   }, [
     trimmedQuery,
-    activeType,
     searchSkills,
     debounceMs,
     enabled,

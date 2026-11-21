@@ -425,7 +425,6 @@ describe("Header", () => {
     expect(screen.getByText("Start typing to search skills, plugins, and creators")).toBeTruthy();
     expect(useUnifiedSearchMock).toHaveBeenLastCalledWith(
       "",
-      "all",
       expect.objectContaining({ enabled: false }),
     );
   });

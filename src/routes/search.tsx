@@ -127,7 +127,7 @@ function UnifiedSearchPage() {
     isSearching,
     pluginSearchError,
     skillSearchError,
-  } = useUnifiedSearch(search.q ?? "", "all", {
+  } = useUnifiedSearch(search.q ?? "", {
     ...(manualCatalogSearch ? { manualCatalogSearch } : {}),
     ...(initialSearch ? { initialData: initialSearch } : null),
     limits: {
