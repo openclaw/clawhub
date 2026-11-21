@@ -313,8 +313,6 @@ export function SkillsIndex() {
               hasQuery={model.hasQuery}
               canLoadMore={model.canLoadMore}
               isLoadingMore={model.isLoadingMore}
-              canAutoLoad={model.canAutoLoad}
-              loadMoreRef={model.loadMoreRef}
               loadMore={model.loadMore}
               listFailed={model.listFailed}
               retryLoad={model.retryLoad}

@@ -117,7 +117,6 @@ export function useSkillsBrowseModel({
 }) {
   const [query, setQuery] = useState(search.q ?? "");
   const searchRequest = useRef(0);
-  const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const loadMoreInFlightRef = useRef(false);
   const retryInFlightRef = useRef(false);
   const navigateTimer = useRef<number>(0);
@@ -173,7 +172,6 @@ export function useSkillsBrowseModel({
   const [listStatus, setListStatus] = useState<ListStatus>(() =>
     matchedInitialList?.nextCursor ? "idle" : matchedInitialList ? "done" : "loading",
   );
-  const [, setListAutoLoadPaused] = useState(false);
   const fetchGeneration = useRef(0);
   const appliedInitialList = useRef(matchedInitialList);
 
@@ -205,7 +203,6 @@ export function useSkillsBrowseModel({
 
           setListResults((prev) => (cursor ? [...prev, ...visiblePage] : visiblePage));
           setListCursor(nextCursor);
-          setListAutoLoadPaused(visiblePage.length === 0 && Boolean(nextCursor));
           setListStatus(nextCursor ? "idle" : "done");
           return;
         }
@@ -216,7 +213,6 @@ export function useSkillsBrowseModel({
         }
         // A failed first page gets its own error state; later pages remain retryable.
         setListCursor(pageCursor);
-        setListAutoLoadPaused(Boolean(pageCursor));
         setListStatus(pageCursor ? "idle" : "error");
       }
     },
@@ -234,7 +230,6 @@ export function useSkillsBrowseModel({
       if (appliedInitialList.current !== matchedInitialList) {
         setListResults(matchedInitialList.results);
         setListCursor(matchedInitialList.nextCursor);
-        setListAutoLoadPaused(false);
         setListStatus(matchedInitialList.nextCursor ? "idle" : "done");
         appliedInitialList.current = matchedInitialList;
       }
@@ -245,7 +240,6 @@ export function useSkillsBrowseModel({
     appliedInitialList.current = null;
     setListResults([]);
     setListCursor(null);
-    setListAutoLoadPaused(false);
     setListStatus("loading");
     void fetchPage(null, generation);
     return () => {
@@ -436,12 +430,10 @@ export function useSkillsBrowseModel({
     : canLoadMoreList;
   const isLoadingMore = hasQuery ? isSearching && searchResults.length > 0 : isLoadingMoreList;
   const listFailed = !hasQuery && listFailedList;
-  const canAutoLoad = false;
 
   const loadMore = useCallback(() => {
     if (loadMoreInFlightRef.current || isLoadingMore || !canLoadMore) return;
     loadMoreInFlightRef.current = true;
-    setListAutoLoadPaused(false);
     if (hasQuery) {
       setSearchLimit((value) => value + SKILLS_PAGE_SIZE);
     } else {
@@ -579,7 +571,6 @@ export function useSkillsBrowseModel({
   return {
     activeCategory: activeCategory?.slug,
     activeTopic,
-    canAutoLoad,
     canLoadMore,
     dir,
     hasQuery,
@@ -589,7 +580,6 @@ export function useSkillsBrowseModel({
     listFailed,
     searchError,
     loadMore,
-    loadMoreRef,
     onClearFilters,
     onClearQuery,
     onQueryChange,

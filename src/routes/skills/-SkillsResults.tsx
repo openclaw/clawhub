@@ -1,6 +1,5 @@
 import { Link } from "@tanstack/react-router";
 import { Download, ExternalLink, Plus } from "lucide-react";
-import type { RefObject } from "react";
 import { BrowseResultsSkeleton } from "../../components/skeletons/BrowseResultsSkeleton";
 import { SkillListItem } from "../../components/SkillListItem";
 import { Badge } from "../../components/ui/badge";
@@ -24,8 +23,6 @@ type SkillsResultsProps = {
   hasQuery: boolean;
   canLoadMore: boolean;
   isLoadingMore: boolean;
-  canAutoLoad: boolean;
-  loadMoreRef: RefObject<HTMLDivElement | null>;
   loadMore: () => void;
   listFailed: boolean;
   retryLoad: () => void;
@@ -129,8 +126,6 @@ export function SkillsResults({
   hasQuery,
   canLoadMore,
   isLoadingMore,
-  canAutoLoad,
-  loadMoreRef,
   loadMore,
   listFailed,
   retryLoad,
@@ -198,18 +193,14 @@ export function SkillsResults({
       )}
 
       {isLoadingMore ? (
-        <div ref={canAutoLoad ? loadMoreRef : null} className="mt-4">
+        <div className="mt-4">
           <BrowseResultsSkeleton count={2} showIcon={false} />
         </div>
       ) : canLoadMore ? (
-        <div ref={canAutoLoad ? loadMoreRef : null} className="card mt-4 flex justify-center">
-          {canAutoLoad ? (
-            "Scroll to load more"
-          ) : (
-            <Button type="button" onClick={loadMore} disabled={isLoadingMore}>
-              Load more
-            </Button>
-          )}
+        <div className="card mt-4 flex justify-center">
+          <Button type="button" onClick={loadMore} disabled={isLoadingMore}>
+            Load more
+          </Button>
         </div>
       ) : null}
     </>
