@@ -3,6 +3,7 @@ import { resolveStoredPluginCategories } from "clawhub-schema/pluginCategories";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { adjustGlobalPublicPluginsCount, getPublicPluginVisibilityDelta } from "./globalStats";
+import { hasDigestChanged, reconcileSearchDigestRows } from "./searchDigestRows";
 
 function pick<T extends Record<string, unknown>, K extends keyof T>(obj: T, keys: K[]): Pick<T, K> {
   return Object.fromEntries(keys.map((key) => [key, obj[key]])) as Pick<T, K>;
@@ -153,22 +154,13 @@ async function syncPackagePluginCategorySearchDigests(
       pluginCategory,
     });
   }
-  for (const row of existing) {
-    const next = nextByCategory.get(row.pluginCategory);
-    if (!next) {
-      await ctx.db.delete(row._id);
-      continue;
-    }
-    if (!hasDigestChanged(row, next)) {
-      nextByCategory.delete(row.pluginCategory);
-      continue;
-    }
-    await ctx.db.patch(row._id, next);
-    nextByCategory.delete(row.pluginCategory);
-  }
-  for (const next of nextByCategory.values()) {
-    await ctx.db.insert("packagePluginCategorySearchDigest", next);
-  }
+  await reconcileSearchDigestRows(
+    ctx.db,
+    "packagePluginCategorySearchDigest",
+    existing,
+    nextByCategory,
+    (row) => row.pluginCategory,
+  );
 }
 
 async function syncPackageTopicSearchDigests(
@@ -187,22 +179,13 @@ async function syncPackageTopicSearchDigests(
       topic,
     });
   }
-  for (const row of existing) {
-    const next = nextByTopic.get(row.topic);
-    if (!next) {
-      await ctx.db.delete(row._id);
-      continue;
-    }
-    if (!hasDigestChanged(row, next)) {
-      nextByTopic.delete(row.topic);
-      continue;
-    }
-    await ctx.db.patch(row._id, next);
-    nextByTopic.delete(row.topic);
-  }
-  for (const next of nextByTopic.values()) {
-    await ctx.db.insert("packageTopicSearchDigest", next);
-  }
+  await reconcileSearchDigestRows(
+    ctx.db,
+    "packageTopicSearchDigest",
+    existing,
+    nextByTopic,
+    (row) => row.topic,
+  );
 }
 
 export async function deletePackageSearchDigests(
@@ -229,17 +212,4 @@ export async function deletePackageSearchDigests(
     .collect()) {
     await ctx.db.delete(row._id);
   }
-}
-
-function hasDigestChanged(
-  existing: Record<string, unknown>,
-  fields: Record<string, unknown>,
-): boolean {
-  for (const key of Object.keys(fields)) {
-    const oldValue = existing[key];
-    const newValue = fields[key];
-    if (oldValue === newValue) continue;
-    if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) return true;
-  }
-  return false;
 }
