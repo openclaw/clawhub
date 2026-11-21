@@ -1,5 +1,5 @@
 import { useAction } from "convex/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import { convexHttp } from "../convex/client";
 import { consumeManualCatalogSearch, type ManualCatalogSearch } from "./manualCatalogSearch";
@@ -66,17 +66,20 @@ export type UnifiedCreatorResult = {
 
 type UnifiedResult = UnifiedSkillResult | UnifiedPluginResult | UnifiedCreatorResult;
 
-export type UnifiedSearchInitialData = {
+type PublishedSearchResults = {
   query: string;
   activeType: UnifiedSearchType;
+  skillResults: UnifiedSkillResult[];
+  pluginResults: UnifiedPluginResult[];
+  creatorResults: UnifiedCreatorResult[];
+};
+
+export type UnifiedSearchInitialData = PublishedSearchResults & {
   limits: {
     skills: number;
     plugins: number;
     creators: number;
   };
-  skillResults: UnifiedSkillResult[];
-  pluginResults: UnifiedPluginResult[];
-  creatorResults: UnifiedCreatorResult[];
   skillHasMore: boolean;
   pluginHasMore: boolean;
   creatorHasMore: boolean;
@@ -172,33 +175,23 @@ export function useUnifiedSearch(
     initialData.limits.creators === creatorLimit
       ? initialData
       : null;
-  const [resultsQuery, setResultsQuery] = useState(trimmedQuery);
-  const hasCurrentResults = resultsQuery === trimmedQuery;
-  const [results, setResults] = useState<UnifiedResult[]>(() =>
-    matchedInitialData
-      ? mergeUnifiedResults(
-          activeType,
-          matchedInitialData.skillResults,
-          matchedInitialData.pluginResults,
-          matchedInitialData.creatorResults,
-        )
-      : [],
-  );
-  const [skillResults, setSkillResults] = useState<UnifiedSkillResult[]>(
-    () => matchedInitialData?.skillResults ?? [],
-  );
-  const [pluginResults, setPluginResults] = useState<UnifiedPluginResult[]>(
-    () => matchedInitialData?.pluginResults ?? [],
-  );
-  const [creatorResults, setCreatorResults] = useState<UnifiedCreatorResult[]>(
-    () => matchedInitialData?.creatorResults ?? [],
-  );
-  const [skillCount, setSkillCount] = useState(() => matchedInitialData?.skillResults.length ?? 0);
-  const [pluginCount, setPluginCount] = useState(
-    () => matchedInitialData?.pluginResults.length ?? 0,
-  );
-  const [creatorCount, setCreatorCount] = useState(
-    () => matchedInitialData?.creatorResults.length ?? 0,
+  const [publishedResults, setPublishedResults] = useState<PublishedSearchResults>(() => ({
+    query: trimmedQuery,
+    activeType,
+    skillResults: matchedInitialData?.skillResults ?? [],
+    pluginResults: matchedInitialData?.pluginResults ?? [],
+    creatorResults: matchedInitialData?.creatorResults ?? [],
+  }));
+  const hasCurrentResults = publishedResults.query === trimmedQuery;
+  const results = useMemo(
+    () =>
+      mergeUnifiedResults(
+        publishedResults.activeType,
+        publishedResults.skillResults,
+        publishedResults.pluginResults,
+        publishedResults.creatorResults,
+      ),
+    [publishedResults],
   );
   const [skillHasMore, setSkillHasMore] = useState(() => matchedInitialData?.skillHasMore ?? false);
   const [pluginHasMore, setPluginHasMore] = useState(
@@ -215,37 +208,28 @@ export function useUnifiedSearch(
 
   useEffect(() => {
     if (!matchedInitialData) return;
-    setResultsQuery(matchedInitialData.query);
-    setSkillResults(matchedInitialData.skillResults);
-    setPluginResults(matchedInitialData.pluginResults);
-    setCreatorResults(matchedInitialData.creatorResults);
-    setSkillCount(matchedInitialData.skillResults.length);
-    setPluginCount(matchedInitialData.pluginResults.length);
-    setCreatorCount(matchedInitialData.creatorResults.length);
+    setPublishedResults({
+      query: matchedInitialData.query,
+      activeType,
+      skillResults: matchedInitialData.skillResults,
+      pluginResults: matchedInitialData.pluginResults,
+      creatorResults: matchedInitialData.creatorResults,
+    });
     setSkillHasMore(matchedInitialData.skillHasMore);
     setPluginHasMore(matchedInitialData.pluginHasMore);
     setCreatorHasMore(matchedInitialData.creatorHasMore);
-    setResults(
-      mergeUnifiedResults(
-        activeType,
-        matchedInitialData.skillResults,
-        matchedInitialData.pluginResults,
-        matchedInitialData.creatorResults,
-      ),
-    );
     setIsSearching(false);
   }, [activeType, matchedInitialData]);
 
   useEffect(() => {
     if (!enabled || !trimmedQuery) {
       requestRef.current += 1;
-      setResults([]);
-      setSkillResults([]);
-      setPluginResults([]);
-      setCreatorResults([]);
-      setSkillCount(0);
-      setPluginCount(0);
-      setCreatorCount(0);
+      setPublishedResults((current) => ({
+        ...current,
+        skillResults: [],
+        pluginResults: [],
+        creatorResults: [],
+      }));
       setSkillHasMore(false);
       setPluginHasMore(false);
       setCreatorHasMore(false);
@@ -331,7 +315,6 @@ export function useUnifiedSearch(
           let pluginMatches: UnifiedPluginResult[] = [];
           const publishSettledResults = () => {
             if (requestId !== requestRef.current) return;
-            setResultsQuery(trimmedQuery);
             setPluginSearchError(shouldFetchPlugins && settled[1].status === "rejected");
             setSkillSearchError(shouldFetchSkills && settled[0].status === "rejected");
 
@@ -362,9 +345,6 @@ export function useUnifiedSearch(
             }));
             const nextCreatorResults = creatorMatches.slice(0, creatorLimit);
 
-            setSkillCount(nextSkillResults.length);
-            setPluginCount(nextPluginResults.length);
-            setCreatorCount(nextCreatorResults.length);
             setSkillHasMore(
               matchedInitialData
                 ? matchedInitialData.skillHasMore
@@ -376,18 +356,13 @@ export function useUnifiedSearch(
                 (creatorMatches.length > creatorLimit ||
                   (creatorsRaw as { isDone?: boolean } | null)?.isDone === false),
             );
-            setSkillResults(nextSkillResults);
-            setPluginResults(nextPluginResults);
-            setCreatorResults(nextCreatorResults);
-
-            setResults(
-              mergeUnifiedResults(
-                activeType,
-                nextSkillResults,
-                nextPluginResults,
-                nextCreatorResults,
-              ),
-            );
+            setPublishedResults({
+              query: trimmedQuery,
+              activeType,
+              skillResults: nextSkillResults,
+              pluginResults: nextPluginResults,
+              creatorResults: nextCreatorResults,
+            });
           };
           const publications = await Promise.allSettled(
             promises.map(async (promise, index) => {
@@ -431,14 +406,13 @@ export function useUnifiedSearch(
         } catch (error) {
           console.error("Unified search failed:", error);
           if (requestId === requestRef.current) {
-            setResultsQuery(trimmedQuery);
-            setResults([]);
-            setSkillResults([]);
-            setPluginResults([]);
-            setCreatorResults([]);
-            setSkillCount(0);
-            setPluginCount(0);
-            setCreatorCount(0);
+            setPublishedResults({
+              query: trimmedQuery,
+              activeType,
+              skillResults: [],
+              pluginResults: [],
+              creatorResults: [],
+            });
             setSkillHasMore(false);
             setPluginHasMore(false);
             setCreatorHasMore(false);
@@ -476,12 +450,12 @@ export function useUnifiedSearch(
   // immediately rather than presenting them as matches for the new input.
   return {
     results: hasCurrentResults ? results : [],
-    skillResults: hasCurrentResults ? skillResults : [],
-    pluginResults: hasCurrentResults ? pluginResults : [],
-    creatorResults: hasCurrentResults ? creatorResults : [],
-    skillCount: hasCurrentResults ? skillCount : 0,
-    pluginCount: hasCurrentResults ? pluginCount : 0,
-    creatorCount: hasCurrentResults ? creatorCount : 0,
+    skillResults: hasCurrentResults ? publishedResults.skillResults : [],
+    pluginResults: hasCurrentResults ? publishedResults.pluginResults : [],
+    creatorResults: hasCurrentResults ? publishedResults.creatorResults : [],
+    skillCount: hasCurrentResults ? publishedResults.skillResults.length : 0,
+    pluginCount: hasCurrentResults ? publishedResults.pluginResults.length : 0,
+    creatorCount: hasCurrentResults ? publishedResults.creatorResults.length : 0,
     skillHasMore: hasCurrentResults && skillHasMore,
     pluginHasMore: hasCurrentResults && pluginHasMore,
     creatorHasMore: hasCurrentResults && creatorHasMore,
