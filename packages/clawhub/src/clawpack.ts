@@ -20,7 +20,7 @@ const MAX_TAR_BYTES = 64 * 1024 * 1024;
 const MAX_FILE_BYTES = MAX_UNPACKED_BYTES;
 const MAX_PACKAGE_JSON_BYTES = 256 * 1024;
 const MAX_FILE_COUNT = 10_000;
-const GZIP_INPUT_CHUNK_BYTES = 1_024;
+const GZIP_INPUT_CHUNK_BYTES = 16_384;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -70,29 +70,39 @@ function normalizeTarPath(path: string) {
 export class ClawPackTarLimitError extends Error {}
 
 function gunzipBounded(bytes: Uint8Array, maxTarBytes: number): Uint8Array {
-  const chunks: Uint8Array[] = [];
+  // Inflate into one buffer: per-chunk copies held about 5x the unpacked size
+  // at peak and exhausted the 512 MB publish action on ~24 MB packages. The
+  // gzip trailer's size is only a hint; the limit check below stays authoritative.
+  const trailer = bytes.byteLength >= 4 ? bytes.byteLength - 4 : 0;
+  const sizeHint =
+    ((bytes[trailer] ?? 0) |
+      ((bytes[trailer + 1] ?? 0) << 8) |
+      ((bytes[trailer + 2] ?? 0) << 16) |
+      ((bytes[trailer + 3] ?? 0) << 24)) >>>
+    0;
+  let output = new Uint8Array(Math.min(maxTarBytes, Math.max(sizeHint, TAR_BLOCK_SIZE)));
   let total = 0;
   const gunzip = new Gunzip((chunk) => {
-    total += chunk.byteLength;
-    if (total > maxTarBytes)
+    const next = total + chunk.byteLength;
+    if (next > maxTarBytes)
       throw new ClawPackTarLimitError(
         maxTarBytes === MAX_TAR_BYTES
           ? "ClawPack unpacked archive exceeds 64MB limit"
           : "ClawPack unpacked archive exceeds the requested byte limit",
       );
-    chunks.push(Uint8Array.from(chunk));
+    if (next > output.byteLength) {
+      const grown = new Uint8Array(Math.min(maxTarBytes, Math.max(next, output.byteLength * 2)));
+      grown.set(output.subarray(0, total));
+      output = grown;
+    }
+    output.set(chunk, total);
+    total = next;
   });
   for (let offset = 0; offset < bytes.byteLength; offset += GZIP_INPUT_CHUNK_BYTES) {
     const end = Math.min(offset + GZIP_INPUT_CHUNK_BYTES, bytes.byteLength);
     gunzip.push(bytes.subarray(offset, end), end === bytes.byteLength);
   }
-  const result = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    result.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return result;
+  return output.subarray(0, total);
 }
 
 function isZeroBlock(block: Uint8Array) {
@@ -138,7 +148,7 @@ function parseTarEntries(bytes: Uint8Array): ClawPackEntry[] {
       if (entries.length >= MAX_FILE_COUNT) throw new Error("ClawPack exceeds 10000 file limit");
       entries.push({
         path: relPath,
-        bytes: Uint8Array.from(bytes.subarray(payloadOffset, payloadEnd)),
+        bytes: bytes.subarray(payloadOffset, payloadEnd),
       });
     } else if (typeflag !== "5") {
       throw new Error("ClawPack may only contain regular files and directories");
