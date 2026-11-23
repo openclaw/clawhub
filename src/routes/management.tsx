@@ -45,6 +45,7 @@ import {
   formatManagementUserLabel,
   formatMutationError,
   formatWholeNumber,
+  MANAGEMENT_VIEW_LABELS,
   SKILL_AUDIT_LOG_LIMIT,
   type DuplicateCandidateEntry,
   type ManagementOwnerOption,
@@ -70,23 +71,7 @@ import { SearchInsightsPage } from "./-management/SearchInsightsPage";
 import { SkillsPage } from "./-management/SkillsPage";
 import { UsersPage } from "./-management/UsersPage";
 
-const MANAGEMENT_VIEWS = new Set<string>([
-  "downloads",
-  "search-insights",
-  "overview",
-  "abuse",
-  "reports",
-  "users",
-  "publishers",
-  "skills",
-  "plugins",
-  "promotions",
-  "duplicates",
-  "recent",
-  "audit",
-  "system",
-  "settings",
-]);
+const MANAGEMENT_VIEWS = new Set<string>(Object.keys(MANAGEMENT_VIEW_LABELS));
 
 function isManagementView(value: unknown): value is ManagementView {
   return typeof value === "string" && MANAGEMENT_VIEWS.has(value);
@@ -766,7 +751,7 @@ export function Management() {
         <div className="management-breadcrumb">
           <span>Management</span>
           <ChevronRight size={13} aria-hidden="true" />
-          <strong>{formatManagementViewLabel(activeView)}</strong>
+          <strong>{MANAGEMENT_VIEW_LABELS[activeView]}</strong>
         </div>
 
         {activeView === "downloads" ? (
@@ -1055,14 +1040,12 @@ function ManagementSidebar({
             active={activeView === "abuse"}
             badge={queueBadge(abuseCount)}
             icon={<AlertTriangle size={15} />}
-            label="Publisher abuse"
             view="abuse"
           />
           <ManagementSidebarLink
             active={activeView === "reports"}
             badge={queueBadge(reportCount)}
             icon={<ClipboardList size={15} />}
-            label="Content reports"
             view="reports"
           />
         </div>
@@ -1073,14 +1056,12 @@ function ManagementSidebar({
             active={activeView === "duplicates"}
             badge={queueBadge(duplicateCount)}
             icon={<PackageSearch size={15} />}
-            label="Duplicate candidates"
             view="duplicates"
           />
           <ManagementSidebarLink
             active={activeView === "recent"}
             badge={queueBadge(recentCount)}
             icon={<GitBranch size={15} />}
-            label="Recent pushes"
             view="recent"
           />
         </div>
@@ -1090,14 +1071,12 @@ function ManagementSidebar({
           <ManagementSidebarLink
             active={activeView === "downloads"}
             icon={<Download size={15} />}
-            label="Template downloads"
             view="downloads"
           />
         ) : null}
         <ManagementSidebarLink
           active={activeView === "search-insights"}
           icon={<PackageSearch size={15} />}
-          label="Search intelligence"
           view="search-insights"
         />
         <div className="management-sidebar-group">
@@ -1106,27 +1085,23 @@ function ManagementSidebar({
               active={activeView === "users"}
               badge={userCount === undefined ? undefined : formatWholeNumber(userCount)}
               icon={<UserRound size={15} />}
-              label="Users"
               view="users"
             />
           ) : null}
           <ManagementSidebarLink
             active={activeView === "skills"}
             icon={<Wrench size={15} />}
-            label="Skills"
             view="skills"
           />
           <ManagementSidebarLink
             active={activeView === "plugins"}
             icon={<Plug size={15} />}
-            label="Plugins"
             view="plugins"
           />
           {admin ? (
             <ManagementSidebarLink
               active={activeView === "promotions"}
               icon={<Megaphone size={15} />}
-              label="Promotions"
               view="promotions"
             />
           ) : null}
@@ -1140,13 +1115,11 @@ function ManagementSidebarLink({
   active,
   badge,
   icon,
-  label,
   view,
 }: {
   active: boolean;
   badge?: string;
   icon: ReactNode;
-  label: string;
   view: ManagementView;
 }) {
   return (
@@ -1156,7 +1129,7 @@ function ManagementSidebarLink({
       search={{ view, skill: undefined, plugin: undefined }}
     >
       {icon}
-      <span>{label}</span>
+      <span>{MANAGEMENT_VIEW_LABELS[view]}</span>
       {badge ? <small>{badge}</small> : null}
     </Link>
   );
@@ -1170,28 +1143,6 @@ function resolveManagementView(
   if (selectedSlug) return "skills";
   if (selectedPluginName) return "plugins";
   return view ?? "abuse";
-}
-
-const MANAGEMENT_VIEW_LABELS: Record<ManagementView, string> = {
-  downloads: "Template downloads",
-  "search-insights": "Search intelligence",
-  overview: "Overview",
-  abuse: "Publisher abuse",
-  reports: "Content reports",
-  users: "Users",
-  publishers: "Publishers",
-  skills: "Skills",
-  plugins: "Plugins",
-  promotions: "Promotions",
-  duplicates: "Duplicate candidates",
-  recent: "Recent pushes",
-  audit: "Audit log",
-  system: "System",
-  settings: "Settings",
-};
-
-function formatManagementViewLabel(view: ManagementView) {
-  return MANAGEMENT_VIEW_LABELS[view];
 }
 
 /** Queue badges only carry signal when there is a backlog; hide 0 and loading. */

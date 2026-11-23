@@ -3,12 +3,13 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { getFunctionName } from "convex/server";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { Management } from "./management";
+import { Management, Route } from "./management";
 
 const useQueryMock = vi.fn();
 const usePaginatedQueryMock = vi.fn();
 const useMutationMock = vi.fn();
 const useActionMock = vi.fn();
+const convexClientMock = { query: vi.fn() };
 const navigateMock = vi.fn();
 let searchState: Record<string, string | undefined> = {};
 let authUser: { _id: string; handle: string; role: "admin" | "moderator" | "user" } = {
@@ -227,7 +228,16 @@ function linkHref(to: string, search: unknown) {
   return query ? `${to}?${query}` : to;
 }
 
+function validateManagementSearch(search: Record<string, unknown>) {
+  return (
+    Route as unknown as {
+      validateSearch: (search: Record<string, unknown>) => Record<string, string | undefined>;
+    }
+  ).validateSearch(search);
+}
+
 vi.mock("convex/react", () => ({
+  useConvex: () => convexClientMock,
   useAction: (...args: unknown[]) => useActionMock(...args),
   usePaginatedQuery: (...args: unknown[]) => usePaginatedQueryMock(...args),
   useQuery: (...args: unknown[]) => useQueryMock(...args),
@@ -1360,6 +1370,131 @@ describe("Management", () => {
     expect(screen.getByRole("link", { name: "Users" }).getAttribute("href")).toBe(
       "/management?view=users",
     );
+  });
+
+  it.each([
+    ["downloads", "Template downloads"],
+    ["search-insights", "Search intelligence"],
+    ["overview", "Overview"],
+    ["abuse", "Publisher abuse"],
+    ["reports", "Content reports"],
+    ["users", "Users"],
+    ["publishers", "Publishers"],
+    ["skills", "Skills"],
+    ["plugins", "Plugins"],
+    ["promotions", "Promotions"],
+    ["duplicates", "Duplicate candidates"],
+    ["recent", "Recent pushes"],
+    ["audit", "Audit log"],
+    ["system", "System"],
+    ["settings", "Settings"],
+  ])("preserves the %s URL and breadcrumb label", async (view, label) => {
+    if (view === "downloads") convexClientMock.query.mockResolvedValue(null);
+    if (view === "search-insights") {
+      useMutationMock.mockReturnValue(
+        vi.fn().mockResolvedValue({ reportId: "report:1", status: "pending" }),
+      );
+    }
+    const url = new URL(`/management?view=${view}`, "https://example.invalid");
+    searchState = validateManagementSearch(Object.fromEntries(url.searchParams));
+    expect(searchState).toEqual({ view });
+
+    const { container } = render(<Management />);
+
+    await waitFor(() =>
+      expect(container.querySelector(".management-breadcrumb strong")?.textContent).toBe(label),
+    );
+    const link = container.querySelector(`a[href="/management?view=${view}"]`);
+    if (link) expect(link.querySelector("span")?.textContent).toBe(label);
+  });
+
+  it.each(["constructor", "__proto__", "toString", "Skills", " skills", "skills ", "missing", ""])(
+    "rejects the unsupported view %j without changing the default",
+    (view) => {
+      const url = new URL("/management", "https://example.invalid");
+      url.searchParams.set("view", view);
+      searchState = validateManagementSearch(Object.fromEntries(url.searchParams));
+      expect(searchState).toEqual({});
+
+      const { container } = render(<Management />);
+
+      expect(container.querySelector(".management-breadcrumb strong")?.textContent).toBe(
+        "Publisher abuse",
+      );
+    },
+  );
+
+  it.each([undefined, null, 1, {}, ["skills"]])("rejects a non-string view %j", (view) => {
+    expect(validateManagementSearch({ view })).toEqual({});
+  });
+
+  it.each([
+    [{ view: "reports", skill: "owned-skill", plugin: "example-plugin" }, "Skills"],
+    [{ skill: " owned-skill " }, "Skills"],
+    [{ view: "reports", plugin: "example-plugin" }, "Plugins"],
+    [{ view: "reports", skill: " ", plugin: "example-plugin" }, "Plugins"],
+    [{ view: "reports", skill: " ", plugin: " " }, "Content reports"],
+  ])("preserves selected item precedence for %j", (search, label) => {
+    searchState = validateManagementSearch(search);
+
+    const { container } = render(<Management />);
+
+    expect(container.querySelector(".management-breadcrumb strong")?.textContent).toBe(label);
+  });
+
+  it.each(["admin", "moderator"] as const)("keeps %s navigation order and groups", (role) => {
+    authUser = { ...authUser, role };
+    render(<Management />);
+    const nav = screen.getByRole("navigation", { name: "Management sections" });
+    const expectedViews = ["abuse", "reports", "duplicates", "recent"];
+    if (role === "admin") expectedViews.push("downloads");
+    expectedViews.push("search-insights");
+    if (role === "admin") expectedViews.push("users");
+    expectedViews.push("skills", "plugins");
+    if (role === "admin") expectedViews.push("promotions");
+    expect(Array.from(nav.querySelectorAll("a"), (link) => link.getAttribute("href"))).toEqual(
+      expectedViews.map((view) => `/management?view=${view}`),
+    );
+    expect(
+      Array.from(
+        nav.querySelectorAll(".management-sidebar-section-title"),
+        (group) => group.textContent,
+      ),
+    ).toEqual(["Review", "Queues", "Staff tools"]);
+  });
+
+  it.each([undefined, 0, 2])("keeps queue badge visibility for count %j", (count) => {
+    const originalQuery = useQueryMock.getMockImplementation();
+    useQueryMock.mockImplementation((query, args) => {
+      if (args === "skip") return undefined;
+      const name = getFunctionName(query);
+      if (name === "publisherAbuse:listReviewDashboard") {
+        return count === undefined
+          ? undefined
+          : makeEmptyPublisherAbuseDashboard({
+              pendingPotentialBanCandidateItems: Array.from({ length: count }, (_, index) =>
+                makePublisherAbuseItem({ id: String(index + 1) }),
+              ),
+            });
+      }
+      if (
+        [
+          "skills:listReportedSkills",
+          "skills:listDuplicateCandidates",
+          "skills:listRecentVersions",
+        ].includes(name)
+      ) {
+        return count === undefined ? undefined : Array.from({ length: count }, () => ({}));
+      }
+      return originalQuery?.(query, args);
+    });
+    render(<Management />);
+    const nav = screen.getByRole("navigation", { name: "Management sections" });
+    for (const view of ["abuse", "reports", "duplicates", "recent"]) {
+      expect(nav.querySelector(`a[href="/management?view=${view}"] small`)?.textContent).toBe(
+        count ? String(count) : undefined,
+      );
+    }
   });
 
   it("links admins to Template download analytics", () => {
