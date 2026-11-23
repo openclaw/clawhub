@@ -33,22 +33,25 @@ export type PublisherAbuseTab =
   | "all_pending"
   | "resolved"
   | "signals";
-export type ManagementView =
-  | "downloads"
-  | "search-insights"
-  | "overview"
-  | "abuse"
-  | "reports"
-  | "users"
-  | "publishers"
-  | "skills"
-  | "plugins"
-  | "promotions"
-  | "duplicates"
-  | "recent"
-  | "audit"
-  | "system"
-  | "settings";
+export const MANAGEMENT_VIEW_LABELS = {
+  downloads: "Template downloads",
+  "search-insights": "Search intelligence",
+  overview: "Overview",
+  abuse: "Publisher abuse",
+  reports: "Content reports",
+  users: "Users",
+  publishers: "Publishers",
+  skills: "Skills",
+  plugins: "Plugins",
+  promotions: "Promotions",
+  duplicates: "Duplicate candidates",
+  recent: "Recent pushes",
+  audit: "Audit log",
+  system: "System",
+  settings: "Settings",
+} as const;
+
+export type ManagementView = keyof typeof MANAGEMENT_VIEW_LABELS;
 
 export type PromotionEntry = FunctionReturnType<typeof api.promotions.listForStaff>["page"][number];
 export type PromotionStatus = PromotionEntry["status"];
