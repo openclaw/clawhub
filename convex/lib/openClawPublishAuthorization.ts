@@ -547,7 +547,9 @@ function validateParentState(
 ) {
   const status = stringOrNumber(run.status);
   const conclusion = stringOrNumber(run.conclusion);
-  const active = status === "in_progress" && !conclusion;
+  // GitHub reports a running workflow as queued, waiting, or pending while any
+  // of its jobs waits for a runner or approval; only completion ends the run.
+  const active = status !== "completed" && !conclusion;
   const successful = status === "completed" && conclusion === "success";
   const failed = status === "completed" && conclusion === "failure";
   // Sealing preserves exact transactions through parent failure, but public
@@ -603,21 +605,29 @@ function validateRecoveryReceipt(
   }
 }
 
+const GITHUB_LOOKUP_ATTEMPTS = 3;
+const GITHUB_LOOKUP_RETRY_MS = 250;
+
 async function githubRequest(pathOrUrl: string, fetchImpl: typeof fetch, accept?: string) {
   const url = pathOrUrl.startsWith("https://")
     ? pathOrUrl
     : `https://api.github.com/${pathOrUrl.replace(/^\/+/, "")}`;
-  const response = await fetchImpl(url, {
-    headers: await buildGitHubApiHeaders({
-      userAgent: "clawhub/openclaw-publish-authorization",
-      ...(accept ? { accept } : {}),
-      fetchImpl,
-      allowAnonymous: false,
-    }),
-    redirect: "follow",
+  const headers = await buildGitHubApiHeaders({
+    userAgent: "clawhub/openclaw-publish-authorization",
+    ...(accept ? { accept } : {}),
+    fetchImpl,
+    allowAnonymous: false,
   });
-  if (!response.ok) fail(`GitHub authorization lookup failed with HTTP ${response.status}`);
-  return response;
+  // Release CI submits a whole plugin wave at once; a single GitHub 5xx must
+  // not fail one package's job while its siblings stage.
+  for (let attempt = 1; ; attempt += 1) {
+    const response = await fetchImpl(url, { headers, redirect: "follow" });
+    if (response.ok) return response;
+    if (response.status < 500 || attempt >= GITHUB_LOOKUP_ATTEMPTS) {
+      fail(`GitHub authorization lookup failed with HTTP ${response.status}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, GITHUB_LOOKUP_RETRY_MS * attempt));
+  }
 }
 
 async function fetchJson<T>(path: string, fetchImpl: typeof fetch): Promise<T> {

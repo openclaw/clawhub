@@ -386,6 +386,8 @@ describe("OpenClaw package publish authorization", () => {
 
   it.each([
     ["submission", "in_progress", null],
+    ["submission", "queued", null],
+    ["submission", "waiting", null],
     ["terminal", "completed", "failure"],
   ] as const)(
     "authorizes a sealed release milestone in %s mode after parent %s/%s",
@@ -402,6 +404,24 @@ describe("OpenClaw package publish authorization", () => {
       ).resolves.toMatchObject({ authorizationRoute: "automated-sealed" });
     },
   );
+
+  it("retries a transient GitHub 5xx during authorization lookup", async () => {
+    const github = githubFetch({
+      parentReceipt: parentReceipt({ authorizationRoute: "automated-sealed" }),
+    });
+    let failed = false;
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      if (!failed && requestUrl(input).includes("/actions/runs/")) {
+        failed = true;
+        return new Response("bad gateway", { status: 502 });
+      }
+      return github(input);
+    });
+    await expect(verify(fetchImpl, "submission")).resolves.toMatchObject({
+      authorizationRoute: "automated-sealed",
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(github.mock.calls.length + 1);
+  });
 
   it("withholds sealed public finalization while the parent is active", async () => {
     await expect(
