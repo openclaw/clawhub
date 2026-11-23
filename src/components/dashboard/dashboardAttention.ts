@@ -84,6 +84,13 @@ function pushSkillAttention(
   skill: DashboardSkill,
   ownerHandle: string,
 ) {
+  const identity = {
+    kind: "skill" as const,
+    slug: skill.slug,
+    ownerHandle,
+    version: skill.latestVersion?.version,
+    updatedAt: skill.updatedAt,
+  };
   const detailHref = skillDetailHref(skill, ownerHandle);
   const auditHref = skillSecurityAuditHref(skill, ownerHandle);
   const security = skillSecurityStatus(skill);
@@ -93,11 +100,7 @@ function pushSkillAttention(
   if (security.tone === "destructive") {
     items.push({
       id: `skill:${skill._id}:blocked`,
-      kind: "skill",
-      slug: skill.slug,
-      ownerHandle,
-      version: skill.latestVersion?.version,
-      updatedAt: skill.updatedAt,
+      ...identity,
       issueType: "security",
       title: skill.displayName,
       reason: "Blocked by security checks",
@@ -109,11 +112,7 @@ function pushSkillAttention(
   } else if (security.tone === "pending" || security.tone === "warning") {
     items.push({
       id: `skill:${skill._id}:${security.tone === "pending" ? "pending-scan" : "review"}`,
-      kind: "skill",
-      slug: skill.slug,
-      ownerHandle,
-      version: skill.latestVersion?.version,
-      updatedAt: skill.updatedAt,
+      ...identity,
       issueType: "security",
       title: skill.displayName,
       reason: security.tone === "pending" ? "Waiting for security checks" : "Needs security review",
@@ -126,11 +125,7 @@ function pushSkillAttention(
   if (visibility.label === "Hidden" || visibility.label === "Removed") {
     items.push({
       id: `skill:${skill._id}:visibility`,
-      kind: "skill",
-      slug: skill.slug,
-      ownerHandle,
-      version: skill.latestVersion?.version,
-      updatedAt: skill.updatedAt,
+      ...identity,
       issueType: "visibility",
       title: skill.displayName,
       reason: visibility.label,
@@ -147,6 +142,14 @@ function pushPackageAttention(
   ownerHandle: string,
 ) {
   const version = pkg.latestRelease?.version;
+  const identity = {
+    kind: "plugin" as const,
+    packageFamily: pkg.family,
+    packageName: pkg.name,
+    ownerHandle,
+    version,
+    updatedAt: pkg.updatedAt,
+  };
   const auditHref =
     pkg.family === "template"
       ? buildTemplateSecurityAuditHref(pkg.name, ownerHandle, version)!
@@ -158,12 +161,7 @@ function pushPackageAttention(
   if (pkg.apiRetirements?.length) {
     items.push({
       id: `plugin:${pkg._id}:retirement`,
-      kind: "plugin",
-      packageFamily: pkg.family,
-      packageName: pkg.name,
-      ownerHandle,
-      version,
-      updatedAt: pkg.updatedAt,
+      ...identity,
       issueType: "retirement",
       apiRetirements: pkg.apiRetirements,
       title: pkg.displayName,
@@ -178,12 +176,7 @@ function pushPackageAttention(
   if (warningCount > 0) {
     items.push({
       id: `plugin:${pkg._id}:validation`,
-      kind: "plugin",
-      packageFamily: pkg.family,
-      packageName: pkg.name,
-      ownerHandle,
-      version,
-      updatedAt: pkg.updatedAt,
+      ...identity,
       issueType: "validation",
       title: pkg.displayName,
       reason: `${warningCount} validation warning${warningCount === 1 ? "" : "s"}`,
@@ -196,12 +189,7 @@ function pushPackageAttention(
   if (security.tone === "destructive") {
     items.push({
       id: `plugin:${pkg._id}:blocked`,
-      kind: "plugin",
-      packageFamily: pkg.family,
-      packageName: pkg.name,
-      ownerHandle,
-      version,
-      updatedAt: pkg.updatedAt,
+      ...identity,
       issueType: "security",
       title: pkg.displayName,
       reason: "Blocked by security checks",
@@ -214,12 +202,7 @@ function pushPackageAttention(
   if (security.tone === "pending") {
     items.push({
       id: `plugin:${pkg._id}:pending-scan`,
-      kind: "plugin",
-      packageFamily: pkg.family,
-      packageName: pkg.name,
-      ownerHandle,
-      version,
-      updatedAt: pkg.updatedAt,
+      ...identity,
       issueType: "security",
       title: pkg.displayName,
       reason: "Waiting for security checks",
@@ -230,12 +213,7 @@ function pushPackageAttention(
   } else if (security.tone === "warning") {
     items.push({
       id: `plugin:${pkg._id}:review`,
-      kind: "plugin",
-      packageFamily: pkg.family,
-      packageName: pkg.name,
-      ownerHandle,
-      version,
-      updatedAt: pkg.updatedAt,
+      ...identity,
       issueType: "security",
       title: pkg.displayName,
       reason: "Needs security review",
