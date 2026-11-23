@@ -130,6 +130,32 @@ describe("clawpack", () => {
     await expect(parseClawPack(pack)).rejects.toThrow("file/ancestor path collision");
   });
 
+  it("inflates the full archive when the gzip size trailer is wrong", async () => {
+    const readme = "x".repeat(200_000);
+    const pack = npmPackFixture({
+      "package/package.json": JSON.stringify({ name: "demo", version: "1.0.0" }),
+      "package/README.md": readme,
+    });
+    // ISIZE is untrusted: an understated hint must grow the buffer, not truncate.
+    pack.set([1, 0, 0, 0], pack.byteLength - 4);
+
+    const parsed = await parseClawPack(pack);
+    const entry = parsed.entries.find((candidate) => candidate.path === "README.md");
+    expect(new TextDecoder().decode(entry?.bytes)).toBe(readme);
+  });
+
+  it("enforces the unpacked byte limit even when the size trailer understates it", async () => {
+    const pack = npmPackFixture({
+      "package/package.json": JSON.stringify({ name: "demo", version: "1.0.0" }),
+      "package/README.md": "x".repeat(200_000),
+    });
+    pack.set([1, 0, 0, 0], pack.byteLength - 4);
+
+    await expect(parseClawPack(pack, { maxTarBytes: 64 * 1024 })).rejects.toThrow(
+      "exceeds the requested byte limit",
+    );
+  });
+
   it("uses npm-style tarball names", () => {
     expect(npmTarballName("demo", "1.0.0")).toBe("demo-1.0.0.tgz");
     expect(npmTarballName("@scope/demo", "1.0.0")).toBe("scope-demo-1.0.0.tgz");
