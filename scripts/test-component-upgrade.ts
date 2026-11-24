@@ -14,7 +14,6 @@ import {
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { pipeline } from "node:stream/promises";
 import {
   buildLocalAuthBackendEnv,
   buildLocalAuthBackendVersionArgs,
@@ -221,26 +220,27 @@ async function main() {
       writeFileSync(join(project, path), source);
   };
   async function archive(ref: string) {
-    const producer = track(
-      spawn("git", ["archive", ref], {
-        cwd: repository,
-        detached: true,
-        stdio: ["ignore", "pipe", "inherit"],
-      }),
-    );
-    const consumer = track(
-      spawn("tar", ["-x", "-C", project], {
-        detached: true,
-        stdio: ["pipe", "inherit", "inherit"],
-      }),
-    );
-    const [[produced], [consumed]] = await Promise.all([
-      once(producer, "exit"),
-      once(consumer, "exit"),
-      pipeline(producer.stdout!, consumer.stdin!),
-    ]);
-    assert.equal(produced, 0);
-    assert.equal(consumed, 0);
+    const file = join(root, "source.tar");
+    try {
+      // A file avoids premature-close events in the streaming pipeline and
+      // gives the producer and extractor independently checked exit statuses.
+      for (const [command, args] of [
+        ["git", ["archive", "--output", file, ref]],
+        ["tar", ["-xf", file, "-C", project]],
+      ] as const) {
+        const child = track(
+          spawn(command, [...args], {
+            cwd: repository,
+            detached: true,
+            stdio: ["ignore", "inherit", "inherit"],
+          }),
+        );
+        const [code] = await once(child, "close");
+        assert.equal(code, 0, `Fixture ${command} failed`);
+      }
+    } finally {
+      rmSync(file, { force: true });
+    }
   }
   async function start(provision = false) {
     const child = launch(
