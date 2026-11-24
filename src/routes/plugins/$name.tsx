@@ -1228,47 +1228,29 @@ function PluginDetailPageContent({ name, loaderData, pendingNotice }: PluginDeta
           ) : undefined
         }
         actions={
-          <>
-            {newVersionHref ? (
-              <a className="plugin-catalog-action" href={newVersionHref}>
-                <Upload size={14} aria-hidden="true" />
-                New version
-              </a>
-            ) : null}
-            <PluginPackageDetails
-              downloadHref={pkg.latestVersion && !isDownloadBlocked ? downloadPath : null}
-              name={title}
-              activeTab={activeTab}
-              onTab={selectTab}
-              activity={activityPanel}
-              configuration={configurationPanel}
-              compatibility={compatibilityPanel}
-              versionsPanel={versionsPanel}
-            />
-            {isPlugin ? (
-              <Dialog>
-                <DialogTrigger asChild>
-                  <button
-                    className="plugin-catalog-action plugin-catalog-action--primary"
-                    type="button"
-                    disabled={isDownloadBlocked}
-                    aria-describedby={isDownloadBlocked ? "plugin-blocked-notice" : undefined}
-                  >
-                    Install
-                  </button>
-                </DialogTrigger>
-                {!isDownloadBlocked ? (
-                  <DialogContent className="plugin-install-dialog">
-                    <DialogHeader>
-                      <DialogTitle>Install {title}</DialogTitle>
-                      <DialogDescription>Choose an install method.</DialogDescription>
-                    </DialogHeader>
-                    {installCommandCard}
-                  </DialogContent>
-                ) : null}
-              </Dialog>
-            ) : null}
-          </>
+          isPlugin ? (
+            <Dialog>
+              <DialogTrigger asChild>
+                <button
+                  className="plugin-catalog-action plugin-catalog-action--primary"
+                  type="button"
+                  disabled={isDownloadBlocked}
+                  aria-describedby={isDownloadBlocked ? "plugin-blocked-notice" : undefined}
+                >
+                  Install
+                </button>
+              </DialogTrigger>
+              {!isDownloadBlocked ? (
+                <DialogContent className="plugin-install-dialog">
+                  <DialogHeader>
+                    <DialogTitle>Install {title}</DialogTitle>
+                    <DialogDescription>Choose an install method.</DialogDescription>
+                  </DialogHeader>
+                  {installCommandCard}
+                </DialogContent>
+              ) : null}
+            </Dialog>
+          ) : undefined
         }
         summary={
           pkg.summary ? (
@@ -1278,12 +1260,32 @@ function PluginDetailPageContent({ name, loaderData, pendingNotice }: PluginDeta
           ) : undefined
         }
         sidebar={
-          <PluginCatalogRail
-            pkg={pkg}
-            release={latestRelease}
-            ownerHandle={owner?.handle}
-            onEditTopics={manageContext ? () => setIsCatalogMetadataDialogOpen(true) : undefined}
-          />
+          <>
+            <PluginCatalogRail
+              pkg={pkg}
+              release={latestRelease}
+              ownerHandle={owner?.handle}
+              onEditTopics={manageContext ? () => setIsCatalogMetadataDialogOpen(true) : undefined}
+            />
+            <div className="plugin-catalog-utilities">
+              {newVersionHref ? (
+                <a className="plugin-catalog-utility" href={newVersionHref}>
+                  <Upload size={14} aria-hidden="true" />
+                  New version
+                </a>
+              ) : null}
+              <PluginPackageDetails
+                downloadHref={pkg.latestVersion && !isDownloadBlocked ? downloadPath : null}
+                name={title}
+                activeTab={activeTab}
+                onTab={selectTab}
+                activity={activityPanel}
+                configuration={configurationPanel}
+                compatibility={compatibilityPanel}
+                versionsPanel={versionsPanel}
+              />
+            </div>
+          </>
         }
       >
         {pendingNotice}

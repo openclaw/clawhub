@@ -300,9 +300,14 @@ describe("plugin detail route", () => {
       const heading = screen.getByRole("heading", { level: 1, name: "Demo Plugin" });
       const hero = heading.closest<HTMLElement>(".catalog-detail__hero");
       expect(hero?.closest(".catalog-detail")).toBeTruthy();
-      expect(within(hero!).getByRole("button", { name: "Install" })).toBeTruthy();
+      expect(within(hero!).getAllByRole("button")).toEqual([
+        within(hero!).getByRole("button", { name: "Install" }),
+      ]);
       expect(within(hero!).queryByRole("link", { name: "Download" })).toBeNull();
-      expect(within(hero!).getByRole("button", { name: "Package details" })).toBeTruthy();
+      const detailsTrigger = within(screen.getByRole("complementary")).getByRole("button", {
+        name: "Package details",
+      });
+      expect(detailsTrigger.textContent).toBe("Package details");
       expect(screen.queryByRole("tablist")).toBeNull();
       expect(screen.getByText("Getting started with Demo")).toBeTruthy();
       expect(

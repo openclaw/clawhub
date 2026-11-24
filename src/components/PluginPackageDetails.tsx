@@ -1,4 +1,4 @@
-import { Ellipsis } from "lucide-react";
+import { Package } from "lucide-react";
 import { useRef, useState, useEffect, type ReactNode } from "react";
 import {
   Dialog,
@@ -62,13 +62,9 @@ export function PluginPackageDetails({
   return (
     <Dialog open={activeTab !== null} onOpenChange={(open) => onTab(open ? "activity" : null)}>
       <DialogTrigger asChild>
-        <button
-          className="plugin-catalog-action plugin-catalog-action--icon"
-          type="button"
-          aria-label="Package details"
-          title="Package details"
-        >
-          <Ellipsis size={18} aria-hidden="true" />
+        <button className="plugin-catalog-utility" type="button">
+          <Package size={14} aria-hidden="true" />
+          Package details
         </button>
       </DialogTrigger>
       <DialogContent className="plugin-package-dialog">
