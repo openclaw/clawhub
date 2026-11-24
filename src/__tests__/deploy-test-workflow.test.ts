@@ -30,14 +30,11 @@ async function readWorkflow() {
     };
     jobs?: Record<string, WorkflowJob>;
     on?: {
-      pull_request?: {
-        types?: string[];
-      };
-      workflow_dispatch?: unknown;
-      workflow_run?: {
+      push?: {
         branches?: string[];
-        types?: string[];
-        workflows?: string[];
+      };
+      workflow_dispatch?: {
+        inputs?: Record<string, { required?: boolean }>;
       };
     };
     permissions?: Record<string, string>;
@@ -45,82 +42,99 @@ async function readWorkflow() {
 }
 
 describe("Test deploy workflow", () => {
-  it("admits main CI and exact guarded mirror proof branches", async () => {
+  it("deploys only the exact current next head from a push or dispatch", async () => {
     const workflow = await readWorkflow();
     const job = workflow.jobs?.["deploy-test"];
     const steps = job?.steps ?? [];
-    const revision = steps.find((step) => step.name === "Resolve deployment revision")?.run ?? "";
+    const revisionStep = steps.find((step) => step.name === "Resolve deployment revision");
+    const revision = revisionStep?.run ?? "";
 
-    expect(workflow.on?.workflow_run).toEqual({
-      workflows: ["CI"],
-      types: ["completed"],
-      branches: ["main"],
-    });
-    expect(workflow.on?.pull_request).toEqual({
-      types: ["synchronize", "labeled"],
-    });
-    expect(workflow.on?.workflow_dispatch).toBeDefined();
+    expect(Object.keys(workflow.on ?? {}).sort()).toEqual(["push", "workflow_dispatch"]);
+    expect(workflow.on?.push).toEqual({ branches: ["next"] });
+    expect(workflow.on?.workflow_dispatch?.inputs?.expected_sha?.required).toBe(true);
     expect(workflow.concurrency).toEqual({
       group: "deploy-test",
       "cancel-in-progress": false,
     });
-    expect(job?.if).toContain("github.event_name == 'workflow_dispatch'");
-    expect(job?.if).toContain("github.ref == 'refs/heads/main'");
-    expect(job?.if).toContain("github.actor == 'Patrick-Erichsen'");
-    expect(job?.if).toContain("github.ref == 'refs/heads/pe/claw-563-skills-sh-mirror-10k'");
-    expect(job?.if).toContain("inputs.branch_test_confirm == 'deploy-claw-563-to-permanent-test'");
-    expect(job?.if).toContain("github.ref == 'refs/heads/pe/claw-589-trending-rank-overlay'");
-    expect(job?.if).toContain("inputs.branch_test_confirm == 'deploy-claw-589-to-permanent-test'");
-    expect(job?.if).toContain("github.ref == 'refs/heads/pe/claw-577-canonical-mixed-search'");
-    expect(job?.if).toContain("inputs.branch_test_confirm == 'deploy-claw-577-to-permanent-test'");
-    expect(job?.if).toContain("github.ref == 'refs/heads/pe/claw-583-mirrored-search-journey'");
-    expect(job?.if).toContain("inputs.branch_test_confirm == 'deploy-claw-583-to-permanent-test'");
-    expect(job?.if).toContain("inputs.expected_sha != ''");
-    expect(job?.if).toContain("github.event_name == 'pull_request'");
-    expect(job?.if).toContain(
-      "github.event.pull_request.head.ref == 'pe/claw-563-skills-sh-mirror-10k'",
+    expect(job?.if).toBe(
+      "github.ref == 'refs/heads/next' && (github.event_name == 'push' || " +
+        "(github.event_name == 'workflow_dispatch' && inputs.expected_sha != ''))",
     );
-    expect(job?.if).toContain("github.event.pull_request.head.repo.full_name == github.repository");
-    expect(job?.if).toContain("github.actor == 'Patrick-Erichsen'");
-    expect(job?.if).toContain(
-      "contains(github.event.pull_request.labels.*.name, 'test-mirror-load')",
+    expect(steps[0]?.with?.ref).toBe("${{ github.sha }}");
+    expect(revisionStep?.env?.EXPECTED_SHA).toBe(
+      "${{ github.event_name == 'push' && github.sha || inputs.expected_sha }}",
     );
-    expect(job?.if).toContain(
-      "github.event.pull_request.head.ref == 'pe/claw-589-trending-rank-overlay'",
+    expect(revision).not.toContain("${{");
+    expect(revision).toContain('"$GITHUB_REF" != refs/heads/next');
+    expect(revision).toContain("+refs/heads/next:refs/remotes/origin/next");
+    expect(revision).toContain(
+      '"$EXPECTED_SHA" != "$deploy_sha" || "$deploy_sha" != "$current_sha"',
     );
-    expect(job?.if).toContain(
-      "contains(github.event.pull_request.labels.*.name, 'test-trending-load')",
-    );
-    expect(job?.if).toContain(
-      "github.event.pull_request.head.ref == 'pe/claw-577-canonical-mixed-search'",
-    );
-    expect(job?.if).toContain(
-      "contains(github.event.pull_request.labels.*.name, 'test-search-load')",
-    );
-    expect(job?.if).toContain(
-      "github.event.pull_request.head.ref == 'pe/claw-583-mirrored-search-journey'",
-    );
-    expect(job?.if).toContain(
-      "contains(github.event.pull_request.labels.*.name, 'test-external-catalog')",
-    );
-    expect(job?.if).toContain("github.event.workflow_run.conclusion == 'success'");
-    expect(job?.if).toContain("github.event.workflow_run.event == 'push'");
-    expect(revision).toContain('deploy_sha" != "$main_sha');
-    expect(revision).toContain("refs/heads/pe/claw-563-skills-sh-mirror-10k");
-    expect(revision).toContain("Patrick-Erichsen");
-    expect(revision).toContain("deploy-claw-563-to-permanent-test");
-    expect(revision).toContain("refs/heads/pe/claw-589-trending-rank-overlay");
-    expect(revision).toContain("deploy-claw-589-to-permanent-test");
-    expect(revision).toContain("refs/heads/pe/claw-577-canonical-mixed-search");
-    expect(revision).toContain("deploy-claw-577-to-permanent-test");
-    expect(revision).toContain("refs/heads/pe/claw-583-mirrored-search-journey");
-    expect(revision).toContain("deploy-claw-583-to-permanent-test");
-    expect(revision).toContain("refs/heads/pe/claw-590-trending-snapshot");
-    expect(revision).toContain("deploy-claw-590-to-permanent-test");
-    expect(revision).toContain("${{ inputs.expected_sha }}");
-    expect(revision).toContain("${{ github.event.pull_request.head.sha }}");
-    expect(revision).toContain("${{ github.event.pull_request.head.repo.full_name }}");
-    expect(revision).toContain("$GITHUB_REPOSITORY");
+    expect(revision).not.toContain("main");
+    expect(revision).not.toContain("pe/claw-");
+  });
+
+  it("refuses a superseded or mismatched revision before any deployment step", async () => {
+    const workflow = await readWorkflow();
+    const steps = workflow.jobs?.["deploy-test"]?.steps ?? [];
+    const revision = steps.find((step) => step.name === "Resolve deployment revision");
+    const root = await mkdtemp(join(tmpdir(), "deploy-test-revision-"));
+    const head = "a".repeat(40);
+    const other = "b".repeat(40);
+    try {
+      // Stub git so the guard runs without a repository or network.
+      const git = join(root, "git");
+      await writeFile(
+        git,
+        [
+          "#!/usr/bin/env bash",
+          'case "$1 $2" in',
+          '  "rev-parse HEAD") echo "$TEST_HEAD_SHA" ;;',
+          '  "rev-parse origin/next") echo "$TEST_NEXT_SHA" ;;',
+          '  "hash-object "*) echo fixture ;;',
+          "esac",
+          "",
+        ].join("\n"),
+      );
+      await chmod(git, 0o755);
+      // macOS has no sha256sum by default; the fixture digest is not under test here.
+      const sha256sum = join(root, "sha256sum");
+      await writeFile(sha256sum, "#!/usr/bin/env bash\ncat\n");
+      await chmod(sha256sum, 0o755);
+      const run = (env: Record<string, string>) => {
+        const output = join(root, `output-${Math.random().toString(36).slice(2)}`);
+        const result = spawnSync("bash", ["-c", revision?.run ?? "exit 97"], {
+          env: {
+            ...process.env,
+            PATH: `${root}:${process.env.PATH}`,
+            GITHUB_EVENT_NAME: "push",
+            GITHUB_OUTPUT: output,
+            GITHUB_REF: "refs/heads/next",
+            EXPECTED_SHA: head,
+            TEST_HEAD_SHA: head,
+            TEST_NEXT_SHA: head,
+            ...env,
+          },
+        });
+        return { output, status: result.status };
+      };
+
+      const accepted = run({});
+      expect(accepted.status).toBe(0);
+      expect(await readFile(accepted.output, "utf8")).toContain(`deploy_sha=${head}`);
+      expect(run({ GITHUB_EVENT_NAME: "workflow_dispatch" }).status).toBe(0);
+
+      expect(run({ GITHUB_REF: "refs/heads/main" }).status).toBe(1);
+      expect(run({ GITHUB_REF: "refs/heads/pe/claw-590-trending-snapshot" }).status).toBe(1);
+      expect(run({ GITHUB_EVENT_NAME: "pull_request" }).status).toBe(1);
+      expect(run({ GITHUB_EVENT_NAME: "workflow_run" }).status).toBe(1);
+      expect(run({ EXPECTED_SHA: "" }).status).toBe(1);
+      expect(run({ EXPECTED_SHA: head.slice(0, 12) }).status).toBe(1);
+      expect(run({ EXPECTED_SHA: other }).status).toBe(1);
+      expect(run({ TEST_NEXT_SHA: other }).status).toBe(1);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("uses only the Test environment and narrowly scoped secrets", async () => {

@@ -1,20 +1,16 @@
 name: Deploy Test
 
 on:
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
-    branches: [main]
-  pull_request:
-    types: [synchronize, labeled]
+  push:
+    branches: [next]
   workflow_dispatch:
     inputs:
       expected_sha:
-        description: Exact branch SHA permitted for a temporary protected Test deploy
-        required: false
+        description: Exact current next branch SHA to deploy to Test
+        required: true
         type: string
       branch_test_confirm:
-        description: Confirmation phrase for an explicitly guarded branch-only Test deploy
+        description: Unused. Retained only for the retired branch proof jobs in this workflow.
         required: false
         type: string
 
@@ -27,37 +23,11 @@ permissions:
 
 jobs:
   deploy-test:
+    # Test deploys only from next. Merges to main and pull requests do not deploy it.
     if: >-
-      (github.event_name == 'workflow_dispatch' &&
-      (github.ref == 'refs/heads/main' ||
-      ((github.ref == 'refs/heads/pe/claw-563-skills-sh-mirror-10k' &&
-      inputs.branch_test_confirm == 'deploy-claw-563-to-permanent-test') ||
-      (github.ref == 'refs/heads/pe/claw-589-trending-rank-overlay' &&
-      inputs.branch_test_confirm == 'deploy-claw-589-to-permanent-test') ||
-      (github.ref == 'refs/heads/pe/claw-577-canonical-mixed-search' &&
-      inputs.branch_test_confirm == 'deploy-claw-577-to-permanent-test') ||
-      (github.ref == 'refs/heads/pe/claw-583-mirrored-search-journey' &&
-      inputs.branch_test_confirm == 'deploy-claw-583-to-permanent-test') ||
-      (github.ref == 'refs/heads/pe/claw-560-verified-adoption' &&
-      inputs.branch_test_confirm == 'deploy-claw-560-to-permanent-test') ||
-      (github.ref == 'refs/heads/pe/claw-590-trending-snapshot' &&
-      inputs.branch_test_confirm == 'deploy-claw-590-to-permanent-test')) &&
-      github.actor == 'Patrick-Erichsen' &&
-      inputs.expected_sha != '')) ||
-      (github.event_name == 'pull_request' &&
-      ((github.event.pull_request.head.ref == 'pe/claw-563-skills-sh-mirror-10k' &&
-      contains(github.event.pull_request.labels.*.name, 'test-mirror-load')) ||
-      (github.event.pull_request.head.ref == 'pe/claw-589-trending-rank-overlay' &&
-      contains(github.event.pull_request.labels.*.name, 'test-trending-load')) ||
-      (github.event.pull_request.head.ref == 'pe/claw-577-canonical-mixed-search' &&
-      contains(github.event.pull_request.labels.*.name, 'test-search-load')) ||
-      (github.event.pull_request.head.ref == 'pe/claw-583-mirrored-search-journey' &&
-      contains(github.event.pull_request.labels.*.name, 'test-external-catalog'))) &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      github.actor == 'Patrick-Erichsen' &&
-      github.event.pull_request.head.sha != '') ||
-      (github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push')
+      github.ref == 'refs/heads/next' &&
+      (github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && inputs.expected_sha != ''))
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment:
@@ -67,114 +37,35 @@ jobs:
       deployment_url: ${{ steps.vercel.outputs.deployment_url }}
       deploy_sha: ${{ steps.revision.outputs.deploy_sha }}
       fixture_version: ${{ steps.revision.outputs.fixture_version }}
-      branch_test: ${{ steps.revision.outputs.branch_test }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
-          ref: >-
-            ${{
-              github.event_name == 'workflow_run' && github.event.workflow_run.head_sha ||
-              github.event_name == 'pull_request' && github.event.pull_request.head.sha ||
-              github.ref
-            }}
+          ref: ${{ github.sha }}
 
       - name: Resolve deployment revision
         id: revision
+        env:
+          EXPECTED_SHA: ${{ github.event_name == 'push' && github.sha || inputs.expected_sha }}
         run: |
           set -euo pipefail
+          if [[ "$GITHUB_REF" != refs/heads/next ||
+                ( "$GITHUB_EVENT_NAME" != push && "$GITHUB_EVENT_NAME" != workflow_dispatch ) ]]; then
+            echo "::error::Test deploys must run from a next push or next dispatch"
+            exit 1
+          fi
+          if [[ ! "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::expected_sha must be a full lowercase commit SHA"
+            exit 1
+          fi
           deploy_sha="$(git rev-parse HEAD)"
-          git fetch --no-tags origin main
-          main_sha="$(git rev-parse origin/main)"
-          if [[ "$deploy_sha" != "$main_sha" ]]; then
-            branch_test_allowed=false
-            if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]] &&
-              [[ "$GITHUB_REF" == refs/heads/pe/claw-563-skills-sh-mirror-10k ]] &&
-              [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
-              [[ "${{ inputs.branch_test_confirm }}" == deploy-claw-563-to-permanent-test ]] &&
-              [[ "${{ inputs.expected_sha }}" == "$deploy_sha" ]]
-            then
-              branch_test_allowed=true
-            fi
-            if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]] &&
-              [[ "$GITHUB_REF" == refs/heads/pe/claw-589-trending-rank-overlay ]] &&
-              [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
-              [[ "${{ inputs.branch_test_confirm }}" == deploy-claw-589-to-permanent-test ]] &&
-              [[ "${{ inputs.expected_sha }}" == "$deploy_sha" ]]
-            then
-              branch_test_allowed=true
-            fi
-            if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]] &&
-              [[ "$GITHUB_REF" == refs/heads/pe/claw-577-canonical-mixed-search ]] &&
-              [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
-              [[ "${{ inputs.branch_test_confirm }}" == deploy-claw-577-to-permanent-test ]] &&
-              [[ "${{ inputs.expected_sha }}" == "$deploy_sha" ]]
-            then
-              branch_test_allowed=true
-            fi
-            if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]] &&
-              [[ "$GITHUB_REF" == refs/heads/pe/claw-583-mirrored-search-journey ]] &&
-              [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
-              [[ "${{ inputs.branch_test_confirm }}" == deploy-claw-583-to-permanent-test ]] &&
-              [[ "${{ inputs.expected_sha }}" == "$deploy_sha" ]]
-            then
-              branch_test_allowed=true
-            fi
-            if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]] &&
-              [[ "$GITHUB_REF" == refs/heads/pe/claw-560-verified-adoption ]] &&
-              [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
-              [[ "${{ inputs.branch_test_confirm }}" == deploy-claw-560-to-permanent-test ]] &&
-              [[ "${{ inputs.expected_sha }}" == "$deploy_sha" ]]
-            then
-              branch_test_allowed=true
-            fi
-            if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]] &&
-              [[ "$GITHUB_REF" == refs/heads/pe/claw-590-trending-snapshot ]] &&
-              [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
-              [[ "${{ inputs.branch_test_confirm }}" == deploy-claw-590-to-permanent-test ]] &&
-              [[ "${{ inputs.expected_sha }}" == "$deploy_sha" ]]
-            then
-              branch_test_allowed=true
-            fi
-            if [[ "$GITHUB_EVENT_NAME" == pull_request ]] &&
-              [[ "$GITHUB_HEAD_REF" == pe/claw-563-skills-sh-mirror-10k ]] &&
-              [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
-              [[ "${{ github.event.pull_request.head.repo.full_name }}" == "$GITHUB_REPOSITORY" ]] &&
-              [[ "${{ github.event.pull_request.head.sha }}" == "$deploy_sha" ]]
-            then
-              branch_test_allowed=true
-            fi
-            if [[ "$GITHUB_EVENT_NAME" == pull_request ]] &&
-              [[ "$GITHUB_HEAD_REF" == pe/claw-589-trending-rank-overlay ]] &&
-              [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
-              [[ "${{ github.event.pull_request.head.repo.full_name }}" == "$GITHUB_REPOSITORY" ]] &&
-              [[ "${{ github.event.pull_request.head.sha }}" == "$deploy_sha" ]]
-            then
-              branch_test_allowed=true
-            fi
-            if [[ "$GITHUB_EVENT_NAME" == pull_request ]] &&
-              [[ "$GITHUB_HEAD_REF" == pe/claw-577-canonical-mixed-search ]] &&
-              [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
-              [[ "${{ github.event.pull_request.head.repo.full_name }}" == "$GITHUB_REPOSITORY" ]] &&
-              [[ "${{ github.event.pull_request.head.sha }}" == "$deploy_sha" ]]
-            then
-              branch_test_allowed=true
-            fi
-            if [[ "$GITHUB_EVENT_NAME" == pull_request ]] &&
-              [[ "$GITHUB_HEAD_REF" == pe/claw-583-mirrored-search-journey ]] &&
-              [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
-              [[ "${{ github.event.pull_request.head.repo.full_name }}" == "$GITHUB_REPOSITORY" ]] &&
-              [[ "${{ github.event.pull_request.head.sha }}" == "$deploy_sha" ]]
-            then
-              branch_test_allowed=true
-            fi
-            if [[ "$branch_test_allowed" != true ]]; then
-              echo "::error::Refusing non-main Test deploy without an exact approved branch guard"
-              exit 1
-            fi
-            echo "branch_test=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "branch_test=false" >> "$GITHUB_OUTPUT"
+          git fetch --no-tags origin \
+            +refs/heads/next:refs/remotes/origin/next
+          current_sha="$(git rev-parse origin/next)"
+          # Only the current next head deploys; a superseded push or stale dispatch is refused.
+          if [[ "$EXPECTED_SHA" != "$deploy_sha" || "$deploy_sha" != "$current_sha" ]]; then
+            echo "::error::Requested SHA must equal both the checked-out commit and current next head"
+            exit 1
           fi
           fixture_version="$(
             git hash-object convex/devSeed.ts convex/lib/testSeed.ts |
@@ -270,7 +161,6 @@ jobs:
           ' <<< "$capabilities"
 
       - name: Apply additive Test fixtures
-        if: steps.revision.outputs.branch_test != 'true'
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
           CONVEX_DEPLOYMENT: ${{ vars.CONVEX_DEPLOYMENT }}
@@ -392,6 +282,9 @@ jobs:
             echo "- Result: \`${{ job.status }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
+  # Retired branch proofs. Every job below is unreachable: pull-request conditions have
+  # no trigger, and dispatch conditions name merged, deleted branches for which
+  # deploy-test is skipped. They are kept unchanged until a follow-up removes them.
   claw563-mirror-load:
     needs: deploy-test
     if: >-
