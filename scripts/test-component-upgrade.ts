@@ -96,6 +96,11 @@ function fixtureSources(read: (path: string) => string, legacy: boolean) {
       "export default defineSchema({",
       'export default defineSchema({\n  componentUpgradeExecutions: defineTable({ reportId: v.id("searchReportRuns") }).index("by_reportId", ["reportId"]),',
     ),
+    "convex/lib/retentionPolicy.ts": replaceOnce(
+      read("convex/lib/retentionPolicy.ts"),
+      "export const RETENTION_POLICIES = {",
+      'export const RETENTION_POLICIES = {\n  componentUpgradeExecutions: ephemeral("Fixture generation counter.", { prune: "capsule teardown", retention: "Fixture lifetime." }),',
+    ),
     "convex/componentUpgradeProbe.ts": legacy
       ? probeSource.replace('"@convex-dev/workpool"', '"workpool-previous"')
       : probeSource,
