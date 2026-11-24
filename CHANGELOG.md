@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Management: show Publisher abuse for unsupported view links instead of an empty page. Selected skill and plugin links keep their existing precedence.
+
 - Link previews: release the rendered image and renderer after PNG generation, including when rendering fails.
 
 - Browser tests: start the local preview on `PLAYWRIGHT_PORT` so custom-port runs probe the same server they launch.

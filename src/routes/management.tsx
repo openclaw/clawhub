@@ -1136,13 +1136,13 @@ function ManagementSidebarLink({
 }
 
 function resolveManagementView(
-  view: ManagementView | undefined,
+  view: unknown,
   selectedSlug?: string,
   selectedPluginName?: string,
 ): ManagementView {
   if (selectedSlug) return "skills";
   if (selectedPluginName) return "plugins";
-  return view ?? "abuse";
+  return isManagementView(view) ? view : "abuse";
 }
 
 /** Queue badges only carry signal when there is a backlog; hide 0 and loading. */
