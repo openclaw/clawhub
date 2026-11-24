@@ -33,6 +33,8 @@ describe("DetailSecuritySummary", () => {
 
     expect(screen.getByText("Pass")).toBeTruthy();
     const auditLink = screen.getByRole("link", { name: "View Security Audit" });
+    expect(auditLink.textContent).toBe("Audit");
+    expect(auditLink.contains(screen.getByText("Pass"))).toBe(false);
     expect(auditLink.getAttribute("href")).toBe("/steipete/weather/security-audit");
     expect(auditLink.getAttribute("target")).toBeNull();
     expect(auditLink.getAttribute("rel")).toBeNull();

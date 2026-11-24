@@ -1,4 +1,5 @@
-import { Info } from "lucide-react";
+import { ArrowUpRight, Info } from "lucide-react";
+import "./detail-security-summary.css";
 import { useId } from "react";
 import {
   aggregateAuditVerdict,
@@ -29,29 +30,32 @@ export function DetailSecuritySummary({
   const auditVerdictInfo = getScanStatusInfo(auditVerdict);
   const meterLevel = auditVerdictMeterLevel(auditVerdict);
   return (
-    <a
-      href={auditHref}
-      className="security-audit-sidebar-value"
-      aria-label="View Security Audit"
-      aria-describedby={description ? descriptionId : undefined}
-      title={description}
-    >
-      <div className="security-audit-sidebar-value-row">
+    <span className="detail-audit" title={description}>
+      <span className="detail-audit__score">
         <span className="security-audit-sidebar-verdict" data-status={auditVerdict}>
           {auditVerdictInfo.label}
         </span>
-        <div className="security-audit-meter" data-level={meterLevel} aria-hidden="true">
+        <span className="security-audit-meter" data-level={meterLevel} aria-hidden="true">
           <span />
           <span />
           <span />
-        </div>
-      </div>
+        </span>
+      </span>
+      <a
+        href={auditHref}
+        className="detail-audit__link"
+        aria-label="View Security Audit"
+        aria-describedby={description ? descriptionId : undefined}
+      >
+        <span>Audit</span>
+        <ArrowUpRight size={11} aria-hidden="true" />
+      </a>
       {description ? (
         <span id={descriptionId} className="sr-only">
           {description}
         </span>
       ) : null}
-    </a>
+    </span>
   );
 }
 
