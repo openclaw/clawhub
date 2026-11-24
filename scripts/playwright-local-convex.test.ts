@@ -27,15 +27,23 @@ function probe(url: string): Promise<string> {
 }
 
 it.skipIf(process.platform === "win32").each([
-  { bootstrapExit: 0, disconnect: false },
-  { bootstrapExit: 7, disconnect: false },
-  { bootstrapExit: 0, disconnect: true },
-])("owns bootstrap descendants through cleanup: %j", async ({ bootstrapExit, disconnect }) => {
+  { bootstrapExit: 0, disconnect: false, serve: false, exitBeforeReady: false },
+  { bootstrapExit: 7, disconnect: false, serve: false, exitBeforeReady: false },
+  { bootstrapExit: 0, disconnect: true, serve: false, exitBeforeReady: false },
+  { bootstrapExit: 0, disconnect: false, serve: true, exitBeforeReady: false },
+  { bootstrapExit: 0, disconnect: true, serve: true, exitBeforeReady: false },
+  { bootstrapExit: 0, disconnect: false, serve: true, exitBeforeReady: true },
+  { bootstrapExit: 7, disconnect: false, serve: true, exitBeforeReady: true },
+  { bootstrapExit: 0, disconnect: false, serve: true, exitBeforeReady: false, abrupt: true },
+])("owns Convex readiness and cleanup: %j", async (options) => {
+  const { bootstrapExit, disconnect, serve, exitBeforeReady } = options;
   const directory = await mkdtemp(join(tmpdir(), "clawhub-backend-owner-"));
   const serverPath = join(directory, "server.mjs");
   const addressPath = join(directory, "address.json");
+  const keeperPath = join(directory, "keeper.json");
   let owner: ChildProcess | undefined;
   let serverUrl: string | undefined;
+  let keeperPid: number | undefined;
   try {
     await writeFile(
       serverPath,
@@ -55,19 +63,43 @@ server.listen(0, '127.0.0.1', () => {
       join(directory, "bunx"),
       `#!/usr/bin/env bun
 import { spawn } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
 const backend = spawn(process.execPath, [${JSON.stringify(serverPath)}], {
   stdio: ['ignore', 'pipe', 'ignore'],
 });
-backend.stdout.once('data', () => process.exit(Number(process.argv[2])));
+backend.stdout.once('data', () => {
+  if (!${serve}) process.exit(Number(process.argv[2]));
+  if (${exitBeforeReady}) {
+    backend.once('exit', () => process.exit(Number(process.argv[2])));
+    backend.kill('SIGTERM');
+    return;
+  }
+  const start = process.argv.indexOf('--start');
+  if (!process.argv.includes('--once') || start < 0) process.exit(9);
+  const keeper = spawn(process.argv[start + 1], { shell: true, stdio: 'inherit', detached: true });
+  writeFileSync(${JSON.stringify(keeperPath)}, JSON.stringify(keeper.pid));
+  keeper.once('exit', (code) => {
+    backend.kill('SIGTERM');
+    process.exit(code ?? 1);
+  });
+});
 `,
       { mode: 0o755 },
     );
 
-    owner = spawn("bun", [resolve("scripts/playwright-local-convex.ts"), String(bootstrapExit)], {
-      detached: true,
-      stdio: ["ignore", "pipe", "pipe", "ipc"],
-      env: { ...process.env, PATH: `${directory}:${process.env.PATH}` },
-    });
+    owner = spawn(
+      "bun",
+      [
+        resolve("scripts/playwright-local-convex.ts"),
+        ...(serve ? ["--serve"] : []),
+        String(bootstrapExit),
+      ],
+      {
+        detached: true,
+        stdio: ["ignore", "pipe", "pipe", "ipc"],
+        env: { ...process.env, PATH: `${directory}:${process.env.PATH}` },
+      },
+    );
     const bootstrapOwner = owner;
     const result = await new Promise<LocalConvexBootstrapResult>((resolveResult, reject) => {
       bootstrapOwner.once("error", reject);
@@ -76,16 +108,35 @@ backend.stdout.once('data', () => process.exit(Number(process.argv[2])));
       );
       bootstrapOwner.once("message", resolveResult);
     });
-    expect(result.status).toBe(bootstrapExit === 0 ? "ready" : "error");
+    const ready = bootstrapExit === 0 && !exitBeforeReady;
+    expect(result.status).toBe(ready ? "ready" : "error");
     const { port } = z
       .object({ port: z.number() })
       .parse(JSON.parse(await readFile(addressPath, "utf8")));
     const url = `http://127.0.0.1:${port}`;
     serverUrl = url;
-    expect(await probe(url)).toBe("alive");
+    if (serve && exitBeforeReady) {
+      await expect
+        .poll(() =>
+          probe(url).then(
+            () => true,
+            () => false,
+          ),
+        )
+        .toBe(false);
+    } else {
+      expect(await probe(url)).toBe("alive");
+    }
     expect(owner.exitCode).toBeNull();
+    if (serve && !exitBeforeReady) {
+      keeperPid = z.number().parse(JSON.parse(await readFile(keeperPath, "utf8")));
+    }
 
-    if (disconnect) {
+    if ("abrupt" in options && options.abrupt) {
+      const exited = once(owner, "exit");
+      process.kill(-owner.pid!, "SIGKILL");
+      await exited;
+    } else if (disconnect) {
       const exited = once(owner, "exit");
       owner.disconnect();
       await exited;
@@ -114,12 +165,32 @@ backend.stdout.once('data', () => process.exit(Number(process.argv[2])));
         ),
       )
       .toBe(false);
+    if (keeperPid) {
+      await expect
+        .poll(() => {
+          try {
+            process.kill(-keeperPid!, 0);
+            return true;
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+            return false;
+          }
+        })
+        .toBe(false);
+    }
   } finally {
     if (serverUrl) await probe(`${serverUrl}/stop`).catch(() => {});
     if (owner?.pid && owner.exitCode === null && owner.signalCode === null) {
       const exited = once(owner, "exit");
       process.kill(-owner.pid, "SIGKILL");
       await exited;
+    }
+    if (keeperPid) {
+      try {
+        process.kill(-keeperPid, "SIGKILL");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+      }
     }
     await rm(directory, { recursive: true, force: true });
   }

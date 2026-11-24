@@ -122,7 +122,12 @@ export function resolveLocalAuthDeployment(
   configuredDeployment: string | undefined,
   fallbackDeployment: string | null | undefined,
 ) {
-  return configuredDeployment ?? fallbackDeployment ?? DEFAULT_LOCAL_AUTH_CONVEX_DEPLOYMENT;
+  const deployment =
+    configuredDeployment ?? fallbackDeployment ?? DEFAULT_LOCAL_AUTH_CONVEX_DEPLOYMENT;
+  if (!/^(anonymous|local):[^\s]+$/.test(deployment)) {
+    throw new Error("Local-auth tests require a local or anonymous Convex deployment.");
+  }
+  return deployment;
 }
 
 export function resolveLocalAuthRunnerConfig(

@@ -131,12 +131,16 @@ local Convex process before running it.
 
 Long or cross-filesystem scratch paths use a short writable ancestor on the workspace filesystem. Short `TMPDIR` overrides on that filesystem are preserved. This keeps module renames on one device and leaves room for Convex's Unix socket paths on macOS.
 
-The runner starts the backend without publishing functions, configures the
-backend environment, and then publishes once. Cron definitions read deployment
+The runner provisions the local deployment without publishing functions, then
+configures its environment through the CLI's short-lived local backend owner.
+Environment values use private file input, and the CLI selector names only the
+isolated local or anonymous deployment. Cron definitions read deployment
 environment variables during publication, so `CLAWHUB_DISABLE_CRONS=1` must be
-set before the first push. Application readiness checks never republish code,
-and no development watcher can push again while the app builds. A persistent
-launcher retains ownership of the backend process group through cleanup.
+set before the first push. The persistent launcher runs `convex dev --once`
+with an owned `--start` keeper. Its ready signal comes after the initial push;
+the keeper holds the backend alive without a development watcher. Application
+readiness checks never republish code, and process-group cleanup retires the
+launcher, keeper, and backend together.
 
 CI pins the local-auth backend with `PLAYWRIGHT_LOCAL_AUTH_BACKEND_VERSION`.
 Before bootstrap, it restores the versioned binary cache or downloads the Linux

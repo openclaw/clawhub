@@ -85,6 +85,15 @@ describe("playwright local-auth runner config", () => {
     );
   });
 
+  it.each(["prod:production", "dev:shared-development", "local:fixture\nCONVEX_DEPLOY_KEY=key"])(
+    "rejects a non-local deployment selector: %s",
+    (deployment) => {
+      expect(() => resolveLocalAuthDeployment(deployment, null)).toThrow(
+        "Local-auth tests require a local or anonymous Convex deployment.",
+      );
+    },
+  );
+
   it("does not inherit the generic CI Convex URL", () => {
     expect(
       resolveLocalAuthRunnerConfig({

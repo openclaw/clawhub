@@ -318,8 +318,13 @@ async function cleanupOwnedResources() {
   }
 }
 
-async function runRequired(command: string, args: string[], env: NodeJS.ProcessEnv) {
-  const child = spawnManaged(command, args, env);
+async function runRequired(
+  command: string,
+  args: string[],
+  env: NodeJS.ProcessEnv,
+  stdio: StdioOptions = "inherit",
+) {
+  const child = spawnManaged(command, args, env, process.cwd(), stdio);
   // Keep signal handlers runnable while builds and browser tests are active.
   await new Promise<void>((resolve, reject) => {
     child.once("error", reject);
@@ -401,12 +406,17 @@ function runBuffered(command: string, args: string[], env: NodeJS.ProcessEnv) {
   };
 }
 
-async function startLocalConvex(args: string[], env: NodeJS.ProcessEnv, convexUrl: string) {
+async function startLocalConvex(
+  args: string[],
+  env: NodeJS.ProcessEnv,
+  convexUrl: string,
+  mode: "provision" | "serve",
+) {
   const maxAttempts = 3;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const child = spawnManaged(
       "bun",
-      ["scripts/playwright-local-convex.ts", ...args],
+      ["scripts/playwright-local-convex.ts", ...(mode === "serve" ? ["--serve"] : []), ...args],
       env,
       process.cwd(),
       ["inherit", "inherit", "inherit", "ipc"],
@@ -422,14 +432,20 @@ async function startLocalConvex(args: string[], env: NodeJS.ProcessEnv, convexUr
           else reject(new Error(result.message));
         });
       });
-      await waitUntilReachable(convexUrl, "Local Convex", child);
+      if (mode === "provision") {
+        await stopManagedChild(child);
+        await waitUntilUnreachable(convexUrl, "Local Convex provisioner");
+      } else {
+        await waitUntilReachable(convexUrl, "Local Convex", child);
+      }
       return;
     } catch (error) {
       await stopManagedChild(child);
-      rmSync(LOCAL_CONVEX_STATE_DIR, { force: true, recursive: true });
+      // Serving retries must retain the environment configured before the push.
+      if (mode === "provision") rmSync(LOCAL_CONVEX_STATE_DIR, { force: true, recursive: true });
       if (attempt >= maxAttempts) throw error;
       console.log(
-        `Local Convex did not start cleanly on attempt ${attempt}; retrying with fresh isolated state...`,
+        `Local Convex did not start cleanly on attempt ${attempt}; retrying ${mode === "provision" ? "with fresh isolated state" : "the configured local backend"}...`,
       );
       await sleep(2_000 * attempt);
     }
@@ -460,8 +476,8 @@ function isFunctionReadinessRetryableOutput(output: string) {
 }
 
 async function setLocalConvexEnv(
-  convexUrl: string,
   changes: Array<{ name: string; value: string }>,
+  env: NodeJS.ProcessEnv,
 ) {
   const config = readLocalDeploymentConfig();
   if (!config) {
@@ -470,18 +486,22 @@ async function setLocalConvexEnv(
     );
   }
 
-  const response = await fetch(new URL("/api/update_environment_variables", convexUrl), {
-    body: JSON.stringify({ changes }),
-    headers: {
-      Authorization: `Convex ${config.adminKey}`,
-      "Content-Type": "application/json",
-    },
-    method: "POST",
-  });
-  if (!response.ok) {
-    throw new Error(
-      `Failed to configure local Convex environment: ${response.status} ${await response.text()}`,
-    );
+  const valueFile = join(tempDir, "convex-env-value");
+  try {
+    for (const { name, value } of changes) {
+      // File input preserves JSON/PEM bytes without exposing values in argv.
+      writeFileSync(valueFile, value, { mode: 0o600 });
+      console.log(`Configuring local Convex variable ${name}.`);
+      await runRequired(
+        "bunx",
+        ["convex", "env", "set", name, "--from-file", valueFile, "--env-file", envFile],
+        env,
+        // Keep even CLI/server error diagnostics from exposing a submitted value.
+        "ignore",
+      );
+    }
+  } finally {
+    rmSync(valueFile, { force: true });
   }
 }
 
@@ -585,30 +605,7 @@ async function main() {
     e2eEnv.DEV_AUTH_CONVEX_DEPLOYMENT = devAuthDeploymentMarker(deployment);
   }
 
-  writeFileSync(
-    envFile,
-    [
-      `AUTH_GITHUB_ID=${e2eEnv.AUTH_GITHUB_ID}`,
-      `AUTH_GITHUB_SECRET=${e2eEnv.AUTH_GITHUB_SECRET}`,
-      "CLAWHUB_DISABLE_CRONS=1",
-      "CLAWHUB_SKILLS_SH_ROLLOUT_MODE=test",
-      `CLAWHUB_EMAIL_CAPTURE_FILE=${e2eEnv.CLAWHUB_EMAIL_CAPTURE_FILE}`,
-      `CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN=${e2eEnv.CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN}`,
-      ...(deployment ? [`CONVEX_DEPLOYMENT=${deployment}`] : []),
-      `CONVEX_SITE_URL=${convexSiteUrl}`,
-      ...(deployment ? [`DEV_AUTH_CONVEX_DEPLOYMENT=${devAuthDeploymentMarker(deployment)}`] : []),
-      "DEV_AUTH_ENABLED=1",
-      `JWKS=${authKeys.JWKS}`,
-      `JWT_PRIVATE_KEY=${authKeys.JWT_PRIVATE_KEY}`,
-      `SECURITY_SCAN_WORKER_TOKEN=${e2eEnv.SECURITY_SCAN_WORKER_TOKEN}`,
-      `SITE_URL=${appUrl}`,
-      `VITE_CONVEX_SITE_URL=${convexSiteUrl}`,
-      `VITE_CONVEX_URL=${convexUrl}`,
-      "VITE_ENABLE_DEV_AUTH=1",
-      `VITE_SITE_URL=${appUrl}`,
-      "",
-    ].join("\n"),
-  );
+  writeFileSync(envFile, `CONVEX_DEPLOYMENT=${deployment}\n`, { mode: 0o600 });
 
   await warmLocalAuthExternalNodeDependencies(e2eEnv);
 
@@ -629,52 +626,44 @@ async function main() {
     ...buildLocalAuthBackendVersionArgs(),
   ];
   // Deployment environment controls cron registration, so configure it before any push.
-  await startLocalConvex([...convexArgs, "--skip-push"], e2eEnv, convexUrl);
   activeConvexUrl = convexUrl;
+  await startLocalConvex([...convexArgs, "--skip-push"], e2eEnv, convexUrl, "provision");
 
   console.log("Configuring local Convex environment for local-auth Playwright e2e.");
-  const localAuthDeployment =
-    readLocalDeployment() ?? deployment ?? DEFAULT_DEV_AUTH_CONVEX_DEPLOYMENT;
+  const localAuthDeployment = resolveLocalAuthDeployment(
+    readLocalDeployment() ?? deployment,
+    DEFAULT_DEV_AUTH_CONVEX_DEPLOYMENT,
+  );
   e2eEnv.CONVEX_DEPLOYMENT = localAuthDeployment;
   e2eEnv.DEV_AUTH_CONVEX_DEPLOYMENT = localAuthDeployment;
-  await setLocalConvexEnv(convexUrl, [
-    { name: "AUTH_GITHUB_ID", value: e2eEnv.AUTH_GITHUB_ID ?? "local-dev" },
-    { name: "AUTH_GITHUB_SECRET", value: e2eEnv.AUTH_GITHUB_SECRET ?? "local-dev" },
-    { name: "CLAWHUB_DISABLE_CRONS", value: "1" },
-    { name: "CLAWHUB_SKILLS_SH_ROLLOUT_MODE", value: "test" },
-    { name: "CLAWHUB_EMAIL_CAPTURE_FILE", value: e2eEnv.CLAWHUB_EMAIL_CAPTURE_FILE ?? "" },
-    {
-      name: "CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN",
-      value: e2eEnv.CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN ?? DEFAULT_E2E_WORKER_TOKEN,
-    },
-    { name: "DEV_AUTH_CONVEX_DEPLOYMENT", value: localAuthDeployment },
-    { name: "DEV_AUTH_ENABLED", value: "1" },
-    { name: "JWKS", value: authKeys.JWKS },
-    { name: "JWT_PRIVATE_KEY", value: authKeys.JWT_PRIVATE_KEY },
-    {
-      name: "SECURITY_SCAN_WORKER_TOKEN",
-      value: e2eEnv.SECURITY_SCAN_WORKER_TOKEN ?? DEFAULT_E2E_WORKER_TOKEN,
-    },
-    { name: "SITE_URL", value: appUrl },
-  ]);
-
-  spawnManaged("bunx", ["convex", "logs", "--history", "0"], e2eEnv);
-  console.log("Pushing local Convex functions with the test environment configured.");
-  await runRequired(
-    "bunx",
+  writeFileSync(envFile, `CONVEX_DEPLOYMENT=${localAuthDeployment}\n`, { mode: 0o600 });
+  await setLocalConvexEnv(
     [
-      "convex",
-      "run",
-      "--push",
-      "--inline-query",
-      "null",
-      "--typecheck",
-      "disable",
-      "--codegen",
-      "disable",
+      { name: "AUTH_GITHUB_ID", value: e2eEnv.AUTH_GITHUB_ID ?? "local-dev" },
+      { name: "AUTH_GITHUB_SECRET", value: e2eEnv.AUTH_GITHUB_SECRET ?? "local-dev" },
+      { name: "CLAWHUB_DISABLE_CRONS", value: "1" },
+      { name: "CLAWHUB_SKILLS_SH_ROLLOUT_MODE", value: "test" },
+      { name: "CLAWHUB_EMAIL_CAPTURE_FILE", value: e2eEnv.CLAWHUB_EMAIL_CAPTURE_FILE ?? "" },
+      {
+        name: "CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN",
+        value: e2eEnv.CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN ?? DEFAULT_E2E_WORKER_TOKEN,
+      },
+      { name: "DEV_AUTH_CONVEX_DEPLOYMENT", value: localAuthDeployment },
+      { name: "DEV_AUTH_ENABLED", value: "1" },
+      { name: "JWKS", value: authKeys.JWKS },
+      { name: "JWT_PRIVATE_KEY", value: authKeys.JWT_PRIVATE_KEY },
+      {
+        name: "SECURITY_SCAN_WORKER_TOKEN",
+        value: e2eEnv.SECURITY_SCAN_WORKER_TOKEN ?? DEFAULT_E2E_WORKER_TOKEN,
+      },
+      { name: "SITE_URL", value: appUrl },
     ],
     e2eEnv,
   );
+
+  console.log("Pushing local Convex functions with the test environment configured.");
+  await startLocalConvex(convexArgs, e2eEnv, convexUrl, "serve");
+  spawnManaged("bunx", ["convex", "logs", "--history", "0"], e2eEnv);
 
   console.log("Waiting for local Convex functions.");
   await runConvexFunctionWhenReady("appMeta:getDeploymentInfo", {}, e2eEnv);
