@@ -341,7 +341,9 @@ test("seeded public plugin detail supports versions navigation", async ({
   await expect(
     page.getByRole("heading", { name: "Local Scanned Runtime Plugin", exact: true }).first(),
   ).toBeVisible();
-  const versions = page.getByRole("tab", { name: "Versions", exact: true });
+  await page.getByRole("button", { name: "Package details", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Package details", exact: true });
+  const versions = dialog.getByRole("tab", { name: "Versions", exact: true });
   await versions.click();
   await expect(page).toHaveURL(/#versions$/);
   await expect(versions).toHaveAttribute("aria-selected", "true");

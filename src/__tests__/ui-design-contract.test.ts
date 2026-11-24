@@ -461,8 +461,24 @@ describe("restored UI design contract", () => {
     expect(css).not.toMatch(/#(?:8eb8e8|4a7fd0|6b9fd4)/i);
   });
 
-  it("keeps detail heroes full width unless an explicit sidebar is present", () => {
-    const shellSource = read("src/components/DetailPageShell.tsx");
+  it("keeps the public catalog hero full width and stacks its sidebar on narrow layouts", () => {
+    const css = read("src/components/catalog-detail-layout.css");
+    expect(cssRule(css, ".catalog-detail")).toContain("grid-template-columns: minmax(0, 1fr)");
+    expect(cssRule(css, ".catalog-detail__content")).toContain(
+      "grid-template-columns: minmax(0, 1fr) 248px",
+    );
+    const narrow = balancedCssBlock(
+      css,
+      css.indexOf("@container (max-width: 768px)"),
+      "narrow catalog",
+    );
+    expect(cssRule(narrow, ".catalog-detail__content")).toContain(
+      "grid-template-columns: minmax(0, 1fr)",
+    );
+  });
+
+  it("keeps legacy detail heroes full width unless an explicit sidebar is present", () => {
+    const shellSource = read("src/components/PendingPackageListing.tsx");
     const css = styles();
 
     expect(shellSource).toContain('"skill-hero-layout has-sidebar"');

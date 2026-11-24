@@ -182,7 +182,7 @@ test("users can permanently delete their account and personal publisher resource
   await gotoUntilVisible(
     page,
     `/plugins/${encodeURIComponent(packageName)}`,
-    page.getByText(packageDisplayName),
+    page.getByRole("heading", { level: 1, name: packageDisplayName, exact: true }),
   );
 
   await page.goto("/settings?view=danger", { waitUntil: "domcontentloaded" });

@@ -194,7 +194,9 @@
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-.plugin-package-dialog {
+.plugin-package-dialog[data-slot="dialog-content"] {
+  /* The site's generic .grid auto-fills columns; tabs and panels must each get a full row. */
+  grid-template-columns: minmax(0, 1fr);
   width: min(680px, calc(100vw - 32px));
   max-height: 85dvh;
   overflow: auto;
