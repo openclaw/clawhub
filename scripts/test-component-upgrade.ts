@@ -138,6 +138,9 @@ async function main() {
   )?.[1];
   assert.equal(process.versions.bun, bunPin, "Run with the repository's pinned Bun version");
   assert.equal(process.platform === "win32", false, "This fixture requires POSIX process groups");
+  const node = spawnSync("node", ["--version"], { encoding: "utf8" });
+  assert.equal(node.status, 0, "The local backend requires Node.js on PATH");
+  assert.match(node.stdout.trim(), /^v24\./, "The configured local backend requires Node.js 24");
   // /tmp preserves short Unix-socket paths on macOS; this is one disposable source capsule.
   const root = mkdtempSync(
     join(process.platform === "darwin" ? "/tmp" : tmpdir(), "clawhub-upgrade-"),
@@ -417,9 +420,12 @@ async function main() {
       "Component upgrade: PASS (legacy → backfilled 0.4.15 → candidate, one database, retained quota/IDs, one generation)",
     );
   } finally {
-    process.off("SIGINT", interrupt);
-    process.off("SIGTERM", interrupt);
-    await clean();
+    try {
+      await clean();
+    } finally {
+      process.off("SIGINT", interrupt);
+      process.off("SIGTERM", interrupt);
+    }
   }
 }
 

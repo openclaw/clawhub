@@ -98,6 +98,10 @@ jobs:
 
       - uses: ./.github/actions/setup-bun
 
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.1
+
       - name: Fetch the pinned pre-upgrade application
         run: git -c maintenance.auto=false -c gc.auto=0 fetch --no-tags --depth=1 origin 252a3f86d05331ea5944ad7749165fafb282097e
 
