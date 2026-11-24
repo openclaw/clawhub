@@ -161,7 +161,10 @@ suspicious or malicious result remains a completed native verdict but fails this
 known benign fixture check; it does not change normal publication policy. No
 operational failure becomes clean, and no retry seeks a preferred verdict.
 
-After Deploy Test succeeds for the exact new main SHA, an authorized operator runs:
+After Deploy Test succeeds for the exact new main SHA, an authorized operator runs
+the command below. Test deploys from `next` (see `specs/deploy.md`), so that run
+exists only when `next` is at the same commit; otherwise this workflow fails
+closed at its backend SHA check.
 
 ```sh
 gh workflow run test-template-canary-prepublication.yml \

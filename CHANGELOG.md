@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- CI: deploy the permanent Test environment from the `next` branch instead of `main`. A push to `next` deploys after CI passes for that commit; a manual dispatch deploys the exact current `next` commit. Merging to `main` no longer deploys Test.
+
 - Link previews: release the rendered image and renderer after PNG generation, including when rendering fails.
 
 - Browser tests: start the local preview on `PLAYWRIGHT_PORT` so custom-port runs probe the same server they launch.
