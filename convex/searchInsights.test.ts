@@ -6,7 +6,11 @@ import { getFunctionName } from "convex/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { api, internal } from "./_generated/api";
-import { SEARCH_DAILY_SCAN_MAX_ROWS, SearchScanBudgetError } from "./lib/searchInsightRead";
+import {
+  SEARCH_DAILY_SCAN_MAX_QUERIES,
+  SEARCH_DAILY_SCAN_MAX_ROWS,
+  SearchScanBudgetError,
+} from "./lib/searchInsightRead";
 import { hashToken } from "./lib/tokens";
 import schema from "./schema";
 import { getInternal, readCurrentResultsInternal } from "./searchInsights";
@@ -698,5 +702,26 @@ describe("daily aggregate scan budget", () => {
     // however many rows each page carried.
     const served = pages.mock.calls.reduce((rows, [count]) => rows + count, 0);
     expect(served).toBe(SEARCH_DAILY_SCAN_MAX_ROWS + 1);
+  });
+  it("fails before distinct queries can outgrow the action's memory", async () => {
+    // Every row is a new query: well inside the row budget, yet each one is
+    // retained until ranking. The reader must stop on the first page past the limit.
+    const { ctx, pages } = scan(SEARCH_DAILY_SCAN_MAX_ROWS, (row) => `query ${row}`);
+    await expect(
+      handler(ctx, { endDay: END, includeCurrentResults: false }),
+    ).rejects.toBeInstanceOf(SearchScanBudgetError);
+    const served = pages.mock.calls.reduce((rows, [count]) => rows + count, 0);
+    expect(served).toBeGreaterThan(SEARCH_DAILY_SCAN_MAX_QUERIES);
+    expect(served).toBeLessThanOrEqual(SEARCH_DAILY_SCAN_MAX_QUERIES + 4_000);
+  });
+  it("reads a window at both budgets exactly", async () => {
+    const perQuery = Math.ceil(SEARCH_DAILY_SCAN_MAX_ROWS / SEARCH_DAILY_SCAN_MAX_QUERIES);
+    const { ctx } = scan(
+      SEARCH_DAILY_SCAN_MAX_ROWS,
+      (row) => `query ${Math.floor(row / perQuery)}`,
+    );
+    const report = await handler(ctx, { endDay: END, includeCurrentResults: false });
+    expect(report.totalSearches7d).toBe(SEARCH_DAILY_SCAN_MAX_ROWS);
+    expect(report.totalQueries).toBeLessThanOrEqual(SEARCH_DAILY_SCAN_MAX_QUERIES);
   });
 });

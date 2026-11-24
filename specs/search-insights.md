@@ -128,19 +128,23 @@ Sources can be combined or selected. Output order is selected-window searches th
 query code-point order. Internal digest callers can select absolute seven-day change
 or official-gap count ordering. Counts/source totals cover all filtered rows before
 the 1–100 output limit; `truncated` explicitly marks a shortlist. The paginated action
-reads at most 400,000 daily rows and fails explicitly rather than silently truncating
-facts. An aggregation revision change during the read requires a refresh.
+reads at most 400,000 daily rows holding at most 120,000 distinct scoped queries, and
+fails explicitly rather than silently truncating facts. An aggregation revision change
+during the read requires a refresh.
 
-The budget counts rows read, not pages, so it holds whatever the page size. It bounds
-memory rather than time: every distinct query in the 30-day window is held until
-ranking, at roughly 500 bytes each, inside a 64 MB action. The earlier 100,000-row
-budget was reached in production in November 2026, when plugin demand across both
-sources passed about 173,000 daily rows; every default plugin report then failed.
-Only the artifact kind and source narrow the scan. Scope, official-gap and intent
-filters apply after it. A background report that exceeds the budget ends after one
-attempt with `report_scan_budget_exceeded`, because a retry reads the same rows.
-Raising the budget again needs a measured memory margin; past that, the window should
-be read from a per-query rollup instead of daily facts.
+The row budget counts rows read, not pages, so it holds whatever the page size. The
+query budget bounds memory, which rows alone cannot: every distinct scoped query in
+the 30-day window is held until ranking. The reader therefore keeps only numeric
+counters per query, a measured 210 bytes, and builds the full row for the returned
+shortlist alone; 120,000 queries use about 25 MB of a 64 MB action. Holding full rows
+cost about 440 bytes per query. The earlier 100,000-row budget was reached in
+production in November 2026, when plugin demand across both sources passed about
+173,000 daily rows and up to 86,000 distinct queries; every default plugin report then
+failed. Only the artifact kind and source narrow the scan. Scope, official-gap and
+intent filters apply after it. A background report that exceeds either budget ends
+after one attempt with `report_scan_budget_exceeded`, because a retry reads the same
+rows. Raising the query budget needs a measured memory margin; past that, the window
+should be read from a per-query rollup instead of daily facts.
 
 Weekly classification storage is an atomic <=100-query replacement per week and
 artifact kind. Classification rows include scope; only catalog gaps enter the current
