@@ -1,4 +1,5 @@
-@import "../fonts/instrument-sans.css";
+@import "@fontsource-variable/instrument-sans/standard.css";
+@import "@fontsource-variable/instrument-sans/standard-italic.css";
 
 /* ClawHub supplies its own navigation above the Control UI detail surface. Use
    identical outer gutters for all three routes, including their phone layout. */
@@ -30,7 +31,8 @@ body:has(.catalog-detail-page) {
   --detail-card: light-dark(#fff, #161920);
   --detail-tone: color-mix(in srgb, var(--detail-text) 4.5%, transparent);
   --detail-rule: color-mix(in srgb, var(--detail-text) 8%, transparent);
-  --font-body: "Instrument Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-body:
+    "Instrument Sans Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   container-type: inline-size;
   display: grid;
   gap: 30px;

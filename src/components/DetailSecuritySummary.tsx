@@ -33,7 +33,7 @@ export function DetailSecuritySummary({
     <span className="detail-audit" title={description}>
       <span className="detail-audit__score">
         <span className="security-audit-sidebar-verdict" data-status={auditVerdict}>
-          {auditVerdictInfo.label}
+          {meterLevel === 3 ? "Clean" : auditVerdictInfo.label}
         </span>
         <span className="security-audit-meter" data-level={meterLevel} aria-hidden="true">
           <span />

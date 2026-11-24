@@ -31,10 +31,10 @@ describe("DetailSecuritySummary", () => {
       />,
     );
 
-    expect(screen.getByText("Pass")).toBeTruthy();
+    expect(screen.getByText("Clean")).toBeTruthy();
     const auditLink = screen.getByRole("link", { name: "View Security Audit" });
     expect(auditLink.textContent).toBe("Audit");
-    expect(auditLink.contains(screen.getByText("Pass"))).toBe(false);
+    expect(auditLink.contains(screen.getByText("Clean"))).toBe(false);
     expect(auditLink.getAttribute("href")).toBe("/steipete/weather/security-audit");
     expect(auditLink.getAttribute("target")).toBeNull();
     expect(auditLink.getAttribute("rel")).toBeNull();
@@ -137,7 +137,7 @@ describe("DetailSecuritySummary", () => {
     expect(screen.queryByText("Suspicious")).toBeNull();
   });
 
-  it("renders clean scanner outcomes as pass in the user-facing audit UI", () => {
+  it("renders clean scanner outcomes as Clean in the catalog rail", () => {
     render(
       <DetailSecuritySummary
         auditHref="/steipete/weather/security-audit"
@@ -145,7 +145,7 @@ describe("DetailSecuritySummary", () => {
       />,
     );
 
-    expect(screen.getByText("Pass")).toBeTruthy();
+    expect(screen.getByText("Clean")).toBeTruthy();
     expect(screen.queryByText("Benign")).toBeNull();
     expect(document.querySelector(".security-audit-meter")?.getAttribute("data-level")).toBe("3");
   });
@@ -167,7 +167,7 @@ describe("DetailSecuritySummary", () => {
     expect(document.querySelector(".security-audit-meter")?.getAttribute("data-level")).toBe("1");
   });
 
-  it("keeps ClawScan clean summaries passing", () => {
+  it("keeps ClawScan clean summaries labeled Clean", () => {
     render(
       <DetailSecuritySummary
         auditHref="/steipete/weather/security-audit"
@@ -175,7 +175,7 @@ describe("DetailSecuritySummary", () => {
       />,
     );
 
-    expect(screen.getByText("Pass")).toBeTruthy();
+    expect(screen.getByText("Clean")).toBeTruthy();
     expect(screen.queryByText("Review")).toBeNull();
     expect(screen.queryByText("Warn")).toBeNull();
   });
