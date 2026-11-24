@@ -15,6 +15,7 @@ import {
   Moon,
   Package,
   Palette,
+  Plug,
   Plus,
   RefreshCw,
   Save,
@@ -43,6 +44,7 @@ import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { EmptyState } from "../components/EmptyState";
 import { MarketplaceIcon } from "../components/MarketplaceIcon";
+import { ConnectionsPanel } from "../components/settings/ConnectionsPanel";
 import { SignInPrompt } from "../components/SignInPrompt";
 import { SettingsSkeleton } from "../components/skeletons/ProtectedPageSkeletons";
 import { Avatar, AvatarFallback, AvatarImage } from "../components/ui/avatar";
@@ -76,7 +78,14 @@ import { timeAgo } from "../lib/timeAgo";
 import { uploadFile } from "../lib/uploadUtils";
 import { useAuthStatus } from "../lib/useAuthStatus";
 
-const settingsViews = ["account", "organizations", "githubSources", "tokens", "danger"] as const;
+const settingsViews = [
+  "account",
+  "organizations",
+  "githubSources",
+  "tokens",
+  "connections",
+  "danger",
+] as const;
 type SettingsView = (typeof settingsViews)[number];
 
 function isSettingsView(value: unknown): value is SettingsView {
@@ -95,6 +104,9 @@ export const Route = createFileRoute("/settings")({
     sourcePath?: string;
     sourceCommit?: string;
     sourceContentHash?: string;
+    app?: string;
+    attempt?: string;
+    status?: string;
   } => ({
     view: isSettingsView(search.view) ? search.view : undefined,
     ownerHandle: typeof search.ownerHandle === "string" ? search.ownerHandle : undefined,
@@ -106,6 +118,10 @@ export const Route = createFileRoute("/settings")({
     sourceCommit: typeof search.sourceCommit === "string" ? search.sourceCommit : undefined,
     sourceContentHash:
       typeof search.sourceContentHash === "string" ? search.sourceContentHash : undefined,
+    // Present when the browser returns from an app sign-in (see ConnectionsPanel).
+    app: typeof search.app === "string" ? search.app : undefined,
+    attempt: typeof search.attempt === "string" ? search.attempt : undefined,
+    status: typeof search.status === "string" ? search.status : undefined,
   }),
   component: Settings,
 });
@@ -255,6 +271,7 @@ const navigationGroups: Array<{
         icon: GitBranch,
       },
       { view: "tokens", label: "API tokens", mobileLabel: "Tokens", icon: KeyRound },
+      { view: "connections", label: "Connections", mobileLabel: "Connections", icon: Plug },
       {
         view: "danger",
         label: "Account deletion",
@@ -296,6 +313,12 @@ export function Settings() {
     shouldLoadAccountScopedQueries ? {} : "skip",
   ) as GitHubOrgMembershipsResult | undefined;
   const rolloutCapabilities = useQuery(api.rolloutCapabilities.getPublicCapabilities, {});
+  // Null when app connections are not configured for this deployment: the
+  // section and its navigation entry then do not exist.
+  const connections = useQuery(
+    api.connections.getMine,
+    shouldLoadAccountScopedQueries ? {} : "skip",
+  );
   const createOrg = useMutation(api.publishers.createOrg);
   const deleteOrg = useMutation(api.publishers.deleteOrg);
   const createOrgImageUpload = useMutation(api.publishers.createImageUpload);
@@ -350,6 +373,8 @@ export function Settings() {
     sourcePath: requestedSourcePath,
     sourceCommit: requestedSourceCommit,
     sourceContentHash: requestedSourceContentHash,
+    connectionReturn,
+    clearConnectionReturn,
   } = useActiveSettingsView();
   const orgs = (publisherMemberships ?? []).filter((entry) => entry.publisher.kind === "org");
   const manageablePublishers = (publisherMemberships ?? []).filter(
@@ -363,7 +388,8 @@ export function Settings() {
     rolloutCapabilities?.githubSkillSync.selfServiceEnabled === true &&
     officialGitHubSourcePublishers.length > 0;
   const effectiveActiveView =
-    activeView === "githubSources" && publisherMembershipsLoaded && !canConfigureGitHubSources
+    (activeView === "githubSources" && publisherMembershipsLoaded && !canConfigureGitHubSources) ||
+    (activeView === "connections" && connections === null)
       ? "account"
       : activeView;
   const selectedSourcePublisher =
@@ -931,6 +957,7 @@ export function Settings() {
                       ) {
                         return null;
                       }
+                      if (item.view === "connections" && !connections) return null;
                       const active = effectiveActiveView === item.view;
                       return (
                         <button
@@ -1821,6 +1848,22 @@ export function Settings() {
                   </DialogContent>
                 </Dialog>
               </div>
+            </SettingsSection>
+
+            <SettingsSection
+              id="connections"
+              visible={effectiveActiveView === "connections"}
+              icon={<Plug size={18} />}
+              title="Connections"
+              description="Apps your OpenClaw chats can read from."
+            >
+              {connections ? (
+                <ConnectionsPanel
+                  overview={connections}
+                  returned={connectionReturn}
+                  onReturnHandled={clearConnectionReturn}
+                />
+              ) : null}
             </SettingsSection>
 
             <SettingsSection
@@ -2992,10 +3035,20 @@ function useActiveSettingsView() {
   const navigateToView = (view: SettingsView) => {
     void navigate({ search: { view } });
   };
+  const connectionReturn =
+    activeView === "connections" && typeof search.attempt === "string"
+      ? { app: search.app, attempt: search.attempt, status: search.status }
+      : null;
+  // The sign-in return parameters are single-use hints; drop them once handled.
+  const clearConnectionReturn = () => {
+    void navigate({ search: { view: "connections" }, replace: true });
+  };
 
   return {
     activeView,
     navigateToView,
+    connectionReturn,
+    clearConnectionReturn,
     ownerHandle: typeof search.ownerHandle === "string" ? search.ownerHandle : undefined,
     repo: typeof search.repo === "string" ? search.repo : undefined,
     sourceRepo: typeof search.sourceRepo === "string" ? search.sourceRepo : undefined,
