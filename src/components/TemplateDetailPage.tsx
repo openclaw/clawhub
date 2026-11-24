@@ -8,6 +8,8 @@ import {
   resolveDeclaredTemplateCategory,
 } from "clawhub-schema/catalogMetadata";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { formatCompactStat } from "../lib/numberFormat";
+import { buildPublisherProfileHref } from "../lib/ownerRoute";
 import {
   fetchPackageFile,
   getPackageArtifactDownloadPath,
@@ -27,16 +29,22 @@ import {
   buildTemplateSecurityAuditHref,
   isTemplateReadyToAdd,
 } from "../lib/templateRoutes";
-import { useMediaQuery } from "../lib/useMediaQuery";
+import {
+  CatalogDetailBreadcrumb,
+  CatalogDetailFact,
+  CatalogDetailLayout,
+} from "./CatalogDetailLayout";
 import { DetailSecuritySummary, DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
 import { MarkdownPreview } from "./MarkdownPreview";
+import { MarketplaceIcon } from "./MarketplaceIcon";
+import { OfficialBadge } from "./OfficialBadge";
 import { PackageContentTabs } from "./PackageContentTabs";
 import type { LlmAnalysis } from "./securityAuditModel";
-import { SidebarMetadata } from "./SidebarMetadata";
 import { formatOpenClawPrompt } from "./skillDetailUtils";
 import { InstallCommandCard } from "./SkillInstallSurface";
-import { TemplateReleaseInventory } from "./TemplateReleaseInventory";
-import { UserBadge } from "./UserBadge";
+import { TemplatePersonality, TemplateReleaseInventory } from "./TemplateReleaseInventory";
+import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "./ui/dialog";
+import "./template-catalog-detail.css";
 import "./template-detail.css";
 
 type Package = NonNullable<PackageDetailResponse["package"]>;
@@ -81,7 +89,6 @@ export function TemplateDetailPage({
   }, [pkg.name, manifestPath, version, documentAttempt]);
   const documentLoading = Boolean(display) && !documentResult;
   const contents = display ? (documentResult?.contents ?? null) : suppliedContents;
-  const isMobileDetailLayout = useMediaQuery("(max-width: 900px)");
   const { markdown, manifest } = useMemo(() => parseTemplateDocument(contents), [contents]);
   const summary = display?.templateManifestSummary ?? pkg.templateManifestSummary;
   const inventory: TemplateDependencyInventory | null = display
@@ -108,7 +115,7 @@ export function TemplateDetailPage({
   const categories = (pkg.categories ?? (declaredCategory ? [declaredCategory] : [])).map(
     getTemplateCategoryLabel,
   );
-  const description = pkg.summary ?? summary?.agent.description ?? manifest?.agent.description;
+  const description = summary?.agent.description ?? manifest?.agent.description ?? pkg.summary;
   const scanStatus = pkg.scanStatus ?? "pending";
   // Historical summaries retain profile counts even when CLAW.md alone still parses.
   const retiredProfile = (summary?.profiles?.count ?? 0) > 0;
@@ -157,205 +164,245 @@ export function TemplateDetailPage({
     </section>
   );
 
-  return (
-    <main className="template-detail-page">
-      <div className="template-detail-container">
-        <header className="template-detail-hero">
-          {categories.length ? (
-            <p className="template-detail-category">{categories.join(" · ")}</p>
-          ) : null}
-          <h1>{summary?.agent.name || manifest?.agent.name || pkg.displayName}</h1>
-          {description ? (
-            <TemplateDescription key={pkg.name + description} description={description} />
-          ) : null}
-          <div className="template-detail-publisher skill-hero-creator">
-            <UserBadge
-              user={detail.owner}
-              fallbackHandle={fallbackOwner}
-              prefix=""
-              size="md"
-              showName
-              showMutedHandle
-              stackMutedHandleBelowName
-            />
-          </div>
-        </header>
-        <div className="template-detail-layout">
-          <div className="template-detail-main">
-            {pendingNotice}
-            {isMobileDetailLayout ? installSurface : null}
-            {display && workspaceContents ? (
-              <TemplateReleaseInventory inventory={display} workspace={workspaceContents} />
-            ) : null}
-            <PackageContentTabs
-              routeKind="template"
-              renderPanel={(tab) =>
-                tab === "CLAW.md" ? (
-                  <>
-                    {documentLoading ? (
-                      <p role="status">Loading Template instructions…</p>
-                    ) : documentResult?.failed ? (
-                      <p role="alert">
-                        Could not load Template instructions.{" "}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setDocumentResult(undefined);
-                            setDocumentAttempt((n) => n + 1);
-                          }}
-                        >
-                          Try again
-                        </button>
-                      </p>
-                    ) : markdown ? (
-                      <MarkdownPreview className="template-detail-markdown">
-                        {markdown}
-                      </MarkdownPreview>
-                    ) : (
-                      <ContentMessage>
-                        Template instructions are unavailable for this release.
-                      </ContentMessage>
-                    )}
-                    {!supportedManifest && contents !== null ? (
-                      <details className="template-detail-original">
-                        <summary>View original CLAW.md</summary>
-                        <pre>
-                          <code>{contents}</code>
-                        </pre>
-                      </details>
-                    ) : null}
-                  </>
-                ) : !display && (!supportedManifest || !manifest) ? (
-                  <ContentMessage>
-                    The manifest is unavailable in the current Template format. See the original
-                    CLAW.md and migration guidance before asking the publisher for a new version.
-                  </ContentMessage>
-                ) : tab === "Skills" || tab === "Plugins" ? (
-                  <TemplatePackages
-                    inventory={inventory ?? []}
-                    kind={tab === "Skills" ? "skill" : "plugin"}
-                    workspace={
-                      (tab === "Skills" ? workspaceContents?.skills : workspaceContents?.plugins) ??
-                      []
-                    }
-                  />
-                ) : tab === "Automations" ? (
-                  <TemplateAutomations
-                    manifest={manifest}
-                    schedules={display?.contents.automations}
-                    heartbeat={workspaceContents?.heartbeat ?? null}
-                  />
-                ) : (
-                  <TemplateWorkspace
-                    manifest={manifest}
-                    projected={display?.contents.instructions}
-                    pkg={pkg}
-                    markdown={markdown}
-                    documentLoading={documentLoading}
-                  />
-                )
-              }
-            />
-          </div>
-          <aside className="template-detail-metadata" aria-label="Template metadata">
-            {!isMobileDetailLayout ? installSurface : null}
-            <SidebarMetadata
-              ariaLabel="Template metadata"
-              density="compact"
-              blocks={[
-                {
-                  key: "security",
-                  label: <DetailSecuritySummaryLabel />,
-                  value: (
-                    <DetailSecuritySummary
-                      auditHref={buildTemplateSecurityAuditHref(
-                        pkg.name,
-                        detail.owner?.handle ?? fallbackOwner,
-                        pkg.latestVersion,
-                      )!}
-                      llmAnalysis={llmAnalysis}
-                      githubScanStatus={display?.security.verdict ?? "Unavailable"}
-                      description={
-                        display?.security.overview ||
-                        llmAnalysis?.summary ||
-                        "No completed security audit is available for this release."
-                      }
-                    />
-                  ),
-                },
-                {
-                  grid: [
-                    {
-                      label: "Last updated",
-                      value: (
-                        <time dateTime={new Date(pkg.updatedAt).toISOString()}>
-                          {new Date(pkg.updatedAt).toLocaleDateString("en-US", {
-                            month: "short",
-                            day: "numeric",
-                            year: "numeric",
-                            timeZone: "UTC",
-                          })}
-                        </time>
-                      ),
-                    },
-                    {
-                      label: "Current version",
-                      value: pkg.latestVersion ? "v" + pkg.latestVersion : "Not available",
-                    },
-                  ],
-                },
-              ]}
-            />
-          </aside>
-        </div>
-      </div>
-    </main>
-  );
-}
-
-function TemplateDescription({ description }: { description: string }) {
-  const [expanded, setExpanded] = useState(false);
-  const [overflows, setOverflows] = useState(false);
-  const ref = useRef<HTMLParagraphElement>(null);
-  const id = useId();
-
+  const owner = detail.owner?.handle ?? fallbackOwner;
+  const title = summary?.agent.name || manifest?.agent.name || pkg.displayName;
+  const auditHref = buildTemplateSecurityAuditHref(pkg.name, owner, pkg.latestVersion)!;
+  const [browseFiles, setBrowseFiles] = useState(false);
+  // SSR uses UTC. Once hydrated, the rail and Add preview use the same local zone as Control UI.
+  const [deviceZone, setDeviceZone] = useState<string>();
+  useEffect(() => setDeviceZone(Intl.DateTimeFormat().resolvedOptions().timeZone), []);
+  const explicitSoul =
+    display?.contents.instructions.find((file) => file.name === "SOUL.md")?.source ??
+    manifest?.workspace?.bootstrapFiles?.["SOUL.md"]?.source ??
+    manifest?.workspace?.files?.find((file) => file.path === "SOUL.md")?.source;
+  // SOUL is the only file whose body is part of the detail page; other file reads require selection.
+  const soulPath = explicitSoul && explicitSoul !== "CLAW.md#body" ? explicitSoul : null;
+  const [explicitSoulText, setExplicitSoulText] = useState<string | null>(null);
   useEffect(() => {
-    const element = ref.current;
-    if (!element) return undefined;
-    let disposed = false;
-    const measure = () => {
-      if (disposed) return;
-      // Measure the full text even while clamped; character counts miss narrow viewports.
-      const lineHeight = Number.parseFloat(getComputedStyle(element).lineHeight);
-      setOverflows(element.scrollHeight > Math.ceil(lineHeight * 2));
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(element);
-    void document.fonts?.ready.then(measure);
+    if (!soulPath || !pkg.latestVersion || !supportedManifest) return undefined;
+    let active = true;
+    void fetchPackageFile(pkg.name, soulPath, pkg.latestVersion).then(
+      (text) => {
+        if (active) setExplicitSoulText(text);
+      },
+      () => {
+        if (active) setExplicitSoulText(null);
+      },
+    );
     return () => {
-      disposed = true;
-      observer.disconnect();
+      active = false;
     };
-  }, []);
-
+  }, [soulPath, pkg.name, pkg.latestVersion, supportedManifest]);
+  const soul = supportedManifest ? (soulPath ? explicitSoulText : markdown) : null;
+  const releaseBrowser = (
+    <PackageContentTabs
+      routeKind="template"
+      renderPanel={(tab) =>
+        tab === "CLAW.md" ? (
+          <>
+            {documentLoading ? (
+              <p role="status">Loading Template instructions…</p>
+            ) : documentResult?.failed ? (
+              <p role="alert">
+                Could not load Template instructions.{" "}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDocumentResult(undefined);
+                    setDocumentAttempt((n) => n + 1);
+                  }}
+                >
+                  Try again
+                </button>
+              </p>
+            ) : markdown ? (
+              <MarkdownPreview className="template-detail-markdown">{markdown}</MarkdownPreview>
+            ) : (
+              <ContentMessage>
+                Template instructions are unavailable for this release.
+              </ContentMessage>
+            )}
+            {!supportedManifest && contents !== null ? (
+              <details className="template-detail-original">
+                <summary>View original CLAW.md</summary>
+                <pre>
+                  <code>{contents}</code>
+                </pre>
+              </details>
+            ) : null}
+          </>
+        ) : !display && (!supportedManifest || !manifest) ? (
+          <ContentMessage>
+            The manifest is unavailable in the current Template format. See the original CLAW.md and
+            migration guidance before asking the publisher for a new version.
+          </ContentMessage>
+        ) : tab === "Skills" || tab === "Plugins" ? (
+          <TemplatePackages
+            inventory={inventory ?? []}
+            kind={tab === "Skills" ? "skill" : "plugin"}
+            workspace={
+              (tab === "Skills" ? workspaceContents?.skills : workspaceContents?.plugins) ?? []
+            }
+          />
+        ) : tab === "Automations" ? (
+          <TemplateAutomations
+            manifest={manifest}
+            schedules={display?.contents.automations}
+            heartbeat={workspaceContents?.heartbeat ?? null}
+          />
+        ) : (
+          <TemplateWorkspace
+            manifest={manifest}
+            projected={display?.contents.instructions}
+            pkg={pkg}
+            markdown={markdown}
+            documentLoading={documentLoading}
+          />
+        )
+      }
+    />
+  );
+  const fileTrigger = (
+    <DialogTrigger asChild>
+      <button type="button" className="template-catalog-file" onClick={() => setBrowseFiles(!soul)}>
+        {soul ? "SOUL.md" : "Browse release files"}
+      </button>
+    </DialogTrigger>
+  );
+  const releaseDate = (value: number) => (
+    <time dateTime={new Date(value).toISOString()}>
+      {new Intl.DateTimeFormat("en-US", {
+        dateStyle: "medium",
+        timeZone: deviceZone ?? "UTC",
+      }).format(value)}
+    </time>
+  );
   return (
-    <div className="template-detail-description-block">
-      <p id={id} ref={ref} className="template-detail-description" data-expanded={expanded}>
-        {description}
-      </p>
-      {overflows ? (
-        <button
-          type="button"
-          className="template-detail-description-toggle"
-          aria-expanded={expanded}
-          aria-controls={id}
-          onClick={() => setExpanded((value) => !value)}
-        >
-          {expanded ? "Show less" : "Read more"}
-        </button>
-      ) : null}
-    </div>
+    <main className="catalog-detail-page template-catalog-page">
+      <CatalogDetailLayout
+        className="template-catalog-detail"
+        breadcrumb={<CatalogDetailBreadcrumb href="/templates" label="Templates" current={title} />}
+        title={title}
+        icon={<MarketplaceIcon kind="template" label={pkg.name} imageUrl={pkg.icon} />}
+        publisher={
+          <>
+            <a
+              href={buildPublisherProfileHref(owner)}
+              title={detail.owner?.displayName ?? undefined}
+            >
+              {owner === "openclaw" ? <strong>OpenClaw </strong> : null}@{owner}
+            </a>
+            {detail.owner?.official && <OfficialBadge iconOnly size={14} />}
+          </>
+        }
+        actions={
+          <Dialog>
+            <DialogTrigger asChild>
+              <button type="button" className="template-catalog-add" disabled={!ready}>
+                Add
+              </button>
+            </DialogTrigger>
+            <DialogContent aria-describedby={undefined}>
+              <DialogTitle>Add Template</DialogTitle>
+              {installSurface}
+            </DialogContent>
+          </Dialog>
+        }
+        summary={description}
+        sidebar={
+          <>
+            <CatalogDetailFact label={<DetailSecuritySummaryLabel />}>
+              <DetailSecuritySummary
+                auditHref={auditHref}
+                llmAnalysis={llmAnalysis}
+                githubScanStatus={display?.security.verdict ?? "Unavailable"}
+                description={
+                  display?.security.overview ||
+                  llmAnalysis?.summary ||
+                  "No completed security audit is available for this release."
+                }
+              />
+            </CatalogDetailFact>
+            <CatalogDetailFact label="Version">
+              {pkg.latestVersion ?? "Not available"}
+            </CatalogDetailFact>
+            <CatalogDetailFact label="Updated">{releaseDate(pkg.updatedAt)}</CatalogDetailFact>
+            <CatalogDetailFact label="Published">{releaseDate(pkg.createdAt)}</CatalogDetailFact>
+            {pkg.stats?.downloads !== undefined && (
+              <CatalogDetailFact label="Downloads">
+                {formatCompactStat(pkg.stats.downloads)}
+              </CatalogDetailFact>
+            )}
+            {categories.length > 0 && (
+              <CatalogDetailFact label="Categories">
+                {categories.map((category) => (
+                  <span key={category} className="template-catalog-category">
+                    {category}
+                  </span>
+                ))}
+              </CatalogDetailFact>
+            )}
+          </>
+        }
+      >
+        {pendingNotice}
+        {!ready && !documentLoading && installSurface}
+        {documentLoading && <p role="status">Loading Template instructions…</p>}
+        {documentResult?.failed && (
+          <p role="alert">
+            Could not load Template instructions.{" "}
+            <button
+              type="button"
+              onClick={() => {
+                setDocumentResult(undefined);
+                setDocumentAttempt((n) => n + 1);
+              }}
+            >
+              Try again
+            </button>
+          </p>
+        )}
+        {!supportedManifest && contents !== null && (
+          <details className="template-detail-original">
+            <summary>View original CLAW.md</summary>
+            <pre>
+              <code>{contents}</code>
+            </pre>
+          </details>
+        )}
+        <Dialog>
+          <TemplateReleaseInventory
+            packageName={pkg.name}
+            releaseVersion={pkg.latestVersion}
+            deviceZone={deviceZone}
+            display={display}
+            manifest={supportedManifest ? manifest : null}
+            dependencies={display || supportedManifest ? (inventory ?? []) : []}
+            workspace={display || supportedManifest ? workspaceContents : null}
+            personality={
+              soul ? <TemplatePersonality markdown={soul} fileAction={fileTrigger} /> : fileTrigger
+            }
+          />
+          <DialogContent className="template-catalog-file-dialog" aria-describedby={undefined}>
+            <DialogTitle>{soul && !browseFiles ? "SOUL.md" : "Release files"}</DialogTitle>
+            {soul && !browseFiles ? (
+              <>
+                <button
+                  type="button"
+                  className="template-catalog-browse"
+                  onClick={() => setBrowseFiles(true)}
+                >
+                  Browse release files
+                </button>
+                <MarkdownPreview className="template-catalog-document">{soul}</MarkdownPreview>
+              </>
+            ) : (
+              releaseBrowser
+            )}
+          </DialogContent>
+        </Dialog>
+      </CatalogDetailLayout>
+    </main>
   );
 }
 

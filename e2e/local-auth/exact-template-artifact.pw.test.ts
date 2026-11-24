@@ -274,6 +274,12 @@ test("publishes, polls, retries, and downloads the exact Template tarball", asyn
 
     await page.goto(`/cli-user/templates/${packageName}`);
     await expect(page.getByRole("heading", { name: "Exact Template Proof" })).toBeVisible();
+    // Named capabilities now paint directly; the full release browser opens from SOUL.md.
+    await expect(page.getByRole("region", { name: "Included in this release" })).toContainText(
+      "Bundled Research",
+    );
+    await page.getByRole("button", { name: "SOUL.md", exact: true }).click();
+    await page.getByRole("button", { name: "Browse release files", exact: true }).click();
     const proofDir = process.env.TEMPLATE_CONTRACT_PROOF_DIR;
     if (proofDir) {
       mkdirSync(proofDir, { recursive: true });
