@@ -5,6 +5,7 @@ import {
   catalogSkillsFeedV1Handler,
   promotionsFeedV1Handler,
 } from "./httpApiV1/catalogFeedV1";
+import { connectionsMcpV1Handler } from "./httpApiV1/connectionsV1";
 import { contentRightsV1Handler } from "./httpApiV1/contentRightsV1";
 import { verifyDocsSessionV1Handler } from "./httpApiV1/docsSessionV1";
 import { featuredV1Handler } from "./httpApiV1/featuredV1";
@@ -122,6 +123,7 @@ export const promotionsPostRouterV1Http = httpAction(promotionsPostRouterV1Handl
 export const featuredV1Http = httpAction(featuredV1Handler);
 
 export const whoamiV1Http = httpAction(whoamiV1Handler);
+export const connectionsMcpV1Http = httpAction(connectionsMcpV1Handler);
 export const usersGetRouterV1Http = httpAction(usersGetRouterV1Handler);
 export const usersPostRouterV1Http = httpAction(usersPostRouterV1Handler);
 export const usersListV1Http = httpAction(usersListV1Handler);
@@ -170,6 +172,7 @@ export const __handlers = {
   starsDeleteRouterV1Handler,
   transfersGetRouterV1Handler,
   whoamiV1Handler,
+  connectionsMcpV1Handler,
   usersGetRouterV1Handler,
   usersPostRouterV1Handler,
   usersListV1Handler,
