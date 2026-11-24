@@ -19,6 +19,7 @@ type WorkflowJob = {
   environment?: { name?: string; url?: string };
   if?: string;
   needs?: string;
+  permissions?: Record<string, string>;
   steps?: WorkflowStep[];
 };
 
@@ -132,6 +133,99 @@ describe("Test deploy workflow", () => {
       expect(run({ EXPECTED_SHA: head.slice(0, 12) }).status).toBe(1);
       expect(run({ EXPECTED_SHA: other }).status).toBe(1);
       expect(run({ TEST_NEXT_SHA: other }).status).toBe(1);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("waits for exact-SHA next CI on pushes before changing Test", async () => {
+    const workflow = await readWorkflow();
+    const job = workflow.jobs?.["deploy-test"];
+    const steps = job?.steps ?? [];
+    const indexOf = (name: string) => steps.findIndex((step) => step.name === name);
+    const wait = steps.find((step) => step.name === "Wait for successful next CI");
+    const recheck = steps.find((step) => step.name === "Recheck next head after CI");
+    const ci = parseYaml(await readFile(".github/workflows/ci.yml", "utf8")) as {
+      on?: { push?: { branches?: string[] } };
+    };
+
+    expect(ci.on?.push?.branches).toContain("next");
+    expect(job?.permissions).toEqual({ actions: "read", contents: "read" });
+    expect(wait?.if).toBe("github.event_name == 'push'");
+    expect(recheck?.if).toBe("github.event_name == 'push'");
+    expect(wait?.env).toEqual({
+      DEPLOY_SHA: "${{ steps.revision.outputs.deploy_sha }}",
+      GH_TOKEN: "${{ github.token }}",
+    });
+    expect(wait?.run).toContain("actions/workflows/ci.yml/runs");
+    expect(wait?.run).toContain("-f branch=next -f event=push");
+    expect(indexOf("Wait for successful next CI")).toBeGreaterThan(
+      indexOf("Resolve deployment revision"),
+    );
+    expect(indexOf("Recheck next head after CI")).toBeGreaterThan(
+      indexOf("Wait for successful next CI"),
+    );
+    // Both gates precede the first step that receives a deployment credential.
+    expect(indexOf("Check Test configuration")).toBeGreaterThan(
+      indexOf("Recheck next head after CI"),
+    );
+    expect(steps.findIndex((step) => step.env?.CONVEX_DEPLOY_KEY || step.env?.VERCEL_TOKEN)).toBe(
+      indexOf("Check Test configuration"),
+    );
+  });
+
+  it("admits only a successful push CI run for the deployed next commit", async () => {
+    const workflow = await readWorkflow();
+    const steps = workflow.jobs?.["deploy-test"]?.steps ?? [];
+    const wait = steps.find((step) => step.name === "Wait for successful next CI");
+    const root = await mkdtemp(join(tmpdir(), "deploy-test-ci-gate-"));
+    const sha = "a".repeat(40);
+    try {
+      // Stub the API read and the delay, and shorten the 30-minute retry budget.
+      expect(wait?.run).toContain("for attempt in {1..180}; do");
+      const script = wait?.run?.replace("{1..180}", "{1..3}") ?? "exit 97";
+      const gh = join(root, "gh");
+      await writeFile(
+        gh,
+        '#!/usr/bin/env bash\n[[ -n "${TEST_GH_FAIL:-}" ]] && exit 1\nprintf "%s" "$TEST_CI_RUNS"\n',
+      );
+      await writeFile(join(root, "sleep"), "#!/usr/bin/env bash\nexit 0\n");
+      await chmod(gh, 0o755);
+      await chmod(join(root, "sleep"), 0o755);
+      const ciRun = (overrides: Record<string, unknown>) => ({
+        conclusion: "success",
+        event: "push",
+        head_branch: "next",
+        head_sha: sha,
+        html_url: "https://example.invalid/run",
+        run_number: 1,
+        status: "completed",
+        ...overrides,
+      });
+      const run = (runs: unknown[], env: Record<string, string> = {}) =>
+        spawnSync("bash", ["-c", script], {
+          env: {
+            ...process.env,
+            PATH: `${root}:${process.env.PATH}`,
+            DEPLOY_SHA: sha,
+            GITHUB_REPOSITORY: "openclaw/clawhub",
+            TEST_CI_RUNS: JSON.stringify({ workflow_runs: runs }),
+            ...env,
+          },
+        }).status;
+
+      expect(run([ciRun({})])).toBe(0);
+      // The newest run for the commit decides, so a passing rerun supersedes a failure.
+      expect(run([ciRun({ conclusion: "failure" }), ciRun({ run_number: 2 })])).toBe(0);
+      expect(run([ciRun({}), ciRun({ conclusion: "failure", run_number: 2 })])).toBe(1);
+      expect(run([ciRun({ conclusion: "failure" })])).toBe(1);
+      expect(run([ciRun({ conclusion: "cancelled" })])).toBe(1);
+      expect(run([ciRun({ conclusion: null, status: "in_progress" })])).toBe(1);
+      expect(run([])).toBe(1);
+      expect(run([ciRun({ head_branch: "main" })])).toBe(1);
+      expect(run([ciRun({ event: "pull_request" })])).toBe(1);
+      expect(run([ciRun({ head_sha: "b".repeat(40) })])).toBe(1);
+      expect(run([ciRun({})], { TEST_GH_FAIL: "1" })).toBe(1);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

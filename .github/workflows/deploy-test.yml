@@ -29,7 +29,11 @@ jobs:
       (github.event_name == 'push' ||
       (github.event_name == 'workflow_dispatch' && inputs.expected_sha != ''))
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # Allows up to 30 minutes of waiting for CI before the deploy itself.
+    timeout-minutes: 75
+    permissions:
+      actions: read
+      contents: read
     environment:
       name: Test
       url: ${{ vars.SITE_URL }}
@@ -74,6 +78,61 @@ jobs:
           )"
           echo "deploy_sha=$deploy_sha" >> "$GITHUB_OUTPUT"
           echo "fixture_version=$fixture_version" >> "$GITHUB_OUTPUT"
+
+      # A push deploys only after CI passes for the same commit. A manual dispatch is
+      # the operator override and skips the wait.
+      - name: Wait for successful next CI
+        if: github.event_name == 'push'
+        env:
+          DEPLOY_SHA: ${{ steps.revision.outputs.deploy_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for attempt in {1..180}; do
+            if ! runs_json="$(gh api --method GET \
+              "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
+              -f branch=next -f event=push -f head_sha="$DEPLOY_SHA" \
+              -f per_page=100 2>/dev/null)"; then
+              echo "CI run lookup failed on attempt $attempt; retrying..."
+              sleep 10
+              continue
+            fi
+            ci_run="$(jq -c --arg sha "$DEPLOY_SHA" '
+              [.workflow_runs[] | select(
+                .event == "push" and
+                .head_branch == "next" and
+                .head_sha == $sha
+              )] | sort_by(.run_number) | last // {}
+            ' <<< "$runs_json")"
+            ci_status="$(jq -r '.status // empty' <<< "$ci_run")"
+            ci_conclusion="$(jq -r '.conclusion // empty' <<< "$ci_run")"
+            ci_url="$(jq -r '.html_url // empty' <<< "$ci_run")"
+            if [[ "$ci_status" == completed ]]; then
+              if [[ "$ci_conclusion" == success ]]; then
+                echo "Exact-SHA next CI passed: $ci_url"
+                exit 0
+              fi
+              echo "::error::Exact-SHA next CI ended with ${ci_conclusion:-unknown}: $ci_url"
+              exit 1
+            fi
+            echo "Waiting for next CI at $DEPLOY_SHA on attempt $attempt..."
+            sleep 10
+          done
+          echo "::error::Timed out waiting for exact-SHA next CI"
+          exit 1
+
+      - name: Recheck next head after CI
+        if: github.event_name == 'push'
+        env:
+          DEPLOY_SHA: ${{ steps.revision.outputs.deploy_sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin \
+            +refs/heads/next:refs/remotes/origin/next
+          if [[ "$(git rev-parse origin/next)" != "$DEPLOY_SHA" ]]; then
+            echo "::error::next advanced while CI ran"
+            exit 1
+          fi
 
       - name: Check Test configuration
         env:
