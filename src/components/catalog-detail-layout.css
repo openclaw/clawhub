@@ -38,7 +38,7 @@ body:has(.catalog-detail-page) {
   gap: 30px;
   grid-template-columns: minmax(0, 1fr);
   width: 100%;
-  max-width: 1088px;
+  max-width: 1058px;
   min-width: 0;
   margin-inline: auto;
   font-family: var(--font-body);

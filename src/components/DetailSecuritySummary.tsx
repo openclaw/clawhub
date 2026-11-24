@@ -59,10 +59,10 @@ export function DetailSecuritySummary({
   );
 }
 
-export function DetailSecuritySummaryLabel() {
+export function DetailSecuritySummaryLabel({ label = "Security audit" }: { label?: string }) {
   return (
     <span className="security-audit-sidebar-label">
-      <span>Security audit</span>
+      <span>{label}</span>
       <TooltipProvider delayDuration={400}>
         <Tooltip>
           <TooltipTrigger asChild>
