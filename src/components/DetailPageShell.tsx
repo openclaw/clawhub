@@ -8,16 +8,6 @@ type DetailPageShellProps = {
   className?: string;
 };
 
-type DetailHeroProps = {
-  main: ReactNode;
-  sidebar?: ReactNode;
-  children?: ReactNode;
-  className?: string;
-  topClassName?: string;
-  mainClassName?: string;
-  sidebarClassName?: string;
-};
-
 type DetailBodyProps = {
   children: ReactNode;
   className?: string;
@@ -26,34 +16,6 @@ type DetailBodyProps = {
 
 export function DetailPageShell({ children, className }: DetailPageShellProps) {
   return <div className={cn("skill-detail-stack", className)}>{children}</div>;
-}
-
-export function DetailHero({
-  main,
-  sidebar,
-  children,
-  className,
-  topClassName,
-  mainClassName,
-  sidebarClassName,
-}: DetailHeroProps) {
-  return (
-    <div className={cn("skill-hero", className)}>
-      <div className={cn("skill-hero-top", topClassName)}>
-        <div className={cn(sidebar ? "skill-hero-layout has-sidebar" : "skill-hero-layout")}>
-          <div className={cn("skill-hero-main", mainClassName)}>{main}</div>
-          {children || sidebar ? (
-            <div className={cn("skill-hero-lower", sidebar && "has-sidebar")}>
-              {children ? <div className="skill-hero-main-extra">{children}</div> : null}
-              {sidebar ? (
-                <aside className={cn("skill-hero-sidebar", sidebarClassName)}>{sidebar}</aside>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  );
 }
 
 export function DetailBody({ children, className, mainClassName }: DetailBodyProps) {
