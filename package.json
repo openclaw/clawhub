@@ -81,6 +81,7 @@
     "skills-sh:prove-trending": "bun scripts/skills-sh-catalog/prove-trending-test.ts",
     "skills:install": "npx --yes skills@1.5.16 add openclaw/carapace --skill openclaw-design openclaw-brand openclaw-carapace openclaw-design-system openclaw-marketing-pages openclaw-design-audit --agent codex --copy --yes",
     "test": "vitest run",
+    "test:component-upgrade": "bun scripts/test-component-upgrade.ts",
     "test:e2e": "vitest run -c vitest.e2e.config.ts",
     "test:e2e:local": "bash scripts/run-playwright-local.sh",
     "test:e2e:prod-http": "vitest run -c vitest.e2e.config.ts e2e/prod-http-smoke.e2e.test.ts",

@@ -1,12 +1,10 @@
 /// <reference types="vite/client" />
 /* @vitest-environment edge-runtime */
 import rateLimiter from "@convex-dev/rate-limiter/test";
-import workpool from "@convex-dev/workpool/test";
 import { convexTest } from "convex-test";
 import previousRateLimiter from "rate-limiter-previous/test";
 import { expect, it, vi } from "vitest";
-import previousWorkpool from "workpool-previous/test";
-import { api, internal } from "./_generated/api";
+import { internal } from "./_generated/api";
 import schema from "./schema";
 
 type Modules = Record<string, () => Promise<unknown>>;
@@ -24,7 +22,7 @@ function switchingModules(previous: Modules, current: Modules, upgraded: () => b
   );
 }
 
-it("retains consumed quota and queued reports when component implementations change", async () => {
+it("retains consumed quota when rate limiter implementations change", async () => {
   vi.useFakeTimers();
   vi.setSystemTime(Date.UTC(2026, 8, 16));
   try {
@@ -36,9 +34,8 @@ it("retains consumed quota and queued reports when component implementations cha
         rateLimiter.modules,
         () => upgraded,
       ),
-      searchReports: switchingModules(previousWorkpool.modules, workpool.modules, () => upgraded),
     };
-    // Register once: replacing registrations would erase component data and queued jobs.
+    // Register once: replacing registrations would erase the consumed quota.
     // The candidate's additive schema is used throughout; this proves runtime continuity,
     // not a backend deployment or schema migration.
     const registration: typeof t = {
@@ -47,7 +44,6 @@ it("retains consumed quota and queued reports when component implementations cha
         t.registerComponent(name, componentSchema, implementations[name] ?? modules),
     };
     rateLimiter.register(registration, "rateLimiterV2");
-    workpool.register(registration, "searchReports");
 
     const quota = {
       name: "component-upgrade",
@@ -57,18 +53,7 @@ it("retains consumed quota and queued reports when component implementations cha
     expect(await t.mutation(internal.rateLimits.consumeHttpRateLimitKeyInternal, quota)).toEqual({
       ok: true,
     });
-    const staff = await t.run((ctx) => ctx.db.insert("users", { role: "moderator" }));
-    const signed = t.withIdentity({ subject: staff });
-    const queued = await signed.mutation(api.searchReports.start, {
-      view: "recommendations",
-      artifactKind: "plugin",
-    });
-    expect(queued.status).toBe("pending");
-    const before = await t.run((ctx) => ctx.db.query("searchReportRuns").unique());
-    expect(before?.workId).toBeTruthy();
-
     upgraded = true;
-    expect(await t.run((ctx) => ctx.db.query("searchReportRuns").unique())).toEqual(before);
     const denied = await t.run(async (ctx) => ({
       now: Date.now(),
       status: await ctx.runMutation(internal.rateLimits.consumeHttpRateLimitKeyInternal, quota),
@@ -87,14 +72,6 @@ it("retains consumed quota and queued reports when component implementations cha
     expect(await t.mutation(internal.rateLimits.consumeHttpRateLimitKeyInternal, quota)).toEqual({
       ok: true,
     });
-    await t.finishAllScheduledFunctions(vi.runAllTimers);
-    const ready = await signed.action(api.searchReports.get, { reportId: queued.reportId });
-    expect(ready.status).toBe("ready");
-    const reused = await signed.mutation(api.searchReports.start, {
-      view: "recommendations",
-      artifactKind: "plugin",
-    });
-    expect(reused).toMatchObject({ reportId: queued.reportId, status: "ready" });
   } finally {
     vi.useRealTimers();
   }

@@ -238,3 +238,26 @@ Vercel deployment URL when GitHub's Vercel status exposes it.
 Use these tags as the audit map for rollback selection. Vercel traffic rollback
 still happens through Vercel's deployment rollback/promote controls; the Git tag
 is the stable source pointer for the deployed build.
+
+### Component upgrade retention
+
+`bun run test:component-upgrade` runs an isolated local backend with one disposable
+source capsule and one database. It starts the pinned pre-upgrade application
+with Workpool 0.4.12 and rate-limiter 0.3.2, consumes quota and queues a real search
+report with fixture-only capacity zero. It then pushes Workpool 0.4.15, runs its
+pending-start backfill, and pushes the current frozen dependency graph without
+replacing the database. The report and work IDs, pending row, and denied quota
+must survive both transitions. Resuming capacity must generate and retrieve the
+report exactly once, then reuse that same ready report.
+
+Only the capsule receives the paused capacity, execution counter, and probe
+functions. The source checkout and production schema do not receive those hooks.
+The command removes its capsule and owned processes on exit. The `component-upgrade`
+CI job runs this proof before the required `unit` job; its baseline is fetched as
+one pinned commit. Run with the repository-pinned Bun version. `--check` validates
+the source transformation contracts without installing dependencies or starting
+a backend. This is a forward-upgrade test; Workpool 0.5 does not support downgrades.
+
+The quota-only unit test keeps the additive rate-limiter implementation switch.
+Workpool retention uses the real backend because `convex-test` cannot replace a
+component schema without replacing that component's database.
