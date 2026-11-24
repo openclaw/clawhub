@@ -768,6 +768,26 @@ describe("connecting and disconnecting an app", () => {
     expect(composio.sessions.get(row?.composioSessionId ?? "")?.toolkits).toEqual([]);
   });
 
+  it("starts a fresh sign-in when the recorded connection is gone at Composio", async () => {
+    const context = await fixture();
+    const { t, asAda } = context;
+    await relay(t, "clh_ada");
+    const { accountId } = await connectGranola(context, composio);
+    composio.accounts.delete(accountId);
+
+    const started = await asAda.action(api.connections.startConnect, { app: "granola" });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect(started.status).toBe("pending");
+    expect((await asAda.query(api.connections.getMine, {}))?.apps[0]).toMatchObject({
+      status: "pending",
+      accountLabel: null,
+    });
+    // The stale connection no longer gives the user's chats any tools.
+    const [row] = await t.run((ctx) => ctx.db.query("appConnectionSessions").take(1));
+    expect(composio.sessions.get(row?.composioSessionId ?? "")?.toolkits).toEqual([]);
+  });
+
   it("does not leak Composio details when a check fails", async () => {
     const { asAda } = await fixture();
     composio.setOutage(500);

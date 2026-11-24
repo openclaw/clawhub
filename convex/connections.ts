@@ -40,9 +40,9 @@ import { pushSessionConfig, SESSION_TTL_MS } from "./lib/connectionSessions";
  */
 
 /** A sign-in the user never returns from is treated as abandoned after this. */
-export const ATTEMPT_TTL_MS = 15 * 60 * 1000;
+const ATTEMPT_TTL_MS = 15 * 60 * 1000;
 /** Bounds how many Composio sessions one account can hold at a time. */
-export const MAX_SESSIONS_PER_USER = 1000;
+const MAX_SESSIONS_PER_USER = 1000;
 const SYNC_PAGE_SIZE = 20;
 const PRUNE_BATCH_SIZE = 50;
 const DEFAULT_SITE_URL = "https://clawhub.ai";
@@ -109,12 +109,8 @@ function newAttemptId() {
 }
 
 /** Where Composio sends the browser after a sign-in. Server-controlled, never client-supplied. */
-export function buildConnectCallbackUrl(
-  appId: string,
-  attemptId: string,
-  env: Record<string, string | undefined> = process.env,
-) {
-  const url = new URL("/settings", env.SITE_URL?.trim() || DEFAULT_SITE_URL);
+function buildConnectCallbackUrl(appId: string, attemptId: string) {
+  const url = new URL("/settings", process.env.SITE_URL?.trim() || DEFAULT_SITE_URL);
   url.searchParams.set("view", "connections");
   url.searchParams.set("app", appId);
   url.searchParams.set("attempt", attemptId);
@@ -228,6 +224,16 @@ export const startConnect = action({
         internal.connections.getConnectionInternal,
         { userId, app: app.id },
       );
+      if (row?.status === "connected") {
+        // Composio no longer has the recorded account. Say so, and narrow the
+        // user's sessions, before a new sign-in starts.
+        await ctx.runMutation(internal.connections.recordDisconnectedInternal, {
+          userId,
+          app: app.id,
+          lastError: "lost",
+          expectedStatus: "connected",
+        });
+      }
       // Only one sign-in is live per user and app: drop the one being replaced.
       const replaced = row?.status === "pending" ? row.connectedAccountId : undefined;
       if (replaced && accounts.some((account) => account.id === replaced)) {
