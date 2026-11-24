@@ -286,6 +286,20 @@ describe("SearchInsightsPage", () => {
     expect(startReport.mock.lastCall?.[0].refreshOf).toBeUndefined();
     expect(screen.queryByRole("alert")).toBeNull();
   });
+  it("explains a scan-budget failure by its remedy instead of offering a retry", async () => {
+    getReport.mockResolvedValue(report);
+    const page = render(<SearchInsightsPage />);
+    await screen.findByText("33");
+    statuses.set("report-1", {
+      ...statuses.get("report-1"),
+      status: "failed",
+      failureCode: "report_scan_budget_exceeded",
+    });
+    page.rerender(<SearchInsightsPage />);
+    const alert = screen.getByRole("alert").textContent;
+    expect(alert).toContain("Choose a single source");
+    expect(alert).not.toContain("Refresh to retry");
+  });
   it.each(["failed", "expired", "incomplete", "removed"])(
     "shows a visible %s outcome and allows a new generation",
     async (terminal) => {

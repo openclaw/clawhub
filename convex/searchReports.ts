@@ -16,9 +16,11 @@ import {
   query,
 } from "./functions";
 import { assertModerator, requireUser, requireUserFromAction } from "./lib/access";
+import { SearchScanBudgetError } from "./lib/searchInsightRead";
 import {
   REPORT_CHUNK_BYTES,
   REPORT_MAX_CHUNKS,
+  REPORT_SCAN_BUDGET_EXCEEDED,
   REPORT_TTL_MS,
   REPORT_VERSION,
   normalizeReportRequest,
@@ -246,12 +248,15 @@ export const generateInternal = internalAction({
       });
       return { reportId };
     } catch (error) {
-      if (error instanceof ConvexError && error.data === "report_catalog_unavailable")
+      const overBudget = error instanceof SearchScanBudgetError;
+      if (overBudget) phase = REPORT_SCAN_BUDGET_EXCEEDED;
+      else if (error instanceof ConvexError && error.data === "report_catalog_unavailable")
         phase = error.data;
       // Workpool records thrown errors. Never forward catalog queries or provider
       // errors into its logs, retry payloads, or completion context.
       await ctx.runMutation(internal.searchReports.failureInternal, { reportId, code: phase });
-      if (error instanceof NonRetryableError) throw new NonRetryableError(phase);
+      // Another attempt would read the same rows and exceed the same budget.
+      if (overBudget || error instanceof NonRetryableError) throw new NonRetryableError(phase);
       // oxlint-disable-next-line preserve-caught-error -- Workpool must never log a cause containing private search terms.
       throw new Error(phase);
     }
