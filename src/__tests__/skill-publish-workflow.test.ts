@@ -138,4 +138,25 @@ describe("skill publish workflow", () => {
     expect(workflow).toContain("uses: actions/upload-artifact@v7\n        if: ${{ always() }}");
     expect(workflow).toContain("if-no-files-found: ignore");
   });
+
+  it("keeps the ClawHub checkout out of a repository-root skill", () => {
+    const workflow = readFileSync(resolve(".github/workflows/skill-publish.yml"), "utf8");
+    const steps = (
+      parseYaml(workflow) as {
+        jobs: {
+          publish: { steps: Array<{ name?: string; run?: string; "working-directory"?: string }> };
+        };
+      }
+    ).jobs.publish.steps;
+    const names = steps.map((step) => step.name);
+    const move = steps.find(
+      (step) => step.name === "Move ClawHub source out of the caller workspace",
+    );
+    const install = steps.find((step) => step.name === "Install ClawHub CLI dependencies");
+
+    expect(move?.run).toBe('mv "$GITHUB_WORKSPACE/clawhub-source" "$RUNNER_TEMP/clawhub-source"');
+    expect(names.indexOf(move?.name)).toBeLessThan(names.indexOf(install?.name));
+    expect(install?.["working-directory"]).toBe("${{ runner.temp }}/clawhub-source");
+    expect(workflow).toContain('cli_entry = Path(os.environ["RUNNER_TEMP"]) / "clawhub-source"');
+  });
 });
