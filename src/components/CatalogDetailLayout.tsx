@@ -1,7 +1,16 @@
 import { ChevronRight } from "lucide-react";
-import { type ReactNode, useId } from "react";
+import { type ReactNode, useEffect, useId, useState } from "react";
 import { cn } from "../lib/utils";
 import "./catalog-detail-layout.css";
+
+const serverDate = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: "UTC" });
+
+export function useCatalogDateFormatter() {
+  // The first client render must match the server, even across a calendar-day boundary.
+  const [formatter, setFormatter] = useState(serverDate);
+  useEffect(() => setFormatter(new Intl.DateTimeFormat(undefined, { dateStyle: "medium" })), []);
+  return formatter;
+}
 
 // Keep the public detail views on one rail, like Control UI's PluginDetailShell.
 export function CatalogDetailLayout(props: {

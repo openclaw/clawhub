@@ -24,6 +24,7 @@ import {
   CatalogDetailLayout,
   CatalogDetailFact,
   CatalogDetailBreadcrumb,
+  useCatalogDateFormatter,
 } from "./CatalogDetailLayout";
 import { DETAIL_HERO_TOPIC_LIMIT } from "./DetailPageShell";
 import { DetailSecuritySummary, DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
@@ -387,6 +388,7 @@ export function SkillDetailPageView({
   const repository = getGitHubRepositoryLink(skill);
   const linkedIdentity = ownerHandle || owner?.displayName;
   const platforms = (latestVersion?.parsed?.clawdis as ClawdisSkillMetadata | undefined)?.os;
+  const dateFormatter = useCatalogDateFormatter();
   const updatedAt = new Date(skill.updatedAt);
   const fullDescription = getLatestVersionDescription(latestVersion);
   const identity = (
@@ -644,9 +646,7 @@ export function SkillDetailPageView({
                 {Number.isFinite(updatedAt.valueOf()) && (
                   <CatalogDetailFact label="Updated">
                     <time dateTime={updatedAt.toISOString()}>
-                      {updatedAt.toLocaleDateString(undefined, {
-                        dateStyle: "medium",
-                      })}
+                      {dateFormatter.format(updatedAt)}
                     </time>
                   </CatalogDetailFact>
                 )}

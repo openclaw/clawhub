@@ -1,5 +1,4 @@
 import { ArrowUpRight, Pencil, Plus } from "lucide-react";
-import { useEffect, useState } from "react";
 import {
   buildPluginCategoryBrowseHref,
   buildPluginTopicBrowseHref,
@@ -9,7 +8,7 @@ import {
 import type { PackageDetailResponse, PackageVersionDetail } from "../lib/packageApi";
 import { buildPluginSecurityAuditHref } from "../lib/pluginRoutes";
 import { GitHubIcon } from "./BrandIcons";
-import { CatalogDetailFact } from "./CatalogDetailLayout";
+import { CatalogDetailFact, useCatalogDateFormatter } from "./CatalogDetailLayout";
 import { DetailSecuritySummary, DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
 
 function repositoryLink(raw: string | undefined) {
@@ -60,7 +59,6 @@ function compactCount(value: number) {
     (scale === 1_000 ? "k" : scale === 1_000_000 ? "m" : "b")
   );
 }
-const serverDate = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: "UTC" });
 
 export function PluginCatalogRail({
   pkg,
@@ -73,12 +71,7 @@ export function PluginCatalogRail({
   ownerHandle?: string | null;
   onEditTopics?: () => void;
 }) {
-  // Hydrate the server's UTC text before switching to the same local calendar as Control UI.
-  const [publishedDate, setPublishedDate] = useState(serverDate);
-  useEffect(
-    () => setPublishedDate(new Intl.DateTimeFormat(undefined, { dateStyle: "medium" })),
-    [],
-  );
+  const publishedDate = useCatalogDateFormatter();
   const categories = (pkg.categories ?? []).flatMap(
     (value) => getPluginCategoryBySlug(value) ?? [],
   );

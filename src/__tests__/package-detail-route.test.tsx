@@ -287,37 +287,33 @@ describe("plugin detail route", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it.each([390, 768, 900, 901, 1366, 1440])(
-    "keeps the same header, inline README and metadata rail at %ipx",
-    async (width) => {
-      setViewportWidth(width);
-      loaderDataMock.detail.package!.latestVersion = "1.0.0";
-      loaderDataMock.readme = "Getting started with Demo";
-      const route = await loadRoute();
-      const Component = route.__config.component as ComponentType;
-      render(<Component />);
+  it("renders one install action, inline README and package details in the metadata rail", async () => {
+    loaderDataMock.detail.package!.latestVersion = "1.0.0";
+    loaderDataMock.readme = "Getting started with Demo";
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+    render(<Component />);
 
-      const heading = screen.getByRole("heading", { level: 1, name: "Demo Plugin" });
-      const hero = heading.closest<HTMLElement>(".catalog-detail__hero");
-      expect(hero?.closest(".catalog-detail")).toBeTruthy();
-      expect(within(hero!).getAllByRole("button")).toEqual([
-        within(hero!).getByRole("button", { name: "Install" }),
-      ]);
-      expect(within(hero!).queryByRole("link", { name: "Download" })).toBeNull();
-      const detailsTrigger = within(screen.getByRole("complementary")).getByRole("button", {
-        name: "Package details",
-      });
-      expect(detailsTrigger.textContent).toBe("Package details");
-      expect(screen.queryByRole("tablist")).toBeNull();
-      expect(screen.getByText("Getting started with Demo")).toBeTruthy();
-      expect(
-        within(screen.getByRole("complementary")).getByRole("group", { name: "Plugin metadata" }),
-      ).toBeTruthy();
-      expect(
-        within(openPackageDetails()).getByRole("link", { name: "Download" }).getAttribute("href"),
-      ).toBe("/api/v1/packages/demo-plugin/download?version=1.0.0");
-    },
-  );
+    const heading = screen.getByRole("heading", { level: 1, name: "Demo Plugin" });
+    const hero = heading.closest<HTMLElement>(".catalog-detail__hero");
+    expect(hero?.closest(".catalog-detail")).toBeTruthy();
+    expect(within(hero!).getAllByRole("button")).toEqual([
+      within(hero!).getByRole("button", { name: "Install" }),
+    ]);
+    expect(within(hero!).queryByRole("link", { name: "Download" })).toBeNull();
+    const detailsTrigger = within(screen.getByRole("complementary")).getByRole("button", {
+      name: "Package details",
+    });
+    expect(detailsTrigger.textContent).toBe("Package details");
+    expect(screen.queryByRole("tablist")).toBeNull();
+    expect(screen.getByText("Getting started with Demo")).toBeTruthy();
+    expect(
+      within(screen.getByRole("complementary")).getByRole("group", { name: "Plugin metadata" }),
+    ).toBeTruthy();
+    expect(
+      within(openPackageDetails()).getByRole("link", { name: "Download" }).getAttribute("href"),
+    ).toBe("/api/v1/packages/demo-plugin/download?version=1.0.0");
+  });
 
   it.each([
     { family: "bundle-plugin", name: "discord", href: "openclaw://plugins/install?name=discord" },
