@@ -1218,6 +1218,23 @@ export async function processPrePublicationAttempt(
         { event: "prepublication_container_cleanup_unconfirmed", attemptId: attempt.attemptId },
         "ClawScan container removal unconfirmed; preserving workspace and stopping worker",
       );
+      // Custody stays here; the attempt itself retries on another worker.
+      try {
+        await client.action(api.publishAttempts.releasePrePublicationChecksClaim, {
+          token,
+          attemptId: attempt.attemptId,
+          claimId: attempt.claimId,
+        });
+      } catch (releaseError) {
+        logger.warn(
+          {
+            attemptId: attempt.attemptId,
+            completionError: backendFailureDiagnostic(releaseError),
+            event: "prepublication_claim_release_failed",
+          },
+          "pre-publication claim release failed; attempt waits for its lease to expire",
+        );
+      }
       return { completed: false, result: undefined, workerMustStop: true };
     }
     if (truffleHogBlocked) {

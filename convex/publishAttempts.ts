@@ -874,6 +874,11 @@ export const completePendingPublishAttemptChecksInternal = internalMutation({
         failedAt: terminal ? now : undefined,
         updatedAt: now,
       });
+      // Retries must not wait for the shared scheduled sweep, which a single
+      // stuck worker can starve for hours.
+      if (!terminal) {
+        await requestPublishAttemptDispatch(ctx, attempt._id, CHECK_RETRY_BACKOFF_MS);
+      }
       return {
         attemptId: attempt._id,
         kind: attempt.kind,
@@ -1700,6 +1705,58 @@ export const backoffFailedPrePublicationHandoffInternal = internalMutation({
       updatedAt: now,
     });
     return { backedOff: true };
+  },
+});
+
+// A worker that cannot confirm ClawScan container cleanup keeps custody of its
+// workspace and stops claiming, but must not hold the attempt for the whole
+// lease: release the exact claim into the retry backoff and dispatch a fresh
+// worker. This is operational, so it does not count as a scanner failure.
+export const releasePrePublicationChecksClaimInternal = internalMutation({
+  args: {
+    attemptId: v.id("publishAttempts"),
+    claimId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const attempt = await ctx.db.get(args.attemptId);
+    const now = Date.now();
+    if (
+      !attempt ||
+      attempt.status !== "pending_checks" ||
+      attempt.checkClaimId !== args.claimId ||
+      (attempt.checkClaimExpiresAt ?? 0) <= now
+    ) {
+      return { released: false };
+    }
+    await ctx.db.patch(attempt._id, {
+      checkClaimExpiresAt: Math.min(
+        attempt.checkClaimExpiresAt ?? now,
+        now + CHECK_RETRY_BACKOFF_MS,
+      ),
+      checkClaimLastError:
+        "ClawScan container cleanup was unconfirmed; retrying on another worker.",
+      updatedAt: now,
+    });
+    await requestPublishAttemptDispatch(ctx, attempt._id, CHECK_RETRY_BACKOFF_MS);
+    return { released: true };
+  },
+});
+
+export const releasePrePublicationChecksClaim: ReturnType<typeof action> = action({
+  args: {
+    token: v.string(),
+    attemptId: v.id("publishAttempts"),
+    claimId: v.string(),
+  },
+  handler: async (ctx, args): Promise<unknown> => {
+    assertWorkerToken(args.token);
+    return await ctx.runMutation(
+      internal.publishAttempts.releasePrePublicationChecksClaimInternal,
+      {
+        attemptId: args.attemptId,
+        claimId: args.claimId,
+      },
+    );
   },
 });
 

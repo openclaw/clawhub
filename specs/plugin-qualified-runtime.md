@@ -216,7 +216,11 @@ verdict.
 
 Prepublication does not swallow this error as ordinary scan failure; it retains
 workspace custody, emits workerMustStop, and stops after already-active batch
-work settles. Manual scan workers similarly stop, including when recording the
+work settles. Before stopping it releases its exact check claim into the
+five-minute retry backoff, without counting a scanner failure, and the backend
+dispatches a targeted worker for the attempt, so custody of one host never holds
+the attempt for the full lease. Retryable scanner failures likewise dispatch a
+targeted retry after the backoff rather than waiting for the scheduled sweep. Manual scan workers similarly stop, including when recording the
 backend failure itself is unavailable. Legacy/nonqualified command paths are
 unchanged. Real process-supervisor tests and executable mocked-daemon tests
 cover multiple/late containers, ownership mismatches, daemon/removal failures,
