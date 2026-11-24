@@ -35,24 +35,24 @@ vi.mock("../lib/useHeroCreatorPublisher", () => ({
 
 describe("SkillDetailPageView", () => {
   function sidebarStatsRoot(container: HTMLElement) {
-    const node = container.querySelector(".detail-sidebar-stats");
-    if (!node) throw new Error("Missing .detail-sidebar-stats");
+    const node = container.querySelector(".catalog-detail__sidebar");
+    if (!node) throw new Error("Missing .catalog-detail__sidebar");
     return node as HTMLElement;
   }
 
   function heroCreatorRoot(container: HTMLElement) {
-    const node = container.querySelector(".skill-hero-creator");
-    if (!node) throw new Error("Missing .skill-hero-creator");
+    const node = container.querySelector(".skill-catalog-byline");
+    if (!node) throw new Error("Missing .skill-catalog-byline");
     return node as HTMLElement;
   }
 
-  function expectCreatorBelowSummary(container: HTMLElement) {
-    const summary = container.querySelector(".skill-summary-block");
-    const creator = container.querySelector(".skill-hero-creator");
+  function expectCreatorAboveSummary(container: HTMLElement) {
+    const summary = container.querySelector(".catalog-detail__summary");
+    const creator = container.querySelector(".skill-catalog-byline");
     expect(summary).toBeTruthy();
     expect(creator).toBeTruthy();
     expect(
-      summary!.compareDocumentPosition(creator!) & Node.DOCUMENT_POSITION_FOLLOWING,
+      creator!.compareDocumentPosition(summary!) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   }
 
@@ -130,16 +130,18 @@ describe("SkillDetailPageView", () => {
     expect(onRequireSignIn).toHaveBeenCalledTimes(2);
     expect(onToggleStar).not.toHaveBeenCalled();
     expect(onOpenReport).not.toHaveBeenCalled();
-    expectCreatorBelowSummary(container);
+    expectCreatorAboveSummary(container);
     expect(within(heroCreatorRoot(container)).getByText("Local")).toBeTruthy();
     expect(within(heroCreatorRoot(container)).getByText("@local")).toBeTruthy();
     expect(within(sidebarStatsRoot(container)).queryByText("Creator")).toBeNull();
     expect(within(sidebarStatsRoot(container)).getByText("Downloads")).toBeTruthy();
     expect(within(sidebarStatsRoot(container)).getByText("2")).toBeTruthy();
     expect(container.querySelector('a[href="/local"]')).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Skills" }).getAttribute("href")).toBe("/skills");
     expect(
-      container.querySelector('nav[aria-label="Skill breadcrumbs"] a[href="/local"]'),
-    ).toBeTruthy();
+      screen.getByRole("navigation", { name: "Breadcrumb" }).querySelector('[aria-current="page"]')
+        ?.textContent,
+    ).toBe("Demo Skill");
   });
 
   it("renders hero category labels without comma separators", () => {
@@ -158,38 +160,23 @@ describe("SkillDetailPageView", () => {
     expect(taxonomy?.textContent).not.toContain(",");
   });
 
-  it("keeps desktop-width sidebar details expanded at 1071px", () => {
+  it("keeps a single facts rail beside the overview", () => {
     const { container } = renderHeader();
-
-    expectCreatorBelowSummary(container);
-    expect(within(heroCreatorRoot(container)).getByText("Local")).toBeTruthy();
-    expect(within(sidebarStatsRoot(container)).queryByText("Creator")).toBeNull();
-    expect(within(sidebarStatsRoot(container)).getByText("Downloads")).toBeTruthy();
-    expect(container.querySelector(".detail-mobile-master-tab-list")).toBeTruthy();
+    expectCreatorAboveSummary(container);
+    const rail = screen.getByRole("complementary");
+    expect(within(rail).getByText("Updated")).toBeTruthy();
+    expect(within(rail).queryByText("Creator")).toBeNull();
+    expect(container.querySelectorAll(".catalog-detail__sidebar")).toHaveLength(1);
   });
 
-  it("places creator below the summary and keeps it out of the sidebar below 901px", () => {
+  it("keeps the same facts and creator reachable on mobile without duplicate tab panels", () => {
     setViewportWidth(488);
     const { container } = renderHeader();
-
-    const creator = container.querySelector(".skill-hero-creator");
-    const statsPanel = container.querySelector("#skill-mobile-master-panel-stats");
-    expectCreatorBelowSummary(container);
-    expect(creator?.textContent).toContain("Local");
-    expect(creator?.textContent).toContain("@local");
-    expect(statsPanel?.textContent).not.toContain("Creator");
-    expect(statsPanel?.hasAttribute("hidden")).toBe(true);
-
-    expect(screen.getByRole("tab", { name: "SKILL.md" }).getAttribute("aria-selected")).toBe(
-      "true",
-    );
-
-    fireEvent.click(screen.getByRole("tab", { name: "Stats & details" }));
-
-    expect(screen.getByRole("tab", { name: "Stats & details" }).getAttribute("aria-selected")).toBe(
-      "true",
-    );
-    expect(statsPanel?.hasAttribute("hidden")).toBe(false);
+    expectCreatorAboveSummary(container);
+    expect(within(heroCreatorRoot(container)).getByText("@local")).toBeTruthy();
+    expect(within(sidebarStatsRoot(container)).getByText("Updated")).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: "Stats & details" })).toBeNull();
+    expect(container.querySelectorAll(".skill-catalog-byline")).toHaveLength(1);
   });
 
   it("shows the 30-day downloads graph from activity data", () => {
@@ -235,7 +222,9 @@ describe("SkillDetailPageView", () => {
     expect(screen.queryByText("30-day Installs")).toBeNull();
     expect(sidebar.getByText("All time")).toBeTruthy();
     expect(sidebar.getByText("2")).toBeTruthy();
-    expect(container.querySelector(".detail-sidebar-stats .metric-trend-card-skeleton")).toBeNull();
+    expect(
+      container.querySelector(".catalog-detail__sidebar .metric-trend-card-skeleton"),
+    ).toBeNull();
     expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
   });
 
@@ -311,7 +300,7 @@ describe("SkillDetailPageView", () => {
     expect(container.querySelectorAll(".metric-trend-marker-line")).toHaveLength(1);
   });
 
-  it("shows the Official badge on the creator for official publishers", () => {
+  it("distinguishes an official publisher from an official skill", () => {
     const { container } = renderHeader({
       owner: {
         ...owner,
@@ -319,12 +308,14 @@ describe("SkillDetailPageView", () => {
       },
     });
 
-    const creator = container.querySelector(".skill-hero-creator");
-    expect(creator?.querySelector(".user-name-row .official-badge-icon-only")).toBeTruthy();
-    expect(container.querySelector(".skill-hero-title-row .official-tag")).toBeNull();
+    const creator = container.querySelector(".skill-catalog-byline");
+    expect(creator?.querySelector(".official-badge-icon-only")).toBeNull();
+    expect(container.querySelector(".catalog-detail__sidebar details")?.textContent).toContain(
+      "Official publisher",
+    );
   });
 
-  it("renders canonical topics in the detail hero", () => {
+  it("retains canonical linked topics in package contents", () => {
     renderHeader({
       skill: {
         ...skill,
@@ -372,8 +363,8 @@ describe("SkillDetailPageView", () => {
     expect(within(sidebarStatsRoot(container)).getByText("Downloads")).toBeTruthy();
     expect(within(sidebarStatsRoot(container)).queryByText("Creator")).toBeNull();
     expect(within(heroCreatorRoot(container)).getByText("Local")).toBeTruthy();
-    expect(within(sidebarStatsRoot(container)).getByText("Last updated")).toBeTruthy();
-    expect(screen.queryByText("Current version")).toBeNull();
+    expect(within(sidebarStatsRoot(container)).getByText("Updated")).toBeTruthy();
+    expect(screen.queryByText("Version")).toBeNull();
     expect(screen.queryByText("License")).toBeNull();
     expect(screen.queryByText("MIT-0")).toBeNull();
   });
@@ -443,18 +434,13 @@ describe("SkillDetailPageView", () => {
     ).toBeTruthy();
   });
 
-  it("places Bookmark in the sidebar without an outline button", () => {
-    const { container } = renderHeader();
-
-    const starBand = container.querySelector(".skill-sidebar-star-band");
-    expect(starBand).toBeTruthy();
-    const starButton = within(starBand as HTMLElement).getByRole("button", {
-      name: "Bookmark skill",
-    });
-    expect(starButton.className).toContain("skill-sidebar-star-action");
-    expect(starButton.querySelector(".lucide-bookmark")).toBeTruthy();
-    expect(starButton.querySelector(".lucide-star")).toBeNull();
-    expect(container.querySelector(".skill-hero-title-row .skill-title-actions")).toBeNull();
+  it("keeps Bookmark beside the public activity details instead of the native Add action", () => {
+    renderHeader();
+    const activity = screen.getByText("Activity & details").closest("details")!;
+    fireEvent.click(within(activity).getByText("Activity & details"));
+    const bookmark = within(activity).getByRole("button", { name: "Bookmark skill" });
+    expect(bookmark.querySelector(".lucide-bookmark")).toBeTruthy();
+    expect(bookmark.querySelector(".lucide-star")).toBeNull();
   });
 
   it("presents the active bookmark control as an Unbookmark action", () => {
@@ -465,18 +451,13 @@ describe("SkillDetailPageView", () => {
     expect(unbookmark.querySelector(".lucide-bookmark")).toBeTruthy();
   });
 
-  it("places Bookmark on the creator row on mobile detail layout", () => {
+  it("keeps one Bookmark control on mobile", () => {
     setViewportWidth(390);
-    const { container } = renderHeader();
-
-    expect(container.querySelector(".skill-sidebar-star-band")).toBeNull();
-    const creator = container.querySelector(".skill-hero-creator");
-    expect(creator).toBeTruthy();
-    const starButton = within(creator as HTMLElement).getByRole("button", {
-      name: "Bookmark skill",
-    });
-    expect(starButton.className).toContain("skill-sidebar-star-action");
-    expect(starButton.closest(".skill-hero-creator-star")).toBeTruthy();
+    renderHeader();
+    fireEvent.click(screen.getByText("Activity & details"));
+    expect(
+      within(screen.getByRole("complementary")).getAllByRole("button", { name: "Bookmark skill" }),
+    ).toHaveLength(1);
   });
 
   it("does not render a separate warning banner for scanner warnings", () => {
@@ -494,7 +475,7 @@ describe("SkillDetailPageView", () => {
     expect(screen.queryByText(/Review the scan results before using/i)).toBeNull();
   });
 
-  it("shows the latest version description instead of the short catalog summary", () => {
+  it("keeps the full release description available beneath the catalog summary", () => {
     renderHeader({
       latestVersion: {
         _id: "skillVersions:demo" as Id<"skillVersions">,
@@ -518,7 +499,7 @@ describe("SkillDetailPageView", () => {
         "Full uploaded description with more operational context than the short summary.",
       ),
     ).toBeTruthy();
-    expect(screen.queryByText("Demo summary")).toBeNull();
+    expect(screen.getByText("Demo summary").closest(".catalog-detail__summary")).toBeTruthy();
   });
 
   it("prefers the resolved presentation summary for the latest version", () => {
@@ -545,7 +526,7 @@ describe("SkillDetailPageView", () => {
 
     expect(screen.getByText("Feed-ready OpenAI summary.")).toBeTruthy();
     expect(screen.queryByText("Full uploaded description.")).toBeNull();
-    expect(screen.queryByText("Demo summary")).toBeNull();
+    expect(screen.getByText("Demo summary").closest(".catalog-detail__summary")).toBeTruthy();
   });
 
   it("keeps the download action hidden on the detail header", () => {
@@ -586,6 +567,6 @@ describe("SkillDetailPageView", () => {
     });
 
     expect(screen.getByText("Legacy full description from parsed frontmatter.")).toBeTruthy();
-    expect(screen.queryByText("Demo summary")).toBeNull();
+    expect(screen.getByText("Demo summary").closest(".catalog-detail__summary")).toBeTruthy();
   });
 });

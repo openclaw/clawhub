@@ -1,6 +1,6 @@
 /* @vitest-environment jsdom */
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { SkillsShCatalogDetail } from "../lib/skillsShCatalog";
@@ -44,8 +44,8 @@ describe("SkillsShCatalogDetailPage", () => {
     expect(screen.getAllByText("Downloads").length).toBeGreaterThan(0);
     expect(screen.queryByText("Upstream installs")).toBeNull();
     expect(screen.getByText("HTML Artifact Chooser Build useful artifacts.")).toBeTruthy();
-    expect(container.querySelector(".skill-hero-layout.has-sidebar")).toBeTruthy();
-    expect(container.querySelector(".skill-hero-sidebar")?.textContent).toContain(
+    expect(container.querySelector(".catalog-detail__content")).toBeTruthy();
+    expect(container.querySelector(".catalog-detail__sidebar")?.textContent).toContain(
       "Security Audits",
     );
     const audits = screen.getByRole("region", { name: "Security Audits" });
@@ -120,22 +120,13 @@ Build a useful artifact.`,
   it("uses the shared skill detail shell for content and stats", () => {
     render(<SkillsShCatalogDetailPage entry={makeEntry()} />);
 
-    const sectionTabs = screen.getByRole("tablist", { name: "Skill mobile sections" });
-    expect(sectionTabs).toBeTruthy();
-    expect(sectionTabs.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
-      "SKILL.md",
-    );
+    expect(screen.getAllByRole("complementary")).toHaveLength(1);
     expect(screen.getByRole("link", { name: "html", current: "page" }).getAttribute("href")).toBe(
       "/skills-sh/patrick-erichsen/skills/html",
     );
     const breadcrumbs = screen.getByRole("navigation", { name: "Skill breadcrumbs" });
     expect(breadcrumbs.querySelector("a[href*='skills.sh']")).toBeNull();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Stats & details" }));
-
-    expect(screen.getByRole("tab", { name: "Stats & details" }).getAttribute("aria-selected")).toBe(
-      "true",
-    );
     expect(screen.getAllByText("Security Audits").length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: "Bookmark skill" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Report" })).toBeNull();

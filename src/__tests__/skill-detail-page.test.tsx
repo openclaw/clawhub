@@ -254,6 +254,22 @@ describe("SkillDetailPage", () => {
     vi.useRealTimers();
   });
 
+  it("renders the verified card and current release notes before opening package contents", async () => {
+    const initialData = makeInitialData();
+    initialData.result!.latestVersion = makeWeatherVersion({
+      changelog: "New release notes.",
+      generatedSkillCard: { path: "skill-card.md", size: 20, storageId, sha256: "card" },
+    } as Partial<Doc<"skillVersions">>);
+    getSkillCardMock.mockResolvedValue({ text: "## Description:\n\nGenerated release summary." });
+    render(<SkillDetailPage slug="weather" initialData={initialData} />);
+    expect(await screen.findByRole("heading", { name: "Skill card" })).toBeTruthy();
+    const well = document.querySelector(".skill-catalog-well");
+    expect(well?.textContent).toContain("Generated release summary.");
+    expect(screen.getByRole("heading", { name: "Latest: v1.0.0" })).toBeTruthy();
+    expect(document.querySelector(".skill-catalog-contents")?.hasAttribute("open")).toBe(false);
+    expect(getSkillCardMock).toHaveBeenCalledExactlyOnceWith({ versionId });
+  });
+
   it.each(["#card", "#skill-card"])("opens the generated card alias %s", async (hash) => {
     window.location.hash = hash;
     getSkillCardMock.mockResolvedValue({ text: "# Generated card" });
@@ -269,7 +285,11 @@ describe("SkillDetailPage", () => {
           .getAttribute("aria-selected"),
       ).toBe("true"),
     );
-    expect(await screen.findByRole("heading", { name: "Generated card" })).toBeTruthy();
+    expect(
+      await within(screen.getByRole("tabpanel", { name: "Skill Card" })).findByRole("heading", {
+        name: "Generated card",
+      }),
+    ).toBeTruthy();
   });
 
   it.each(["#diff", "#compare"])(
@@ -686,7 +706,7 @@ describe("SkillDetailPage", () => {
 
     expect(screen.queryByRole("status", { name: /Loading skill details/i })).toBeNull();
     expect(screen.getAllByRole("heading", { name: "Github" }).length).toBeGreaterThan(0);
-    const summary = document.querySelector(".skill-summary-line");
+    const summary = document.querySelector(".catalog-detail__summary");
     expect(summary?.textContent).toBe("Interact with GitHub using the gh CLI.");
     expect(summary?.querySelector("code.skill-summary-inline-code")?.textContent).toBe("gh");
   });
@@ -855,7 +875,7 @@ describe("SkillDetailPage", () => {
     );
 
     expect((await screen.findAllByText("Pending")).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Security audit").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Security check").length).toBeGreaterThan(0);
     expect(screen.queryByText("Loading README...")).toBeNull();
   });
 
@@ -1122,7 +1142,11 @@ describe("SkillDetailPage", () => {
 
     expect(await screen.findByText("Deploy it.")).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: "Skill Card" }));
-    expect(await screen.findByText("Risk details.")).toBeTruthy();
+    expect(
+      await within(screen.getByRole("tabpanel", { name: "Skill Card" })).findByText(
+        "Risk details.",
+      ),
+    ).toBeTruthy();
     expect(getReadmeMock).not.toHaveBeenCalled();
   });
 
@@ -1227,7 +1251,11 @@ describe("SkillDetailPage", () => {
         "true",
       );
     });
-    expect(await screen.findByText("Generated from worker.")).toBeTruthy();
+    expect(
+      await within(screen.getByRole("tabpanel", { name: "Skill Card" })).findByText(
+        "Generated from worker.",
+      ),
+    ).toBeTruthy();
   });
 
   it("keeps one generated card request pending across loading-state and parent renders", async () => {
@@ -1254,7 +1282,11 @@ describe("SkillDetailPage", () => {
       pending.resolve({ text: "# Skill Card\n\nOnly one completed request." });
       await pending.promise;
     });
-    expect(await screen.findByText("Only one completed request.")).toBeTruthy();
+    expect(
+      await within(screen.getByRole("tabpanel", { name: "Skill Card" })).findByText(
+        "Only one completed request.",
+      ),
+    ).toBeTruthy();
     expect(getSkillCardMock).toHaveBeenCalledOnce();
   });
 
@@ -1298,7 +1330,11 @@ describe("SkillDetailPage", () => {
       newRead.resolve({ text: "# Skill Card\n\nCurrent card content." });
       await newRead.promise;
     });
-    expect(await screen.findByText("Current card content.")).toBeTruthy();
+    expect(
+      await within(screen.getByRole("tabpanel", { name: "Skill Card" })).findByText(
+        "Current card content.",
+      ),
+    ).toBeTruthy();
     expect(getSkillCardMock).toHaveBeenCalledTimes(2);
   });
 
@@ -1385,7 +1421,7 @@ describe("SkillDetailPage", () => {
     expect(screen.getByText(/Compose agent workflow pipelines\./i)).toBeTruthy();
   });
 
-  it("defaults the sidebar install surface to the full CLI command and offers Desktop second", async () => {
+  it("opens the owner-qualified CLI and Desktop choices from Add and links the canonical audit", async () => {
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
       return undefined;
@@ -1429,9 +1465,10 @@ describe("SkillDetailPage", () => {
       />,
     );
 
+    fireEvent.click(await screen.findByRole("button", { name: "Add" }));
     await screen.findByRole("heading", { name: "Install" });
     const sidebarMetadata = document.querySelector(
-      '.detail-sidebar-stats dl[aria-label="Skill metadata"]',
+      '.catalog-detail__sidebar [aria-label="Skill metadata"]',
     );
     expect(sidebarMetadata).toBeTruthy();
 
@@ -1456,26 +1493,26 @@ describe("SkillDetailPage", () => {
     expect(screen.queryByText("npx clawhub@latest install @steipete/weather")).toBeNull();
     expect(screen.queryByRole("tab", { name: "ClawHub" })).toBeNull();
     expect(screen.queryByText(/After install, inspect the skill metadata/i)).toBeNull();
-    expect(screen.getAllByText("Security audit").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.getAllByText("Security check").length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: "View Security Audit" }).getAttribute("href")).toBe(
       "/steipete/skills/weather/security-audit",
     );
-    const sidebarLabels = Array.from(
-      sidebarMetadata?.querySelectorAll(".sidebar-metadata-label") ?? [],
-      (label) => label.textContent?.trim(),
+    const sidebarLabels = Array.from(sidebarMetadata?.querySelectorAll("dt") ?? [], (label) =>
+      label.textContent?.trim(),
     );
     const securityAuditLabelIndex = sidebarLabels.findIndex((label) =>
-      label?.startsWith("Security audit"),
+      label?.startsWith("Security check"),
     );
     expect(sidebarLabels).not.toContain("Creator");
     expect(securityAuditLabelIndex).toBeGreaterThanOrEqual(0);
-    const heroCreator = document.querySelector(".skill-hero-creator");
+    const heroCreator = document.querySelector(".skill-catalog-byline");
     expect(heroCreator).toBeTruthy();
-    const summary = document.querySelector(".skill-summary-block");
+    const summary = document.querySelector(".catalog-detail__summary");
     expect(
       summary &&
         heroCreator &&
-        summary.compareDocumentPosition(heroCreator) & Node.DOCUMENT_POSITION_FOLLOWING,
+        heroCreator.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(
       screen.getByRole("button", {
@@ -1485,12 +1522,7 @@ describe("SkillDetailPage", () => {
     expect(screen.queryByText("No risk analysis has been recorded yet.")).toBeNull();
     expect(screen.queryByText(/Like a lobster shell, security has layers/i)).toBeNull();
     expect(screen.queryByRole("button", { name: "Rescan" })).toBeNull();
-
-    expect(installCard.closest(".skill-hero-sidebar-stack")).toBeTruthy();
-    expect(
-      sidebarMetadata &&
-        installCard.compareDocumentPosition(sidebarMetadata) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    fireEvent.click(screen.getByText("Package contents"));
     expect(screen.getByRole("tab", { name: "Files" })).toBeTruthy();
   });
 
@@ -1549,7 +1581,7 @@ describe("SkillDetailPage", () => {
       />,
     );
 
-    expect((await screen.findAllByText("Security audit")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Security check")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Review").length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: "View Security Audit" })).toBeTruthy();
     expect(screen.queryByText(/reviewed by staff and cleared/i)).toBeNull();
@@ -2273,7 +2305,9 @@ describe("SkillDetailPage", () => {
     });
 
     const { unmount } = render(<SkillDetailPage slug="weather" />);
-    expect(await screen.findByText("Weather")).toBeTruthy();
+    await waitFor(() =>
+      expect(document.querySelector(".catalog-detail__title-row h1")?.textContent).toBe("Weather"),
+    );
     expect(screen.queryByRole("link", { name: /settings/i })).toBeNull();
     unmount();
 
@@ -2424,7 +2458,9 @@ describe("SkillDetailPage", () => {
     });
 
     render(<SkillDetailPage slug="weather" />);
-    expect(await screen.findByText("Weather")).toBeTruthy();
+    await waitFor(() =>
+      expect(document.querySelector(".catalog-detail__title-row h1")?.textContent).toBe("Weather"),
+    );
     expect(getDesktopSkillTabs().getByRole("tab", { name: "SKILL.md" })).toBeTruthy();
     expect(getDesktopSkillTabs().getByRole("tab", { name: "Files" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /diff/i })).toBeNull();

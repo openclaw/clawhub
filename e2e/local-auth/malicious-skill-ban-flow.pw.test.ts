@@ -42,15 +42,15 @@ async function getNewVersionHref(page: Parameters<typeof waitForHydration>[0], d
 
 async function expectCurrentVersion(page: Page, version: string) {
   const detailUrl = page.url().split("#", 1)[0];
-  const expectedVersion = `v${version}`;
+  const expectedVersion = version;
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= 4; attempt += 1) {
     try {
       await waitForHydration(page).catch(() => {});
       await recoverFromTransientErrorScreen(page);
-      const metadata = page.locator(".detail-sidebar-stats .sidebar-metadata");
-      await expect(metadata.getByText("Current version", { exact: true })).toBeVisible({
+      const metadata = page.getByRole("group", { name: "Skill metadata" });
+      await expect(metadata.getByText("Version", { exact: true })).toBeVisible({
         timeout: 30_000,
       });
       await expect(metadata.getByText(expectedVersion, { exact: true })).toBeVisible({

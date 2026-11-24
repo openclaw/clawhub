@@ -30,6 +30,7 @@ async function gotoUntilStarButtonReady(page: Page, detailPath: string): Promise
     await waitForHydration(page);
     await recoverFromTransientErrorScreen(page).catch(() => {});
     try {
+      await page.getByText("Activity & details", { exact: true }).click();
       await expect(starButton).toBeVisible({ timeout: 30_000 });
       return starButton;
     } catch (error) {
@@ -106,6 +107,7 @@ test("bookmarking a skill survives refresh with the synchronized count", async (
   await page.reload({ waitUntil: "domcontentloaded" });
   await waitForHydration(page);
 
+  await page.getByText("Activity & details", { exact: true }).click();
   const refreshedUnbookmarkButton = page.getByRole("button", { name: "Unbookmark skill" });
   await expect(refreshedUnbookmarkButton).toBeVisible({ timeout: 30_000 });
   await expect(refreshedUnbookmarkButton).toContainText("1", { timeout: 30_000 });

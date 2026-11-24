@@ -1,0 +1,357 @@
+/* Skill-specific parts of Control UI's skills/clawhub-skill-page.tsx. The page grid,
+ * breadcrumb, hero, rail fact rows and theme are shared by CatalogDetailLayout. */
+.skill-catalog-detail {
+  --skill-readme-clamp: 170px;
+}
+.skill-catalog-detail .catalog-detail__icon {
+  background: color-mix(in srgb, var(--detail-card) 50%, light-dark(#f8f8f8, #0e1015));
+}
+.skill-catalog-detail .skill-catalog-tile {
+  corner-shape: inherit;
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  overflow: hidden;
+  border-radius: inherit;
+  background: var(--detail-tone);
+  color: color-mix(in srgb, var(--detail-text) 42%, transparent);
+}
+.skill-catalog-detail .skill-catalog-tile > img {
+  width: 60%;
+  height: 60%;
+  object-fit: contain;
+}
+.skill-catalog-detail .skill-catalog-tile--profile > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.skill-catalog-detail .skill-catalog-tile > svg {
+  width: 26px;
+  height: 26px;
+}
+.skill-catalog-detail .skill-catalog-byline,
+.skill-catalog-detail .skill-catalog-byline > a {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+.skill-catalog-detail .skill-catalog-owner-name {
+  color: var(--detail-strong);
+  font-weight: 550;
+}
+.skill-catalog-detail .skill-catalog-byline > a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.skill-catalog-detail .skill-catalog-add {
+  height: 36px;
+  min-height: 36px;
+  padding: 0 18px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--detail-primary);
+  box-shadow: 0 1px 3px light-dark(rgb(189 69 49 / 8%), rgb(209 60 60 / 8%));
+  color: white;
+  letter-spacing: -0.01em;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: normal;
+}
+.skill-catalog-detail .skill-catalog-add:hover {
+  background: light-dark(#aa3d2b, #c22e2e);
+}
+.skill-catalog-detail .skill-catalog-facts {
+  display: flex;
+  margin: 0;
+  flex-direction: column;
+  gap: 22px;
+  min-width: 0;
+}
+.skill-catalog-detail .skill-catalog-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 10px;
+  background: var(--detail-tone);
+  font-size: 12.5px;
+}
+.skill-catalog-detail .skill-catalog-section {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+.skill-catalog-detail .skill-catalog-section > h2 {
+  margin: 0 0 10px;
+  font-family: inherit;
+  color: var(--detail-muted);
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.skill-catalog-detail .skill-catalog-well {
+  padding: 22px 24px;
+  border-radius: calc(16px * var(--detail-radius-scale));
+  background: var(--detail-tone);
+}
+.skill-catalog-detail .skill-catalog-well:has(> button) {
+  padding-bottom: 16px;
+}
+.skill-catalog-detail
+  .skill-catalog-well[data-clamped="true"]
+  .skill-catalog-well-body:not(:focus-within) {
+  max-height: var(--skill-readme-clamp);
+  overflow: hidden;
+  mask-image: linear-gradient(black 62%, transparent 100%);
+}
+.skill-catalog-detail .skill-catalog-well > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 10px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--detail-muted);
+  font: inherit;
+  font-size: 13.5px;
+}
+.skill-catalog-detail .skill-catalog-well > button:hover {
+  color: var(--detail-strong);
+}
+.skill-catalog-page .skill-catalog-more {
+  min-width: 0;
+  color: var(--detail-muted, var(--ink-soft));
+  font-size: 13.5px;
+}
+.skill-catalog-page .skill-catalog-more > summary {
+  width: fit-content;
+  cursor: pointer;
+}
+.skill-catalog-page .skill-catalog-more[open] > summary {
+  margin-bottom: 16px;
+}
+.skill-catalog-page .skill-catalog-more[open] > :not(summary) + :not(summary) {
+  margin-top: 22px;
+}
+.skill-catalog-detail .skill-catalog-secondary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.skill-catalog-detail .skill-catalog-secondary-actions .skill-sidebar-actions {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.skill-catalog-page .skill-catalog-contents .tab-card {
+  width: 100%;
+  min-width: 0;
+}
+.skill-catalog-page .skill-catalog-contents .tab-header {
+  display: flex;
+  overflow-x: auto;
+}
+.skill-catalog-detail .catalog-detail__fact:has(.downloads-metric-label-row) dt,
+.skill-catalog-detail .catalog-detail__fact:has(.downloads-metric-label-row) dd {
+  display: block;
+}
+.skill-catalog-detail .skill-catalog-markdown {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  margin: 0;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--detail-text);
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
+  overflow-wrap: anywhere;
+}
+.skill-catalog-detail .skill-catalog-markdown :is(h1, h2, h3, h4, h5, h6) {
+  font-family: inherit;
+  color: inherit;
+  scroll-margin-top: 80px;
+}
+.skill-catalog-detail .skill-catalog-markdown h1 {
+  margin: 1.6em 0 0.6em;
+  padding-bottom: 0.35em;
+  border-bottom: 1px solid var(--line);
+  font-size: 1.65em;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.25;
+  text-wrap: balance;
+}
+.skill-catalog-detail .skill-catalog-markdown h2 {
+  margin: 1.4em 0 0.5em;
+  padding-bottom: 0.25em;
+  border-bottom: 1px solid var(--line);
+  font-size: 1.35em;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+  text-wrap: balance;
+}
+.skill-catalog-detail .skill-catalog-markdown h3 {
+  margin: 1.2em 0 0.4em;
+  font-size: 1.15em;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+  text-wrap: balance;
+}
+.skill-catalog-detail .skill-catalog-markdown :is(h4, h5, h6) {
+  margin: 1em 0 0.35em;
+  color: var(--detail-strong);
+  font-size: 1em;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.skill-catalog-detail .skill-catalog-markdown > :is(h1, h2, h3, h4, h5, h6):first-child {
+  margin-top: 0;
+}
+.skill-catalog-detail .skill-catalog-markdown :is(p, ul, ol, blockquote, table, details) {
+  margin: 0;
+}
+.skill-catalog-detail .skill-catalog-markdown p + :is(p, ul, ol, pre, blockquote, table, details) {
+  margin-top: 0.75em;
+}
+.skill-catalog-detail .skill-catalog-markdown :is(ul, ol) {
+  padding-inline-start: 1.6em;
+}
+.skill-catalog-detail .skill-catalog-markdown li {
+  padding: 0;
+  margin: 0;
+}
+.skill-catalog-detail .skill-catalog-markdown li + li {
+  margin-top: 0.3em;
+}
+.skill-catalog-detail .skill-catalog-markdown li > :is(p, ul, ol) {
+  margin-top: 0.25em;
+}
+.skill-catalog-detail .skill-catalog-markdown strong {
+  color: var(--detail-strong);
+  font-weight: 600;
+}
+.skill-catalog-detail .skill-catalog-markdown code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+}
+.skill-catalog-detail .skill-catalog-markdown :not(pre) > code {
+  padding: 0.15em 0.4em;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--detail-tone);
+  white-space: pre-wrap;
+}
+.skill-catalog-detail .skill-catalog-markdown blockquote {
+  margin-top: 0.75em;
+  padding: 8px 14px;
+  border-inline-start: 3px solid var(--line);
+  background: color-mix(in srgb, currentColor 3%, transparent);
+  color: var(--detail-muted);
+}
+.skill-catalog-detail .skill-catalog-markdown table {
+  display: block;
+  width: 100%;
+  margin-top: 0.75em;
+  overflow-x: auto;
+  border-collapse: collapse;
+  border-spacing: 0;
+  border: 0;
+  border-radius: 0;
+  font-size: 13px;
+}
+.skill-catalog-detail .skill-catalog-markdown :is(th, td) {
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  text-align: start;
+  vertical-align: top;
+}
+.skill-catalog-detail .skill-catalog-markdown th {
+  color: var(--detail-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.skill-catalog-detail .skill-catalog-markdown img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: 420px;
+  margin-top: 0.75em;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  object-fit: contain;
+}
+@container (max-width:768px) {
+  .skill-catalog-detail .skill-catalog-facts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px 16px;
+  }
+  .skill-catalog-detail
+    .skill-catalog-facts
+    > :has(.skill-catalog-chip, a, .metric-trend-value-row, .downloads-metric-label-row) {
+    grid-column: 1/-1;
+  }
+}
+@container (max-width:560px) {
+  .skill-catalog-detail .catalog-detail__hero {
+    flex-wrap: nowrap;
+    align-items: center;
+  }
+  .skill-catalog-detail .catalog-detail__actions {
+    flex: none;
+  }
+  .skill-catalog-detail .catalog-detail__actions .skill-catalog-add {
+    width: auto;
+    height: 38px;
+    min-height: 38px;
+    padding: 0 14px;
+  }
+  .skill-catalog-detail .skill-catalog-byline,
+  .skill-catalog-detail .skill-catalog-byline > a {
+    flex-wrap: nowrap;
+  }
+  .skill-catalog-detail .skill-catalog-byline :is(span, strong):not(.official-badge) {
+    flex: 0 1000 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .skill-catalog-detail .skill-catalog-byline .skill-catalog-owner-name {
+    flex-shrink: 1;
+  }
+  .skill-catalog-detail .skill-catalog-well {
+    padding: 16px;
+  }
+  .skill-catalog-detail .skill-catalog-well > button {
+    margin: 2px 0 -8px;
+    padding: 8px 14px 8px 0;
+  }
+}
+
+/* The website's files, versions and related listings remain accessible without
+   pushing the catalog rail below the package controls on a phone. */
+.skill-catalog-page > .skill-catalog-contents {
+  width: 100%;
+  max-width: 1088px;
+  margin: 32px auto 0;
+}

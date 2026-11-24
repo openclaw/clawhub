@@ -29,9 +29,9 @@ import { clearAuthError } from "../lib/useAuthError";
 import { useAuthStatus } from "../lib/useAuthStatus";
 import { useDeferredSkillActivityTrend } from "../lib/useDeferredActivityTrend";
 import { DetailBody, DetailPageShell } from "./DetailPageShell";
-import { DetailSecuritySummary } from "./DetailSecuritySummary";
 import { GenericNotFoundPage } from "./GenericNotFoundPage";
 import { SkillDetailSkeleton } from "./skeletons/SkillDetailSkeleton";
+import { SkillCatalogOverview } from "./SkillCatalogOverview";
 import { SkillDetailPageView } from "./SkillDetailPageView";
 import { SkillDetailTabs } from "./SkillDetailTabs";
 import {
@@ -817,18 +817,6 @@ export function SkillDetailPage({
     return <GenericNotFoundPage />;
   }
 
-  const githubScanStatus =
-    !latestVersion && (displayedSkill as GitHubBackedSkillFields).installKind === "github"
-      ? (displayedSkill as GitHubBackedSkillFields).githubScanStatus
-      : null;
-  const securitySummary =
-    latestVersion || githubScanStatus ? (
-      <DetailSecuritySummary
-        auditHref={buildSkillSecurityAuditHref(ownerParam ?? ownerHandle ?? "unknown", skill.slug)}
-        llmAnalysis={latestVersion?.llmAnalysis ?? null}
-        githubScanStatus={githubScanStatus}
-      />
-    ) : null;
   const staffVisibilityAlert = staffModerationNote ? (
     <p className="skill-visibility-alert" role="status">
       <TriangleAlert size={14} aria-hidden="true" />
@@ -931,7 +919,21 @@ export function SkillDetailPage({
       category={relatedCategory}
       categories={relatedCategories}
       staffVisibilityAlert={staffVisibilityAlert}
-      securityAuditSummary={securitySummary}
+      securityAuditHref={
+        latestVersion || githubBackedFields?.githubScanStatus
+          ? buildSkillSecurityAuditHref(ownerParam ?? ownerHandle ?? "unknown", skill.slug)
+          : undefined
+      }
+      overview={
+        <SkillCatalogOverview
+          card={isPendingPublication ? null : displayedSkillCard}
+          changelog={latestVersion?.changelog}
+          version={latestVersion?.version}
+          slug={skill.slug}
+          ownerHandle={ownerHandle}
+          resolveHref={readmeHrefResolver}
+        />
+      }
       activityTrend={activityTrend}
       newVersionHref={newVersionHref}
       settingsHref={settingsHref}

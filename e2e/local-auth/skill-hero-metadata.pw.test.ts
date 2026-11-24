@@ -77,7 +77,8 @@ test("owner metadata save persists categories and topics after reload", async ({
 
   await page.goto(detailHref, { waitUntil: "domcontentloaded" });
   await waitForHydration(page);
-  const metadata = page.getByLabel("Skill metadata");
+  await page.getByText("Package contents", { exact: true }).click();
+  const metadata = page.getByLabel("Skill taxonomy");
   const persisted = expect.configure({ soft: true });
   await persisted
     .poll(async () => (await metadata.locator(".skill-category-meta-link").allInnerTexts()).sort())

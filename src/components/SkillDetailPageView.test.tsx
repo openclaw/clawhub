@@ -34,7 +34,7 @@ describe("SkillDetailPageView", () => {
   });
 
   it.each([false, true])(
-    "places exactly one command card in the desktop rail/mobile fallback (%s)",
+    "opens exactly one command card from the hero on desktop and mobile (%s)",
     (mobile) => {
       vi.stubGlobal("matchMedia", () => ({
         matches: mobile,
@@ -46,10 +46,9 @@ describe("SkillDetailPageView", () => {
           <SkillDetailPageView {...makeMinimalProps()} />
         </TooltipProvider>,
       );
+      fireEvent.click(screen.getByRole("button", { name: "Install options" }));
       const card = screen.getByRole("article", { name: "Install" });
-      expect(
-        card.closest(mobile ? ".detail-mobile-install" : ".skill-hero-sidebar"),
-      ).not.toBeNull();
+      expect(card.closest('[role="dialog"]')).toBeTruthy();
       expect(document.querySelectorAll(".skill-install-command-card")).toHaveLength(1);
     },
   );
@@ -60,10 +59,11 @@ describe("SkillDetailPageView", () => {
         <SkillDetailPageView {...makeInstallableProps()} />
       </TooltipProvider>,
     );
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
     fireEvent.click(screen.getByRole("button", { name: "Desktop" }));
     const link = screen.getByRole("link", { name: "Install in OpenClaw" });
     expect(link.getAttribute("href")).toBe("openclaw://skills/install?name=%40publisher%2Fdemo");
-    expect(link.closest(".skill-hero-sidebar")).not.toBeNull();
+    expect(link.closest('[role="dialog"]')).not.toBeNull();
     expect(link.closest(".skill-install-command-card")).not.toBeNull();
     expect(link.querySelector("svg")).toBeNull();
   });
@@ -100,6 +100,10 @@ describe("SkillDetailPageView", () => {
         <SkillDetailPageView {...makeInstallableProps()} {...overrides} />
       </TooltipProvider>,
     );
+    expect(screen.queryByRole("button", { name: "Add" })).toBeNull();
+    const options = screen.queryByRole("button", { name: "Install options" });
+    if (options) fireEvent.click(options);
+    expect(screen.queryByRole("button", { name: "Desktop" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Install in OpenClaw" })).toBeNull();
   });
 
@@ -110,6 +114,10 @@ describe("SkillDetailPageView", () => {
         <SkillDetailPageView {...props} skill={{ ...props.skill, installKind: "github" }} />
       </TooltipProvider>,
     );
+    expect(screen.queryByRole("button", { name: "Add" })).toBeNull();
+    const options = screen.queryByRole("button", { name: "Install options" });
+    if (options) fireEvent.click(options);
+    expect(screen.queryByRole("button", { name: "Desktop" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Install in OpenClaw" })).toBeNull();
   });
 
@@ -163,10 +171,10 @@ describe("SkillDetailPageView", () => {
     expect(screen.getByRole("heading", { name: "Demo Skill" })).toBeTruthy();
     expect(screen.getByText("Source install")).toBeTruthy();
     expect(screen.getByText("Source tabs")).toBeTruthy();
-    expect(screen.getAllByText("Source provenance")).toHaveLength(2);
+    expect(screen.getAllByText("Source provenance")).toHaveLength(1);
   });
 
-  it("omits the fallback title icon and renders source metadata before taxonomy", () => {
+  it("renders the book fallback and keeps source metadata before taxonomy", () => {
     const { container } = render(
       <TooltipProvider>
         <SkillDetailPageView
@@ -177,7 +185,7 @@ describe("SkillDetailPageView", () => {
       </TooltipProvider>,
     );
 
-    expect(container.querySelector(".marketplace-icon")).toBeNull();
+    expect(container.querySelector(".catalog-detail__icon .lucide-book-open-text")).toBeTruthy();
     const taxonomy = container.querySelector(".skill-hero-taxonomy-row");
     expect(taxonomy).toBeTruthy();
     expect(taxonomy?.textContent).toContain("Synced from skills.sh");
@@ -185,10 +193,30 @@ describe("SkillDetailPageView", () => {
     expect(taxonomy?.querySelector(".skill-hero-taxonomy-separator")).toBeTruthy();
   });
 
+  it("uses a publisher image only if the registry would admit it as skill artwork", () => {
+    const hosted = "/api/v1/skill-icons/" + "b".repeat(64);
+    const props = makeMinimalProps();
+    const owner = { ...props.owner!, image: "https://avatars.githubusercontent.com/u/1" };
+    const { container, rerender } = render(
+      <TooltipProvider>
+        <SkillDetailPageView {...props} owner={owner} />
+      </TooltipProvider>,
+    );
+    expect(container.querySelector(".skill-catalog-tile img")).toBeNull();
+    rerender(
+      <TooltipProvider>
+        <SkillDetailPageView {...props} owner={{ ...owner, image: hosted }} />
+      </TooltipProvider>,
+    );
+    expect(container.querySelector(".skill-catalog-tile--profile img")?.getAttribute("src")).toBe(
+      hosted,
+    );
+  });
+
   it.each([
     ["legacy", "brain"],
     ["hosted", `/api/v1/skill-icons/${"a".repeat(64)}`],
-  ])("omits the title icon for %s skill icon data", (_kind, icon) => {
+  ])("uses only content-addressed artwork for %s skill icon data", (_kind, icon) => {
     const { container } = render(
       <TooltipProvider>
         <SkillDetailPageView
@@ -202,7 +230,9 @@ describe("SkillDetailPageView", () => {
       </TooltipProvider>,
     );
 
-    expect(container.querySelector(".skill-hero-title-row .marketplace-icon")).toBeNull();
+    const image = container.querySelector(".catalog-detail__icon img");
+    if (_kind === "hosted") expect(image?.getAttribute("src")).toBe(icon);
+    else expect(image).toBeNull();
     expect(container.querySelector(".skill-hero-taxonomy-row .skill-category-icon")).toBeTruthy();
   });
 });

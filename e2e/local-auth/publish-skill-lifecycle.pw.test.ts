@@ -147,15 +147,15 @@ async function expectHealthyPublishPage(page: Page, errors: string[]) {
 
 async function expectCurrentVersion(page: Page, version: string) {
   const detailUrl = page.url().split("#", 1)[0];
-  const expectedVersion = `v${version}`;
+  const expectedVersion = version;
 
   await expect
     .poll(
       async () => {
         await waitForHydration(page).catch(() => {});
-        const metadata = page.locator(".detail-sidebar-stats .sidebar-metadata");
+        const metadata = page.getByRole("group", { name: "Skill metadata" });
         const text = await metadata.innerText({ timeout: 3_000 }).catch(() => "");
-        if (text.includes("Current version") && text.includes(expectedVersion)) {
+        if (text.includes("Version") && text.includes(expectedVersion)) {
           return expectedVersion;
         }
         await page.goto(detailUrl, { waitUntil: "domcontentloaded" }).catch(() => {});
@@ -464,7 +464,9 @@ test("owner sees failed publication checks while the version stays private", asy
   expect(await publicSkillVersionExists(request, { ownerHandle, slug, version })).toBe(false);
   await page.goto(`/${ownerHandle}/${slug}`, { waitUntil: "domcontentloaded" });
   await waitForHydration(page);
-  await expect(page.locator("h1.skill-page-title")).toHaveText("Local Owner Publication Failure");
+  await expect(page.locator(".catalog-detail__title-row h1")).toHaveText(
+    "Local Owner Publication Failure",
+  );
   await capturePublicationState(page, testInfo, "owner-checks-failed", "Publication checks failed");
   await expect(page.getByText("Publication checks failed", { exact: true })).toBeVisible();
   await expect(page.getByText(/not yet public or installable/i)).toBeVisible();
@@ -544,7 +546,7 @@ test.describe("owner publication progress after a clean public release", () => {
       expect(await publicSkillVersionExists(request, { ownerHandle, slug, version })).toBe(false);
       await page.goto(`/${ownerHandle}/${slug}`, { waitUntil: "domcontentloaded" });
       await waitForHydration(page);
-      await expect(page.locator("h1.skill-page-title")).toHaveText(displayName);
+      await expect(page.locator(".catalog-detail__title-row h1")).toHaveText(displayName);
       await capturePublicationState(
         page,
         testInfo,
@@ -766,11 +768,14 @@ test("clean skill publish stays private until TruffleHog and ClawScan pass", asy
 
   await page.goto(`/${ownerHandle}/${slug}`, { waitUntil: "domcontentloaded" });
   await waitForHydration(page);
-  await expect(page.locator("h1.skill-page-title", { hasText: displayName })).toBeVisible({
-    timeout: 30_000,
-  });
+  await expect(page.locator(".catalog-detail__title-row h1", { hasText: displayName })).toBeVisible(
+    {
+      timeout: 30_000,
+    },
+  );
   await expect(page.getByText("Pending publication", { exact: true })).toBeVisible();
   await expect(page.getByText(/not yet public or installable/i)).toBeVisible();
+  await page.getByText("Package contents", { exact: true }).click();
   await expect(page.getByText("Files pending security checks")).toBeVisible();
   await expect(page.getByRole("article", { name: "Install" })).toHaveCount(0);
   await page.screenshot({
@@ -793,9 +798,11 @@ test("clean skill publish stays private until TruffleHog and ClawScan pass", asy
 
   await page.goto(`/${ownerHandle}/${slug}`, { waitUntil: "domcontentloaded" });
   await waitForHydration(page);
-  await expect(page.locator("h1.skill-page-title", { hasText: displayName })).toBeVisible({
-    timeout: 30_000,
-  });
+  await expect(page.locator(".catalog-detail__title-row h1", { hasText: displayName })).toBeVisible(
+    {
+      timeout: 30_000,
+    },
+  );
   await expectCurrentVersion(page, version);
   await expectHealthyPublishPage(page, errors);
 });
@@ -932,9 +939,11 @@ test("suspicious ClawScan verdict publishes the skill with review metadata", asy
 
   await page.goto(`/${ownerHandle}/${slug}`, { waitUntil: "domcontentloaded" });
   await waitForHydration(page);
-  await expect(page.locator("h1.skill-page-title", { hasText: displayName })).toBeVisible({
-    timeout: 30_000,
-  });
+  await expect(page.locator(".catalog-detail__title-row h1", { hasText: displayName })).toBeVisible(
+    {
+      timeout: 30_000,
+    },
+  );
   await expectHealthyPublishPage(page, errors);
 });
 
@@ -993,6 +1002,7 @@ test("skill publishers can create a skill and publish a new version", async ({
   });
 
   await expectCurrentVersion(page, "1.0.1");
+  await page.getByText("Package contents", { exact: true }).click();
   await page.getByRole("tab", { name: "Files" }).click();
   await expect(page.getByRole("button", { name: /main\.tf/i })).toBeVisible();
   await expect(page.getByRole("button", { name: /terraform\.tfvars/i })).toBeVisible();

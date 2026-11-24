@@ -58,7 +58,7 @@ test("skill detail page has no horizontal overflow on mobile", async ({ page, re
   const slug = payload.skill.slug;
 
   await page.goto(buildSkillDetailHref(ownerHandle, slug), { waitUntil: "domcontentloaded" });
-  await expect(page.locator("h1.skill-page-title")).toHaveText(payload.skill.displayName);
+  await expect(page.locator(".catalog-detail__title-row h1")).toHaveText(payload.skill.displayName);
 
   const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
   const clientWidth = await page.evaluate(() => document.documentElement.clientWidth);
@@ -84,6 +84,7 @@ test("archive detail tabs can be selected on mobile", async ({ page, request }) 
     payload.latestVersion,
     "mobile archive tabs require an archived skill fixture",
   ).toBeTruthy();
+  await page.getByText("Package contents", { exact: true }).click();
   const tabs = page.getByRole("tablist", { name: "Skill detail tabs" });
   for (const tabName of ["SKILL.md", "Files", "Versions"]) {
     const tab = tabs.getByRole("tab", { name: tabName, exact: true });
