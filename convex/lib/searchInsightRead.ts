@@ -12,6 +12,25 @@ import {
   type SearchCurrentResult,
 } from "./searchInsights";
 
+// A production daily fact is about 350 bytes, so one page stays far below a
+// single query's read and return limits while needing few round trips. The
+// row budget bounds the action's memory: every distinct query in the window
+// is held until ranking, at roughly 500 bytes each.
+const SEARCH_DAILY_SCAN_PAGE_ROWS = 4_000;
+const SEARCH_DAILY_SCAN_PAGE_BYTES = 4_000_000;
+export const SEARCH_DAILY_SCAN_MAX_ROWS = 400_000;
+// A byte-limited page can be short. This bound only stops a scan that makes
+// no progress; the row budget is the limit that callers observe.
+const SEARCH_DAILY_SCAN_MAX_PAGES = (4 * SEARCH_DAILY_SCAN_MAX_ROWS) / SEARCH_DAILY_SCAN_PAGE_ROWS;
+
+/** The selected window holds more daily facts than one report may read. */
+export class SearchScanBudgetError extends Error {
+  constructor() {
+    super("Search aggregate scan budget exceeded; narrow the source filter");
+    this.name = "SearchScanBudgetError";
+  }
+}
+
 export async function readReport(
   ctx: Pick<ActionCtx, "runQuery" | "runAction">,
   args: SearchInsightArgs,
@@ -37,9 +56,9 @@ export async function readReport(
   };
   const facts = new Map<string, SearchInsightRow>();
   let cursor: string | null = null;
+  let scannedRows = 0;
   for (let batch = 0; ; batch++) {
-    if (batch >= 200)
-      throw new Error("Search aggregate scan budget exceeded; narrow the source filter");
+    if (batch >= SEARCH_DAILY_SCAN_MAX_PAGES) throw new SearchScanBudgetError();
     const page: { page: Doc<"searchDailyAggregates">[]; isDone: boolean; continueCursor: string } =
       await ctx.runQuery(internal.searchInsights.listDailyInternal, {
         artifactKind,
@@ -48,11 +67,15 @@ export async function readReport(
         source: args.source,
         paginationOpts: {
           cursor,
-          numItems: 500,
-          maximumRowsRead: 500,
-          maximumBytesRead: 1_000_000,
+          numItems: SEARCH_DAILY_SCAN_PAGE_ROWS,
+          maximumRowsRead: SEARCH_DAILY_SCAN_PAGE_ROWS,
+          maximumBytesRead: SEARCH_DAILY_SCAN_PAGE_BYTES,
         },
       });
+    // Count rows rather than pages so the limit does not depend on page size.
+    // Exceeding it fails the whole report: partial facts would understate demand.
+    scannedRows += page.page.length;
+    if (scannedRows > SEARCH_DAILY_SCAN_MAX_ROWS) throw new SearchScanBudgetError();
     for (const daily of page.page) {
       const scope = daily.scope ?? "legacy";
       if (args.scope && args.scope !== scope) continue;

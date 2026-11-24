@@ -6,9 +6,10 @@ import { getFunctionName } from "convex/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { api, internal } from "./_generated/api";
+import { SEARCH_DAILY_SCAN_MAX_ROWS, SearchScanBudgetError } from "./lib/searchInsightRead";
 import { hashToken } from "./lib/tokens";
 import schema from "./schema";
-import { readCurrentResultsInternal } from "./searchInsights";
+import { getInternal, readCurrentResultsInternal } from "./searchInsights";
 
 const modules = import.meta.glob("./**/*.ts");
 const END = Date.UTC(2026, 8, 8);
@@ -644,4 +645,58 @@ describe("current search metadata batching", () => {
       await expect(handler(ctx, { queries, artifactKind })).rejects.toThrow("metadata unavailable");
     },
   );
+});
+
+describe("daily aggregate scan budget", () => {
+  const handler = getTestHandler<
+    { endDay: number; includeCurrentResults: false },
+    { totalQueries: number; totalSearches7d: number; sources7d: Record<string, number> }
+  >(getInternal);
+  // Serves a synthetic index range through the real pagination contract: the
+  // reader chooses the page size and the cursor is the next row offset.
+  const scan = (totalRows: number, queryOf: (row: number) => string) => {
+    const pages = vi.fn();
+    const dispatch = vi.fn(async (ref, args) => {
+      const name = getFunctionName(ref);
+      if (name !== "searchInsights:listDailyInternal") return null;
+      const start = Number(args.paginationOpts.cursor ?? 0);
+      const end = Math.min(totalRows, start + args.paginationOpts.numItems);
+      pages(end - start);
+      return {
+        page: Array.from({ length: end - start }, (_, offset) => ({
+          artifactKind: "plugin",
+          scope: "catalog",
+          source: (start + offset) % 2 ? "openclaw-control-ui" : "clawhub-web",
+          query: queryOf(start + offset),
+          dayStart: END - DAY,
+          searches: 1,
+          officialGaps: 0,
+          zeroResults: 0,
+        })),
+        isDone: end === totalRows,
+        continueCursor: String(end),
+      };
+    });
+    return { ctx: { runQuery: dispatch, runAction: dispatch }, pages };
+  };
+  it("reads a combined-source plugin window larger than 100,000 daily rows", async () => {
+    // Production reached about 173,000 plugin rows across both sources in 30 days.
+    const { ctx } = scan(173_000, (row) => `query ${Math.floor(row / 6)}`);
+    const report = await handler(ctx, { endDay: END, includeCurrentResults: false });
+    expect(report).toMatchObject({
+      totalQueries: Math.ceil(173_000 / 6),
+      totalSearches7d: 173_000,
+      sources7d: { "clawhub-web": 86_500, "openclaw-control-ui": 86_500 },
+    });
+  });
+  it("fails explicitly instead of truncating a window beyond the row budget", async () => {
+    const { ctx, pages } = scan(SEARCH_DAILY_SCAN_MAX_ROWS + 1, () => "same query");
+    await expect(
+      handler(ctx, { endDay: END, includeCurrentResults: false }),
+    ).rejects.toBeInstanceOf(SearchScanBudgetError);
+    // The budget counts rows, so the reader stops at the first page past it
+    // however many rows each page carried.
+    const served = pages.mock.calls.reduce((rows, [count]) => rows + count, 0);
+    expect(served).toBe(SEARCH_DAILY_SCAN_MAX_ROWS + 1);
+  });
 });
