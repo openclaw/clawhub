@@ -1,0 +1,282 @@
+/* Plugin-only slots in Control UI's catalog-detail rail (ui/src/styles/plugins.css).
+   Header/body/grid widths, title and fact typography belong to CatalogDetailLayout. */
+.plugin-catalog-page .catalog-detail__icon .marketplace-icon {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: var(--detail-muted);
+  transform: none;
+  box-shadow: none;
+}
+.plugin-catalog-page .catalog-detail__icon .marketplace-icon-image-backed {
+  padding: 14px;
+}
+.plugin-catalog-page .catalog-detail__icon .marketplace-icon-image {
+  padding: 0;
+  background: transparent;
+  object-fit: contain;
+}
+/* Control UI insets official package artwork a further 10% inside the tile. */
+.plugin-catalog-page--official-art .catalog-detail__icon .marketplace-icon-image {
+  padding: 10%;
+}
+.plugin-catalog-page .catalog-detail__publisher .official-badge-icon-only {
+  flex: none;
+  color: light-dark(#1d4ed8, #60a5fa);
+  stroke-width: 1.75px;
+}
+.plugin-catalog-page .catalog-detail__icon .marketplace-icon-glyph {
+  width: 26px;
+  height: 26px;
+  stroke-width: 1.5px;
+}
+.plugin-catalog-page .catalog-detail__publisher strong {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--detail-strong);
+  font-weight: 550;
+}
+.plugin-catalog-page .catalog-detail__publisher a {
+  color: inherit;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  min-width: 24px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.plugin-catalog-page .catalog-detail__publisher a:hover {
+  color: var(--detail-text);
+  text-decoration: underline;
+}
+.plugin-catalog-page .catalog-detail__summary p {
+  margin: 0;
+}
+.plugin-catalog-page .plugin-catalog-action {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0 18px;
+  border: 1px solid var(--oc-border-subtle);
+  border-radius: calc(8px * var(--detail-radius-scale, 1));
+  background: var(--detail-card);
+  color: var(--detail-text);
+  font: 500 13.5px/normal var(--font-body);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.plugin-catalog-page .plugin-catalog-action:hover {
+  background: var(--detail-tone);
+}
+.plugin-catalog-page .plugin-catalog-action--primary {
+  background: var(--detail-primary);
+  color: white;
+  border-color: var(--detail-primary);
+  letter-spacing: -0.01em;
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--detail-primary) 8%, transparent);
+}
+.plugin-catalog-page .plugin-catalog-action--primary:not(:disabled):hover {
+  background: var(--accent-deep);
+  border-color: var(--accent-deep);
+}
+.plugin-catalog-page .plugin-catalog-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.plugin-catalog-page .plugin-catalog-action--icon {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  margin-inline-end: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--detail-muted);
+}
+.plugin-catalog-page .plugin-catalog-action--icon:hover {
+  background: var(--detail-tone);
+  color: var(--detail-strong);
+}
+.plugin-catalog-page
+  :is(
+    .plugin-catalog-action,
+    .plugin-catalog-repo,
+    .plugin-catalog-chips a,
+    .plugin-catalog-chips button
+  ):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.plugin-catalog-page .plugin-catalog-facts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 22px;
+}
+.plugin-catalog-page .plugin-catalog-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.plugin-catalog-page .plugin-catalog-chips :is(a, button) {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: calc(8px * var(--detail-radius-scale, 1));
+  background: var(--detail-tone);
+  color: var(--detail-text);
+  font-size: 12.5px;
+  font-weight: 400;
+  text-decoration: none;
+}
+.plugin-catalog-page .plugin-catalog-chips :is(a, button):hover {
+  text-decoration: underline;
+}
+.plugin-catalog-page .plugin-catalog-repo {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  max-width: 100%;
+  color: var(--detail-text);
+  text-decoration: none;
+}
+.plugin-catalog-page .plugin-catalog-repo svg {
+  flex: none;
+  color: color-mix(in srgb, var(--detail-text) 44%, transparent);
+}
+.plugin-catalog-page .plugin-catalog-repo svg:last-child {
+  color: color-mix(in srgb, var(--detail-text) 30%, transparent);
+}
+.plugin-catalog-page .plugin-catalog-repo__path {
+  display: flex;
+  min-width: 0;
+  white-space: nowrap;
+}
+.plugin-catalog-page .plugin-catalog-repo__path > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.plugin-catalog-page .plugin-catalog-repo__path > span:last-child {
+  flex-shrink: 0;
+  max-width: 100%;
+}
+.plugin-catalog-page .plugin-catalog-repo:hover .plugin-catalog-repo__path {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.plugin-package-dialog {
+  width: min(680px, calc(100vw - 32px));
+  max-height: 85dvh;
+  overflow: auto;
+}
+.plugin-install-dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-height: 85dvh;
+  overflow: auto;
+}
+.plugin-package-dialog .plugin-package-dialog__download {
+  width: fit-content;
+  color: var(--ink);
+  font-size: 13.5px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.plugin-package-dialog .plugin-package-dialog__tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+.plugin-package-dialog .plugin-package-dialog__tabs button {
+  padding: 4px 8px 8px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 550;
+}
+.plugin-package-dialog .plugin-package-dialog__tabs button[aria-selected="true"] {
+  color: var(--ink);
+  box-shadow: 0 2px 0 var(--accent);
+}
+.plugin-package-dialog [role="tabpanel"][hidden] {
+  display: none;
+}
+.plugin-catalog-loading [class^="plugin-catalog-loading__"],
+.plugin-catalog-loading .catalog-detail__icon {
+  display: block;
+  border-radius: 8px;
+  background: var(--detail-tone);
+}
+.plugin-catalog-loading .plugin-catalog-loading__crumb {
+  width: 180px;
+  height: 18px;
+}
+.plugin-catalog-loading .plugin-catalog-loading__title {
+  width: min(420px, 65%);
+  height: 28px;
+}
+.plugin-catalog-loading .plugin-catalog-loading__publisher {
+  width: min(220px, 100%);
+  height: 18px;
+  margin-top: 8px;
+}
+.plugin-catalog-loading .plugin-catalog-loading__card {
+  height: 90px;
+}
+.plugin-catalog-loading .plugin-catalog-loading__fact {
+  width: 72%;
+  height: 14px;
+}
+@container (max-width:768px) {
+  .plugin-catalog-page .plugin-catalog-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px 16px;
+  }
+  .plugin-catalog-page
+    .catalog-detail__fact:has(
+      .plugin-catalog-chips,
+      .plugin-catalog-repo,
+      a[href*="security-audit"]
+    ) {
+    grid-column: 1 / -1;
+  }
+}
+@container (max-width:560px) {
+  .plugin-catalog-page .plugin-catalog-action:not(.plugin-catalog-action--icon) {
+    height: 38px;
+    min-height: 38px;
+    padding: 0 14px;
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .plugin-catalog-page .plugin-catalog-repo {
+    margin-block: -7px;
+    padding-block: 7px;
+  }
+  .plugin-catalog-page .catalog-detail__publisher a {
+    margin-block: -6px;
+    padding-block: 6px;
+  }
+}
+@media (forced-colors: active) {
+  .plugin-package-dialog .plugin-package-dialog__tabs button[aria-selected="true"] {
+    text-decoration: underline;
+  }
+}
