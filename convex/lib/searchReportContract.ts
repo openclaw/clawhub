@@ -5,6 +5,9 @@ export const REPORT_VERSION = "search-report-v2" as const;
 export const REPORT_TTL_MS = SEARCH_DAY_MS;
 export const REPORT_CHUNK_BYTES = 256 * 1024;
 export const REPORT_MAX_CHUNKS = 8;
+// Terminal failure code for a selection whose daily facts exceed the scan budget.
+// Clients explain it differently: refreshing the same selection cannot succeed.
+export const REPORT_SCAN_BUDGET_EXCEEDED = "report_scan_budget_exceeded";
 export const reportRequest = v.object({
   view: v.union(v.literal("demand"), v.literal("recommendations")),
   artifactKind: searchInsightArgs.artifactKind,

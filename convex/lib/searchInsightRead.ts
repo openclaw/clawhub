@@ -8,9 +8,48 @@ import {
   type SearchInsightArgs,
   type SearchInsightReport,
   type SearchInsightRow,
+  type SearchScope,
   type SearchCurrentResults,
   type SearchCurrentResult,
 } from "./searchInsights";
+
+// A production daily fact is about 350 bytes, so one page stays far below a
+// single query's read and return limits while needing few round trips.
+const SEARCH_DAILY_SCAN_PAGE_ROWS = 4_000;
+const SEARCH_DAILY_SCAN_PAGE_BYTES = 4_000_000;
+// The row budget bounds how much one report reads. The query budget bounds
+// memory, which rows cannot: each row may introduce a new query, and every
+// distinct scoped query is held until ranking. At a measured 210 bytes per
+// QueryDemand, 120,000 queries use about 25 MB of the 64 MB action.
+export const SEARCH_DAILY_SCAN_MAX_ROWS = 400_000;
+export const SEARCH_DAILY_SCAN_MAX_QUERIES = 120_000;
+// A byte-limited page can be short. This bound only stops a scan that makes
+// no progress; the row budget is the limit that callers observe.
+const SEARCH_DAILY_SCAN_MAX_PAGES = (4 * SEARCH_DAILY_SCAN_MAX_ROWS) / SEARCH_DAILY_SCAN_PAGE_ROWS;
+
+// The counters kept for every distinct scoped query in the window. Production
+// holds tens of thousands at once, so this stays numeric: the full report row,
+// with its strings and nested objects, is built only for the returned shortlist.
+type QueryDemand = {
+  scope: SearchScope;
+  query: string;
+  searches7d: number;
+  searchesPrevious7d: number;
+  searches30d: number;
+  officialGaps7d: number;
+  officialGaps30d: number;
+  zeroResults7d: number;
+  web7d: number;
+  controlUi7d: number;
+};
+
+/** The selected window holds more daily facts or queries than one report may read. */
+export class SearchScanBudgetError extends Error {
+  constructor() {
+    super("Search aggregate scan budget exceeded; narrow the source filter");
+    this.name = "SearchScanBudgetError";
+  }
+}
 
 export async function readReport(
   ctx: Pick<ActionCtx, "runQuery" | "runAction">,
@@ -35,11 +74,13 @@ export async function readReport(
     start30d: endDay - 30 * SEARCH_DAY_MS,
     days,
   };
-  const facts = new Map<string, SearchInsightRow>();
+  // First-seen order: the stable ranking sort keeps it for equal-rank ties.
+  const demand: QueryDemand[] = [];
+  const byScope = new Map<SearchScope, Map<string, QueryDemand>>();
   let cursor: string | null = null;
+  let scannedRows = 0;
   for (let batch = 0; ; batch++) {
-    if (batch >= 200)
-      throw new Error("Search aggregate scan budget exceeded; narrow the source filter");
+    if (batch >= SEARCH_DAILY_SCAN_MAX_PAGES) throw new SearchScanBudgetError();
     const page: { page: Doc<"searchDailyAggregates">[]; isDone: boolean; continueCursor: string } =
       await ctx.runQuery(internal.searchInsights.listDailyInternal, {
         artifactKind,
@@ -48,48 +89,52 @@ export async function readReport(
         source: args.source,
         paginationOpts: {
           cursor,
-          numItems: 500,
-          maximumRowsRead: 500,
-          maximumBytesRead: 1_000_000,
+          numItems: SEARCH_DAILY_SCAN_PAGE_ROWS,
+          maximumRowsRead: SEARCH_DAILY_SCAN_PAGE_ROWS,
+          maximumBytesRead: SEARCH_DAILY_SCAN_PAGE_BYTES,
         },
       });
+    // Count rows rather than pages so the limit does not depend on page size.
+    // Exceeding it fails the whole report: partial facts would understate demand.
+    scannedRows += page.page.length;
+    if (scannedRows > SEARCH_DAILY_SCAN_MAX_ROWS) throw new SearchScanBudgetError();
     for (const daily of page.page) {
       const scope = daily.scope ?? "legacy";
       if (args.scope && args.scope !== scope) continue;
-      const key = JSON.stringify([scope, daily.query]);
-      const row = facts.get(key) ?? {
-        artifactKind,
-        scope,
-        query: daily.query,
-        searches7d: 0,
-        searchesPrevious7d: 0,
-        searches30d: 0,
-        officialGaps7d: 0,
-        officialGaps30d: 0,
-        zeroResults7d: 0,
-        change7d: 0,
-        changePercent: null,
-        sources7d: { "clawhub-web": 0, "openclaw-control-ui": 0 },
-        classification: null,
-        companyOpportunity: false,
-        currentResults: [],
-        featuredCandidate: null,
-        searchUrl: `/${artifactKind === "skill" ? "skills" : "plugins"}?q=${encodeURIComponent(daily.query)}`,
-      };
+      let scoped = byScope.get(scope);
+      if (!scoped) byScope.set(scope, (scoped = new Map()));
+      let row = scoped.get(daily.query);
+      if (!row) {
+        row = {
+          scope,
+          query: daily.query,
+          searches7d: 0,
+          searchesPrevious7d: 0,
+          searches30d: 0,
+          officialGaps7d: 0,
+          officialGaps30d: 0,
+          zeroResults7d: 0,
+          web7d: 0,
+          controlUi7d: 0,
+        };
+        scoped.set(daily.query, row);
+        demand.push(row);
+      }
       row.searches30d += daily.searches;
       row.officialGaps30d += daily.officialGaps;
       if (daily.dayStart >= window.start7d) {
         row.searches7d += daily.searches;
         row.officialGaps7d += daily.officialGaps;
         row.zeroResults7d += daily.zeroResults;
-        row.sources7d[daily.source] += daily.searches;
+        if (daily.source === "clawhub-web") row.web7d += daily.searches;
+        else row.controlUi7d += daily.searches;
       } else if (daily.dayStart >= window.startPrevious7d) row.searchesPrevious7d += daily.searches;
-      facts.set(key, row);
     }
+    if (demand.length > SEARCH_DAILY_SCAN_MAX_QUERIES) throw new SearchScanBudgetError();
     if (page.isDone) break;
     cursor = page.continueCursor;
   }
-  let rows = [...facts.values()].filter(
+  let counted = demand.filter(
     (row) =>
       (days === 7 ? row.searches7d : row.searches30d) > 0 ||
       (args.order === "change" && row.searchesPrevious7d > 0),
@@ -107,47 +152,38 @@ export async function readReport(
     for (const entry of batch)
       classifications.set(JSON.stringify([entry.scope ?? "legacy", entry.query]), entry);
   }
-  for (const row of rows) {
-    const entry = classifications.get(JSON.stringify([row.scope, row.query]));
-    if (entry) {
-      const { _id, _creationTime, expirationTime: _expirationTime, ...classification } = entry;
-      row.classification = classification;
-    }
-    row.companyOpportunity =
-      row.scope === "catalog" &&
-      (days === 7 ? row.officialGaps7d : row.officialGaps30d) >= 3 &&
-      row.classification?.intentKind === "company_product" &&
-      row.classification.confidence >= SEARCH_INTENT_CONFIDENCE;
-    row.change7d = row.searches7d - row.searchesPrevious7d;
-    row.changePercent = row.searchesPrevious7d
-      ? (100 * row.change7d) / row.searchesPrevious7d
-      : null;
-  }
-  rows = rows.filter(
+  const classify = (row: QueryDemand) =>
+    classifications.size ? classifications.get(JSON.stringify([row.scope, row.query])) : undefined;
+  const officialGaps = (row: QueryDemand) =>
+    days === 7 ? row.officialGaps7d : row.officialGaps30d;
+  const isCompanyOpportunity = (row: QueryDemand) => {
+    if (row.scope !== "catalog" || officialGaps(row) < 3) return false;
+    const entry = classify(row);
+    return entry?.intentKind === "company_product" && entry.confidence >= SEARCH_INTENT_CONFIDENCE;
+  };
+  counted = counted.filter(
     (row) =>
-      (!args.officialGap || (days === 7 ? row.officialGaps7d : row.officialGaps30d) > 0) &&
+      (!args.officialGap || officialGaps(row) > 0) &&
       (!args.intentKind ||
         (args.intentKind === "company_product"
-          ? row.companyOpportunity
-          : row.classification?.intentKind === args.intentKind)),
+          ? isCompanyOpportunity(row)
+          : classify(row)?.intentKind === args.intentKind)),
   );
-  const rank = (row: SearchInsightRow) =>
+  const rank = (row: QueryDemand) =>
     args.order === "change"
-      ? Math.abs(row.change7d)
+      ? Math.abs(row.searches7d - row.searchesPrevious7d)
       : args.order === "official-gaps"
-        ? days === 7
-          ? row.officialGaps7d
-          : row.officialGaps30d
+        ? officialGaps(row)
         : days === 7
           ? row.searches7d
           : row.searches30d;
-  rows.sort((a, b) => rank(b) - rank(a) || (a.query < b.query ? -1 : a.query > b.query ? 1 : 0));
+  counted.sort((a, b) => rank(b) - rank(a) || (a.query < b.query ? -1 : a.query > b.query ? 1 : 0));
   const sources7d = { "clawhub-web": 0, "openclaw-control-ui": 0 };
   let totalSearches7d = 0;
-  for (const row of rows) {
+  for (const row of counted) {
     totalSearches7d += row.searches7d;
-    sources7d["clawhub-web"] += row.sources7d["clawhub-web"];
-    sources7d["openclaw-control-ui"] += row.sources7d["openclaw-control-ui"];
+    sources7d["clawhub-web"] += row.web7d;
+    sources7d["openclaw-control-ui"] += row.controlUi7d;
   }
   const run = classificationRun
     ? {
@@ -169,7 +205,34 @@ export async function readReport(
           classificationRun.classifiedCount < classificationRun.expectedQualified
         ? "partial"
         : "available";
-  const selected = rows.slice(0, limit);
+  const selected = counted.slice(0, limit).map((row): SearchInsightRow => {
+    const entry = classify(row);
+    let classification: SearchInsightRow["classification"] = null;
+    if (entry) {
+      const { _id, _creationTime, expirationTime: _expirationTime, ...rest } = entry;
+      classification = rest;
+    }
+    const change7d = row.searches7d - row.searchesPrevious7d;
+    return {
+      artifactKind,
+      scope: row.scope,
+      query: row.query,
+      searches7d: row.searches7d,
+      searchesPrevious7d: row.searchesPrevious7d,
+      searches30d: row.searches30d,
+      officialGaps7d: row.officialGaps7d,
+      officialGaps30d: row.officialGaps30d,
+      zeroResults7d: row.zeroResults7d,
+      change7d,
+      changePercent: row.searchesPrevious7d ? (100 * change7d) / row.searchesPrevious7d : null,
+      sources7d: { "clawhub-web": row.web7d, "openclaw-control-ui": row.controlUi7d },
+      classification,
+      companyOpportunity: isCompanyOpportunity(row),
+      currentResults: [],
+      featuredCandidate: null,
+      searchUrl: `/${artifactKind === "skill" ? "skills" : "plugins"}?q=${encodeURIComponent(row.query)}`,
+    };
+  });
   let metadataCheckedAt: number | null = null;
   if (args.includeCurrentResults !== false && selected.length) {
     try {
@@ -210,13 +273,13 @@ export async function readReport(
     currentMetadataStatus: metadataCheckedAt === null ? "unavailable" : "available",
     totalSearches7d,
     sources7d,
-    truncated: rows.length > limit,
+    truncated: counted.length > limit,
     classificationStatus,
     classificationRun: run,
     window,
     source: args.source ?? null,
     generatedAt: Date.now(),
-    totalQueries: rows.length,
+    totalQueries: counted.length,
     rows: selected,
   };
 }

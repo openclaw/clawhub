@@ -13,6 +13,7 @@ import {
   getPackagePublishAttemptStatusInternal,
   recordSkillPublishAttemptFinalizedInternal,
   releasePackagePublishAttemptFinalizationClaimInternal,
+  releasePrePublicationChecksClaimInternal,
   releaseSkillPublishAttemptFinalizationClaimInternal,
 } from "./publishAttempts";
 
@@ -24,6 +25,9 @@ const claimReadyFinalizationHandler = getTestHandler<unknown>(
   claimReadyPublishAttemptFinalizationRetryInternal,
 );
 const claimPrePublicationChecksHandler = getTestHandler<unknown>(claimPrePublicationChecks);
+const releasePrePublicationChecksClaimHandler = getTestHandler<unknown>(
+  releasePrePublicationChecksClaimInternal,
+);
 const releaseSkillFinalizationHandler = getTestHandler<unknown>(
   releaseSkillPublishAttemptFinalizationClaimInternal,
 );
@@ -1148,6 +1152,87 @@ describe("publishAttempts", () => {
     );
     const patch = ctx.db.patch.mock.calls[0]?.[1] as { checkClaimExpiresAt: number };
     expect(patch.checkClaimExpiresAt).toBeGreaterThan(now);
+  });
+
+  describe("stalled check retries", () => {
+    function enableDispatch() {
+      vi.stubEnv("SECURITY_SCAN_EVENT_DISPATCH_ENABLED", "1");
+      vi.stubEnv("GITHUB_APP_ID", "configured");
+      vi.stubEnv("GITHUB_APP_INSTALLATION_ID", "configured");
+      vi.stubEnv("GITHUB_APP_PRIVATE_KEY", "configured");
+    }
+    function claimedCtx(now: number, overrides: Record<string, unknown> = {}) {
+      return {
+        db: {
+          ...createMockDb(),
+          get: vi.fn(async () => ({
+            _id: "publishAttempts:demo",
+            kind: "package",
+            status: "pending_checks",
+            artifactFingerprint: "fingerprint",
+            checkClaimId: "checks:claim",
+            checkClaimExpiresAt: now + 70 * 60_000,
+            checkFailureCount: 1,
+            checks: { trufflehog: { status: "pending" }, clawscan: { status: "pending" } },
+            ...overrides,
+          })),
+        },
+        scheduler: { runAfter: vi.fn(async () => "_scheduled_functions:1") },
+        storage: { delete: vi.fn() },
+      };
+    }
+
+    it("dispatches a targeted retry after the backoff instead of waiting for a sweep", async () => {
+      enableDispatch();
+      const ctx = claimedCtx(Date.now());
+      await completePendingChecksHandler(ctx, {
+        attemptId: "publishAttempts:demo",
+        claimId: "checks:claim",
+        artifactFingerprint: "fingerprint",
+        trufflehog: { status: "failed", summary: "scanner unavailable" },
+        clawscan: { status: "failed", summary: "scanner unavailable" },
+      });
+      expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(5 * 60_000, expect.anything(), {
+        attemptId: "publishAttempts:demo",
+        retryCount: 0,
+      });
+      vi.unstubAllEnvs();
+    });
+
+    it("releases an exact claim into backoff without counting a scanner failure", async () => {
+      enableDispatch();
+      const now = Date.now();
+      const ctx = claimedCtx(now);
+      await expect(
+        releasePrePublicationChecksClaimHandler(ctx, {
+          attemptId: "publishAttempts:demo",
+          claimId: "checks:claim",
+        }),
+      ).resolves.toEqual({ released: true });
+      const patch = ctx.db.patch.mock.calls[0]?.[1] as Record<string, unknown>;
+      expect(patch.checkClaimExpiresAt).toBeLessThanOrEqual(Date.now() + 5 * 60_000);
+      expect(patch).not.toHaveProperty("checkFailureCount");
+      expect(patch).not.toHaveProperty("status");
+      expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(5 * 60_000, expect.anything(), {
+        attemptId: "publishAttempts:demo",
+        retryCount: 0,
+      });
+      vi.unstubAllEnvs();
+    });
+
+    it("ignores a release from a worker that no longer owns the claim", async () => {
+      enableDispatch();
+      const ctx = claimedCtx(Date.now(), { checkClaimId: "checks:newer" });
+      await expect(
+        releasePrePublicationChecksClaimHandler(ctx, {
+          attemptId: "publishAttempts:demo",
+          claimId: "checks:claim",
+        }),
+      ).resolves.toEqual({ released: false });
+      expect(ctx.db.patch).not.toHaveBeenCalled();
+      expect(ctx.scheduler.runAfter).not.toHaveBeenCalled();
+      vi.unstubAllEnvs();
+    });
   });
 
   it("terminalizes an attempt after three consecutive scanner execution failures", async () => {
