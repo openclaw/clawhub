@@ -748,6 +748,31 @@ describe("connecting and disconnecting an app", () => {
     });
   });
 
+  it("keeps a sign-in pending when Composio cannot remove it on cancel", async () => {
+    const { asAda } = await fixture();
+    await asAda.action(api.connections.startConnect, { app: "granola" });
+    // The sign-in completed after the page last checked.
+    const account = [...composio.accounts.values()][0];
+    if (!account) throw new Error("missing sign-in account");
+    account.status = "ACTIVE";
+    composio.setOutage(503);
+
+    await expect(asAda.action(api.connections.cancelConnect, { app: "granola" })).rejects.toThrow(
+      "The connection service is not responding.",
+    );
+    expect((await asAda.query(api.connections.getMine, {}))?.apps[0]?.status).toBe("pending");
+
+    composio.setOutage(null);
+    expect(await asAda.action(api.connections.cancelConnect, { app: "granola" })).toEqual({
+      status: "disconnected",
+    });
+    // The completed account is gone, so a later check cannot reconnect it.
+    expect(composio.accounts.size).toBe(0);
+    expect(await asAda.action(api.connections.verify, { app: "granola" })).toEqual({
+      status: "disconnected",
+    });
+  });
+
   it("notices a connection that was revoked elsewhere and narrows sessions", async () => {
     const context = await fixture();
     const { t, asAda } = context;

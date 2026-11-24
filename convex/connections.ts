@@ -348,7 +348,10 @@ export const verify = action({
   },
 });
 
-/** Abandons the caller's pending sign-in. */
+/**
+ * Abandons the caller's pending sign-in. A Composio failure leaves it pending,
+ * so a cancel is never reported that did not remove the account.
+ */
 export const cancelConnect = action({
   args: { app: v.string() },
   handler: async (ctx, args): Promise<{ status: ConnectionStatus }> => {
@@ -362,7 +365,10 @@ export const cancelConnect = action({
     if (row?.status !== "pending") return { status: row?.status ?? "disconnected" };
     const pendingAccountId = row.connectedAccountId;
     if (pendingAccountId) {
-      await bestEffort(() => deleteComposioConnectedAccount(client, pendingAccountId));
+      // The sign-in may have completed since the page last checked. Removal
+      // must succeed before the cancel is recorded; otherwise the account
+      // would be found active on the next check and silently reconnect.
+      await withComposio(() => deleteComposioConnectedAccount(client, pendingAccountId));
     }
     await ctx.runMutation(internal.connections.recordDisconnectedInternal, {
       userId,
@@ -599,8 +605,6 @@ export const saveSessionInternal = internalMutation({
       updatedAt: now,
       expirationTime: now + SESSION_TTL_MS,
     });
-    // Retention runs as sessions are created, so an unused feature schedules nothing.
-    await ctx.scheduler.runAfter(0, internal.connections.pruneExpiredSessionsInternal, {});
     return { outcome: "saved" as const, ...stored, configKey: args.configKey };
   },
 });
@@ -688,6 +692,7 @@ export const syncUserSessionsInternal = internalAction({
 // Retention
 // ---------------------------------------------------------------------------
 
+/** Daily cron entry point (see crons.ts); continues itself while a batch is full. */
 export const pruneExpiredSessionsInternal = internalMutation({
   args: {},
   handler: async (ctx) => {

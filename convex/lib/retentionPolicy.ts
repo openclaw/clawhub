@@ -496,7 +496,7 @@ export const RETENTION_POLICIES = {
     {
       expirationField: "expirationTime",
       expirationIndex: "by_expiration_time",
-      prune: "connections.pruneExpiredSessionsInternal, scheduled whenever a session is created",
+      prune: "connections.pruneExpiredSessionsInternal",
       retention: "30 days after the chat last used the session.",
     },
   ),

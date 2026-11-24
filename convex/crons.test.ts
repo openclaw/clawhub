@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => {
   const authRefreshTokensPruneRef = Symbol("auth-refresh-tokens-prune");
   const finalizationCursorsPruneRef = Symbol("publish-finalization-cursors-prune");
   const publisherInvitesPruneRef = Symbol("publisher-invites-prune");
+  const appConnectionSessionsPruneRef = Symbol("app-connection-sessions-prune");
   const promotionsFeedPublishRef = Symbol("promotions-feed-publish");
   const canonicalTrendingMaterializeRef = Symbol("canonical-trending-materialize");
   const canonicalTrendingPruneRef = Symbol("canonical-trending-prune");
@@ -48,6 +49,7 @@ const mocks = vi.hoisted(() => {
     authRefreshTokensPruneRef,
     finalizationCursorsPruneRef,
     publisherInvitesPruneRef,
+    appConnectionSessionsPruneRef,
     promotionsFeedPublishRef,
     canonicalTrendingMaterializeRef,
     canonicalTrendingPruneRef,
@@ -145,6 +147,9 @@ vi.mock("./_generated/api", () => ({
     },
     rateLimits: {
       pruneHttpRateLimitKeysInternal: mocks.httpRateLimitKeysPruneRef,
+    },
+    connections: {
+      pruneExpiredSessionsInternal: mocks.appConnectionSessionsPruneRef,
     },
     retention: {
       pruneExpiredAuthSessionsInternal: mocks.authSessionsPruneRef,
@@ -395,6 +400,17 @@ describe("crons", () => {
       { hours: 6 },
       mocks.publisherInvitesPruneRef,
       { batchSize: 500 },
+    );
+  });
+
+  it("prunes expired app-connection sessions daily", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "app-connection-session-retention-prune",
+      { hours: 24 },
+      mocks.appConnectionSessionsPruneRef,
+      {},
     );
   });
 
