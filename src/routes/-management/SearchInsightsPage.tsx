@@ -2,6 +2,7 @@ import { useAction, useMutation, useQuery } from "convex/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import type { SearchInsightArgs, SearchInsightReport } from "../../../convex/lib/searchInsights";
+import { REPORT_SCAN_BUDGET_EXCEEDED } from "../../../convex/lib/searchReportContract";
 import type { FeaturedIntelligenceReportSchema } from "../../../packages/clawhub/src/schema/searchInsights";
 import type {
   SearchReportRequest,
@@ -105,7 +106,7 @@ export function SearchInsightsPage({ endDay }: { endDay?: number }) {
       .then((value) => {
         if (!active) return;
         if (value.status !== "ready") {
-          setError(reportFailure(value.status));
+          setError(reportFailure(value.status, value.failureCode, source));
           return;
         }
         if (value.view === "recommendations") {
@@ -121,14 +122,14 @@ export function SearchInsightsPage({ endDay }: { endDay?: number }) {
       // it does not cancel work another staff member may be waiting for.
       active = false;
     };
-  }, [getReport, reportId, phase]);
+  }, [getReport, reportId, phase, source]);
   const failure =
     error ??
     (currentJob && status === null
       ? "This report is no longer available. Refresh to generate a new report."
       : null) ??
     (phase === "failed" || phase === "expired" || phase === "incomplete"
-      ? reportFailure(phase)
+      ? reportFailure(phase, status?.failureCode ?? currentJob?.failureCode ?? null, source)
       : null);
   const loading = !failure && !report;
   const rows = report?.rows;
@@ -405,9 +406,19 @@ export function SearchInsightsPage({ endDay }: { endDay?: number }) {
   );
 }
 
-function reportFailure(status: SearchReportStatus["status"]) {
+function reportFailure(
+  status: SearchReportStatus["status"],
+  failureCode: string | null,
+  source: SearchInsightArgs["source"],
+) {
   if (status === "expired") return "This report has expired. Refresh to generate a new report.";
   if (status === "incomplete")
     return "Analysis ended without a usable report. Refresh to generate a new report.";
+  // Refreshing reads the same rows and fails the same way. Source is the only
+  // filter that narrows the scan; scope and view are applied after it.
+  if (failureCode === REPORT_SCAN_BUDGET_EXCEEDED)
+    return source
+      ? "This source has more search data than one report can analyze. Refreshing will not help until the report limit is raised."
+      : "This selection has more search data than one report can analyze. Choose a single source, then try again.";
   return "The report could not be completed. Refresh to retry.";
 }

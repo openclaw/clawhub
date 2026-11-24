@@ -1,15 +1,25 @@
 /// <reference types="vite/client" />
 /* @vitest-environment edge-runtime */
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
+import { NonRetryableError } from "@convex-dev/workpool";
 import { register as registerWorkpool } from "@convex-dev/workpool/test";
 import { convexTest } from "convex-test";
+import { getFunctionName } from "convex/server";
 import { afterEach, expect, it, vi } from "vitest";
 import { SearchReportResponseSchema } from "../packages/clawhub/src/schema/searchReports";
+import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { api, internal } from "./_generated/api";
 import { syncPackageSearchDigestForPackageId } from "./functions";
-import { REPORT_TTL_MS, REPORT_CHUNK_BYTES } from "./lib/searchReportContract";
+import { SEARCH_DAILY_SCAN_MAX_ROWS } from "./lib/searchInsightRead";
+import {
+  REPORT_TTL_MS,
+  REPORT_CHUNK_BYTES,
+  REPORT_SCAN_BUDGET_EXCEEDED,
+  REPORT_VERSION,
+} from "./lib/searchReportContract";
 import { hashToken } from "./lib/tokens";
 import schema from "./schema";
+import { generateInternal } from "./searchReports";
 
 const modules = import.meta.glob("./**/*.ts");
 afterEach(() => vi.useRealTimers());
@@ -194,6 +204,58 @@ it("lets Workpool retry a real bounded classification failure and exposes only t
   });
   expect(JSON.stringify(result)).not.toContain("private fixture");
   expect(await t.run((ctx) => ctx.db.query("searchReportChunks").collect())).toEqual([]);
+});
+
+it("ends an over-budget scan after one attempt with a query-free code that names the cause", async () => {
+  // The database boundary is simulated because the budget is far beyond a
+  // fixture: the real report owner, evidence collector and reader still run.
+  const failures = vi.fn();
+  const endDay = Date.UTC(2026, 8, 16);
+  const runQuery = vi.fn(async (ref, args) => {
+    const name = getFunctionName(ref);
+    if (name === "searchReports:readInternal")
+      return {
+        row: {
+          reportVersion: REPORT_VERSION,
+          request: { view: "demand", artifactKind: "plugin", window: 7, endDay, limit: 50 },
+        },
+        status: { status: "running" },
+      };
+    if (name === "searchReports:sourceRevisionInternal") return "revision";
+    if (name !== "searchInsights:listDailyInternal") return null;
+    const start = Number(args.paginationOpts.cursor ?? 0);
+    const end = Math.min(SEARCH_DAILY_SCAN_MAX_ROWS + 1, start + args.paginationOpts.numItems);
+    return {
+      page: Array.from({ length: end - start }, () => ({
+        scope: "catalog",
+        source: "clawhub-web",
+        query: "private fixture",
+        dayStart: endDay - REPORT_TTL_MS,
+        searches: 1,
+        officialGaps: 0,
+        zeroResults: 0,
+      })),
+      isDone: end > SEARCH_DAILY_SCAN_MAX_ROWS,
+      continueCursor: String(end),
+    };
+  });
+  const runMutation = vi.fn(async (ref, args) => {
+    if (getFunctionName(ref) === "searchReports:failureInternal") failures(args);
+    return null;
+  });
+  const failure = await getTestHandler<{ reportId: string }>(generateInternal)(
+    { runQuery, runMutation, runAction: runQuery },
+    { reportId: "report" },
+  ).catch((error: unknown) => error);
+  // Workpool retries ordinary errors. Reading the same rows again cannot succeed.
+  expect(failure).toBeInstanceOf(NonRetryableError);
+  expect((failure as NonRetryableError).data).toMatchObject({
+    message: REPORT_SCAN_BUDGET_EXCEEDED,
+  });
+  expect(failures.mock.calls).toEqual([
+    [{ reportId: "report", code: REPORT_SCAN_BUDGET_EXCEEDED }],
+  ]);
+  expect(JSON.stringify(failure)).not.toContain("private fixture");
 });
 
 it("expires private evidence after 24h, deletes chunks before their parent, and refuses late completion", async () => {
