@@ -174,7 +174,13 @@ describe("pre-publication worker", () => {
       },
     });
     expect(result).toEqual({ completed: false, result: undefined, workerMustStop: true });
-    expect(client.action).not.toHaveBeenCalled();
+    // Custody is kept locally, but the exact claim is released for another worker.
+    expect(client.action).toHaveBeenCalledTimes(1);
+    expect(client.action.mock.calls[0]?.[1]).toEqual({
+      token: "fixture",
+      attemptId: attempt.attemptId,
+      claimId: attempt.claimId,
+    });
     tempDirs.track(preserved!);
     expect(await readFile(join(preserved!, "artifact/SKILL.md"), "utf8")).toBe(
       "retained mounted fixture",

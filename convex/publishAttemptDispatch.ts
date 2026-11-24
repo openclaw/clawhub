@@ -31,10 +31,11 @@ export function isPublishAttemptEventDispatchEnabled(env: NodeJS.ProcessEnv = pr
 export async function requestPublishAttemptDispatch(
   ctx: Pick<MutationCtx, "scheduler">,
   attemptId: Id<"publishAttempts">,
+  delayMs = 0,
 ) {
   if (!isPublishAttemptEventDispatchEnabled()) return { scheduled: false as const };
   await ctx.scheduler.runAfter(
-    0,
+    delayMs,
     internalRefs.publishAttemptDispatch.dispatchPublishAttemptInternal as never,
     {
       attemptId,
