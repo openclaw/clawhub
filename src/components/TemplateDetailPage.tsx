@@ -168,7 +168,7 @@ export function TemplateDetailPage({
   const title = summary?.agent.name || manifest?.agent.name || pkg.displayName;
   const auditHref = buildTemplateSecurityAuditHref(pkg.name, owner, pkg.latestVersion)!;
   const [browseFiles, setBrowseFiles] = useState(false);
-  // SSR uses UTC. Once hydrated, the rail and Add preview use the same local zone as Control UI.
+  // Render release dates in UTC for SSR, then in the visitor’s local zone after hydration.
   const [deviceZone, setDeviceZone] = useState<string>();
   useEffect(() => setDeviceZone(Intl.DateTimeFormat().resolvedOptions().timeZone), []);
   const explicitSoul =
@@ -374,7 +374,6 @@ export function TemplateDetailPage({
           <TemplateReleaseInventory
             packageName={pkg.name}
             releaseVersion={pkg.latestVersion}
-            deviceZone={deviceZone}
             display={display}
             manifest={supportedManifest ? manifest : null}
             dependencies={display || supportedManifest ? (inventory ?? []) : []}

@@ -226,7 +226,6 @@ export function TemplateReleaseInventory({
   display,
   packageName,
   releaseVersion,
-  deviceZone,
   manifest,
   dependencies,
   workspace,
@@ -235,7 +234,6 @@ export function TemplateReleaseInventory({
   display?: TemplateDisplayInventory;
   packageName: string;
   releaseVersion?: string | null;
-  deviceZone?: string;
   manifest: TemplateManifest | null;
   dependencies: TemplateDependencyInventory;
   workspace: TemplateWorkspaceContents | null;
@@ -301,7 +299,7 @@ export function TemplateReleaseInventory({
     name: job.name,
     description: [
       scheduleLabel(job.schedule),
-      deviceZone || job.timezone,
+      job.timezone,
       job.enabled ? "Enabled" : "Disabled",
     ].join(" · "),
     details: (

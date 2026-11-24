@@ -640,6 +640,21 @@ describe("Template detail composition and interactions", () => {
     ).toBe(false);
   });
 
+  it("keeps an automation's wall-clock time in its declared zone after hydration", () => {
+    const actual = Intl.DateTimeFormat().resolvedOptions();
+    const zone = vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockReturnValue({
+      ...actual,
+      timeZone: "America/New_York",
+    });
+    try {
+      renderTemplate();
+      const summary = screen.getByText("Weekday release brief", { exact: true }).closest("summary");
+      expect(summary?.textContent).toContain("Weekdays at 9:00 AM · America/Los_Angeles");
+    } finally {
+      zone.mockRestore();
+    }
+  });
+
   it("opens the single guarded install card from Add without taking up rail space", () => {
     renderTemplate();
     expect(screen.queryByRole("article", { name: "Install" })).toBeNull();
