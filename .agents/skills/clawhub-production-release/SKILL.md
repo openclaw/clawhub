@@ -15,6 +15,9 @@ the app or publish the CLI.
 - Require a successful `Deploy Test` workflow for that exact SHA before
   dispatching an app production deploy. This is an operator check until the
   production workflow enforces the gate directly.
+- Test deploys from `next`, not `main`. A `Deploy Test` run for a `main` SHA
+  exists only if `next` pointed at that commit when it deployed. A Test run of
+  a different commit does not satisfy the gate.
 - Do not treat a green workflow alone as proof. Record the workflow URL, exact
   deployed SHA, and live-surface verification.
 - Do not add one-off migrations or repairs to the deploy workflow. Run
@@ -34,14 +37,15 @@ The workflow is `.github/workflows/deploy.yml`.
 gh run list \
   --repo openclaw/clawhub \
   --workflow deploy-test.yml \
-  --branch main \
+  --branch next \
   --commit <MAIN_SHA> \
   --status success \
   --limit 1
 ```
 
-If no successful exact-SHA Test run exists, stop and fix or rerun Test before
-releasing production.
+If no successful exact-SHA Test run exists, stop and ask the owner before
+releasing production. `Deploy Test` cannot be run from `main`. Do not move or
+rewrite `next` to create the run unless the owner asks for that.
 
 3. Run the required pre-merge or release validation for the changed surface.
 4. Dispatch one target:
