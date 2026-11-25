@@ -6644,19 +6644,12 @@ a.skills-sh-security-audit-row:focus-visible {
   }
 
   .skill-hero-main-extra
-    > :not(.detail-mobile-tabs):not(.detail-mobile-related):not(.detail-mobile-install):not(
-      .detail-mobile-master-tabs
-    ) {
+    > :not(.detail-mobile-tabs):not(.detail-mobile-install):not(.detail-mobile-master-tabs) {
     order: 0;
   }
 
   .detail-mobile-tabs {
     order: 4;
-    margin-top: 4px;
-  }
-
-  .detail-mobile-related {
-    order: 5;
     margin-top: 4px;
   }
 

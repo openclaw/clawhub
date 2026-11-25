@@ -1,4 +1,5 @@
 import { Info } from "lucide-react";
+import "./detail-security-summary.css";
 import { useId } from "react";
 import {
   aggregateAuditVerdict,
@@ -28,37 +29,37 @@ export function DetailSecuritySummary({
     : (githubScanStatus ?? "pending");
   const auditVerdictInfo = getScanStatusInfo(auditVerdict);
   const meterLevel = auditVerdictMeterLevel(auditVerdict);
+  const label = meterLevel === 3 ? "Clean" : auditVerdictInfo.label;
   return (
-    <a
-      href={auditHref}
-      className="security-audit-sidebar-value"
-      aria-label="View Security Audit"
-      aria-describedby={description ? descriptionId : undefined}
-      title={description}
-    >
-      <div className="security-audit-sidebar-value-row">
+    <span className="detail-audit" title={description}>
+      <a
+        href={auditHref}
+        className="detail-audit__link"
+        aria-label={`View Security Audit: ${label}`}
+        aria-describedby={description ? descriptionId : undefined}
+      >
         <span className="security-audit-sidebar-verdict" data-status={auditVerdict}>
-          {auditVerdictInfo.label}
+          {label}
         </span>
-        <div className="security-audit-meter" data-level={meterLevel} aria-hidden="true">
+        <span className="security-audit-meter" data-level={meterLevel} aria-hidden="true">
           <span />
           <span />
           <span />
-        </div>
-      </div>
+        </span>
+      </a>
       {description ? (
         <span id={descriptionId} className="sr-only">
           {description}
         </span>
       ) : null}
-    </a>
+    </span>
   );
 }
 
-export function DetailSecuritySummaryLabel() {
+export function DetailSecuritySummaryLabel({ label = "Security audit" }: { label?: string }) {
   return (
     <span className="security-audit-sidebar-label">
-      <span>Security audit</span>
+      <span>{label}</span>
       <TooltipProvider delayDuration={400}>
         <Tooltip>
           <TooltipTrigger asChild>

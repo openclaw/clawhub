@@ -50,12 +50,17 @@ test("agents/openai.yaml drives hosted skill presentation in UI and feed", async
   });
 
   await waitForHydration(page);
-  await expect(page.locator("h1.skill-page-title")).toHaveText("OpenAI Presentation Fixture");
+  await expect(
+    page.getByRole("heading", { level: 1, name: "OpenAI Presentation Fixture" }),
+  ).toHaveText("OpenAI Presentation Fixture");
   await expect(page.getByText("Feed-ready OpenAI summary.")).toBeVisible();
-  // Detail heroes are title-first; hosted presentation icons remain on catalog rows.
-  await expect(page.locator(".skill-hero-title-row .marketplace-icon")).toHaveCount(0);
+  // The same addressed artwork now appears on both the detail tile and catalog row.
+  const detailIcon = page.locator(".catalog-detail__icon img");
+  await expect(detailIcon).toBeVisible();
+  const detailIconUrl = await detailIcon.getAttribute("src");
+  expect(detailIconUrl).toMatch(/^\/api\/v1\/skill-icons\/[a-f\d]{64}$/u);
   await page.screenshot({
-    path: testInfo.outputPath("presentation-detail-title-first.png"),
+    path: testInfo.outputPath("presentation-detail-icon.png"),
     fullPage: true,
   });
   await page.goto(`/${ownerHandle}`);
@@ -72,6 +77,7 @@ test("agents/openai.yaml drives hosted skill presentation in UI and feed", async
     fullPage: true,
   });
   const iconUrl = await icon.getAttribute("src");
+  expect(iconUrl).toBe(detailIconUrl);
   expect(iconUrl).toMatch(/^\/api\/v1\/skill-icons\/[a-f\d]{64}$/);
 
   const iconResponse = await page.request.get(new URL(iconUrl!, page.url()).toString());

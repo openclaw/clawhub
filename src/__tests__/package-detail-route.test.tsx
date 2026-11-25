@@ -160,19 +160,30 @@ async function loadRoute() {
   };
 }
 
+function getInstallCard() {
+  return within(screen.getByRole("complementary")).getByRole("article", { name: "Install" });
+}
+
+function openVersions(name: string | RegExp = /^View releases?\b/) {
+  const metadata = screen.getByRole("group", { name: "Plugin metadata" });
+  fireEvent.click(within(metadata).getByRole("button", { name }));
+  const dialog = screen.getByRole("dialog", { name: "Release details" });
+  expect(within(dialog).getByRole("tab", { name: "Versions", selected: true })).toBeTruthy();
+  return dialog;
+}
+
+function openActivity() {
+  const dialog = openVersions();
+  fireEvent.click(within(dialog).getByRole("tab", { name: "Activity" }));
+  return dialog;
+}
+
+function closeDialog() {
+  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /^Close/i }));
+}
+
 function openRelease(version: string) {
-  const versionPattern = new RegExp(`v${version.replaceAll(".", "\\.")}`);
-  const toggle = screen
-    .getAllByRole("button")
-    .find(
-      (button) =>
-        button.classList.contains("skill-version-release-toggle") &&
-        versionPattern.test(button.textContent ?? ""),
-    );
-  if (!toggle) {
-    throw new Error(`Version toggle for v${version} not found`);
-  }
-  fireEvent.click(toggle);
+  fireEvent.click(screen.getByRole("button", { name: `Show changelog for v${version}` }));
 }
 
 describe("plugin detail route", () => {
@@ -180,7 +191,7 @@ describe("plugin detail route", () => {
     setViewportWidth(1071);
     paramsMock = { name: "demo-plugin" };
     pathnameMock = "/plugins/demo-plugin";
-    window.location.hash = "";
+    window.history.replaceState(null, "", pathnameMock);
     vi.mocked(fetchPackageDetail).mockReset();
     vi.mocked(fetchPackageFile).mockReset();
     vi.mocked(fetchPackageReadme).mockReset();
@@ -246,10 +257,11 @@ describe("plugin detail route", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
-  it("offers a right-rail Install link behind the Desktop tab, after CLI, for a published plugin", async () => {
+  it("shows CLI first and a Desktop action inline for published plugins", async () => {
     loaderDataMock.detail.package = {
       ...loaderDataMock.detail.package!,
       name: "@owner/scoped-plugin",
@@ -260,54 +272,49 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    const tabs = within(screen.getByRole("group", { name: "Install option" })).getAllByRole(
-      "button",
-    );
-    expect(tabs.map((tab) => tab.textContent)).toEqual(["CLI", "Desktop"]);
-    expect(screen.queryByRole("link", { name: "Install in OpenClaw" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Desktop" }));
-    const link = screen.getByRole("link", { name: "Install in OpenClaw" });
-    expect(link.closest(".skill-install-command-card")).not.toBeNull();
-    expect(link.getAttribute("href")).toBe(
-      "openclaw://plugins/install?name=%40owner%2Fscoped-plugin",
-    );
-    expect(link.querySelector("svg")).toBeNull();
-    expect(screen.queryByText("OpenClaw for Mac")).toBeNull();
+    const card = getInstallCard();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const options = within(card).getByRole("group", { name: "Install option" });
     expect(
-      screen.queryByText("Review this plugin in the Mac app, then choose Install."),
-    ).toBeNull();
-    expect(screen.queryByText("This page can’t detect whether the app opened.")).toBeNull();
-    expect(screen.queryByRole("link", { name: "Get OpenClaw for Mac" })).toBeNull();
-    const rail = screen.getByRole("complementary");
-    expect(within(rail).getByRole("button", { name: "CLI" })).toBeTruthy();
-    expect(within(rail).getByRole("button", { name: "Desktop" })).toBeTruthy();
-    expect(within(rail).queryByRole("button", { name: "Prompt" })).toBeNull();
-    expect(screen.getAllByRole("article", { name: "Install" })).toHaveLength(1);
+      within(options)
+        .getAllByRole("button")
+        .map((button) => button.textContent),
+    ).toEqual(["CLI", "Desktop"]);
+    expect(within(card).getByRole("button", { name: "CLI", pressed: true })).toBeTruthy();
+    expect(within(card).queryByRole("link", { name: "Install in OpenClaw" })).toBeNull();
+    fireEvent.click(within(card).getByRole("button", { name: "Desktop" }));
+    expect(
+      within(card).getByRole("link", { name: "Install in OpenClaw" }).getAttribute("href"),
+    ).toBe("openclaw://plugins/install?name=%40owner%2Fscoped-plugin");
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it.each([390, 768, 900, 901, 1366, 1440])(
-    "keeps one install card with its Install action at viewport width %s",
-    async (width) => {
-      setViewportWidth(width);
-      loaderDataMock.detail.package!.latestVersion = "1.0.0";
-      const route = await loadRoute();
-      const Component = route.__config.component as ComponentType;
-      render(<Component />);
+  it("renders one inline install card, the README, and a release button in the metadata rail", async () => {
+    loaderDataMock.detail.package!.latestVersion = "1.0.0";
+    loaderDataMock.readme = "Getting started with Demo";
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+    render(<Component />);
 
-      const cards = screen.getAllByRole("article", { name: "Install" });
-      expect(cards).toHaveLength(1);
-      expect(Boolean(cards[0].closest("aside"))).toBe(width > 900);
-      expect(Boolean(cards[0].closest(".detail-mobile-install"))).toBe(width <= 900);
-      expect(
-        within(cards[0]).getByRole("button", { name: "CLI" }).getAttribute("aria-pressed"),
-      ).toBe("true");
-      expect(
-        within(cards[0]).getByRole("button", { name: "Copy plugin install command" }),
-      ).toBeTruthy();
-      fireEvent.click(within(cards[0]).getByRole("button", { name: "Desktop" }));
-      expect(within(cards[0]).getByRole("link", { name: "Install in OpenClaw" })).toBeTruthy();
-    },
-  );
+    const heading = screen.getByRole("heading", { level: 1, name: "Demo Plugin" });
+    const hero = heading.closest<HTMLElement>(".catalog-detail__hero");
+    expect(hero?.closest(".catalog-detail")).toBeTruthy();
+    expect(within(hero!).queryByRole("button", { name: /^(?:Add|Install)$/i })).toBeNull();
+    expect(within(hero!).queryByRole("link", { name: /^(?:Add|Install|Download)$/i })).toBeNull();
+    expect(screen.getAllByRole("article", { name: "Install" })).toEqual([getInstallCard()]);
+    expect(screen.queryByText("Package details")).toBeNull();
+    expect(screen.queryByRole("tablist")).toBeNull();
+    expect(screen.getByText("Getting started with Demo")).toBeTruthy();
+    const rail = within(screen.getByRole("complementary"));
+    const metadata = within(rail.getByRole("group", { name: "Plugin metadata" }));
+    expect(metadata.getByRole("button", { name: "View release 1.0.0" }).textContent).toBe("1.0.0");
+    const dialog = openVersions("View release 1.0.0");
+    expect(within(dialog).getByRole("link", { name: "Download" }).getAttribute("href")).toBe(
+      "/api/v1/packages/demo-plugin/download?version=1.0.0",
+    );
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
 
   it.each([
     { family: "bundle-plugin", name: "discord", href: "openclaw://plugins/install?name=discord" },
@@ -328,10 +335,11 @@ describe("plugin detail route", () => {
       const route = await loadRoute();
       const Component = route.__config.component as ComponentType;
       render(<Component />);
-      fireEvent.click(screen.getByRole("button", { name: "Desktop" }));
-      expect(screen.getByRole("link", { name: "Install in OpenClaw" }).getAttribute("href")).toBe(
-        href,
-      );
+      const card = getInstallCard();
+      fireEvent.click(within(card).getByRole("button", { name: "Desktop" }));
+      expect(
+        within(card).getByRole("link", { name: "Install in OpenClaw" }).getAttribute("href"),
+      ).toBe(href);
     },
   );
 
@@ -369,10 +377,32 @@ describe("plugin detail route", () => {
       const route = await loadRoute();
       const Component = route.__config.component as ComponentType;
       render(<Component />);
-      expect(screen.queryByRole("link", { name: "Install in OpenClaw" })).toBeNull();
-      expect(screen.queryByRole("link", { name: "Get OpenClaw for Mac" })).toBeNull();
-      expect(screen.getByRole("button", { name: "CLI" })).toBeTruthy();
-      expect(screen.getByRole("button", { name: "Prompt" })).toBeTruthy();
+      if (state !== "skill") {
+        const releaseButton =
+          state === "unpublished"
+            ? "View releases"
+            : state === "beta-only"
+              ? "View release 1.1.0-beta.1"
+              : "View release 1.0.0";
+        const dialog = openVersions(releaseButton);
+        expect(within(dialog).queryByRole("link", { name: "Download" })).toBeNull();
+        closeDialog();
+      }
+      if (state === "malicious package" || state === "malicious release") {
+        expect(screen.getByText("Download blocked")).toBeTruthy();
+        expect(screen.queryByRole("article", { name: "Install" })).toBeNull();
+        expect(screen.queryByRole("button", { name: "Install" })).toBeNull();
+        expect(screen.queryByRole("button", { name: /Copy plugin install/ })).toBeNull();
+        expect(screen.queryByRole("dialog")).toBeNull();
+        expect(screen.queryByRole("link", { name: "Install in OpenClaw" })).toBeNull();
+        return;
+      }
+      const card = getInstallCard();
+      expect(within(card).queryByRole("button", { name: "Desktop" })).toBeNull();
+      expect(within(card).queryByRole("link", { name: "Install in OpenClaw" })).toBeNull();
+      expect(within(card).getByRole("button", { name: "CLI", pressed: true })).toBeTruthy();
+      fireEvent.click(within(card).getByRole("button", { name: "Prompt" }));
+      expect(within(card).getByRole("button", { name: "Prompt", pressed: true })).toBeTruthy();
     },
   );
 
@@ -395,26 +425,15 @@ describe("plugin detail route", () => {
 
       render(<Component />);
 
-      const card = screen
-        .getByRole("heading", { name: "Install" })
-        .closest(".skill-install-command-card") as HTMLElement;
+      const card = getInstallCard();
       fireEvent.click(within(card).getByRole("button", { name: "CLI" }));
       const command = `openclaw plugins install clawhub:${target}`;
-      expect(card.querySelectorAll("pre")).toHaveLength(1);
-      expect(card.querySelector(".skill-install-command-wrap pre")).toBeTruthy();
       expect(card.querySelector("pre")?.textContent).toBe(command);
-      expect(card.querySelector("pre")?.textContent).toContain("clawhub:");
-      expect(card.querySelector("p")).toBeNull();
       expect(within(card).getByRole("button", { name: "CLI" }).getAttribute("aria-pressed")).toBe(
         "true",
       );
       fireEvent.click(within(card).getByRole("button", { name: "Copy plugin install command" }));
       await waitFor(() => expect(writeText).toHaveBeenCalledWith(command));
-
-      if (screen.queryByRole("button", { name: "Desktop" })) {
-        fireEvent.click(screen.getByRole("button", { name: "Desktop" }));
-        expect(within(card).getByRole("link", { name: "Install in OpenClaw" })).toBeTruthy();
-      }
     },
   );
 
@@ -433,56 +452,28 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    const card = screen
-      .getByRole("heading", { name: "Install" })
-      .closest(".skill-install-command-card")!;
+    const card = getInstallCard();
     const command = "openclaw skills install @demo-owner/demo-skill";
-    expect(card.querySelectorAll("pre")).toHaveLength(1);
     expect(card.querySelector("pre")?.textContent).toBe(command);
-    expect(card.querySelector("p")).toBeNull();
-    fireEvent.click(
-      within(card as HTMLElement).getByRole("button", { name: "Copy skill install command" }),
-    );
+    fireEvent.click(within(card).getByRole("button", { name: "Copy skill install command" }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(command));
   });
 
-  it("uses mobile About and Stats tabs below 901px", async () => {
-    setViewportWidth(488);
-    loaderDataMock = {
-      ...loaderDataMock,
-      detail: {
-        package: {
-          ...loaderDataMock.detail.package!,
-          latestVersion: "1.0.0",
-          stats: { downloads: 597, installs: 0, stars: 0, versions: 1 },
-        },
-        owner: { handle: "demo-owner", displayName: "Demo Owner", image: null },
-      },
-      version: loaderDataMock.version,
-    };
+  it("expands and collapses the inline README without opening release details", async () => {
+    // jsdom does not lay out text. Give the README a measured height larger than its clamp.
+    vi.spyOn(Element.prototype, "scrollHeight", "get").mockReturnValue(560);
+    loaderDataMock.readme = Array.from({ length: 120 }, (_, i) => "README line " + i).join("\n");
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
+    render(<Component />);
 
-    const { container } = render(<Component />);
-
-    await waitFor(() => {
-      expect(container.querySelector(".detail-mobile-master-tab-list")).toBeTruthy();
-    });
-
-    expect(screen.getByRole("tab", { name: "About" }).getAttribute("aria-selected")).toBe("true");
-    expect(screen.getByRole("tab", { name: "Stats" }).getAttribute("aria-selected")).toBe("false");
-    expect(
-      container.querySelector("#plugin-mobile-master-panel-stats")?.hasAttribute("hidden"),
-    ).toBe(true);
-    expect(container.querySelector(".detail-sidebar-stats")).toBeNull();
-
-    fireEvent.click(screen.getByRole("tab", { name: "Stats" }));
-
-    expect(screen.getByRole("tab", { name: "Stats" }).getAttribute("aria-selected")).toBe("true");
-    expect(
-      container.querySelector("#plugin-mobile-master-panel-stats")?.hasAttribute("hidden"),
-    ).toBe(false);
-    expect(screen.getByText("Downloads")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: /readme/i })).toBeTruthy();
+    expect(screen.queryByRole("tab")).toBeNull();
+    const toggle = screen.getByRole("button", { name: /read more|show more/i, expanded: false });
+    fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole("button", { name: /less/i, expanded: true }));
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("hides download actions when the plugin has no latest release", async () => {
@@ -491,53 +482,32 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    expect(screen.queryByText(/Latest release:/)).toBeNull();
-    expect(screen.queryByRole("link", { name: "Download zip" })).toBeNull();
+    expect(
+      within(openVersions("View releases")).queryByRole("link", { name: "Download" }),
+    ).toBeNull();
   });
 
-  it("renders canonical topics in the detail hero", async () => {
-    loaderDataMock = {
-      ...loaderDataMock,
-      detail: {
-        ...loaderDataMock.detail,
-        package: {
-          ...loaderDataMock.detail.package!,
-          topics: ["Web Search", "Research"],
-        },
-      },
+  it("keeps browse links for canonical topics and categories in plugin metadata", async () => {
+    loaderDataMock.detail.package = {
+      ...loaderDataMock.detail.package!,
+      topics: ["Web Search", "Research"],
+      categories: ["tools", "web", "channels"],
     };
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
-
     render(<Component />);
 
-    expect(screen.getByLabelText("Topics").textContent).toContain("#web-search");
-    expect(screen.getByLabelText("Topics").textContent).toContain("#research");
-  });
-
-  it("renders hero category labels without comma separators", async () => {
-    loaderDataMock = {
-      ...loaderDataMock,
-      detail: {
-        ...loaderDataMock.detail,
-        package: {
-          ...loaderDataMock.detail.package!,
-          categories: ["tools", "web", "channels"],
-          topics: ["Workflow"],
-        },
-      },
-    };
-    const route = await loadRoute();
-    const Component = route.__config.component as ComponentType;
-
-    render(<Component />);
-
-    const taxonomy = document.querySelector(".skill-category-meta-list");
-    expect(taxonomy).toBeTruthy();
-    expect(taxonomy?.textContent).toContain("Tools");
-    expect(taxonomy?.textContent).toContain("Web");
-    expect(taxonomy?.textContent).toContain("Channels");
-    expect(taxonomy?.textContent).not.toContain(",");
+    const metadata = within(screen.getByLabelText("Plugin metadata"));
+    for (const category of ["Tools", "Web", "Channels"]) {
+      expect(
+        metadata.getByRole("link", { name: `View ${category} plugins` }).getAttribute("href"),
+      ).toBe(`/plugins?category=${category.toLowerCase()}`);
+    }
+    for (const topic of ["web-search", "research"]) {
+      expect(
+        metadata.getByRole("link", { name: new RegExp(topic, "i") }).getAttribute("href"),
+      ).toContain(topic);
+    }
   });
 
   it("renders populated active release history on the versions tab", async () => {
@@ -573,7 +543,7 @@ describe("plugin detail route", () => {
     const Component = route.__config.component as ComponentType;
 
     render(<Component />);
-    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+    openVersions();
 
     expect(screen.getAllByText("v2.0.0").length).toBeGreaterThan(0);
     expect(screen.getByText(new Date(publishedAt).toLocaleDateString())).toBeTruthy();
@@ -611,7 +581,7 @@ describe("plugin detail route", () => {
     render(<Component />);
 
     expect(fetchPackageVersions).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+    openVersions();
 
     await waitFor(() => expect(fetchPackageVersions).toHaveBeenCalledTimes(1));
     expect(fetchPackageVersions).toHaveBeenCalledWith("demo-plugin", {
@@ -631,7 +601,7 @@ describe("plugin detail route", () => {
     const Component = route.__config.component as ComponentType;
 
     render(<Component />);
-    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+    openVersions();
 
     expect(await screen.findByText("Release history is temporarily unavailable.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
@@ -663,7 +633,7 @@ describe("plugin detail route", () => {
     const { rerender } = render(
       <PluginDetailPage name="demo-plugin" loaderData={loaderDataMock} />,
     );
-    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+    openVersions();
     await waitFor(() => expect(fetchPackageVersions).toHaveBeenCalledTimes(1));
     const firstSignal = vi.mocked(fetchPackageVersions).mock.calls[0]?.[1]?.signal;
 
@@ -703,7 +673,7 @@ describe("plugin detail route", () => {
     expect(screen.queryByText("Stale first plugin release")).toBeNull();
   });
 
-  it("keeps catalog icons out of the plugin detail header", async () => {
+  it("does not load untrusted remote package or manifest icons in the catalog header", async () => {
     loaderDataMock = {
       ...loaderDataMock,
       detail: {
@@ -740,7 +710,9 @@ describe("plugin detail route", () => {
       <PluginDetailPage name="demo-plugin" loaderData={loaderDataMock} />,
     );
 
-    expect(container.querySelector(".skill-hero-title-row .marketplace-icon")).toBeNull();
+    const hero = container.querySelector(".catalog-detail__hero");
+    expect(hero).toBeTruthy();
+    expect(hero?.querySelector('img[src$="/package.svg"], img[src$="/manifest.svg"]')).toBeNull();
   });
 
   it("loads and appends the next active release page", async () => {
@@ -773,7 +745,7 @@ describe("plugin detail route", () => {
     const Component = route.__config.component as ComponentType;
 
     render(<Component />);
-    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+    openVersions();
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Load more" }));
@@ -786,18 +758,7 @@ describe("plugin detail route", () => {
     });
     openRelease("2.0.0");
     expect(screen.getByText("Current page")).toBeTruthy();
-    await waitFor(() => {
-      expect(
-        screen
-          .getAllByRole("button", { hidden: true })
-          .some(
-            (button) =>
-              button.getAttribute("aria-controls") === "version-changelog-1.0.0" &&
-              button.classList.contains("skill-version-release-toggle"),
-          ),
-      ).toBe(true);
-    });
-    openRelease("1.0.0");
+    fireEvent.click(await screen.findByRole("button", { name: "Show changelog for v1.0.0" }));
     expect(screen.getByText("Loaded next page")).toBeTruthy();
     expect(
       document.querySelector('a[href="/api/v1/packages/demo-plugin/download?version=1.0.0"]'),
@@ -805,18 +766,9 @@ describe("plugin detail route", () => {
     expect(screen.queryByText("Download .zip")).toBeNull();
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
 
-    fireEvent.click(screen.getByRole("tab", { name: "README.md" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Activity" }));
     fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
-
-    expect(
-      screen
-        .getAllByRole("button", { hidden: true })
-        .some(
-          (button) =>
-            button.getAttribute("aria-controls") === "version-changelog-1.0.0" &&
-            button.classList.contains("skill-version-release-toggle"),
-        ),
-    ).toBe(true);
+    expect(screen.getByRole("button", { name: /changelog for v1\.0\.0$/ })).toBeTruthy();
     expect(fetchPackageVersions).toHaveBeenCalledTimes(1);
   });
 
@@ -859,7 +811,7 @@ describe("plugin detail route", () => {
     const { rerender } = render(
       <PluginDetailPage name="shared-plugin" loaderData={loaderDataMock} />,
     );
-    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+    openVersions();
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Load more" }));
@@ -894,13 +846,11 @@ describe("plugin detail route", () => {
     };
     rerender(<PluginDetailPage name="shared-plugin" loaderData={loaderDataMock} />);
 
-    expect(screen.getByRole("tab", { name: "README.md" }).getAttribute("aria-selected")).toBe(
-      "true",
-    );
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByText("Plugin B README")).toBeTruthy();
     expect(screen.queryByText("Plugin A loaded release")).toBeNull();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+    openVersions();
 
     openRelease("3.0.0");
     expect(screen.getByText("Plugin B release")).toBeTruthy();
@@ -932,7 +882,7 @@ describe("plugin detail route", () => {
     const Component = route.__config.component as ComponentType;
 
     render(<Component />);
-    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+    openVersions();
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Load more" }));
@@ -951,6 +901,7 @@ describe("plugin detail route", () => {
           ...loaderDataMock.detail.package!,
           name: "example-ai-plugin",
           displayName: "Example AI Plugin",
+          ownerHandle: "example-publisher",
           latestVersion: "1.2.3",
         },
         owner: null,
@@ -987,7 +938,14 @@ describe("plugin detail route", () => {
                 sensitive: false,
               },
             ],
-            mcpServers: [{ name: "exampleMcp" }],
+            mcpServers: [
+              {
+                name: "exampleMcp",
+                url: "https://mcp.example.test",
+                auth: "oauth",
+                transport: "streamable-http",
+              },
+            ],
             bundledSkills: [
               {
                 name: "research",
@@ -1002,23 +960,43 @@ describe("plugin detail route", () => {
         },
       },
     };
-    vi.mocked(fetchPackageFile).mockResolvedValueOnce("# Research\n\nDeep research assistant.");
+    vi.mocked(fetchPackageFile).mockResolvedValueOnce(
+      [
+        "---",
+        "name: research",
+        "description: Collect and verify source material.",
+        "---",
+        "# Research",
+        "",
+        "Compare the original sources before summarizing.",
+      ].join("\n"),
+    );
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
 
     render(<Component />);
 
-    expect(
-      Array.from(document.querySelectorAll(".detail-mobile-tabs .tab-button"), (tab) =>
-        tab.textContent?.trim(),
-      ),
-    ).toEqual(["README.md", "Skills", "MCP Servers", "Configuration", "Compatibility", "Versions"]);
-    expect(screen.getByRole("tab", { name: "Compatibility" })).toBeTruthy();
-    expect(screen.getByRole("tab", { name: "Configuration" })).toBeTruthy();
-    expect(screen.getByRole("tab", { name: "MCP Servers" })).toBeTruthy();
-    expect(screen.getByRole("tab", { name: "Skills" })).toBeTruthy();
+    expect(screen.queryByRole("tablist")).toBeNull();
+    expect(screen.getByRole("heading", { name: /skills/i })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: /MCP servers?/i })).toBeTruthy();
+    const summary = screen
+      .getByText("exampleMcp", { selector: "summary, summary *" })
+      .closest("summary")!;
+    const disclosure = summary.closest("details")!;
+    expect(disclosure.open).toBe(false);
+    fireEvent.click(summary);
+    expect(disclosure.open).toBe(true);
+    expect(within(disclosure).getByText("https://mcp.example.test")).toBeTruthy();
+    expect(within(disclosure).getByText("OAuth")).toBeTruthy();
+    expect(within(disclosure).getByText("streamable-http")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Compatibility" }));
+    const dialog = openVersions();
+    expect(
+      within(within(dialog).getByRole("tablist", { name: "Plugin detail tabs" }))
+        .getAllByRole("tab")
+        .map((tab) => tab.textContent),
+    ).toEqual(["Activity", "Configuration", "Compatibility", "Versions"]);
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Compatibility" }));
     expect(screen.getByText("OpenClaw plugin API")).toBeTruthy();
     expect(screen.getByText("^2.0.0")).toBeTruthy();
     expect(screen.queryByText("EXAMPLE_PLUGIN_API_KEY")).toBeNull();
@@ -1028,14 +1006,14 @@ describe("plugin detail route", () => {
     expect(screen.getByText("Required")).toBeTruthy();
     expect(screen.getByText("Sensitive")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("tab", { name: "MCP Servers" }));
-    expect(screen.getAllByText("exampleMcp").length).toBeGreaterThanOrEqual(1);
-
-    fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
+    closeDialog();
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByText("Deep research assistant.")).toBeTruthy();
     expect(fetchPackageFile).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: /preview research/i }));
+    const skillRow = screen.getByRole("button", { name: "Preview research" });
+    expect(skillRow.tagName).toBe("BUTTON");
+    fireEvent.click(skillRow);
 
     await waitFor(() => {
       expect(fetchPackageFile).toHaveBeenCalledWith(
@@ -1044,13 +1022,14 @@ describe("plugin detail route", () => {
         "1.2.3",
       );
     });
-    await waitFor(() => {
-      expect(
-        screen.getAllByText((_content, element) =>
-          Boolean(element?.textContent?.includes("# Research")),
-        ).length,
-      ).toBeGreaterThan(0);
-    });
+    const preview = screen.getByRole("dialog", { name: "research" });
+    expect(within(preview).getByText("@example-publisher")).toBeTruthy();
+    expect(
+      await within(preview).findByText(/Compare the original sources before summarizing/),
+    ).toBeTruthy();
+    expect(within(preview).getByRole("heading", { level: 1, name: "Research" })).toBeTruthy();
+    expect(preview.textContent).not.toContain("name: research");
+    expect(preview.textContent).not.toContain("Collect and verify source material.");
   });
 
   it("keeps loaded releases and allows retry when loading more fails", async () => {
@@ -1085,7 +1064,7 @@ describe("plugin detail route", () => {
     const Component = route.__config.component as ComponentType;
 
     render(<Component />);
-    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+    openVersions();
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Load more" }));
@@ -1134,7 +1113,7 @@ describe("plugin detail route", () => {
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
     const { rerender } = render(<Component />);
-    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+    openVersions();
     fireEvent.click(screen.getByRole("button", { name: "Load more" }));
 
     loaderDataMock = {
@@ -1182,7 +1161,39 @@ describe("plugin detail route", () => {
     expect(screen.queryByText("Stale first plugin release")).toBeNull();
   });
 
-  it("selects the versions tab from the versions hash", async () => {
+  it.each(["Activity", "Configuration", "Compatibility"])(
+    "opens release details directly on the %s hash without loading versions",
+    async (tab) => {
+      loaderDataMock.version = {
+        package: null,
+        version: {
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "First release",
+          files: [],
+          pluginManifestSummary: {
+            schemaVersion: 1,
+            compatibility: { pluginApiRange: "^2.0.0" },
+            configFields: [{ name: "MODEL", required: false, sensitive: false }],
+            bundledSkills: [],
+            mcpServers: [],
+          },
+        },
+      };
+      loaderDataMock.versions = undefined;
+      window.history.replaceState(null, "", "#" + tab.toLowerCase());
+      const route = await loadRoute();
+      const Component = route.__config.component as ComponentType;
+      render(<Component />);
+      const dialog = await screen.findByRole("dialog", { name: "Release details" });
+      expect(within(dialog).getByRole("tab", { name: tab, selected: true })).toBeTruthy();
+      expect(fetchPackageVersions).not.toHaveBeenCalled();
+      closeDialog();
+      expect(screen.queryByRole("dialog")).toBeNull();
+    },
+  );
+
+  it("opens release history in release details from the versions hash", async () => {
     window.location.hash = "#versions";
     loaderDataMock = {
       ...loaderDataMock,
@@ -1203,11 +1214,9 @@ describe("plugin detail route", () => {
     const Component = route.__config.component as ComponentType;
 
     render(<Component />);
-    await act(async () => {});
-
-    expect(screen.getByRole("tab", { name: "Versions" }).getAttribute("aria-selected")).toBe(
-      "true",
-    );
+    const dialog = await screen.findByRole("dialog", { name: "Release details" });
+    expect(within(dialog).getByRole("tab", { name: "Versions", selected: true })).toBeTruthy();
+    await within(dialog).findByRole("button", { name: "Show changelog for v1.0.0" });
     expect(fetchPackageVersions).toHaveBeenCalledTimes(1);
     openRelease("1.0.0");
     expect(screen.getByText("Initial release")).toBeTruthy();
@@ -1249,7 +1258,7 @@ describe("plugin detail route", () => {
     const Component = route.__config.component as ComponentType;
 
     render(<Component />);
-    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+    openVersions();
 
     expect(screen.getByText("No active releases are available.")).toBeTruthy();
   });
@@ -1263,13 +1272,13 @@ describe("plugin detail route", () => {
     const Component = route.__config.component as ComponentType;
 
     render(<Component />);
-    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+    openVersions();
 
     expect(screen.getByText("Release history is temporarily unavailable.")).toBeTruthy();
     expect(screen.queryByText("No active releases are available.")).toBeNull();
   });
 
-  it("links plugin breadcrumb owners to canonical publisher profiles", async () => {
+  it("links the publisher byline to the canonical owner profile", async () => {
     loaderDataMock = {
       ...loaderDataMock,
       detail: {
@@ -1280,14 +1289,13 @@ describe("plugin detail route", () => {
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
 
-    const { container } = render(<Component />);
-
-    expect(
-      container.querySelector('nav[aria-label="Plugin breadcrumbs"] a[href="/openclaw"]'),
-    ).toBeTruthy();
+    render(<Component />);
+    const publisher = screen.getByRole("link", { name: /openclaw/i });
+    expect(publisher.closest(".catalog-detail__publisher")).toBeTruthy();
+    expect(publisher.getAttribute("href")).toBe("/openclaw");
   });
 
-  it("omits scoped package prefixes from plugin breadcrumbs", async () => {
+  it("uses Plugins and the display name for scoped package breadcrumbs", async () => {
     loaderDataMock = {
       ...loaderDataMock,
       detail: {
@@ -1302,12 +1310,13 @@ describe("plugin detail route", () => {
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
 
-    const { container } = render(<Component />);
-
-    const packageCrumb = container.querySelector(
-      'nav[aria-label="Plugin breadcrumbs"] a[href="/openclaw/plugins/firecrawl-plugin"]',
+    render(<Component />);
+    const breadcrumb = screen.getByRole("navigation", { name: /breadcrumb/i });
+    expect(within(breadcrumb).getByRole("link", { name: "Plugins" }).getAttribute("href")).toBe(
+      "/plugins",
     );
-    expect(packageCrumb?.textContent).toBe("firecrawl-plugin");
+    expect(within(breadcrumb).getByText("OpenClaw Firecrawl Plugin")).toBeTruthy();
+    expect(within(breadcrumb).queryByRole("link", { name: /^openclaw$/i })).toBeNull();
   });
 
   it("labels official packages as Official", async () => {
@@ -1326,11 +1335,9 @@ describe("plugin detail route", () => {
     const Component = route.__config.component as ComponentType;
 
     const { container } = render(<Component />);
-
-    expect(screen.getAllByLabelText("Official").length).toBeGreaterThan(0);
-    expect(container.querySelector(".skill-hero-creator .official-badge-icon-only")).toBeTruthy();
-    expect(container.querySelector(".skill-hero-title-row .official-tag")).toBeNull();
-    expect(screen.queryByText("Official")).toBeNull();
+    const publisher = container.querySelector<HTMLElement>(".catalog-detail__publisher");
+    expect(publisher).toBeTruthy();
+    expect(within(publisher!).getByLabelText("Official")).toBeTruthy();
   });
 
   it("renders plugin activity skeletons while graphs load", async () => {
@@ -1347,11 +1354,11 @@ describe("plugin detail route", () => {
     };
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
-    const { container } = render(<Component />);
-
-    expect(screen.getByText("Downloads")).toBeTruthy();
-    expect(screen.queryByText("30-day Installs")).toBeNull();
-    expect(container.querySelectorAll(".metric-trend-card-skeleton")).toHaveLength(1);
+    render(<Component />);
+    const dialog = openActivity();
+    expect(within(dialog).getByRole("tab", { name: "Activity", selected: true })).toBeTruthy();
+    expect(within(dialog).queryByText("30-day Installs")).toBeNull();
+    expect(dialog.querySelectorAll(".metric-trend-card-skeleton")).toHaveLength(1);
     expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
   });
 
@@ -1392,19 +1399,16 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    const downloadsLabel = screen.getByText("Downloads");
-    const currentVersionLabel = screen.getByText("Current version");
-    expect(downloadsLabel.compareDocumentPosition(currentVersionLabel)).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
-    );
-    expect(screen.getByText("Downloads")).toBeTruthy();
-    expect(screen.queryByRole("img", { name: "Daily downloads over the last 30 days" })).toBeNull();
-    await waitFor(() =>
-      expect(
-        screen.getByRole("img", { name: "Daily downloads over the last 30 days" }),
-      ).toBeTruthy(),
-    );
-    expect(screen.getByText("14")).toBeTruthy();
+    const rail = within(screen.getByLabelText("Plugin metadata"));
+    expect(rail.getByText("Downloads")).toBeTruthy();
+    expect(rail.queryByText("Code Plugin")).toBeNull();
+    expect(rail.queryByRole("img", { name: "Daily downloads over the last 30 days" })).toBeNull();
+    const activity = within(openActivity());
+    expect(activity.getByText(/code plugin/i)).toBeTruthy();
+    expect(
+      await activity.findByRole("img", { name: "Daily downloads over the last 30 days" }),
+    ).toBeTruthy();
+    expect(activity.getByText("14")).toBeTruthy();
     expect(screen.queryByText("30-day Installs")).toBeNull();
     expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
     expect(screen.getByRole("img", { name: "Daily downloads over the last 30 days" })).toBeTruthy();
@@ -1426,29 +1430,6 @@ describe("plugin detail route", () => {
         ([query]) => getFunctionName(query as never) === "packages:getActivityTrendForName",
       ),
     ).toBe(false);
-
-    const sidebarMetadata = document.querySelector('dl[aria-label="Plugin metadata"]');
-    expect(sidebarMetadata).toBeTruthy();
-    const sidebarRows = Array.from(
-      sidebarMetadata?.querySelectorAll(".sidebar-metadata-row") ?? [],
-      (row) => ({
-        text: row.textContent?.replace(/\s+/g, " ").trim() ?? "",
-        hasDownload: Boolean(row.querySelector(".plugin-sidebar-download-button")),
-      }),
-    );
-    const downloadsRow = sidebarRows.find((row) => row.text.includes("Downloads"));
-    const creatorRow = sidebarRows.find((row) => row.text.includes("Creator"));
-    const downloadOnlyRow = sidebarRows.find((row) => row.hasDownload);
-    const typeRow = sidebarRows.find((row) => row.text.includes("Code Plugin"));
-    expect(downloadsRow?.hasDownload).toBe(false);
-    expect(downloadOnlyRow).toBeTruthy();
-    expect(creatorRow).toBeUndefined();
-    expect(document.querySelector(".skill-hero-creator")?.textContent).toContain("Demo Owner");
-    expect(typeRow).toBeTruthy();
-    expect(sidebarRows.at(-1)).toEqual(downloadOnlyRow);
-    expect(screen.getByRole("link", { name: /Download/i }).getAttribute("href")).toBe(
-      "/api/v1/packages/demo-plugin/download?version=1.0.0",
-    );
   });
 
   it("falls back to all-time plugin stats when activity graphs are unavailable", async () => {
@@ -1466,25 +1447,21 @@ describe("plugin detail route", () => {
     convexQueryMock.mockResolvedValueOnce(null);
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
-    const { container } = render(<Component />);
-
-    expect(container.querySelectorAll(".metric-trend-card-skeleton")).toHaveLength(1);
-    await waitFor(() =>
-      expect(container.querySelectorAll(".metric-trend-card-skeleton")).toHaveLength(0),
-    );
-
-    expect(screen.getByText("Downloads")).toBeTruthy();
-    expect(screen.getByText("1.2k")).toBeTruthy();
-    expect(screen.queryByText("Installs")).toBeNull();
-    expect(container.querySelectorAll(".metric-trend-card-skeleton")).toHaveLength(0);
-    expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
-    expect(screen.queryByRole("img", { name: "Daily downloads over the last 30 days" })).toBeNull();
-
-    const sidebarMetadata = document.querySelector('dl[aria-label="Plugin metadata"]');
-    const downloadsRow = sidebarMetadata?.querySelector(".sidebar-metadata-row-large");
-    expect(downloadsRow?.textContent).toContain("Downloads");
-    expect(downloadsRow?.querySelector(".plugin-sidebar-download-button")).toBeTruthy();
-    expect(sidebarMetadata?.querySelectorAll(".plugin-sidebar-download-button")).toHaveLength(1);
+    render(<Component />);
+    const metadata = screen.getByLabelText("Plugin metadata");
+    const dialog = openActivity();
+    await waitFor(() => expect(dialog.querySelector(".metric-trend-card-skeleton")).toBeNull());
+    expect(within(dialog).getByText("1.2k")).toBeTruthy();
+    expect(
+      within(dialog).queryByRole("img", { name: "Daily downloads over the last 30 days" }),
+    ).toBeNull();
+    expect(
+      within(dialog).queryByRole("img", { name: "Daily installs over the last 30 days" }),
+    ).toBeNull();
+    expect(within(dialog).getByRole("link", { name: "Download" })).toBeTruthy();
+    closeDialog();
+    expect(within(metadata).getByText("Downloads")).toBeTruthy();
+    expect(within(metadata).queryByRole("link", { name: "Download" })).toBeNull();
   });
 
   it("shows plugin settings when the viewer can manage the plugin", async () => {
@@ -1533,7 +1510,8 @@ describe("plugin detail route", () => {
     render(<Component />);
 
     const newVersionLink = screen.getByRole("link", { name: "New version" });
-    expect(screen.getByRole("link", { name: /download/i })).toBeTruthy();
+    expect(within(openVersions()).getByRole("link", { name: "Download" })).toBeTruthy();
+    closeDialog();
     expect(newVersionLink.getAttribute("href")).toBe(
       "/plugins/publish?ownerHandle=demo-owner&name=demo-plugin&displayName=Demo+Plugin",
     );
@@ -1665,7 +1643,7 @@ describe("plugin detail route", () => {
         .filter(([query]) => getFunctionName(query as never) === "packages:canDeleteVersions")
         .at(-1)?.[1],
     ).toBe("skip");
-    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+    openVersions();
     await waitFor(() =>
       expect(
         useQueryMock.mock.calls.some(
@@ -1735,9 +1713,8 @@ describe("plugin detail route", () => {
     const Component = route.__config.component as ComponentType;
 
     render(<Component />);
-    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
-
     expect(screen.getByRole("link", { name: "New version" })).toBeTruthy();
+    openVersions();
     expect(screen.queryByRole("button", { name: /Delete version/ })).toBeNull();
     expect(
       useQueryMock.mock.calls.some(
@@ -1782,70 +1759,97 @@ describe("plugin detail route", () => {
     expect(screen.queryByRole("link", { name: /settings/i })).toBeNull();
   });
 
-  it("renders package security scan results when scan data is present", async () => {
-    loaderDataMock = {
-      detail: loaderDataMock.detail,
-      version: {
-        package: {
-          name: "demo-plugin",
-          displayName: "Demo Plugin",
-          family: "code-plugin",
-        },
-        version: {
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "Initial release",
-          distTags: ["latest"],
-          files: [],
-          compatibility: null,
-          verification: { tier: "source-linked", scope: "artifact-only", scanStatus: "clean" },
-          sha256hash: "a".repeat(64),
-          llmAnalysis: {
-            status: "clean",
-            verdict: "clean",
-            summary: "Looks safe.",
-            checkedAt: 1,
+  it.each([
+    ["clean", "Clean"],
+    ["suspicious", "Review"],
+  ] as const)(
+    "renders the %s audit verdict with ordered plugin metadata",
+    async (status, verdict) => {
+      loaderDataMock = {
+        detail: {
+          ...loaderDataMock.detail,
+          package: {
+            ...loaderDataMock.detail.package!,
+            latestVersion: "1.0.0",
+            categories: ["web"],
+            topics: ["search"],
+            stats: { downloads: 597, installs: 0, stars: 0, versions: 1 },
           },
         },
-      },
-      versions: emptyVersions,
-      readme: null,
-      rateLimited: null,
-    };
+        version: {
+          package: {
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+          },
+          version: {
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "Initial release",
+            distTags: ["latest"],
+            files: [],
+            compatibility: null,
+            verification: {
+              tier: "source-linked",
+              scope: "artifact-only",
+              scanStatus: status,
+              sourceRepo: "demo-owner/demo-plugin",
+            },
+            sha256hash: "a".repeat(64),
+            llmAnalysis: {
+              status,
+              verdict: status,
+              summary: "Looks safe.",
+              checkedAt: 1,
+            },
+          },
+        },
+        versions: emptyVersions,
+        readme: null,
+        rateLimited: null,
+      };
 
-    const route = await loadRoute();
-    const Component = route.__config.component as ComponentType;
+      const route = await loadRoute();
+      const Component = route.__config.component as ComponentType;
 
-    render(<Component />);
+      render(<Component />);
 
-    expect(screen.getByText("Security audit")).toBeTruthy();
-    expect(screen.getByText("Pass")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "View Security Audit" }).getAttribute("href")).toBe(
-      "/plugins/demo-plugin/security-audit",
-    );
-    expect(
-      screen.getByRole("button", {
-        name: "Security checks for vulnerabilities and agentic risk",
-      }),
-    ).toBeTruthy();
-    expect(screen.queryByText("Looks safe.")).toBeNull();
-
-    const sidebarMetadata = document.querySelector('dl[aria-label="Plugin metadata"]');
-    expect(sidebarMetadata).toBeTruthy();
-    const sidebarLabels = Array.from(
-      sidebarMetadata?.querySelectorAll(".sidebar-metadata-label") ?? [],
-      (label) => label.textContent?.trim(),
-    );
-    const securityAuditLabelIndex = sidebarLabels.findIndex((label) =>
-      label?.startsWith("Security audit"),
-    );
-    const downloadsLabelIndex = sidebarLabels.findIndex((label) => label?.includes("Downloads"));
-    expect(securityAuditLabelIndex).toBeGreaterThanOrEqual(0);
-    expect(downloadsLabelIndex).toBeGreaterThanOrEqual(0);
-    expect(securityAuditLabelIndex).toBeGreaterThan(downloadsLabelIndex);
-    expect(screen.queryByRole("tab", { name: "Capabilities" })).toBeNull();
-    expect(screen.queryByRole("tab", { name: "Verification" })).toBeNull();
-  });
+      const metadata = screen.getByLabelText("Plugin metadata");
+      expect(
+        within(metadata)
+          .getAllByRole("term")
+          .map((term) => term.textContent?.trim()),
+      ).toEqual([
+        "Security audit",
+        "Version",
+        "Updated",
+        "Published",
+        "Downloads",
+        "Categories",
+        "Repository",
+        "Topics",
+      ]);
+      const audit = within(metadata).getByRole("link", {
+        name: new RegExp(`View Security Audit.*${verdict}`, "i"),
+      });
+      expect(audit.textContent?.trim()).toBe(verdict);
+      expect(within(metadata).queryByText(/^Audit$/i)).toBeNull();
+      expect(audit.getAttribute("href")).toBe("/plugins/demo-plugin/security-audit");
+      expect(
+        within(metadata).getByRole("button", {
+          name: "Security checks for vulnerabilities and agentic risk",
+        }),
+      ).toBeTruthy();
+      expect(within(metadata).getByText("1.0.0", { exact: true })).toBeTruthy();
+      expect(within(metadata).getByText("597")).toBeTruthy();
+      expect(
+        within(metadata)
+          .getByRole("link", { name: /demo-plugin/i })
+          .getAttribute("href"),
+      ).toBe("https://github.com/demo-owner/demo-plugin");
+      expect(screen.queryByText("Looks safe.")).toBeNull();
+    },
+  );
 
   it("does not render owner-only plugin scanner rerun state in the detail security summary", async () => {
     useAuthStatusMock.mockReturnValue({
@@ -1944,17 +1948,18 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    fireEvent.click(screen.getByRole("tab", { name: "Compatibility" }));
-    expect(screen.getByText("ClawPack")).toBeTruthy();
-    expect(screen.getByText("demo-plugin-1.0.0.tgz")).toBeTruthy();
-    expect(screen.getByText("sha512-demo")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "CLI" }));
-    expect(screen.getAllByText("openclaw plugins install")).toHaveLength(1);
-    expect(
-      screen.getByText("clawhub:demo-plugin@latest", { selector: ".skill-install-command-target" }),
-    ).toBeTruthy();
-    expect(screen.getByRole("link", { name: /Download/i }).getAttribute("href")).toBe(
+    const dialog = openVersions();
+    expect(within(dialog).getByRole("link", { name: "Download" }).getAttribute("href")).toBe(
       "/api/v1/packages/demo-plugin/versions/1.0.0/artifact/download",
+    );
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Compatibility" }));
+    expect(within(dialog).getByText("ClawPack")).toBeTruthy();
+    expect(within(dialog).getByText("demo-plugin-1.0.0.tgz")).toBeTruthy();
+    expect(within(dialog).getByText("sha512-demo")).toBeTruthy();
+    closeDialog();
+    const card = getInstallCard();
+    expect(card.querySelector("pre")?.textContent).toBe(
+      "openclaw plugins install clawhub:demo-plugin@latest",
     );
   });
 
@@ -2004,12 +2009,13 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    fireEvent.click(screen.getByRole("tab", { name: "Compatibility" }));
-    expect(screen.getByText("Legacy ZIP")).toBeTruthy();
-    expect(screen.getByText(/legacy ZIP path/i)).toBeTruthy();
-    expect(screen.getByRole("link", { name: /Download/i }).getAttribute("href")).toBe(
+    const dialog = openVersions();
+    expect(within(dialog).getByRole("link", { name: "Download" }).getAttribute("href")).toBe(
       "/api/v1/packages/demo-plugin/download?version=1.0.0",
     );
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Compatibility" }));
+    expect(within(dialog).getByText("Legacy ZIP")).toBeTruthy();
+    expect(within(dialog).getByText(/legacy ZIP path/i)).toBeTruthy();
   });
 
   it("hides retirement notices, incompatibility alerts, and validation outputs from visitors", async () => {
@@ -2078,12 +2084,13 @@ describe("plugin detail route", () => {
     ).toBeNull();
     expect(screen.queryByRole("region", { name: "OpenClaw API updates" })).toBeNull();
     expect(screen.queryByText("API details")).toBeNull();
-    expect(screen.getByRole("heading", { name: /^Install$/ })).toBeTruthy();
+    expect(getInstallCard()).toBeTruthy();
+    openVersions();
     expect(screen.queryByRole("tab", { name: /Validation/ })).toBeNull();
     expect(screen.queryByText("missing-expected-seam")).toBeNull();
   });
 
-  it("shows validation outputs to plugin managers above the detail tabs", async () => {
+  it("shows validation outputs inline to plugin managers", async () => {
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,

@@ -10,7 +10,6 @@ import {
   AlertTriangle,
   Braces,
   ChevronRight,
-  Download,
   FileArchive,
   Files,
   Fingerprint,
@@ -18,10 +17,7 @@ import {
   HardDrive,
   Info,
   Package,
-  Pencil,
-  Plus,
   Server,
-  Sparkles,
   Tag,
   Upload,
   type LucideIcon,
@@ -33,34 +29,32 @@ import {
   pluginApiRetirement,
   type PluginApiRetirement,
 } from "../../../convex/lib/pluginApiRetirements";
-import { GitHubIcon } from "../../components/BrandIcons";
+import { CatalogDetailBreadcrumb, CatalogDetailLayout } from "../../components/CatalogDetailLayout";
 import { CatalogMetadataEditor } from "../../components/CatalogMetadataEditor";
-import {
-  DetailHero,
-  DETAIL_HERO_TOPIC_LIMIT,
-  DetailPageShell,
-} from "../../components/DetailPageShell";
-import {
-  DetailSecuritySummary,
-  DetailSecuritySummaryLabel,
-} from "../../components/DetailSecuritySummary";
 import { useDownloadsSidebarMetricBlock } from "../../components/DownloadsMetricCard";
 import { EmptyState } from "../../components/EmptyState";
 import { InlineMarkdownSummary } from "../../components/InlineMarkdownSummary";
 import { InstallCopyButton } from "../../components/InstallCopyButton";
 import { Container } from "../../components/layout/Container";
-import { MarkdownPreview } from "../../components/MarkdownPreview";
+import "./-plugin-catalog-detail.css";
+import { MarketplaceIcon } from "../../components/MarketplaceIcon";
+import { OfficialBadge } from "../../components/OfficialBadge";
+import { PluginCatalogOverview } from "../../components/PluginCatalogOverview";
+import { PluginCatalogRail } from "../../components/PluginCatalogRail";
+import {
+  PluginPackageDetails,
+  pluginDetailTabFromHash,
+  type PluginDetailTab,
+} from "../../components/PluginPackageDetails";
 import {
   PLUGIN_VERSIONS_PAGE_SIZE,
   PluginVersionsPanel,
 } from "../../components/PluginVersionsPanel";
 import { SidebarMetadata } from "../../components/SidebarMetadata";
-import { SkillDetailSkeleton } from "../../components/skeletons/SkillDetailSkeleton";
 import { formatOpenClawPrompt } from "../../components/skillDetailUtils";
 import { InstallCommandCard } from "../../components/SkillInstallSurface";
 import { Alert, AlertDescription } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -68,22 +62,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../../components/ui/dialog";
-import { UserBadge } from "../../components/UserBadge";
 import { getActivityTrendEndDay } from "../../lib/activityTrend";
-import { BrowseCategoryIcon } from "../../lib/browseCategoryIcons";
-import {
-  buildPluginCategoryBrowseHref,
-  buildPluginTopicBrowseHref,
-  formatCatalogTopicLabel,
-  getPluginCategoryBySlug,
-} from "../../lib/categories";
 import { formatRetryDelay } from "../../lib/formatRetryDelay";
 import { buildPluginMeta, buildSocialMetaHead } from "../../lib/og";
 import { getOpenClawPackageCandidateNames } from "../../lib/openClawExtensionSlugs";
 import { buildPublisherProfileHref } from "../../lib/ownerRoute";
 import {
   fetchPackageDetail,
-  fetchPackageFile,
   fetchPackageReadme,
   fetchPackageVersion,
   fetchPackageVersions,
@@ -98,30 +83,19 @@ import {
   buildPluginCanonicalHrefForRequestedPath,
   buildPluginDetailHref,
   buildPluginSecurityAuditHref,
-  displayPluginPackageName,
   parseScopedPackageName,
 } from "../../lib/pluginRoutes";
 import { formatValidationFindingMessage } from "../../lib/pluginValidationFormat";
 import { presentationTitle } from "../../lib/presentationTitle";
 import { buildReadmeAssetBaseUrl } from "../../lib/readmeAssetBaseUrl";
-import { timeAgo } from "../../lib/timeAgo";
 import { useAuthStatus } from "../../lib/useAuthStatus";
 import { useDeferredPackageActivityTrend } from "../../lib/useDeferredActivityTrend";
 import { useHeroCreatorPublisher } from "../../lib/useHeroCreatorPublisher";
-import { useMediaQuery } from "../../lib/useMediaQuery";
 
 type PluginDetailRateLimitState = {
   scope: "detail" | "metadata";
   retryAfterSeconds: number | null;
 } | null;
-
-type PluginDetailTab =
-  | "readme"
-  | "versions"
-  | "compatibility"
-  | "configuration"
-  | "mcpServers"
-  | "skills";
 
 type PluginInspectorFinding = Partial<PluginApiRetirement> & {
   packageName: string;
@@ -305,221 +279,10 @@ function formatArtifactSize(value: number | null | undefined): string | null {
   return `${size >= 10 ? size.toFixed(0) : size.toFixed(1)} ${units[unitIndex]}`;
 }
 
-function pluginDetailTabFromHash(hashValue: string): PluginDetailTab {
-  const hash = hashValue.replace("#", "");
-  if (hash === "warnings" || hash === "validation") return "readme";
-  if (hash === "verification") return "compatibility";
-  if (hash === "mcp-servers" || hash === "mcpServers") return "mcpServers";
-  return hash === "versions" ||
-    hash === "compatibility" ||
-    hash === "configuration" ||
-    hash === "skills"
-    ? hash
-    : "readme";
-}
-
-const PLUGIN_README_COLLAPSED_LINE_COUNT = 50;
-
-function PluginDetailTabs({
-  activeTab,
-  setActiveTab,
-  readme,
-  readmeAssetBaseUrl,
-  versionsPanel,
-  compatibilityPanel,
-  configurationPanel,
-  mcpServersPanel,
-  skillsPanel,
-}: {
-  activeTab: PluginDetailTab;
-  setActiveTab: (tab: PluginDetailTab) => void;
-  readme: string | null;
-  readmeAssetBaseUrl?: string;
-  versionsPanel: (hidden: boolean) => ReactNode;
-  compatibilityPanel: ReactNode | null;
-  configurationPanel: ReactNode | null;
-  mcpServersPanel: ReactNode | null;
-  skillsPanel: ReactNode | null;
-}) {
-  const [hasMountedVersions, setHasMountedVersions] = useState(activeTab === "versions");
-  const [isReadmeExpanded, setIsReadmeExpanded] = useState(false);
-  const readmeLineCount = useMemo(() => readme?.split(/\r\n|\n|\r/).length ?? 0, [readme]);
-  const isReadmeLong = readmeLineCount > PLUGIN_README_COLLAPSED_LINE_COUNT;
-
-  useEffect(() => {
-    setIsReadmeExpanded(false);
-  }, [readme]);
-  const selectTab = (tab: PluginDetailTab) => {
-    const scrollPosition =
-      typeof window === "undefined" ? null : { left: window.scrollX, top: window.scrollY };
-    setActiveTab(tab);
-    if (typeof window === "undefined") return;
-    const hash = tab === "readme" ? "" : tab === "mcpServers" ? "#mcp-servers" : `#${tab}`;
-    window.history.replaceState(
-      null,
-      "",
-      `${window.location.pathname}${window.location.search}${hash}`,
-    );
-    window.requestAnimationFrame(() => {
-      if (!scrollPosition) return;
-      window.scrollTo(scrollPosition.left, scrollPosition.top);
-    });
-  };
-
-  const effectiveActiveTab =
-    activeTab === "versions"
-      ? "versions"
-      : activeTab === "compatibility" && compatibilityPanel
-        ? "compatibility"
-        : activeTab === "configuration" && configurationPanel
-          ? "configuration"
-          : activeTab === "mcpServers" && mcpServersPanel
-            ? "mcpServers"
-            : activeTab === "skills" && skillsPanel
-              ? "skills"
-              : "readme";
-  useEffect(() => {
-    if (effectiveActiveTab === "versions") setHasMountedVersions(true);
-  }, [effectiveActiveTab]);
-  const readmePanel = readme ? (
-    <>
-      <div
-        className={`skill-readme-preview${
-          isReadmeLong && !isReadmeExpanded ? " is-collapsed" : ""
-        }`}
-        data-analytics-public-detail=""
-      >
-        <MarkdownPreview assetBaseUrl={readmeAssetBaseUrl}>{readme}</MarkdownPreview>
-      </div>
-      {isReadmeLong ? (
-        <button
-          type="button"
-          className="skill-readme-toggle"
-          aria-expanded={isReadmeExpanded}
-          onClick={() => setIsReadmeExpanded((expanded) => !expanded)}
-        >
-          {isReadmeExpanded ? "Show less" : "Read more"}
-        </button>
-      ) : null}
-    </>
-  ) : (
-    <div className="empty-state px-[var(--space-4)] py-[var(--space-6)]">
-      <p className="empty-state-title">No README available</p>
-      <p className="empty-state-body">This plugin doesn't have a README yet.</p>
-    </div>
-  );
-  const activePanel =
-    effectiveActiveTab === "compatibility" && compatibilityPanel
-      ? compatibilityPanel
-      : effectiveActiveTab === "configuration" && configurationPanel
-        ? configurationPanel
-        : effectiveActiveTab === "mcpServers" && mcpServersPanel
-          ? mcpServersPanel
-          : effectiveActiveTab === "skills" && skillsPanel
-            ? skillsPanel
-            : readmePanel;
-
-  return (
-    <div className="tab-card detail-mobile-tabs">
-      <div className="tab-header" role="tablist" aria-label="Plugin detail tabs">
-        <button
-          id="plugin-tab-readme"
-          className={`tab-button${effectiveActiveTab === "readme" ? " is-active" : ""}`}
-          type="button"
-          role="tab"
-          aria-selected={effectiveActiveTab === "readme"}
-          aria-controls="plugin-tabpanel-readme"
-          onClick={() => selectTab("readme")}
-        >
-          README.md
-        </button>
-        {skillsPanel ? (
-          <button
-            id="plugin-tab-skills"
-            className={`tab-button${effectiveActiveTab === "skills" ? " is-active" : ""}`}
-            type="button"
-            role="tab"
-            aria-selected={effectiveActiveTab === "skills"}
-            aria-controls="plugin-tabpanel-skills"
-            onClick={() => selectTab("skills")}
-          >
-            Skills
-          </button>
-        ) : null}
-        {mcpServersPanel ? (
-          <button
-            id="plugin-tab-mcpServers"
-            className={`tab-button${effectiveActiveTab === "mcpServers" ? " is-active" : ""}`}
-            type="button"
-            role="tab"
-            aria-selected={effectiveActiveTab === "mcpServers"}
-            aria-controls="plugin-tabpanel-mcpServers"
-            onClick={() => selectTab("mcpServers")}
-          >
-            MCP Servers
-          </button>
-        ) : null}
-        {configurationPanel ? (
-          <button
-            id="plugin-tab-configuration"
-            className={`tab-button${effectiveActiveTab === "configuration" ? " is-active" : ""}`}
-            type="button"
-            role="tab"
-            aria-selected={effectiveActiveTab === "configuration"}
-            aria-controls="plugin-tabpanel-configuration"
-            onClick={() => selectTab("configuration")}
-          >
-            Configuration
-          </button>
-        ) : null}
-        {compatibilityPanel ? (
-          <button
-            id="plugin-tab-compatibility"
-            className={`tab-button${effectiveActiveTab === "compatibility" ? " is-active" : ""}`}
-            type="button"
-            role="tab"
-            aria-selected={effectiveActiveTab === "compatibility"}
-            aria-controls="plugin-tabpanel-compatibility"
-            onClick={() => selectTab("compatibility")}
-          >
-            Compatibility
-          </button>
-        ) : null}
-        <button
-          id="plugin-tab-versions"
-          className={`tab-button${effectiveActiveTab === "versions" ? " is-active" : ""}`}
-          type="button"
-          role="tab"
-          aria-selected={effectiveActiveTab === "versions"}
-          aria-controls="plugin-tabpanel-versions"
-          onClick={() => selectTab("versions")}
-        >
-          Versions
-        </button>
-      </div>
-      {effectiveActiveTab !== "versions" ? (
-        <div
-          className={`tab-body${effectiveActiveTab === "readme" ? " skill-readme-body" : ""}`}
-          role="tabpanel"
-          id={`plugin-tabpanel-${effectiveActiveTab}`}
-          aria-labelledby={`plugin-tab-${effectiveActiveTab}`}
-        >
-          {activePanel}
-        </div>
-      ) : null}
-      {hasMountedVersions || effectiveActiveTab === "versions"
-        ? versionsPanel(effectiveActiveTab !== "versions")
-        : null}
-    </div>
-  );
-}
-
 type PluginManifestSummary = NonNullable<
   NonNullable<PackageVersionDetail["version"]>["pluginManifestSummary"]
 >;
-type BundledPluginSkill = PluginManifestSummary["bundledSkills"][number];
 type PluginConfigField = PluginManifestSummary["configFields"][number];
-type PluginMcpServer = PluginManifestSummary["mcpServers"][number];
 
 type PluginKvRowProps = {
   label: string;
@@ -587,94 +350,6 @@ function PluginManifestConfigurationPanel({ fields }: { fields: PluginConfigFiel
           ))}
         </div>
       </section>
-    </div>
-  );
-}
-
-function PluginManifestMcpServersPanel({ servers }: { servers: PluginMcpServer[] }) {
-  return (
-    <div className="plugin-manifest-capabilities">
-      <section className="plugin-manifest-section">
-        <div className="plugin-manifest-chip-list">
-          {servers.map((server) => (
-            <Badge key={server.name} variant="compact">
-              {server.name}
-            </Badge>
-          ))}
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function PluginManifestSkillsPanel({
-  packageName,
-  version,
-  skills,
-}: {
-  packageName: string;
-  version: string | null;
-  skills: BundledPluginSkill[];
-}) {
-  const [previewSkill, setPreviewSkill] = useState<BundledPluginSkill | null>(null);
-  const [previewContent, setPreviewContent] = useState<string | null>(null);
-  const [previewError, setPreviewError] = useState<string | null>(null);
-  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
-
-  async function openSkillPreview(skill: BundledPluginSkill) {
-    setPreviewSkill(skill);
-    setPreviewContent(null);
-    setPreviewError(null);
-    setIsPreviewLoading(true);
-    try {
-      const content = await fetchPackageFile(packageName, skill.skillMdPath, version);
-      setPreviewContent(content ?? "Skill markdown is unavailable.");
-    } catch (error) {
-      setPreviewError(error instanceof Error ? error.message : "Failed to load skill markdown.");
-    } finally {
-      setIsPreviewLoading(false);
-    }
-  }
-
-  return (
-    <div className="plugin-manifest-capabilities">
-      <section className="plugin-manifest-section">
-        <div className="plugin-manifest-list">
-          {skills.map((skill) => (
-            <article key={skill.skillMdPath} className="plugin-manifest-row">
-              <div className="plugin-manifest-row-main">
-                <code>{skill.name}</code>
-                {skill.description ? <p>{skill.description}</p> : null}
-                <span>{skill.rootPath}</span>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => void openSkillPreview(skill)}
-                aria-label={`Preview ${skill.name}`}
-              >
-                Preview
-              </Button>
-            </article>
-          ))}
-        </div>
-      </section>
-      <Dialog open={Boolean(previewSkill)} onOpenChange={(open) => !open && setPreviewSkill(null)}>
-        <DialogContent className="max-h-[85vh] max-w-[min(920px,92vw)] overflow-auto">
-          <DialogHeader>
-            <DialogTitle>{previewSkill?.name ?? "Bundled skill"}</DialogTitle>
-            <DialogDescription>{previewSkill?.skillMdPath}</DialogDescription>
-          </DialogHeader>
-          {isPreviewLoading ? (
-            <div className="stat">Loading skill markdown...</div>
-          ) : previewError ? (
-            <div className="stat">Failed to load skill markdown: {previewError}</div>
-          ) : previewContent ? (
-            <MarkdownPreview>{previewContent}</MarkdownPreview>
-          ) : null}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
@@ -1027,9 +702,33 @@ function PluginDetailRoute() {
 
 export function PluginDetailPending() {
   return (
-    <main className="section detail-page-section plugin-detail-page" aria-busy="true">
-      <div role="status" aria-label="Loading plugin details">
-        <SkillDetailSkeleton kind="plugin" />
+    <main className="catalog-detail-page plugin-detail-page" aria-busy="true">
+      <div
+        className="catalog-detail plugin-catalog-loading"
+        role="status"
+        aria-label="Loading plugin details"
+      >
+        <div aria-hidden="true" className="catalog-detail__breadcrumb">
+          <span className="plugin-catalog-loading__crumb" />
+        </div>
+        <div aria-hidden="true" className="catalog-detail__hero">
+          <span className="catalog-detail__icon" />
+          <div className="catalog-detail__heading">
+            <span className="plugin-catalog-loading__title" />
+            <span className="plugin-catalog-loading__publisher" />
+          </div>
+        </div>
+        <div className="catalog-detail__content" aria-hidden="true">
+          <div className="catalog-detail__main">
+            <span className="plugin-catalog-loading__card" />
+            <span className="plugin-catalog-loading__card" />
+          </div>
+          <div className="catalog-detail__sidebar">
+            {[0, 1, 2, 3].map((i) => (
+              <span key={i} className="plugin-catalog-loading__fact" />
+            ))}
+          </div>
+        </div>
       </div>
     </main>
   );
@@ -1065,7 +764,7 @@ function PluginDetailPageContent({ name, loaderData, pendingNotice }: PluginDeta
   const router = useRouter();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const { me } = useAuthStatus();
-  const [activeTab, setActiveTab] = useState<PluginDetailTab>("readme");
+  const [activeTab, setActiveTab] = useState<PluginDetailTab | null>(null);
   const [loadedVersions, setLoadedVersions] = useState(versions);
   const isNestedPluginRoute =
     pathname.includes("/security/") || pathname.endsWith("/security-audit");
@@ -1103,7 +802,9 @@ function PluginDetailPageContent({ name, loaderData, pendingNotice }: PluginDeta
   const validationSummaryUnavailable = validationSummaryResult instanceof Error;
   const activityTrendEndDay = getActivityTrendEndDay();
   const { trend: activityTrend, loading: activityTrendLoading } = useDeferredPackageActivityTrend(
-    detail.package ? { name: detail.package.name, endDay: activityTrendEndDay } : null,
+    activeTab === "activity" && detail.package
+      ? { name: detail.package.name, endDay: activityTrendEndDay }
+      : null,
   );
   const downloadsMetricBlock = useDownloadsSidebarMetricBlock({
     allTimeDownloads: detail.package?.stats?.downloads ?? 0,
@@ -1123,13 +824,20 @@ function PluginDetailPageContent({ name, loaderData, pendingNotice }: PluginDeta
     authorInspectorFindings && shouldShowDevValidationFindingMocks()
       ? [...authorInspectorFindings, ...buildDevValidationFindingMocks(authorInspectorFindings[0])]
       : authorInspectorFindings;
-  const [mobileDetailPanel, setMobileDetailPanel] = useState<"content" | "stats">("content");
-  const isMobileDetailLayout = useMediaQuery("(max-width: 900px)");
-  const [isSummaryExpanded, setIsSummaryExpanded] = useState(false);
+  const owner = detail.owner;
+  const heroCreatorPublisher = useHeroCreatorPublisher({
+    owner,
+    packageOfficial: detail.package?.isOfficial === true,
+  });
   const [isCatalogMetadataDialogOpen, setIsCatalogMetadataDialogOpen] = useState(false);
   const setCatalogMetadata = useMutation(api.packages.setPackageCatalogMetadata);
   useEffect(() => {
-    const syncTabFromHash = () => setActiveTab(pluginDetailTabFromHash(window.location.hash));
+    const syncTabFromHash = () => {
+      const hash = window.location.hash;
+      setActiveTab(pluginDetailTabFromHash(hash));
+      // Previous listings accepted both spellings before MCP servers became an inline section.
+      if (hash === "#mcpServers") document.getElementById("mcp-servers")?.scrollIntoView();
+    };
     window.addEventListener("hashchange", syncTabFromHash);
     syncTabFromHash();
     return () => window.removeEventListener("hashchange", syncTabFromHash);
@@ -1185,23 +893,8 @@ function PluginDetailPageContent({ name, loaderData, pendingNotice }: PluginDeta
   }
 
   const pkg = detail.package;
-  const headerCategories = (pkg.categories ?? [])
-    .flatMap((value) => {
-      const category = getPluginCategoryBySlug(value);
-      return category ? [category] : [];
-    })
-    .slice(0, 3);
-  const headerTopics = (pkg.topics ?? [])
-    .map((topic) => topic.trim())
-    .filter(Boolean)
-    .slice(0, DETAIL_HERO_TOPIC_LIMIT);
-  const headerSummary = pkg.summary ?? "No summary provided.";
-  const hasSummaryToggle = headerSummary.length > 220;
-  const owner = detail.owner;
-  const heroCreatorPublisher = useHeroCreatorPublisher({
-    owner,
-    packageOfficial: pkg.isOfficial === true,
-  });
+  const title = presentationTitle(pkg.displayName, pkg.name);
+  const publisherHandle = (heroCreatorPublisher?.handle ?? pkg.ownerHandle)?.replace(/^@+/, "");
   const latestRelease = version?.version ?? null;
   const isDownloadBlocked =
     pkg.scanStatus === "malicious" || latestRelease?.verification?.scanStatus === "malicious";
@@ -1248,9 +941,6 @@ function PluginDetailPageContent({ name, loaderData, pendingNotice }: PluginDeta
         displayName: pkg.displayName,
       }).toString()}`
     : null;
-  const showCatalogMetadataEmptyState = Boolean(
-    manageContext && headerCategories.length === 0 && headerTopics.length === 0,
-  );
   const compatEntries = compatibility
     ? Object.entries(compatibility).filter(([, v]) => v !== undefined && v !== null)
     : [];
@@ -1326,18 +1016,6 @@ function PluginDetailPageContent({ name, loaderData, pendingNotice }: PluginDeta
   const configurationPanel =
     pluginManifestSummary && pluginManifestSummary.configFields.length > 0 ? (
       <PluginManifestConfigurationPanel fields={pluginManifestSummary.configFields} />
-    ) : null;
-  const mcpServersPanel =
-    pluginManifestSummary && pluginManifestSummary.mcpServers.length > 0 ? (
-      <PluginManifestMcpServersPanel servers={pluginManifestSummary.mcpServers} />
-    ) : null;
-  const skillsPanel =
-    pluginManifestSummary && pluginManifestSummary.bundledSkills.length > 0 ? (
-      <PluginManifestSkillsPanel
-        packageName={pkg.name}
-        version={latestRelease?.version ?? pkg.latestVersion ?? null}
-        skills={pluginManifestSummary.bundledSkills}
-      />
     ) : null;
   const validationAvailabilityAlert = validationSummaryUnavailable ? (
     <Alert variant="warn" className="plugin-validation-alert">
@@ -1490,373 +1168,126 @@ function PluginDetailPageContent({ name, loaderData, pendingNotice }: PluginDeta
         </section>
       </section>
     ) : null;
-  const sourceRepoLink = verification?.sourceRepo
-    ? (() => {
-        const raw = verification.sourceRepo;
-        const href = /^https?:\/\//.test(raw) ? raw : `https://github.com/${raw}`;
-        const display = href
-          .replace(/^https?:\/\/github\.com\//, "")
-          .replace(/^https?:\/\//, "")
-          .replace(/\/$/, "");
-        return (
-          <a
-            href={href}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="plugin-external-link"
-            data-analytics-public-detail=""
-          >
-            <GitHubIcon size={14} />
-            {display}
-          </a>
-        );
-      })()
-    : null;
-  const pluginHeroCreator = heroCreatorPublisher ? (
-    <UserBadge
-      user={heroCreatorPublisher}
-      fallbackHandle={heroCreatorPublisher.handle ?? pkg.ownerHandle ?? null}
-      prefix=""
-      size="md"
-      showName
-      showHandle={false}
-      showMutedHandle
-      stackMutedHandleBelowName
-      disableTooltip
+  const selectTab = (tab: PluginDetailTab | null) => {
+    setActiveTab(tab);
+    window.history.replaceState(
+      window.history.state,
+      "",
+      window.location.pathname + window.location.search + (tab ? "#" + tab : ""),
+    );
+  };
+  const activityPanel = (
+    <SidebarMetadata
+      ariaLabel="Package activity"
+      blocks={[downloadsMetricBlock, { label: "Type", value: familyLabel(pkg.family) }]}
     />
-  ) : null;
-  const hasSourceMetadata = Boolean(sourceRepoLink || owner || latestRelease || pkg.latestVersion);
-  const securitySummary = latestRelease ? (
-    <DetailSecuritySummary
-      auditHref={buildPluginSecurityAuditHref(name, { ownerHandle: owner?.handle })}
-      llmAnalysis={latestRelease.llmAnalysis ?? null}
-    />
-  ) : null;
-  const pluginSidebarDownloadActions =
-    pkg.latestVersion && !isDownloadBlocked ? (
-      <div className="plugin-sidebar-download-actions">
-        <Button asChild variant="outline" size="sm" className="plugin-sidebar-download-button">
-          <a href={downloadPath}>
-            <Download size={13} aria-hidden="true" />
-            Download
-          </a>
-        </Button>
-      </div>
-    ) : null;
-  const hasDownloadsGraph = activityTrendLoading || Boolean(activityTrend?.downloads);
-  const pluginDownloadsMetricBlock =
-    !hasDownloadsGraph && pluginSidebarDownloadActions
-      ? {
-          ...downloadsMetricBlock,
-          value: (
-            <div className="plugin-downloads-metric-value-row">
-              <div className="plugin-downloads-metric-content">{downloadsMetricBlock.value}</div>
-              {pluginSidebarDownloadActions}
-            </div>
-          ),
-        }
-      : downloadsMetricBlock;
-  const pluginDownloadMetadataBlock =
-    hasDownloadsGraph && pluginSidebarDownloadActions
-      ? {
-          key: "plugin-download",
-          label: "",
-          value: pluginSidebarDownloadActions,
-        }
-      : null;
-  const pluginSidebarMetadataBlocks = hasSourceMetadata
-    ? [
-        pluginDownloadsMetricBlock,
-        { label: "Repository", value: sourceRepoLink },
-        securitySummary
-          ? {
-              key: "security-audit",
-              label: <DetailSecuritySummaryLabel />,
-              value: securitySummary,
-            }
-          : { label: "", value: null },
-        {
-          grid: [
-            {
-              label: "Last updated",
-              value: (
-                <span title={new Date(pkg.updatedAt).toLocaleString()}>
-                  {timeAgo(pkg.updatedAt)}
-                </span>
-              ),
-            },
-            {
-              label: "Current version",
-              value: pkg.latestVersion ? `v${pkg.latestVersion}` : null,
-            },
-          ],
-        },
-        { label: "Type", value: familyLabel(pkg.family) },
-        ...(pluginDownloadMetadataBlock ? [pluginDownloadMetadataBlock] : []),
-      ]
-    : [
-        pluginDownloadsMetricBlock,
-        ...(pluginDownloadMetadataBlock ? [pluginDownloadMetadataBlock] : []),
-      ];
-  const pluginSidebarStatsContent =
-    hasSourceMetadata || pluginSidebarDownloadActions ? (
-      <SidebarMetadata
-        ariaLabel="Plugin metadata"
-        density="compact"
-        className="skill-sidebar-deferred-metadata"
-        blocks={pluginSidebarMetadataBlocks}
-      />
-    ) : null;
-  const managementToolbar = newVersionHref ? (
-    <div className="skill-management-toolbar">
-      <div className="skill-management-toolbar-inner">
-        <Button asChild variant="ghost" size="xs" className="skill-management-toolbar-action">
-          <a href={newVersionHref} aria-label="New version">
-            <Upload size={13} aria-hidden="true" />
-            New version
-          </a>
-        </Button>
-      </div>
-    </div>
-  ) : null;
+  );
 
   return (
-    <main className="section detail-page-section plugin-detail-page">
-      <DetailPageShell>
-        {managementToolbar}
-        <DetailHero
-          main={
-            <div className="skill-hero-title">
-              <nav className="skill-hero-breadcrumbs" aria-label="Plugin breadcrumbs">
-                <a href="/plugins">plugins</a>
-                <span aria-hidden="true">/</span>
-                <a href={owner?.handle ? buildPublisherProfileHref(owner.handle) : "#"}>
-                  {owner?.handle ?? owner?.displayName ?? "unknown"}
-                </a>
-                <span aria-hidden="true">/</span>
+    <main className="catalog-detail-page plugin-detail-page">
+      <CatalogDetailLayout
+        className={
+          pkg.isOfficial && pkg.icon
+            ? "plugin-catalog-page plugin-catalog-page--official-art"
+            : "plugin-catalog-page"
+        }
+        breadcrumb={
+          <CatalogDetailBreadcrumb
+            href={isPlugin ? "/plugins" : "/skills"}
+            label={isPlugin ? "Plugins" : "Skills"}
+            current={title}
+          />
+        }
+        icon={
+          <MarketplaceIcon
+            kind={isPlugin ? "plugin" : "skill"}
+            label={title}
+            imageUrl={pkg.icon}
+            publisherImageUrl={owner?.image}
+            tone="muted"
+          />
+        }
+        title={title}
+        publisher={
+          heroCreatorPublisher || publisherHandle ? (
+            <>
+              {heroCreatorPublisher?.displayName ? (
+                <strong>{heroCreatorPublisher.displayName}</strong>
+              ) : null}
+              {heroCreatorPublisher?.official ? <OfficialBadge iconOnly size={16} /> : null}
+              {publisherHandle ? (
                 <a
-                  href={buildPluginDetailHref(pkg.name, { ownerHandle: owner?.handle })}
-                  aria-current="page"
-                >
-                  {displayPluginPackageName(pkg.name)}
-                </a>
-              </nav>
-              <div className="skill-hero-heading-stack">
-                {showCatalogMetadataEmptyState ? (
-                  <div
-                    className="plugin-catalog-empty-alert plugin-catalog-empty-alert--hero"
-                    role="status"
-                  >
-                    <span className="plugin-catalog-empty-alert-visibility">
-                      Visible only to you
-                    </span>
-                    <div className="plugin-catalog-empty-alert-row">
-                      <div className="plugin-catalog-empty-alert-icon" aria-hidden="true">
-                        <Sparkles size={14} />
-                      </div>
-                      <span className="plugin-catalog-empty-alert-title">
-                        Add topics to your plugin
-                      </span>
-                      <span className="skill-hero-taxonomy-separator" aria-hidden="true" />
-                      <Button
-                        type="button"
-                        variant="link"
-                        size="xs"
-                        className="plugin-catalog-empty-alert-cta"
-                        aria-label="Add topics"
-                        onClick={() => setIsCatalogMetadataDialogOpen(true)}
-                      >
-                        <Plus size={13} aria-hidden="true" />
-                        Add topics
-                      </Button>
-                    </div>
-                  </div>
-                ) : headerCategories.length > 0 || headerTopics.length > 0 ? (
-                  <div className="skill-hero-taxonomy-row" aria-label="Plugin metadata">
-                    {headerCategories.length > 0 ? (
-                      <div className="skill-category-meta-list" aria-label="Categories">
-                        {headerCategories.map((category) => (
-                          <a
-                            key={category.slug}
-                            className="skill-category-meta-link"
-                            href={buildPluginCategoryBrowseHref(category)}
-                            aria-label={`View ${category.label} plugins`}
-                          >
-                            <BrowseCategoryIcon
-                              slug={category.slug}
-                              icon={category.icon}
-                              size={14}
-                              className="skill-category-icon"
-                            />
-                            <span>{category.label}</span>
-                          </a>
-                        ))}
-                      </div>
-                    ) : null}
-                    {headerCategories.length > 0 && headerTopics.length > 0 ? (
-                      <span className="skill-hero-taxonomy-separator" aria-hidden="true" />
-                    ) : null}
-                    {headerTopics.length > 0 ? (
-                      <div className="skill-hero-topic-list" aria-label="Topics">
-                        {headerTopics.map((topic) => (
-                          <a
-                            key={topic}
-                            className="skill-hero-topic"
-                            href={buildPluginTopicBrowseHref(topic)}
-                            aria-label={`View plugins tagged ${formatCatalogTopicLabel(topic)}`}
-                          >
-                            {formatCatalogTopicLabel(topic)}
-                          </a>
-                        ))}
-                      </div>
-                    ) : null}
-                    {manageContext ? (
-                      <>
-                        <span className="skill-hero-taxonomy-separator" aria-hidden="true" />
-                        <Button
-                          type="button"
-                          variant="link"
-                          size="xs"
-                          className="plugin-catalog-empty-alert-cta"
-                          aria-label="Edit topics"
-                          onClick={() => setIsCatalogMetadataDialogOpen(true)}
-                        >
-                          <Pencil size={13} aria-hidden="true" />
-                          Edit
-                        </Button>
-                      </>
-                    ) : null}
-                  </div>
-                ) : null}
-                <div className="skill-hero-title-row">
-                  <h1 className="skill-page-title">
-                    {presentationTitle(pkg.displayName, pkg.name)}
-                  </h1>
-                  {isDownloadBlocked ? (
-                    <div className="skill-title-actions">
-                      <Badge variant="destructive">Download blocked</Badge>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-              <div className="skill-summary-block">
-                <p
-                  className={`section-subtitle skill-summary-line${
-                    hasSummaryToggle && !isSummaryExpanded ? " line-clamp-2" : ""
-                  }`}
+                  href={buildPublisherProfileHref(publisherHandle)}
                   data-analytics-public-detail=""
                 >
-                  <InlineMarkdownSummary>{headerSummary}</InlineMarkdownSummary>
-                </p>
-                {hasSummaryToggle ? (
-                  <button
-                    type="button"
-                    className="skill-summary-toggle"
-                    aria-expanded={isSummaryExpanded}
-                    onClick={() => setIsSummaryExpanded((expanded) => !expanded)}
-                  >
-                    {isSummaryExpanded ? "Show less" : "Read more"}
-                  </button>
-                ) : null}
-              </div>
-              {pluginHeroCreator ? (
-                <div className="skill-hero-creator" data-analytics-public-detail="">
-                  {pluginHeroCreator}
-                </div>
+                  @{publisherHandle}
+                </a>
               ) : null}
-
-              {pendingNotice}
-              {rateLimited?.scope === "metadata" ? (
-                <div className="skill-hero-badges">
-                  <Badge variant="compact">Some metadata is temporarily unavailable</Badge>
-                </div>
-              ) : null}
-            </div>
-          }
-          sidebar={
-            <div className="skill-hero-sidebar-stack">
-              {!isMobileDetailLayout ? installCommandCard : null}
-              {pluginSidebarStatsContent && !isMobileDetailLayout ? (
-                <div className="detail-sidebar-stats">{pluginSidebarStatsContent}</div>
-              ) : null}
-            </div>
-          }
-        >
-          <div className="detail-mobile-master-tabs" data-active={mobileDetailPanel}>
-            <div
-              className="detail-mobile-master-tab-list"
-              role="tablist"
-              aria-label="Plugin mobile sections"
-            >
-              <button
-                id="plugin-mobile-master-tab-content"
-                className={`detail-mobile-master-tab${
-                  mobileDetailPanel === "content" ? " is-active" : ""
-                }`}
-                type="button"
-                role="tab"
-                aria-selected={mobileDetailPanel === "content"}
-                aria-controls="plugin-mobile-master-panel-content"
-                onClick={() => setMobileDetailPanel("content")}
-              >
-                About
-              </button>
-              {pluginSidebarStatsContent && isMobileDetailLayout ? (
-                <button
-                  id="plugin-mobile-master-tab-stats"
-                  className={`detail-mobile-master-tab${
-                    mobileDetailPanel === "stats" ? " is-active" : ""
-                  }`}
-                  type="button"
-                  role="tab"
-                  aria-selected={mobileDetailPanel === "stats"}
-                  aria-controls="plugin-mobile-master-panel-stats"
-                  onClick={() => setMobileDetailPanel("stats")}
-                >
-                  Stats
-                </button>
-              ) : null}
-            </div>
-            <div
-              className="detail-mobile-master-panel detail-mobile-master-panel-content"
-              id="plugin-mobile-master-panel-content"
-              role="tabpanel"
-              aria-labelledby="plugin-mobile-master-tab-content"
-              hidden={mobileDetailPanel !== "content"}
-            >
-              {validationPanel}
-              {validationAvailabilityAlert}
-              {isMobileDetailLayout ? (
-                <div className="plugin-install-stack detail-mobile-install">
-                  {installCommandCard}
-                </div>
-              ) : null}
-              <PluginDetailTabs
-                activeTab={activeTab}
-                setActiveTab={setActiveTab}
-                readme={readme}
-                readmeAssetBaseUrl={readmeAssetBaseUrl}
-                versionsPanel={versionsPanel}
-                compatibilityPanel={compatibilityPanel}
-                configurationPanel={configurationPanel}
-                mcpServersPanel={mcpServersPanel}
-                skillsPanel={skillsPanel}
-              />
-            </div>
-            {pluginSidebarStatsContent && isMobileDetailLayout ? (
-              <div
-                className="detail-mobile-master-panel detail-mobile-master-stats"
-                id="plugin-mobile-master-panel-stats"
-                role="tabpanel"
-                aria-labelledby="plugin-mobile-master-tab-stats"
-                hidden={mobileDetailPanel !== "stats"}
-              >
-                {pluginSidebarStatsContent}
+            </>
+          ) : undefined
+        }
+        summary={
+          pkg.summary ? (
+            <p data-analytics-public-detail="">
+              <InlineMarkdownSummary>{pkg.summary}</InlineMarkdownSummary>
+            </p>
+          ) : undefined
+        }
+        sidebar={
+          <>
+            {!isDownloadBlocked && installCommandCard}
+            <PluginCatalogRail
+              releaseDetails={
+                <PluginPackageDetails
+                  version={pkg.latestVersion ?? latestRelease?.version}
+                  downloadHref={pkg.latestVersion && !isDownloadBlocked ? downloadPath : null}
+                  name={title}
+                  activeTab={activeTab}
+                  onTab={selectTab}
+                  activity={activityPanel}
+                  configuration={configurationPanel}
+                  compatibility={compatibilityPanel}
+                  versionsPanel={versionsPanel}
+                />
+              }
+              pkg={pkg}
+              release={latestRelease}
+              ownerHandle={owner?.handle}
+              onEditTopics={manageContext ? () => setIsCatalogMetadataDialogOpen(true) : undefined}
+            />
+            {newVersionHref ? (
+              <div className="plugin-catalog-utilities">
+                <a className="plugin-catalog-utility" href={newVersionHref}>
+                  <Upload size={14} aria-hidden="true" />
+                  New version
+                </a>
               </div>
             ) : null}
+          </>
+        }
+      >
+        {pendingNotice}
+        {isDownloadBlocked ? (
+          <div id="plugin-blocked-notice" role="status">
+            <Badge variant="destructive">Download blocked</Badge>
           </div>
-        </DetailHero>
-      </DetailPageShell>
+        ) : null}
+        {rateLimited?.scope === "metadata" ? (
+          <div role="status">
+            <Badge variant="compact">Some metadata is temporarily unavailable</Badge>
+          </div>
+        ) : null}
+        {validationAvailabilityAlert}
+        {validationPanel}
+        <PluginCatalogOverview
+          manifest={pluginManifestSummary}
+          publisherHandle={publisherHandle}
+          packageName={pkg.name}
+          version={latestRelease?.version ?? pkg.latestVersion ?? null}
+          readme={readme}
+          readmeAssetBaseUrl={readmeAssetBaseUrl}
+        />
+      </CatalogDetailLayout>
       {manageContext ? (
         <Dialog open={isCatalogMetadataDialogOpen} onOpenChange={setIsCatalogMetadataDialogOpen}>
           <DialogContent className="plugin-catalog-metadata-dialog">

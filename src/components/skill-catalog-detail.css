@@ -1,0 +1,336 @@
+/* Skill-specific parts of Control UI's skills/clawhub-skill-page.tsx. The page grid,
+ * breadcrumb, hero, rail fact rows and theme are shared by CatalogDetailLayout. */
+.skill-catalog-detail .catalog-detail__icon {
+  background: color-mix(in srgb, var(--detail-card) 50%, light-dark(#f8f8f8, #0e1015));
+}
+.skill-catalog-detail .skill-catalog-tile {
+  corner-shape: inherit;
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  overflow: hidden;
+  border-radius: inherit;
+  background: var(--detail-tone);
+  color: color-mix(in srgb, var(--detail-text) 42%, transparent);
+}
+.skill-catalog-detail .skill-catalog-tile > img {
+  width: 60%;
+  height: 60%;
+  object-fit: contain;
+}
+.skill-catalog-detail .skill-catalog-tile--profile > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.skill-catalog-detail .skill-catalog-tile > svg {
+  width: 26px;
+  height: 26px;
+}
+.skill-catalog-detail .skill-catalog-byline,
+.skill-catalog-detail .skill-catalog-byline > a {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+.skill-catalog-detail .skill-catalog-owner-name {
+  color: var(--detail-strong);
+  font-weight: 550;
+}
+.skill-catalog-detail .skill-catalog-byline > a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.skill-catalog-detail .skill-catalog-add:hover {
+  background: light-dark(#aa3d2b, #c22e2e);
+}
+.skill-catalog-detail .skill-catalog-facts {
+  display: flex;
+  margin: 0;
+  flex-direction: column;
+  gap: 22px;
+  min-width: 0;
+}
+.skill-catalog-detail .skill-catalog-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: calc(8px * var(--detail-radius-scale));
+  background: var(--detail-tone);
+  font-size: 12.5px;
+}
+.skill-catalog-detail .skill-catalog-section {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+.skill-catalog-detail .skill-catalog-section > h2 {
+  margin: 0 0 10px;
+  font-family: inherit;
+  color: var(--detail-muted);
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.skill-catalog-detail .skill-catalog-secondary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  border-top: 1px solid var(--detail-rule);
+  padding-top: 12px;
+  color: var(--detail-muted);
+  font-size: 12.5px;
+}
+.skill-catalog-detail .skill-catalog-secondary-actions .skill-sidebar-action-link {
+  padding-block: 6px;
+  color: inherit;
+  font: inherit;
+}
+.skill-catalog-detail .skill-catalog-security-score {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--detail-strong);
+  font-weight: 500;
+  text-decoration: none;
+}
+.skill-catalog-security-score .security-audit-meter {
+  grid-template-columns: repeat(3, 14px);
+  height: 4px;
+  gap: 3px;
+}
+.skill-catalog-security-score .security-audit-meter span {
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--detail-text) 14%, transparent);
+}
+.skill-catalog-security-score .security-audit-meter[data-level="3"] span {
+  background: light-dark(#166534, #22c55e);
+}
+.skill-catalog-security-score .security-audit-meter[data-level="2"] span:nth-child(-n + 2) {
+  background: light-dark(#92400e, #f59e0b);
+}
+.skill-catalog-security-score .security-audit-meter[data-level="1"] span:first-child {
+  background: light-dark(#b91c1c, #f87171);
+}
+.skill-catalog-detail a.skill-catalog-security-score:hover > span:first-child {
+  text-decoration: underline;
+}
+.skill-catalog-detail a.skill-catalog-security-score:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.skill-catalog-detail .catalog-detail__fact dd:has(.skill-catalog-chip) {
+  gap: 6px;
+}
+.skill-catalog-detail .skill-catalog-markdown {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  margin: 0;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--detail-text);
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
+  overflow-wrap: anywhere;
+}
+.skill-catalog-detail .skill-catalog-markdown :is(h1, h2, h3, h4, h5, h6) {
+  font-family: inherit;
+  color: inherit;
+  scroll-margin-top: 80px;
+}
+.skill-catalog-detail .skill-catalog-markdown h1 {
+  margin: 1.6em 0 0.6em;
+  padding-bottom: 0.35em;
+  border-bottom: 1px solid var(--line);
+  font-size: 1.65em;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.25;
+  text-wrap: balance;
+}
+.skill-catalog-detail .skill-catalog-markdown h2 {
+  margin: 1.4em 0 0.5em;
+  padding-bottom: 0.25em;
+  border-bottom: 1px solid var(--line);
+  font-size: 1.35em;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+  text-wrap: balance;
+}
+.skill-catalog-detail .skill-catalog-markdown h3 {
+  margin: 1.2em 0 0.4em;
+  font-size: 1.15em;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+  text-wrap: balance;
+}
+.skill-catalog-detail .skill-catalog-markdown :is(h4, h5, h6) {
+  margin: 1em 0 0.35em;
+  color: var(--detail-strong);
+  font-size: 1em;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.skill-catalog-detail .skill-catalog-markdown > :is(h1, h2, h3, h4, h5, h6):first-child {
+  margin-top: 0;
+}
+.skill-catalog-detail .skill-catalog-markdown :is(p, ul, ol, blockquote, table, details) {
+  margin: 0;
+}
+.skill-catalog-detail .skill-catalog-markdown p + :is(p, ul, ol, pre, blockquote, table, details) {
+  margin-top: 0.75em;
+}
+.skill-catalog-detail .skill-catalog-markdown :is(ul, ol) {
+  padding-inline-start: 1.6em;
+}
+.skill-catalog-detail .skill-catalog-markdown li {
+  padding: 0;
+  margin: 0;
+}
+.skill-catalog-detail .skill-catalog-markdown li + li {
+  margin-top: 0.3em;
+}
+.skill-catalog-detail .skill-catalog-markdown li > :is(p, ul, ol) {
+  margin-top: 0.25em;
+}
+.skill-catalog-detail .skill-catalog-markdown strong {
+  color: var(--detail-strong);
+  font-weight: 600;
+}
+.skill-catalog-detail .skill-catalog-markdown code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+}
+.skill-catalog-detail .skill-catalog-markdown :not(pre) > code {
+  padding: 0.15em 0.4em;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--detail-tone);
+  white-space: pre-wrap;
+}
+.skill-catalog-detail .skill-catalog-markdown blockquote {
+  margin-top: 0.75em;
+  padding: 8px 14px;
+  border-inline-start: 3px solid var(--line);
+  background: color-mix(in srgb, currentColor 3%, transparent);
+  color: var(--detail-muted);
+}
+.skill-catalog-detail .skill-catalog-markdown table {
+  display: block;
+  width: 100%;
+  margin-top: 0.75em;
+  overflow-x: auto;
+  border-collapse: collapse;
+  border-spacing: 0;
+  border: 0;
+  border-radius: 0;
+  font-size: 13px;
+}
+.skill-catalog-detail .skill-catalog-markdown :is(th, td) {
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  text-align: start;
+  vertical-align: top;
+}
+.skill-catalog-detail .skill-catalog-markdown th {
+  color: var(--detail-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.skill-catalog-detail .skill-catalog-markdown img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: 420px;
+  margin-top: 0.75em;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  object-fit: contain;
+}
+/* The authored document and the footer stay together at both widths. The rail
+   comes before the document in reading order; wide layouts place it on the right. */
+@container (width > 768px) {
+  .catalog-detail__content--with-footer {
+    grid-template-areas: "main sidebar";
+  }
+  .catalog-detail__content--with-footer:has(> .catalog-detail__summary) {
+    grid-template-areas: "summary sidebar" "main sidebar";
+    grid-template-rows: auto 1fr;
+    row-gap: 32px;
+  }
+  .catalog-detail__content--with-footer > .catalog-detail__summary {
+    grid-area: summary;
+  }
+  .catalog-detail__content--with-footer > .catalog-detail__sidebar {
+    grid-area: sidebar;
+  }
+  .catalog-detail__content--with-footer > .catalog-detail__main {
+    grid-area: main;
+  }
+}
+@container (max-width:768px) {
+  .skill-catalog-detail .skill-catalog-facts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px 16px;
+  }
+  .skill-catalog-detail
+    .skill-catalog-facts
+    > :has(.skill-catalog-chip, .skill-catalog-security-score) {
+    grid-column: 1/-1;
+  }
+}
+@container (max-width:560px) {
+  .skill-catalog-detail a.skill-catalog-security-score {
+    margin-block: -7px;
+    padding-block: 7px;
+  }
+  .skill-catalog-detail .catalog-detail__hero {
+    flex-wrap: nowrap;
+    align-items: center;
+  }
+  .skill-catalog-detail .catalog-detail__actions .skill-catalog-add {
+    width: auto;
+    height: 38px;
+    min-height: 38px;
+    padding: 0 14px;
+  }
+  .skill-catalog-detail .skill-catalog-byline,
+  .skill-catalog-detail .skill-catalog-byline > a {
+    flex-wrap: nowrap;
+  }
+  .skill-catalog-detail .skill-catalog-byline :is(span, strong):not(.official-badge) {
+    flex: 0 1000 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .skill-catalog-detail .skill-catalog-byline .skill-catalog-owner-name {
+    flex-shrink: 1;
+  }
+}
+
+.skill-version-history-dialog[data-slot="dialog-content"] {
+  grid-template-columns: minmax(0, 1fr);
+  width: min(900px, calc(100vw - 32px));
+  max-height: 85dvh;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}

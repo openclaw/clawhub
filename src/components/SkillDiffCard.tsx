@@ -31,8 +31,12 @@ import { Button } from "./ui/button";
 import { Skeleton } from "./ui/skeleton";
 
 type SkillDiffCardProps = {
-  skill: Doc<"skills">;
-  versions: Doc<"skillVersions">[];
+  skill: Pick<Doc<"skills">, "tags">;
+  versions: Array<{
+    _id: Id<"skillVersions">;
+    version: string;
+    files: Array<{ path: string; sha256: string; size: number }>;
+  }>;
   variant?: "card" | "embedded";
 };
 

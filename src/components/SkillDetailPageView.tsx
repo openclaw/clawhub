@@ -1,11 +1,10 @@
 import { Link } from "@tanstack/react-router";
 import type { ClawdisSkillMetadata } from "clawhub-schema";
-import { PLATFORM_SKILL_LICENSE } from "clawhub-schema/licenseConstants";
-import { Bookmark, Flag, Settings, ShieldCheck, Upload } from "lucide-react";
+import { getSkillReleaseScanStatus, normalizeSecurityStatus } from "clawhub-schema/securityAudit";
+import { Bookmark, BookOpenText, Flag, Settings, ShieldCheck, Upload } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import type { SkillPublicationProgress } from "../../convex/lib/skillPublicationProgress";
-import type { ActivityTrend } from "../lib/activityTrend";
 import { getSkillBadges, isSkillOfficial } from "../lib/badges";
 import { BrowseCategoryIcon } from "../lib/browseCategoryIcons";
 import {
@@ -14,26 +13,24 @@ import {
   formatCatalogTopicLabel,
   type SkillCategory,
 } from "../lib/categories";
-import { formatSkillStatsTriplet } from "../lib/numberFormat";
+import { formatCompactStat } from "../lib/numberFormat";
 import { buildPublisherProfileHref } from "../lib/ownerRoute";
 import { presentationTitle } from "../lib/presentationTitle";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
-import { timeAgo } from "../lib/timeAgo";
-import { useHeroCreatorPublisher } from "../lib/useHeroCreatorPublisher";
-import { useMediaQuery } from "../lib/useMediaQuery";
+import { getClawHubSiteUrl } from "../lib/site";
 import { cn } from "../lib/utils";
-import { DetailHero, DetailPageShell, DETAIL_HERO_TOPIC_LIMIT } from "./DetailPageShell";
-import { DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
-import { useDownloadsSidebarMetricBlock } from "./DownloadsMetricCard";
+import { CatalogDetailLayout, CatalogDetailBreadcrumb } from "./CatalogDetailLayout";
+import { DETAIL_HERO_TOPIC_LIMIT } from "./DetailPageShell";
 import { InlineMarkdownSummary } from "./InlineMarkdownSummary";
-import { SidebarMetadata } from "./SidebarMetadata";
-import { buildSkillInstallTarget, buildSkillHref } from "./skillDetailUtils";
+import { OfficialBadge } from "./OfficialBadge";
+import { SkillCatalogFacts } from "./SkillCatalogFacts";
+import { buildSkillInstallTarget } from "./skillDetailUtils";
 import { SkillCommandLineCard } from "./SkillInstallSurface";
 import { SkillPublicationNotice } from "./SkillPublicationNotice";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
-import { UserBadge } from "./UserBadge";
+import "./skill-catalog-detail.css";
 
 type SkillModerationInfo = {
   isPendingScan: boolean;
@@ -56,10 +53,6 @@ type SkillCanonical = {
   skill: { slug: string; displayName: string };
   owner: { handle: string | null; userId: Id<"users"> | null };
 };
-
-const SUMMARY_COLLAPSE_THRESHOLD = 220;
-
-type MobileDetailPanel = "content" | "stats";
 
 function formatHeaderTopic(topic: string) {
   return formatCatalogTopicLabel(topic);
@@ -98,7 +91,6 @@ export type SkillDetailViewSkill = {
   githubCurrentCommit?: string;
   githubCurrentStatus?: PublicSkill["githubCurrentStatus"];
   githubScanStatus?: PublicSkill["githubScanStatus"];
-  githubHasSkillCard?: boolean;
   categories?: string[];
   inferredCategories?: string[];
   latestVersionId?: Id<"skillVersions">;
@@ -167,8 +159,10 @@ export type SkillDetailPageViewProps = {
   categories?: SkillCategory[] | null;
   staffVisibilityAlert?: ReactNode;
   postInstallContent?: ReactNode;
-  securityAuditSummary?: ReactNode;
-  activityTrend?: ActivityTrend | null;
+  securityAuditHref?: string;
+  overview?: ReactNode;
+  versionHistory?: ReactNode;
+  footer?: ReactNode;
   newVersionHref?: string | null;
   settingsHref?: string | null;
   showArchiveMetadata?: boolean;
@@ -221,8 +215,10 @@ export function SkillDetailPageView({
   isRemoved,
   staffVisibilityAlert,
   postInstallContent,
-  securityAuditSummary,
-  activityTrend,
+  securityAuditHref,
+  overview,
+  versionHistory,
+  footer,
   newVersionHref,
   settingsHref,
   showArchiveMetadata = true,
@@ -241,29 +237,20 @@ export function SkillDetailPageView({
   pageOverlays,
   children,
 }: SkillDetailPageViewProps) {
-  const formattedStats = formatSkillStatsTriplet(skill.stats);
   const installOwnerId = owner?._id ?? skill.ownerPublisherId ?? skill.ownerUserId ?? null;
   const hasOwnerActions = Boolean(newVersionHref) || Boolean(settingsHref);
   const showReportAction = showReportActionOverride ?? (!canManage || isStaff);
   const badges = getSkillBadges(skill);
   const titleBadges = badges.filter((badge) => badge !== "Official");
-  const heroCreatorPublisher = useHeroCreatorPublisher({
-    owner,
-    skillOfficial: isSkillOfficial(skill),
-  });
+  const officialSkill = isSkillOfficial(skill);
   const showHeroMeta = Boolean((forkOf && forkOfHref) || canonicalHref);
   const showTitleBadges = titleBadges.length > 0;
-  const headerDescription =
-    getLatestVersionDescription(latestVersion) ?? skill.summary ?? "No summary provided.";
+  const headerDescription = skill.summary?.trim() || getLatestVersionDescription(latestVersion);
   const headerTopics = (skill.topics ?? [])
     .map((topic) => topic.trim())
     .filter(Boolean)
     .slice(0, DETAIL_HERO_TOPIC_LIMIT);
   const headerCategories = (categories ?? (category ? [category] : [])).slice(0, 3);
-  const hasSummaryToggle = headerDescription.length > SUMMARY_COLLAPSE_THRESHOLD;
-  const [isSummaryExpanded, setIsSummaryExpanded] = useState(false);
-  const [mobileDetailPanel, setMobileDetailPanel] = useState<MobileDetailPanel>("content");
-  const isMobileDetailLayout = useMediaQuery("(max-width: 900px)");
 
   // Do not fall back to a globally ambiguous slug, a display name or an owner ID.
   const appInstallTarget = ownerHandle?.trim()
@@ -317,31 +304,10 @@ export function SkillDetailPageView({
           fill={isAuthenticated && isStarred ? "currentColor" : "none"}
         />
         {isAuthenticated && isStarred ? "Unbookmark" : "Bookmark"}
-        <span className="skill-action-count">{formattedStats.stars}</span>
+        <span className="skill-action-count">{formatCompactStat(skill.stats.stars)}</span>
       </button>
     </SignedInActionTooltip>
   );
-
-  const renderSidebarActions = () => {
-    if (!showReportAction) return null;
-    return (
-      <div className="skill-sidebar-actions skill-sidebar-actions-secondary">
-        <SignedInActionTooltip
-          isAuthenticated={isAuthenticated}
-          message="You must be signed in to report a skill"
-        >
-          <button
-            type="button"
-            className="skill-sidebar-action-link"
-            onClick={isAuthenticated ? onOpenReport : onRequireSignIn}
-          >
-            <Flag size={14} aria-hidden="true" />
-            Report
-          </button>
-        </SignedInActionTooltip>
-      </div>
-    );
-  };
 
   const managementToolbar =
     hasOwnerActions || isStaff || staffVisibilityAlert ? (
@@ -380,368 +346,386 @@ export function SkillDetailPageView({
       </div>
     ) : null;
 
-  const defaultStatsContent = () => (
+  const displayName = presentationTitle(skill.displayName, skill.slug);
+  const profileHref =
+    breadcrumbOwnerHref === undefined && ownerHandle
+      ? buildPublisherProfileHref(ownerHandle)
+      : breadcrumbOwnerHref;
+  const scanStatus = latestVersion
+    ? getSkillReleaseScanStatus(latestVersion)
+    : skill.installKind === "github" && skill.githubScanStatus
+      ? normalizeSecurityStatus(skill.githubScanStatus)
+      : null;
+  const repository = getGitHubRepositoryLink(skill);
+  const linkedIdentity = ownerHandle || owner?.displayName;
+  const platforms = (latestVersion?.parsed?.clawdis as ClawdisSkillMetadata | undefined)?.os;
+  const fullDescription = getLatestVersionDescription(latestVersion);
+  const identity = (
     <>
-      <SkillSidebarDeferredStats
-        skill={skill}
-        owner={owner}
-        ownerHandle={ownerHandle}
-        latestVersion={latestVersion}
-        showArchiveMetadata={showArchiveMetadata}
-        securityAuditSummary={securityAuditSummary}
-        activityTrend={activityTrend}
-        hideCreator
-      />
-      {renderSidebarActions()}
+      {owner?.displayName && (
+        <strong className="skill-catalog-owner-name">{owner.displayName}</strong>
+      )}
+      {ownerHandle && <span className="skill-catalog-owner-handle">@{ownerHandle}</span>}
     </>
   );
-  // Match the normal shell's CSS-exclusive desktop/mobile copies so responsive
-  // transitions never move or remount the active sidebar subtree.
-  const desktopStatsContent = renderSidebarContent ? renderSidebarContent() : defaultStatsContent();
-  const mobileStatsContent = renderSidebarContent ? renderSidebarContent() : defaultStatsContent();
-  const resolvedBreadcrumbOwnerHref =
-    breadcrumbOwnerHref === undefined
-      ? ownerHandle
-        ? buildPublisherProfileHref(ownerHandle)
-        : "#"
-      : breadcrumbOwnerHref;
-  const displayName = presentationTitle(skill.displayName, skill.slug);
 
-  return (
-    <main className={cn("section detail-page-section skill-detail-page", pageClassName)}>
-      <DetailPageShell>
-        {publicationProgress ? (
-          <SkillPublicationNotice
-            progress={publicationProgress}
-            publishedVersion={latestVersion?.version}
-          />
-        ) : isPendingPublication ? (
-          <div className="pending-banner">
-            <div className="pending-banner-content">
-              <strong>Pending publication</strong>
-              <p>
-                This skill is visible to its publisher and ClawHub staff, but not yet public or
-                installable. ClawHub is completing security and publication checks.
-              </p>
-            </div>
+  const metadata = (
+    <>
+      {hasPluginBundle ? (
+        <div className="skill-panel bundle-card">
+          <div className="bundle-header">
+            <div className="bundle-title">Plugin bundle (nix)</div>
+            <div className="bundle-subtitle">Skill pack · CLI binary · Config</div>
           </div>
-        ) : modInfo?.isPendingScan ? (
-          <div className="pending-banner">
-            <div className="pending-banner-content">
-              <strong>Security scan in progress</strong>
-              <p>
-                Your skill is undergoing security checks. It will be visible to others once the
-                checks complete.
-              </p>
-            </div>
+          <div className="bundle-includes">
+            <span>SKILL.md</span>
+            <span>CLI</span>
+            <span>Config</span>
           </div>
-        ) : modInfo?.isRemoved ? (
-          <div className="pending-banner pending-banner-blocked">
-            <div className="pending-banner-content">
-              <strong>Skill removed by moderator</strong>
-              <p>This skill has been removed and is not visible to others.</p>
-            </div>
-          </div>
-        ) : modInfo?.isHiddenByMod ? (
-          <div className="pending-banner pending-banner-blocked">
-            <div className="pending-banner-content">
-              <strong>Skill hidden</strong>
-              <p>This skill is currently hidden and not visible to others.</p>
-            </div>
-          </div>
-        ) : null}
-
-        {managementToolbar}
-
-        <DetailHero
-          topClassName={hasPluginBundle ? "has-plugin" : undefined}
-          sidebar={
-            <div className="skill-hero-sidebar-stack">
-              {!isMobileDetailLayout && showBookmarkAction ? (
-                <div className="skill-sidebar-star-band detail-hero-summary-row">
-                  {renderStarAction()}
-                </div>
-              ) : null}
-              {!isMobileDetailLayout ? installCommandCard : null}
-              <div className="detail-sidebar-stats">{desktopStatsContent}</div>
-            </div>
-          }
-          main={
-            <>
-              <div className="skill-hero-title">
-                <nav className="skill-hero-breadcrumbs" aria-label="Skill breadcrumbs">
-                  <a href="/skills">skills</a>
-                  <span aria-hidden="true">/</span>
-                  {resolvedBreadcrumbOwnerHref ? (
-                    <a href={resolvedBreadcrumbOwnerHref}>
-                      {breadcrumbOwnerLabel ??
-                        ownerHandle ??
-                        owner?.displayName ??
-                        owner?._id ??
-                        "unknown"}
-                    </a>
-                  ) : (
-                    <span>
-                      {breadcrumbOwnerLabel ??
-                        ownerHandle ??
-                        owner?.displayName ??
-                        owner?._id ??
-                        "unknown"}
-                    </span>
-                  )}
-                  <span aria-hidden="true">/</span>
-                  <a
-                    href={
-                      breadcrumbSkillHref ??
-                      buildSkillHref(ownerHandle, owner?._id ?? null, skill.slug)
-                    }
-                    aria-current="page"
-                  >
-                    {skill.slug}
-                  </a>
-                </nav>
-                <div className="skill-hero-heading-stack">
-                  {taxonomyPrefix || headerCategories.length > 0 || headerTopics.length > 0 ? (
-                    <div className="skill-hero-taxonomy-row" aria-label="Skill metadata">
-                      {taxonomyPrefix ? (
-                        <div className="skill-hero-taxonomy-prefix">{taxonomyPrefix}</div>
-                      ) : null}
-                      {taxonomyPrefix &&
-                      (headerCategories.length > 0 || headerTopics.length > 0) ? (
-                        <span className="skill-hero-taxonomy-separator" aria-hidden="true" />
-                      ) : null}
-                      {headerCategories.length > 0 ? (
-                        <div className="skill-category-meta-list" aria-label="Categories">
-                          {headerCategories.map((categoryItem) => (
-                            <a
-                              key={categoryItem.slug}
-                              className="skill-category-meta-link"
-                              href={buildSkillCategoryBrowseHref(categoryItem)}
-                              aria-label={`View ${categoryItem.label} skills`}
-                            >
-                              <BrowseCategoryIcon
-                                slug={categoryItem.slug}
-                                icon={categoryItem.icon}
-                                size={14}
-                                className="skill-category-icon"
-                              />
-                              <span>{categoryItem.label}</span>
-                            </a>
-                          ))}
-                        </div>
-                      ) : null}
-                      {headerCategories.length > 0 && headerTopics.length > 0 ? (
-                        <span className="skill-hero-taxonomy-separator" aria-hidden="true" />
-                      ) : null}
-                      {headerTopics.length > 0 ? (
-                        <div className="skill-hero-topic-list" aria-label="Topics">
-                          {headerTopics.map((topic) => (
-                            <a
-                              key={topic}
-                              className="skill-hero-topic"
-                              href={buildSkillTopicBrowseHref(topic)}
-                              aria-label={`View skills tagged ${formatHeaderTopic(topic)}`}
-                            >
-                              {formatHeaderTopic(topic)}
-                            </a>
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
-                  <div className="skill-hero-title-row">
-                    <h1 className="skill-page-title">{displayName}</h1>
-                    {showTitleBadges ? (
-                      <div className="skill-title-badges">
-                        {titleBadges.map((badge) => (
-                          <Badge key={badge} variant="compact">
-                            {badge}
-                          </Badge>
-                        ))}
-                      </div>
-                    ) : null}
-                    {nixPlugin ? <Badge variant="accent">Plugin bundle (nix)</Badge> : null}
-                    {titleAccessory}
-                  </div>
-                  {showHeroMeta ? (
-                    <div className="skill-hero-meta-row" aria-label="Skill lineage">
-                      {forkOf && forkOfHref ? (
-                        <span className="skill-hero-meta-item">
-                          <span className="skill-hero-meta-label">{forkOfLabel}</span>
-                          <a className="skill-hero-meta-link" href={forkOfHref}>
-                            {forkOfOwnerHandle ? `@${forkOfOwnerHandle}/` : ""}
-                            {forkOf.skill.slug}
-                          </a>
-                          {forkOf.version ? (
-                            <span className="skill-hero-meta-version">({forkOf.version})</span>
-                          ) : null}
-                        </span>
-                      ) : null}
-                      {canonicalHref ? (
-                        <span className="skill-hero-meta-item">
-                          <span className="skill-hero-meta-label">canonical</span>
-                          <a className="skill-hero-meta-link" href={canonicalHref}>
-                            {canonicalOwnerHandle ? `@${canonicalOwnerHandle}/` : ""}
-                            {canonical?.skill?.slug}
-                          </a>
-                        </span>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </div>
-                <div className="skill-summary-block">
-                  <p
-                    className={`section-subtitle skill-summary-line${
-                      hasSummaryToggle && !isSummaryExpanded ? " line-clamp-2" : ""
-                    }`}
-                    data-analytics-public-detail=""
-                  >
-                    <InlineMarkdownSummary>{headerDescription}</InlineMarkdownSummary>
-                  </p>
-                  {hasSummaryToggle ? (
-                    <button
-                      type="button"
-                      className="skill-summary-toggle"
-                      aria-expanded={isSummaryExpanded}
-                      onClick={() => setIsSummaryExpanded((expanded) => !expanded)}
-                    >
-                      {isSummaryExpanded ? "Show less" : "Read more"}
-                    </button>
-                  ) : null}
-                </div>
-                {creatorContent || owner || ownerHandle ? (
-                  <div className="skill-hero-creator" data-analytics-public-detail="">
-                    {creatorContent ?? (
-                      <UserBadge
-                        user={heroCreatorPublisher}
-                        fallbackHandle={ownerHandle}
-                        prefix=""
-                        size="md"
-                        showName
-                        showHandle={false}
-                        showMutedHandle
-                        stackMutedHandleBelowName
-                        disableTooltip
-                      />
-                    )}
-                    {isMobileDetailLayout && showBookmarkAction ? (
-                      <div className="skill-hero-creator-star">{renderStarAction()}</div>
-                    ) : null}
+          {configRequirements ? (
+            <div className="bundle-section">
+              <div className="bundle-section-title">Config requirements</div>
+              <div className="bundle-meta">
+                {configRequirements.requiredEnv?.length ? (
+                  <div className="stat">
+                    <strong>Required env</strong>
+                    <span>{configRequirements.requiredEnv.join(", ")}</span>
                   </div>
                 ) : null}
-
-                {heroNotice}
-
-                {nixPlugin ? (
-                  <div className="skill-hero-note">
-                    Bundles the skill pack, CLI binary, and config requirements in one Nix install.
+                {configRequirements.stateDirs?.length ? (
+                  <div className="stat">
+                    <strong>State dirs</strong>
+                    <span>{configRequirements.stateDirs.join(", ")}</span>
                   </div>
                 ) : null}
               </div>
-            </>
-          }
-        >
-          {isMobileDetailLayout && installCommandCard ? (
-            <div className="detail-mobile-install">{installCommandCard}</div>
+            </div>
           ) : null}
+          {cliHelp ? (
+            <details className="bundle-section bundle-details">
+              <summary>CLI help (from plugin)</summary>
+              <pre className="hero-install-code mono">{cliHelp}</pre>
+            </details>
+          ) : null}
+        </div>
+      ) : null}
 
-          <div className="detail-mobile-master-tabs" data-active={mobileDetailPanel}>
-            <div
-              className="detail-mobile-master-tab-list"
-              role="tablist"
-              aria-label="Skill mobile sections"
-            >
-              <button
-                id="skill-mobile-master-tab-content"
-                className={`detail-mobile-master-tab${
-                  mobileDetailPanel === "content" ? " is-active" : ""
-                }`}
-                type="button"
-                role="tab"
-                aria-selected={mobileDetailPanel === "content"}
-                aria-controls="skill-mobile-master-panel-content"
-                onClick={() => setMobileDetailPanel("content")}
-              >
-                SKILL.md
-              </button>
-              <button
-                id="skill-mobile-master-tab-stats"
-                className={`detail-mobile-master-tab${
-                  mobileDetailPanel === "stats" ? " is-active" : ""
-                }`}
-                type="button"
-                role="tab"
-                aria-selected={mobileDetailPanel === "stats"}
-                aria-controls="skill-mobile-master-panel-stats"
-                onClick={() => setMobileDetailPanel("stats")}
-              >
-                Stats & details
-              </button>
+      {taxonomyPrefix || headerCategories.length > 0 || headerTopics.length > 0 ? (
+        <div
+          className="skill-hero-taxonomy-row"
+          aria-label={renderSidebarContent ? "Skill metadata" : "Skill taxonomy"}
+        >
+          {taxonomyPrefix ? (
+            <div className="skill-hero-taxonomy-prefix">{taxonomyPrefix}</div>
+          ) : null}
+          {taxonomyPrefix && (headerCategories.length > 0 || headerTopics.length > 0) ? (
+            <span className="skill-hero-taxonomy-separator" aria-hidden="true" />
+          ) : null}
+          {headerCategories.length > 0 ? (
+            <div className="skill-category-meta-list" aria-label="Categories">
+              {headerCategories.map((categoryItem) => (
+                <a
+                  key={categoryItem.slug}
+                  className="skill-category-meta-link"
+                  href={buildSkillCategoryBrowseHref(categoryItem)}
+                  aria-label={`View ${categoryItem.label} skills`}
+                >
+                  <BrowseCategoryIcon
+                    slug={categoryItem.slug}
+                    icon={categoryItem.icon}
+                    size={14}
+                    className="skill-category-icon"
+                  />
+                  <span>{categoryItem.label}</span>
+                </a>
+              ))}
             </div>
-            <div
-              className="detail-mobile-master-panel detail-mobile-master-panel-content"
-              id="skill-mobile-master-panel-content"
-              role="tabpanel"
-              aria-labelledby="skill-mobile-master-tab-content"
-              hidden={mobileDetailPanel !== "content"}
-            >
-              {postInstallContent}
+          ) : null}
+          {headerCategories.length > 0 && headerTopics.length > 0 ? (
+            <span className="skill-hero-taxonomy-separator" aria-hidden="true" />
+          ) : null}
+          {headerTopics.length > 0 ? (
+            <div className="skill-hero-topic-list" aria-label="Topics">
+              {headerTopics.map((topic) => (
+                <a
+                  key={topic}
+                  className="skill-hero-topic"
+                  href={buildSkillTopicBrowseHref(topic)}
+                  aria-label={`View skills tagged ${formatHeaderTopic(topic)}`}
+                >
+                  {formatHeaderTopic(topic)}
+                </a>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
-              {children}
-
-              {hasPluginBundle ? (
-                <div className="skill-panel bundle-card">
-                  <div className="bundle-header">
-                    <div className="bundle-title">Plugin bundle (nix)</div>
-                    <div className="bundle-subtitle">Skill pack · CLI binary · Config</div>
-                  </div>
-                  <div className="bundle-includes">
-                    <span>SKILL.md</span>
-                    <span>CLI</span>
-                    <span>Config</span>
-                  </div>
-                  {configRequirements ? (
-                    <div className="bundle-section">
-                      <div className="bundle-section-title">Config requirements</div>
-                      <div className="bundle-meta">
-                        {configRequirements.requiredEnv?.length ? (
-                          <div className="stat">
-                            <strong>Required env</strong>
-                            <span>{configRequirements.requiredEnv.join(", ")}</span>
-                          </div>
-                        ) : null}
-                        {configRequirements.stateDirs?.length ? (
-                          <div className="stat">
-                            <strong>State dirs</strong>
-                            <span>{configRequirements.stateDirs.join(", ")}</span>
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-                  ) : null}
-                  {cliHelp ? (
-                    <details className="bundle-section bundle-details">
-                      <summary>CLI help (from plugin)</summary>
-                      <pre className="hero-install-code mono">{cliHelp}</pre>
-                    </details>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-            <div
-              className="detail-mobile-master-panel detail-mobile-master-stats"
-              id="skill-mobile-master-panel-stats"
-              role="tabpanel"
-              aria-labelledby="skill-mobile-master-tab-stats"
-              hidden={mobileDetailPanel !== "stats"}
-            >
-              {mobileStatsContent}
-            </div>
+      {fullDescription && fullDescription !== headerDescription && (
+        <details className="skill-catalog-more">
+          <summary>Full description</summary>
+          <p data-analytics-public-detail="">
+            <InlineMarkdownSummary>{fullDescription}</InlineMarkdownSummary>
+          </p>
+        </details>
+      )}
+    </>
+  );
+  return (
+    <main className={cn("catalog-detail-page skill-detail-page skill-catalog-page", pageClassName)}>
+      {publicationProgress ? (
+        <SkillPublicationNotice
+          progress={publicationProgress}
+          publishedVersion={latestVersion?.version}
+        />
+      ) : isPendingPublication ? (
+        <div className="pending-banner">
+          <div className="pending-banner-content">
+            <strong>Pending publication</strong>
+            <p>
+              This skill is visible to its publisher and ClawHub staff, but not yet public or
+              installable. ClawHub is completing security and publication checks.
+            </p>
           </div>
-        </DetailHero>
-      </DetailPageShell>
+        </div>
+      ) : modInfo?.isPendingScan ? (
+        <div className="pending-banner">
+          <div className="pending-banner-content">
+            <strong>Security scan in progress</strong>
+            <p>
+              Your skill is undergoing security checks. It will be visible to others once the checks
+              complete.
+            </p>
+          </div>
+        </div>
+      ) : modInfo?.isRemoved ? (
+        <div className="pending-banner pending-banner-blocked">
+          <div className="pending-banner-content">
+            <strong>Skill removed by moderator</strong>
+            <p>This skill has been removed and is not visible to others.</p>
+          </div>
+        </div>
+      ) : modInfo?.isHiddenByMod ? (
+        <div className="pending-banner pending-banner-blocked">
+          <div className="pending-banner-content">
+            <strong>Skill hidden</strong>
+            <p>This skill is currently hidden and not visible to others.</p>
+          </div>
+        </div>
+      ) : null}
+
+      {managementToolbar}
+
+      <CatalogDetailLayout
+        className="skill-catalog-detail"
+        footer={
+          renderSidebarContent ? (
+            footer
+          ) : (
+            <>
+              {footer}
+              {(repository ||
+                versionHistory ||
+                showBookmarkAction ||
+                showReportAction ||
+                (!scanStatus && securityAuditHref)) && (
+                <div
+                  className="skill-catalog-secondary-actions"
+                  role="group"
+                  aria-label="Skill actions"
+                >
+                  {repository && <span>Repository: {repository}</span>}
+                  {!scanStatus && securityAuditHref && (
+                    <a className="skill-sidebar-action-link" href={securityAuditHref}>
+                      Full security report
+                    </a>
+                  )}
+                  {versionHistory}
+                  {showBookmarkAction && renderStarAction()}
+                  {showReportAction && (
+                    <SignedInActionTooltip
+                      isAuthenticated={isAuthenticated}
+                      message="You must be signed in to report a skill"
+                    >
+                      <button
+                        type="button"
+                        className="skill-sidebar-action-link"
+                        onClick={isAuthenticated ? onOpenReport : onRequireSignIn}
+                      >
+                        <Flag size={14} aria-hidden="true" />
+                        Report
+                      </button>
+                    </SignedInActionTooltip>
+                  )}
+                </div>
+              )}
+            </>
+          )
+        }
+        breadcrumb={
+          breadcrumbSkillHref ? (
+            <nav className="catalog-detail__breadcrumb" aria-label="Skill breadcrumbs">
+              <a href="/skills">Skills</a>
+              <span aria-hidden="true">/</span>
+              {breadcrumbOwnerLabel}
+              <span aria-hidden="true">/</span>
+              <a href={breadcrumbSkillHref} aria-current="page">
+                {skill.slug}
+              </a>
+            </nav>
+          ) : (
+            <CatalogDetailBreadcrumb href="/skills" label="Skills" current={displayName} />
+          )
+        }
+        icon={
+          <SkillCatalogTile
+            key={`${skill.icon ?? ""}-${owner?.image ?? ""}`}
+            icon={skill.icon}
+            profileImage={owner?.image}
+          />
+        }
+        title={displayName}
+        publisher={
+          <>
+            {creatorContent ? (
+              <div className="skill-hero-creator">{creatorContent}</div>
+            ) : linkedIdentity ? (
+              <span className="skill-catalog-byline" data-analytics-public-detail="">
+                {officialSkill ? <OfficialBadge iconOnly size={14} /> : null}
+                {profileHref ? (
+                  <a
+                    aria-label={`View ${ownerHandle ?? owner?.displayName} profile`}
+                    href={profileHref}
+                  >
+                    {identity}
+                  </a>
+                ) : (
+                  identity
+                )}
+              </span>
+            ) : null}
+            {showTitleBadges &&
+              titleBadges.map((badge) => (
+                <Badge key={badge} variant="compact">
+                  {badge}
+                </Badge>
+              ))}
+            {nixPlugin ? <Badge variant="accent">Plugin bundle (nix)</Badge> : null}
+            {titleAccessory}
+          </>
+        }
+        summary={
+          headerDescription && (
+            <span data-analytics-public-detail="">
+              <InlineMarkdownSummary>{headerDescription}</InlineMarkdownSummary>
+            </span>
+          )
+        }
+        sidebar={
+          <>
+            {installCommandCard}
+            {renderSidebarContent ? (
+              renderSidebarContent()
+            ) : (
+              <SkillCatalogFacts
+                status={scanStatus}
+                auditHref={securityAuditHref}
+                version={showArchiveMetadata ? latestVersion?.version : undefined}
+                updatedAt={skill.updatedAt}
+                license={showArchiveMetadata ? latestVersion?.parsed?.license : undefined}
+                platforms={platforms}
+              />
+            )}
+          </>
+        }
+      >
+        {heroNotice}
+        {overview}
+        {postInstallContent}
+        {showHeroMeta ? (
+          <div className="skill-hero-meta-row" aria-label="Skill lineage">
+            {forkOf && forkOfHref ? (
+              <span className="skill-hero-meta-item">
+                <span className="skill-hero-meta-label">{forkOfLabel}</span>
+                <a className="skill-hero-meta-link" href={forkOfHref}>
+                  {forkOfOwnerHandle ? `@${forkOfOwnerHandle}/` : ""}
+                  {forkOf.skill.slug}
+                </a>
+                {forkOf.version ? (
+                  <span className="skill-hero-meta-version">({forkOf.version})</span>
+                ) : null}
+              </span>
+            ) : null}
+            {canonicalHref ? (
+              <span className="skill-hero-meta-item">
+                <span className="skill-hero-meta-label">canonical</span>
+                <a className="skill-hero-meta-link" href={canonicalHref}>
+                  {canonicalOwnerHandle ? `@${canonicalOwnerHandle}/` : ""}
+                  {canonical?.skill?.slug}
+                </a>
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+
+        {nixPlugin && (
+          <p>Bundles the skill pack, CLI binary, and config requirements in one Nix install.</p>
+        )}
+        {metadata}
+        {children}
+      </CatalogDetailLayout>
       {pageOverlays}
     </main>
+  );
+}
+
+function skillCatalogImage(value?: string | null) {
+  if (!value) return null;
+  try {
+    const registry = getClawHubSiteUrl();
+    const url = new URL(value, registry);
+    return url.origin === registry &&
+      !url.username &&
+      !url.password &&
+      !url.search &&
+      !url.hash &&
+      /^\/api\/v1\/skill-icons\/[a-f\d]{64}$/u.test(url.pathname)
+      ? url.pathname
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function SkillCatalogTile({
+  icon,
+  profileImage,
+}: {
+  icon?: string | null;
+  profileImage?: string | null;
+}) {
+  // The Control UI registry adapter admits only same-registry, content-addressed
+  // art, including for the publisher fallback. Third-party avatars are not skill icons.
+  const [failed, setFailed] = useState<string[]>([]);
+  const candidates = [skillCatalogImage(icon), skillCatalogImage(profileImage)];
+  const src = candidates.find((candidate) => candidate && !failed.includes(candidate));
+  const hosted = src && src === candidates[0];
+  return (
+    <span
+      className={cn("skill-catalog-tile", !hosted && src && "skill-catalog-tile--profile")}
+      aria-hidden="true"
+    >
+      {src ? (
+        <img
+          src={src}
+          alt=""
+          referrerPolicy="no-referrer"
+          onError={() => setFailed((old) => [...old, src])}
+        />
+      ) : (
+        <BookOpenText size={26} />
+      )}
+    </span>
   );
 }
 
@@ -763,99 +747,5 @@ function SignedInActionTooltip({
         {message}
       </TooltipContent>
     </Tooltip>
-  );
-}
-
-function SkillSidebarDeferredStats({
-  skill,
-  owner,
-  ownerHandle,
-  latestVersion,
-  showArchiveMetadata,
-  securityAuditSummary,
-  activityTrend,
-  hideCreator = false,
-}: {
-  skill: SkillDetailViewSkill;
-  owner: PublicPublisher | null;
-  ownerHandle: string | null;
-  latestVersion: SkillDetailLatestVersion;
-  showArchiveMetadata: boolean;
-  securityAuditSummary?: ReactNode;
-  activityTrend?: ActivityTrend | null;
-  hideCreator?: boolean;
-}) {
-  const githubRepositoryLink = getGitHubRepositoryLink(skill);
-  const downloadsMetricBlock = useDownloadsSidebarMetricBlock({
-    allTimeDownloads: skill.stats.downloads,
-    activityTrend: activityTrend?.downloads,
-  });
-
-  return (
-    <SidebarMetadata
-      ariaLabel="Skill metadata"
-      density="compact"
-      className="skill-sidebar-deferred-metadata"
-      blocks={[
-        downloadsMetricBlock,
-        { label: "Repository", value: githubRepositoryLink },
-        ...(hideCreator
-          ? []
-          : [
-              {
-                label: "Creator",
-                value: (
-                  <UserBadge
-                    user={owner}
-                    fallbackHandle={ownerHandle}
-                    prefix=""
-                    size="md"
-                    showName
-                    showHandle={false}
-                    showMutedHandle
-                    disableTooltip
-                  />
-                ),
-              },
-            ]),
-        securityAuditSummary
-          ? {
-              key: "security-audit",
-              label: <DetailSecuritySummaryLabel />,
-              value: securityAuditSummary,
-            }
-          : { label: "", value: null },
-        ...(showArchiveMetadata
-          ? [
-              {
-                grid: [
-                  {
-                    label: "Last updated",
-                    value: (
-                      <span title={new Date(skill.updatedAt).toLocaleString()}>
-                        {timeAgo(skill.updatedAt)}
-                      </span>
-                    ),
-                  },
-                  {
-                    label: "Current version",
-                    value: latestVersion?.version ? `v${latestVersion.version}` : "None",
-                  },
-                ],
-              },
-              { label: "License", value: PLATFORM_SKILL_LICENSE },
-            ]
-          : [
-              {
-                label: "Last updated",
-                value: (
-                  <span title={new Date(skill.updatedAt).toLocaleString()}>
-                    {timeAgo(skill.updatedAt)}
-                  </span>
-                ),
-              },
-            ]),
-      ]}
-    />
   );
 }

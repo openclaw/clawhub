@@ -18,7 +18,7 @@ describe("DetailSecuritySummary", () => {
     expect(auditVerdictMeterLevel(status)).toBe(0);
   });
 
-  it("shows the audit verdict and full audit link in the compact sidebar row", () => {
+  it("makes both the verdict and its meter the compact audit link", () => {
     render(
       <DetailSecuritySummary
         auditHref="/steipete/weather/security-audit"
@@ -31,8 +31,9 @@ describe("DetailSecuritySummary", () => {
       />,
     );
 
-    expect(screen.getByText("Pass")).toBeTruthy();
-    const auditLink = screen.getByRole("link", { name: "View Security Audit" });
+    const auditLink = screen.getByRole("link", { name: /View Security Audit.*Clean/i });
+    expect(auditLink.textContent).toBe("Clean");
+    expect(screen.queryByText("Audit", { exact: true })).toBeNull();
     expect(auditLink.getAttribute("href")).toBe("/steipete/weather/security-audit");
     expect(auditLink.getAttribute("target")).toBeNull();
     expect(auditLink.getAttribute("rel")).toBeNull();
@@ -42,8 +43,8 @@ describe("DetailSecuritySummary", () => {
     expect(screen.queryByText("Install from publishers you trust.")).toBeNull();
     expect(screen.queryByRole("link", { name: /VirusTotal/i })).toBeNull();
     expect(screen.queryByText("Security checks for vulnerabilities and agentic risk")).toBeNull();
-    expect(document.querySelector(".security-audit-meter")?.getAttribute("data-level")).toBe("3");
-    expect(document.querySelectorAll(".security-audit-meter span")).toHaveLength(3);
+    expect(auditLink.querySelector(".security-audit-meter")?.getAttribute("data-level")).toBe("3");
+    expect(auditLink.querySelectorAll(".security-audit-meter span")).toHaveLength(3);
   });
 
   it("renders GitHub-backed scan status when no version-backed scan exists", () => {
@@ -135,7 +136,7 @@ describe("DetailSecuritySummary", () => {
     expect(screen.queryByText("Suspicious")).toBeNull();
   });
 
-  it("renders clean scanner outcomes as pass in the user-facing audit UI", () => {
+  it("renders clean scanner outcomes as Clean in the catalog rail", () => {
     render(
       <DetailSecuritySummary
         auditHref="/steipete/weather/security-audit"
@@ -143,7 +144,7 @@ describe("DetailSecuritySummary", () => {
       />,
     );
 
-    expect(screen.getByText("Pass")).toBeTruthy();
+    expect(screen.getByText("Clean")).toBeTruthy();
     expect(screen.queryByText("Benign")).toBeNull();
     expect(document.querySelector(".security-audit-meter")?.getAttribute("data-level")).toBe("3");
   });
@@ -165,7 +166,7 @@ describe("DetailSecuritySummary", () => {
     expect(document.querySelector(".security-audit-meter")?.getAttribute("data-level")).toBe("1");
   });
 
-  it("keeps ClawScan clean summaries passing", () => {
+  it("keeps ClawScan clean summaries labeled Clean", () => {
     render(
       <DetailSecuritySummary
         auditHref="/steipete/weather/security-audit"
@@ -173,7 +174,7 @@ describe("DetailSecuritySummary", () => {
       />,
     );
 
-    expect(screen.getByText("Pass")).toBeTruthy();
+    expect(screen.getByText("Clean")).toBeTruthy();
     expect(screen.queryByText("Review")).toBeNull();
     expect(screen.queryByText("Warn")).toBeNull();
   });

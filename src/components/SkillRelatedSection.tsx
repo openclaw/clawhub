@@ -45,8 +45,8 @@ export function SkillRelatedSection({
   const isCompact = variant === "compact";
 
   return (
-    <section
-      className={`related-skills-section${isCompact ? " related-skills-section-compact detail-mobile-related" : ""}`}
+    <footer
+      className={`related-skills-section${isCompact ? " related-skills-section-compact" : ""}`}
       aria-labelledby="related-skills-heading"
     >
       <div className="related-skills-header">
@@ -129,6 +129,6 @@ export function SkillRelatedSection({
           </a>
         </Button>
       </div>
-    </section>
+    </footer>
   );
 }

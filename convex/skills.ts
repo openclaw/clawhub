@@ -7534,10 +7534,6 @@ export const updateVersionLlmAnalysisInternal = internalMutation({
       llmAnalysis: args.llmAnalysis,
       scannerReportsStorageId: args.scannerReportsStorageId,
     });
-    await ctx.scheduler?.runAfter(0, internal.skillCards.enqueueForVersionInternal, {
-      versionId: args.versionId,
-      source: "scan",
-    });
     if (args.moderationMode === "preserve") return;
 
     const skill = await ctx.db.get(version.skillId);

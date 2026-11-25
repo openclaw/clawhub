@@ -6,7 +6,7 @@ import path from "node:path";
 import { expect, test } from "@playwright/test";
 import { parseLastJsonObject } from "../helpers/convexOutput";
 import { localConvexDeployment } from "../helpers/localConvex";
-import { completeMockPrePublicationChecks } from "./helpers";
+import { completeMockPrePublicationChecks, skillMd } from "./helpers";
 
 test.setTimeout(180_000);
 
@@ -84,6 +84,8 @@ test("publishes, polls, retries, and downloads the exact Template tarball", asyn
   const suffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
   const packageName = `exact-claw-proof-${suffix}`;
   const version = "1.0.0";
+  const remoteSkillSlug = `research-${suffix}`;
+  const remoteSkillRef = "@cli-user/" + remoteSkillSlug;
   const registry = process.env.VITE_CONVEX_SITE_URL;
   if (!registry) throw new Error("VITE_CONVEX_SITE_URL is required");
 
@@ -119,7 +121,7 @@ test("publishes, polls, retries, and downloads the exact Template tarball", asyn
             },
           ],
         },
-        skills: [{ ref: "@acme/research", version: "1.2.3" }, { path: "skills/research" }],
+        skills: [{ ref: remoteSkillRef, version: "1.2.3" }, { path: "skills/research" }],
         plugins: [{ ref: "@acme/alerts", version: "2.0.0" }, { path: "plugins/alerts" }],
         automations: [
           {
@@ -206,6 +208,40 @@ test("publishes, polls, retries, and downloads the exact Template tarball", asyn
       throw new Error(`CLI login failed.\n${login.stdout}\n${login.stderr}`);
     }
 
+    // A real newer release must not replace the authored instructions pinned in the Template.
+    const skillDir = path.join(root, remoteSkillSlug);
+    mkdirSync(skillDir);
+    for (const [pin, instructions] of [
+      ["1.2.3", "Pinned research instructions"],
+      ["2.0.0", "Newer research instructions"],
+    ]) {
+      writeFileSync(
+        path.join(skillDir, "SKILL.md"),
+        skillMd({ slug: remoteSkillSlug, displayName: instructions, versionLabel: pin }),
+      );
+      await runCli(
+        [
+          "--no-input",
+          "publish",
+          skillDir,
+          "--slug",
+          remoteSkillSlug,
+          "--name",
+          "Research",
+          "--version",
+          pin,
+          "--changelog",
+          instructions,
+        ],
+        cliEnv,
+      );
+      await completeMockPrePublicationChecks({
+        kind: "skill",
+        slug: remoteSkillSlug,
+        version: pin,
+      });
+    }
+
     const publishArgs = [
       "--registry",
       registry,
@@ -255,7 +291,7 @@ test("publishes, polls, retries, and downloads the exact Template tarball", asyn
     });
 
     const expectedInventory = [
-      { kind: "skill", source: "clawhub", ref: "@acme/research", version: "1.2.3" },
+      { kind: "skill", source: "clawhub", ref: remoteSkillRef, version: "1.2.3" },
       { kind: "skill", source: "bundled", path: "skills/research", name: "Bundled Research" },
       { kind: "plugin", source: "clawhub", ref: "@acme/alerts", version: "2.0.0" },
       { kind: "plugin", source: "bundled", path: "plugins/alerts", name: "Bundled Release Alerts" },
@@ -272,13 +308,50 @@ test("publishes, polls, retries, and downloads the exact Template tarball", asyn
     });
     expect(release.version.artifact.sha256).toBe(artifactSha256);
 
-    await page.goto(`/cli-user/templates/${packageName}`);
-    await expect(page.getByRole("heading", { name: "Exact Template Proof" })).toBeVisible();
     const proofDir = process.env.TEMPLATE_CONTRACT_PROOF_DIR;
     if (proofDir) {
       mkdirSync(proofDir, { recursive: true });
       writeFileSync(path.join(proofDir, "bundled-template-downloaded.tgz"), downloadedBytes);
     }
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`/cli-user/templates/${packageName}`);
+    await expect(page.getByRole("heading", { name: "Exact Template Proof" })).toBeVisible();
+    const included = page.getByRole("region", { name: "Included in this release" });
+    await expect(included.getByRole("button", { name: "Browse release files" })).toHaveCount(0);
+    await included.getByRole("button", { name: "SOUL.md", exact: true }).click();
+    const soul = page.getByRole("dialog", { name: "SOUL.md" });
+    await expect(soul).toContainText("Preserve the exact published artifact.");
+    await expect(soul.getByRole("button", { name: "Browse release files" })).toHaveCount(0);
+    await expect(soul.getByRole("tablist")).toHaveCount(0);
+    if (proofDir && process.env.TEMPLATE_CONTRACT_CAPTURE_SCREENSHOTS !== "0")
+      await page.screenshot({
+        path: path.join(proofDir, "desktop-soul.png"),
+        animations: "disabled",
+      });
+    await soul.getByRole("button", { name: "Close" }).click();
+    await expect(page.getByRole("dialog", { name: "Release files" })).toHaveCount(0);
+    const skills = included.getByRole("region", { name: "Skills" });
+    await skills.getByRole("button", { name: remoteSkillRef }).click();
+    const pinnedSkill = page.getByRole("dialog", { name: remoteSkillRef });
+    await expect(
+      pinnedSkill.getByRole("heading", { name: "Pinned research instructions", exact: true }),
+    ).toBeVisible();
+    await expect(pinnedSkill).not.toContainText("Newer research instructions");
+    await expect(pinnedSkill).not.toContainText("description:");
+    await pinnedSkill.getByRole("button", { name: "Close" }).click();
+    await skills.getByRole("button", { name: "intake" }).click();
+    const intake = page.getByRole("dialog", { name: "intake" });
+    await expect(intake).toContainText("Sort requests.");
+    await intake.getByRole("button", { name: "Close" }).click();
+    const plugins = included.getByRole("region", { name: "Plugins" });
+    await expect(plugins.getByRole("button", { name: "@acme/alerts" })).toBeVisible();
+    await plugins.getByRole("button", { name: "notifier" }).click();
+    const notifier = page.getByRole("dialog", { name: "notifier" });
+    await expect(notifier).toContainText(".openclaw/extensions/notifier/openclaw.plugin.json");
+    await notifier.getByRole("button", { name: "Close" }).click();
+    const jobs = included.getByRole("region", { name: "Automations" });
+    await expect(jobs).toContainText("Heartbeat checklist");
+    await expect(jobs).toContainText("Every 1h");
     for (const [label, width, height] of [
       ["desktop", 1440, 900],
       ["laptop", 1366, 768],
@@ -286,36 +359,31 @@ test("publishes, polls, retries, and downloads the exact Template tarball", asyn
       ["mobile", 390, 844],
     ] as const) {
       await page.setViewportSize({ width, height });
-      for (const tab of ["Skills", "Plugins", "Automations"] as const) {
-        await page.getByRole("tab", { name: tab, exact: true }).click();
-        await expect(page.getByRole("tabpanel")).toContainText(
-          tab === "Skills" ? "@acme/research" : tab === "Plugins" ? "@acme/alerts" : "Paused",
-        );
-        if (tab !== "Automations") {
-          await expect(page.getByRole("tabpanel")).toContainText(
-            tab === "Skills" ? "Bundled Research" : "Bundled Release Alerts",
-          );
-          await expect(page.getByRole("tabpanel")).toContainText(
-            tab === "Skills" ? "skills/research" : "plugins/alerts",
-          );
-          await expect(page.getByRole("tabpanel")).toContainText("Bundled");
+      for (const [section, name, evidence] of [
+        ["Skills", "Bundled Research", "Use assets/reference.bin."],
+        ["Plugins", "Bundled Release Alerts", "plugins/alerts"],
+        ["Automations", "Daily brief", "Summarize approved sources."],
+      ] as const) {
+        const region = included.getByRole("region", { name: section });
+        if (section === "Automations") {
+          await region.getByText(name, { exact: true }).click();
+          await expect(region.getByText(evidence)).toBeVisible();
+          await expect(region).toContainText("Daily at 9:00 AM · UTC · Disabled");
+        } else {
+          await region.getByRole("button", { name }).click();
+          await expect(page.getByRole("dialog", { name })).toContainText(evidence);
         }
-        // Workspace-file contents appear in the matching tab without joining the inventory.
-        await expect(page.getByRole("tabpanel")).toContainText(
-          tab === "Skills"
-            ? "intakeWorkspace file · skills/intake/SKILL.md"
-            : tab === "Plugins"
-              ? "notifierWorkspace file · .openclaw/extensions/notifier/openclaw.plugin.json"
-              : "Heartbeat checklistWorkspace file · HEARTBEAT.md · Every 1h",
-        );
         expect(
           await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
         ).toBe(true);
         if (proofDir && process.env.TEMPLATE_CONTRACT_CAPTURE_SCREENSHOTS !== "0")
           await page.screenshot({
-            path: path.join(proofDir, `candidate-${label}-${tab.toLowerCase()}.png`),
+            path: path.join(proofDir, `candidate-${label}-${section.toLowerCase()}.png`),
             fullPage: true,
           });
+        if (section === "Automations") await region.getByText(name, { exact: true }).click();
+        else
+          await page.getByRole("dialog", { name }).getByRole("button", { name: "Close" }).click();
       }
     }
 

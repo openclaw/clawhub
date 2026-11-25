@@ -16,7 +16,12 @@ import {
 } from "clawhub-schema";
 import { isSkillCategorySlug, resolveStoredSkillCategories } from "clawhub-schema/catalogMetadata";
 import { ApiRoutes } from "clawhub-schema/routes";
-import { formatSecurityAuditOverview } from "clawhub-schema/securityAudit";
+import {
+  formatSecurityAuditOverview,
+  getSkillReleaseScanStatus,
+  normalizeSecurityStatus,
+  type NormalizedSecurityStatus,
+} from "clawhub-schema/securityAudit";
 import { normalizeContentType } from "clawhub-schema/textFiles";
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
@@ -346,8 +351,6 @@ function normalizeModerationFromSkill(skill: SkillModerationShape) {
   };
 }
 
-type NormalizedSecurityStatus = "clean" | "suspicious" | "malicious" | "pending" | "error";
-
 type SkillSecuritySnapshot = {
   status: NormalizedSecurityStatus;
   hasWarnings: boolean;
@@ -648,46 +651,6 @@ function isDefinitiveSecurityStatus(
   return status === "clean" || status === "suspicious" || status === "malicious";
 }
 
-const SECURITY_STATUS_PRIORITY: Record<NormalizedSecurityStatus, number> = {
-  clean: 0,
-  error: 1,
-  pending: 2,
-  suspicious: 3,
-  malicious: 4,
-};
-
-function normalizeSecurityStatus(value: string | null | undefined): NormalizedSecurityStatus {
-  const normalized = value?.trim().toLowerCase();
-  switch (normalized) {
-    case "benign":
-    case "clean":
-      return "clean";
-    case "suspicious":
-      return "suspicious";
-    case "malicious":
-      return "malicious";
-    case "error":
-    case "failed":
-    case "completed":
-      return "error";
-    case "pending":
-    case "loading":
-    case "not_found":
-    case "not-found":
-    case "stale":
-      return "pending";
-    default:
-      return "pending";
-  }
-}
-
-function mergeSecurityStatuses(statuses: NormalizedSecurityStatus[]) {
-  if (statuses.length === 0) return "pending" satisfies NormalizedSecurityStatus;
-  return statuses.reduce((current, candidate) =>
-    SECURITY_STATUS_PRIORITY[candidate] > SECURITY_STATUS_PRIORITY[current] ? candidate : current,
-  );
-}
-
 function hasLlmDimensionWarnings(dimensions: LlmEvalDimension[] | undefined) {
   if (!Array.isArray(dimensions)) return false;
   return dimensions.some((dimension) => {
@@ -704,17 +667,14 @@ function buildSkillSecuritySnapshot(
   const skillSpector = version.skillSpectorAnalysis;
   const llm = version.llmAnalysis;
 
-  if (!sha256hash && !skillSpector && !llm) {
+  const status = getSkillReleaseScanStatus(version);
+  if (!status) {
     return null;
   }
 
   const skillSpectorStatus = skillSpector ? normalizeSecurityStatus(skillSpector.status) : null;
   const llmStatus = llm ? normalizeSecurityStatus(llm.verdict ?? llm.status) : null;
 
-  const statuses: NormalizedSecurityStatus[] = [];
-  if (llmStatus) statuses.push(llmStatus);
-  if (statuses.length === 0 && (sha256hash || skillSpector)) statuses.push("pending");
-  const status = mergeSecurityStatuses(statuses);
   const hasScanResult = isDefinitiveSecurityStatus(llmStatus);
   const hasWarnings =
     status === "suspicious" || status === "malicious" || hasLlmDimensionWarnings(llm?.dimensions);

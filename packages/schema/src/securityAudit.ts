@@ -1,3 +1,42 @@
+// The public version endpoint and the discovered Skill page describe the same snapshot.
+export type NormalizedSecurityStatus = "clean" | "suspicious" | "malicious" | "pending" | "error";
+
+export function normalizeSecurityStatus(
+  value: string | null | undefined,
+): NormalizedSecurityStatus {
+  const normalized = value?.trim().toLowerCase();
+  switch (normalized) {
+    case "benign":
+    case "clean":
+      return "clean";
+    case "suspicious":
+      return "suspicious";
+    case "malicious":
+      return "malicious";
+    case "error":
+    case "failed":
+    case "completed":
+      return "error";
+    case "pending":
+    case "loading":
+    case "not_found":
+    case "not-found":
+    case "stale":
+      return "pending";
+    default:
+      return "pending";
+  }
+}
+
+export function getSkillReleaseScanStatus(version: {
+  sha256hash?: string | null;
+  skillSpectorAnalysis?: { status: string } | null;
+  llmAnalysis?: { verdict?: string | null; status: string } | null;
+}): NormalizedSecurityStatus | null {
+  if (!version.sha256hash && !version.skillSpectorAnalysis && !version.llmAnalysis) return null;
+  return normalizeSecurityStatus(version.llmAnalysis?.verdict ?? version.llmAnalysis?.status);
+}
+
 type SecurityAuditOverviewInput = {
   llmAnalysis?: {
     summary?: string | null;

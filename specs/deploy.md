@@ -335,7 +335,9 @@ receipt because their recipe is unknown. Activated workers certify reuse only
 after a successful generation with the current semantic inputs. Deploying source
 does not itself prove the configured model is available to worker credentials.
 
-Before changing the worker model, dispatch `Skill Card Worker` at the candidate
+Automatic Skill Card generation is off. Security scans still run and publish their verdicts; completing a scan must not queue a card. Disabling generation does not delete prior cards, existing archives or queued history. The GitHub workflow has no automatic triggers.
+
+If the workflow is deliberately re-enabled for a worker model change, dispatch `Skill Card Worker` at the candidate
 ref with `fixture-only=true`. This generates one benign card with the Production
 OpenAI credential and the real renderer. It does not receive Convex credentials
 or claim production jobs; the regular drain shards are excluded from that run.

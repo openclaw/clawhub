@@ -30,6 +30,11 @@ function expectSecretStepAllowlist(
 }
 
 describe("skill-card-worker workflow", () => {
+  it("does not automatically generate Skill Cards after security scans or on a schedule", async () => {
+    const workflow = parseYaml(await readFile(".github/workflows/skill-card-worker.yml", "utf8"));
+    expect(Object.keys(workflow.on)).toEqual(["workflow_dispatch"]);
+  });
+
   it.each(["0.164.0", "0.160.0"])(
     "selects or rejects installed Codex %s despite an earlier ambient CLI",
     async (installedVersion) => {
@@ -119,7 +124,7 @@ describe("skill-card-worker workflow", () => {
       default: false,
     });
     expect(workflow.jobs["skill-card-worker"].if).toBe(
-      "${{ github.event_name != 'workflow_dispatch' || inputs.fixture-only != true }}",
+      "${{ github.event_name == 'workflow_dispatch' && inputs.fixture-only != true }}",
     );
     const fixture = workflow.jobs.fixture;
     expect(fixture.if).toBe(

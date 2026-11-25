@@ -160,7 +160,7 @@ test("org owners can delete an org and hide its skills and plugins", async ({ pa
   await gotoUntilVisible(
     page,
     `/plugins/${encodeURIComponent(packageName)}`,
-    page.getByText(packageDisplayName),
+    page.getByRole("heading", { level: 1, name: packageDisplayName, exact: true }),
   );
 
   await gotoUntilVisible(

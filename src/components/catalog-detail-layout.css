@@ -1,0 +1,253 @@
+@import "@fontsource-variable/instrument-sans/standard.css";
+@import "@fontsource-variable/instrument-sans/standard-italic.css";
+
+/* ClawHub supplies its own navigation above the Control UI detail surface. Use
+   identical outer gutters for all three routes, including their phone layout. */
+.catalog-detail-page {
+  min-height: calc(100svh - var(--site-header-height, 60px));
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 28px 16px 40px;
+}
+body:has(.catalog-detail-page) {
+  background: light-dark(#f8f8f8, #0e1015);
+}
+@media (max-width: 640px) {
+  .catalog-detail-page {
+    padding: 12px 12px 40px;
+  }
+}
+
+/* Public counterpart of Control UI's plugins.css detail rail. All three listing
+   types share the same reading measure and respond to the rail, not the window. */
+.catalog-detail,
+.catalog-skill-preview-dialog {
+  --detail-radius-scale: 1;
+  --detail-primary: light-dark(#bd4531, #d13c3c);
+  --detail-text: light-dark(#353535, #bcbcc0);
+  --detail-strong: light-dark(#202020, #f4f4f5);
+  --detail-muted: light-dark(#5e5e5e, #8e8e97);
+  --detail-card: light-dark(#fff, #161920);
+  --detail-tone: color-mix(in srgb, var(--detail-text) 4.5%, transparent);
+  --detail-rule: color-mix(in srgb, var(--detail-text) 8%, transparent);
+  --font-body:
+    "Instrument Sans Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+.catalog-detail {
+  container-type: inline-size;
+  display: grid;
+  gap: 30px;
+  grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+  max-width: 1058px;
+  min-width: 0;
+  margin-inline: auto;
+  font-family: var(--font-body);
+  color: var(--detail-strong);
+  font-size: 14px;
+  line-height: 1.55;
+  letter-spacing: -0.01em;
+  -webkit-font-smoothing: antialiased;
+}
+@supports (corner-shape: superellipse(1.5)) {
+  .catalog-detail,
+  .catalog-skill-preview-dialog {
+    --detail-radius-scale: 1.25;
+  }
+}
+.catalog-detail__breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-bottom: -8px;
+  color: var(--detail-muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.catalog-detail__breadcrumb > a {
+  flex: none;
+  color: inherit;
+  text-decoration: none;
+}
+.catalog-detail__breadcrumb > a:hover {
+  color: var(--detail-text);
+}
+.catalog-detail__breadcrumb svg {
+  flex: none;
+}
+.catalog-detail__breadcrumb [aria-current] {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--detail-strong);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.catalog-detail__hero {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding-bottom: 26px;
+  box-shadow: 0 1px 0 var(--detail-rule);
+}
+.catalog-detail__icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 64px;
+  height: 64px;
+  overflow: hidden;
+  border-radius: calc(18px * var(--detail-radius-scale));
+  corner-shape: superellipse(1.5);
+  background: var(--detail-card);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--detail-text) 6%, transparent);
+}
+.catalog-detail__heading {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.catalog-detail__title-row h1 {
+  min-width: 0;
+  margin: 0;
+  color: var(--detail-strong);
+  font: 650 24px/1.2 var(--font-body);
+  letter-spacing: -0.025em;
+  overflow-wrap: anywhere;
+}
+.catalog-detail__publisher {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 5px;
+  color: var(--detail-muted);
+  font-size: 13.5px;
+  line-height: 1.4;
+}
+.catalog-detail__content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 248px;
+  align-items: start;
+  gap: 64px;
+}
+.catalog-detail__main,
+.catalog-detail__sidebar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: 32px;
+  min-width: 0;
+}
+.catalog-detail__summary {
+  max-width: 680px;
+  margin: 0;
+  color: var(--detail-text);
+  font-size: 15px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.catalog-detail__sidebar {
+  gap: 22px;
+  font-size: 12px;
+}
+.catalog-detail__sidebar .skill-install-command-card {
+  padding-inline: 0;
+}
+.catalog-detail__sidebar .skill-install-panel-title {
+  font-family: inherit;
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: normal;
+}
+.catalog-detail__fact {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+}
+.catalog-detail__fact dt {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--detail-muted);
+  font-size: 12.5px;
+}
+.catalog-detail__fact dd {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  min-width: 0;
+  margin: 0;
+  color: var(--detail-text);
+  font-size: 13.5px;
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+@media (min-height: 640px) {
+  .catalog-detail__sidebar {
+    position: sticky;
+    top: 24px;
+  }
+}
+@container (max-width: 768px) {
+  .catalog-detail__content {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 32px;
+  }
+  .catalog-detail__sidebar {
+    position: static;
+    padding-top: 22px;
+    border-top: 1px solid var(--detail-rule);
+  }
+  .catalog-detail__sidebar:has(> .catalog-detail__fact) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px 16px;
+  }
+  .catalog-detail__sidebar > :not(.catalog-detail__fact),
+  .catalog-detail__fact:has(a[href*="security-audit"]) {
+    grid-column: 1 / -1;
+  }
+}
+@container (max-width: 560px) {
+  .catalog-detail__hero {
+    flex-wrap: wrap;
+    gap: 14px 12px;
+    padding-bottom: 18px;
+  }
+  .catalog-detail__icon {
+    width: 52px;
+    height: 52px;
+    border-radius: calc(15px * var(--detail-radius-scale));
+  }
+  .catalog-detail__title-row h1 {
+    font-size: 20px;
+  }
+  .catalog-detail__summary {
+    line-height: 1.55;
+  }
+}
+
+.catalog-detail__release {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--detail-rule);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.catalog-detail__release:is(:hover, :focus-visible) {
+  text-decoration-color: currentColor;
+}
+.catalog-detail__release:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}

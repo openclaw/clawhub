@@ -17,12 +17,7 @@ type Receipt = {
 };
 type State = Array<{ version: Doc<"skillVersions">; jobs: Doc<"skillCardGenerationJobs">[] }>;
 
-export async function proveSkillCardReuse(
-  client: ConvexClient,
-  versionId: Id<"skillVersions">,
-  token: string,
-  storageIds: () => string[],
-) {
+function localCardFixtureClient() {
   const config = JSON.parse(readFileSync(".convex/local/default/config.json", "utf8")) as {
     adminKey: string;
     ports: { cloud: number };
@@ -31,6 +26,32 @@ export async function proveSkillCardReuse(
     setAdminAuth(key: string): void;
   };
   admin.setAdminAuth(config.adminKey);
+  return admin;
+}
+
+// Explicitly create a legacy card only after verifying that the real publish/scan path did not.
+export async function enqueueHistoricalCardFixture(versionId: Id<"skillVersions">) {
+  const admin = localCardFixtureClient();
+  const rows = (await admin.query(makeFunctionReference<"query">("skillCardDevSeed:state"), {
+    versionIds: [versionId],
+  })) as State;
+  expect(rows).toHaveLength(1);
+  expect(rows[0].version._id).toBe(versionId);
+  expect(rows[0].jobs).toEqual([]);
+  expect(rows[0].version.files.some((file) => file.path === "skill-card.md")).toBe(false);
+  await admin.mutation(makeFunctionReference<"mutation">("skillCards:enqueueForVersionInternal"), {
+    versionId,
+    source: "manual",
+  });
+}
+
+export async function proveSkillCardReuse(
+  client: ConvexClient,
+  versionId: Id<"skillVersions">,
+  token: string,
+  storageIds: () => string[],
+) {
+  const admin = localCardFixtureClient();
   const run = <T>(name: string, args: Record<string, unknown> = {}) =>
     admin.mutation(makeFunctionReference<"mutation">(name), args) as Promise<T>;
   const enqueue = (id: Id<"skillVersions">) =>

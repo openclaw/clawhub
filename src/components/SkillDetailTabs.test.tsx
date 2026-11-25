@@ -3,194 +3,61 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { useState, type ComponentProps } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Doc } from "../../convex/_generated/dataModel";
-import { buildSkillDetailTabs, type DetailTab } from "../lib/skillDetailTabs";
-import { SkillDetailTabs as SkillDetailTabsView } from "./SkillDetailTabs";
+import { buildSkillDetailTabs, skillTabFromHash, type DetailTab } from "../lib/skillDetailTabs";
+import { SkillDetailTabs } from "./SkillDetailTabs";
 
-function SkillDetailTabs({
-  hasSkillCard,
-  ...props
-}: Omit<ComponentProps<typeof SkillDetailTabsView>, "tabs"> & { hasSkillCard: boolean }) {
+type TestProps = Partial<
+  Omit<ComponentProps<typeof SkillDetailTabs>, "tabs" | "setActiveTab" | "activeTab">
+>;
+
+function TestTabs({ initialTab = "readme", ...overrides }: TestProps & { initialTab?: DetailTab }) {
+  const [activeTab, setActiveTab] = useState<DetailTab>(initialTab);
+  const props = {
+    readmeContent: "# API Gateway",
+    readmeError: null,
+    skill: { slug: "api-gateway" } as Doc<"skills">,
+    clawdis: undefined,
+    osLabels: [],
+    ...overrides,
+  };
+  const tabs = buildSkillDetailTabs({
+    hasEvaluation: Boolean(props.evaluationContent),
+    clawdis: props.clawdis,
+    osLabels: props.osLabels,
+  });
   return (
-    <SkillDetailTabsView
-      {...props}
-      tabs={buildSkillDetailTabs({
-        hasSkillCard,
-        hasEvaluation: Boolean(props.evaluationContent),
-        showArchiveTabs: props.showArchiveTabs ?? true,
-        versionCount: props.versions?.length ?? 0,
-        clawdis: props.clawdis,
-        osLabels: props.osLabels,
-      })}
-    />
+    <SkillDetailTabs {...props} tabs={tabs} activeTab={activeTab} setActiveTab={setActiveTab} />
   );
 }
 
-const useMutationMock = vi.fn();
-
-vi.mock("convex/react", () => ({
-  useMutation: (...args: unknown[]) => useMutationMock(...args),
-  usePaginatedQuery: () => ({
-    results: [],
-    status: "Exhausted",
-    loadMore: vi.fn(),
-  }),
-}));
-
-beforeEach(() => {
-  useMutationMock.mockReset();
-  useMutationMock.mockReturnValue(vi.fn());
-});
-
-function renderReadme(readmeContent: string) {
-  return render(
-    <SkillDetailTabs
-      activeTab="readme"
-      setActiveTab={vi.fn()}
-      readmeContent={readmeContent}
-      readmeError={null}
-      skillCardContent={null}
-      skillCardError={null}
-      hasSkillCard={false}
-      latestFiles={[]}
-      latestVersionId={null}
-      skill={{ slug: "api-gateway" } as Doc<"skills">}
-      onCompareIntent={vi.fn()}
-      diffVersions={undefined}
-      versions={undefined}
-      nixPlugin={false}
-      clawdis={undefined}
-      osLabels={[]}
-    />,
-  );
-}
-
-function renderReadmeForOwner(readmeContent: string) {
-  return render(
-    <SkillDetailTabs
-      activeTab="readme"
-      setActiveTab={vi.fn()}
-      readmeContent={readmeContent}
-      readmeError={null}
-      skillCardContent={null}
-      skillCardError={null}
-      hasSkillCard={false}
-      latestFiles={[]}
-      latestVersionId={null}
-      skill={{ slug: "api-gateway" } as Doc<"skills">}
-      ownerHandle="clawkit"
-      onCompareIntent={vi.fn()}
-      diffVersions={undefined}
-      versions={undefined}
-      nixPlugin={false}
-      clawdis={undefined}
-      osLabels={[]}
-    />,
-  );
-}
-
-describe("SkillDetailTabs README links", () => {
-  it("uses the shared skeleton while tab content loads", () => {
-    const { rerender } = render(
-      <SkillDetailTabs
-        activeTab="readme"
-        setActiveTab={vi.fn()}
-        readmeContent={null}
-        readmeError={null}
-        skillCardContent={null}
-        skillCardError={null}
-        hasSkillCard={true}
-        latestFiles={[]}
-        latestVersionId={null}
-        skill={{ slug: "api-gateway", tags: {} } as Doc<"skills">}
-        onCompareIntent={vi.fn()}
-        diffVersions={undefined}
-        versions={undefined}
-        nixPlugin={false}
-        clawdis={undefined}
-        osLabels={[]}
-      />,
-    );
-
-    expect(screen.getByRole("status", { name: "Loading tab content" })).toBeTruthy();
-    expect(screen.queryByText(/Loading README/i)).toBeNull();
-
-    rerender(
-      <SkillDetailTabs
-        activeTab="skill-card"
-        setActiveTab={vi.fn()}
-        readmeContent={null}
-        readmeError={null}
-        skillCardContent={null}
-        skillCardError={null}
-        hasSkillCard={true}
-        latestFiles={[]}
-        latestVersionId={null}
-        skill={{ slug: "api-gateway", tags: {} } as Doc<"skills">}
-        onCompareIntent={vi.fn()}
-        diffVersions={undefined}
-        versions={undefined}
-        nixPlugin={false}
-        clawdis={undefined}
-        osLabels={[]}
-      />,
-    );
-
-    expect(screen.getByRole("status", { name: "Loading tab content" })).toBeTruthy();
-    expect(screen.queryByText(/Loading Skill Card/i)).toBeNull();
+describe("SkillDetailTabs README", () => {
+  it("renders the publisher's SKILL.md as the only tab when no additional content exists", () => {
+    render(<TestTabs />);
+    expect(screen.getAllByRole("tab")).toEqual([
+      screen.getByRole("tab", { name: "SKILL.md", selected: true }),
+    ]);
+    const panel = screen.getByRole("tabpanel", { name: "SKILL.md" });
+    expect(within(panel).getByRole("heading", { name: "API Gateway" })).toBeTruthy();
   });
 
-  it("renders files and version history tabs before install metadata tabs", () => {
-    renderReadme("# API Gateway");
-
-    expect(screen.getByRole("tab", { name: "SKILL.md" })).toBeTruthy();
-    expect(screen.getByRole("tab", { name: "Files" })).toBeTruthy();
-    expect(screen.getByRole("tab", { name: "Versions" })).toBeTruthy();
-    expect(screen.queryByRole("tab", { name: "Settings" })).toBeNull();
-    expect(screen.queryByRole("tab", { name: "Diff" })).toBeNull();
-  });
-
-  it("hides archive-only tabs for source-backed skills", () => {
-    render(
-      <SkillDetailTabs
-        activeTab="readme"
-        setActiveTab={vi.fn()}
-        readmeContent="# API Gateway"
-        readmeError={null}
-        skillCardContent="# Skill Card"
-        skillCardError={null}
-        hasSkillCard={true}
-        latestFiles={[]}
-        latestVersionId={null}
-        skill={{ slug: "api-gateway", tags: {} } as Doc<"skills">}
-        onCompareIntent={vi.fn()}
-        diffVersions={undefined}
-        versions={undefined}
-        nixPlugin={false}
-        showArchiveTabs={false}
-        clawdis={undefined}
-        osLabels={[]}
-      />,
-    );
-
-    expect(screen.getByRole("tab", { name: "SKILL.md" })).toBeTruthy();
-    expect(screen.getByRole("tab", { name: "Skill Card" })).toBeTruthy();
-    expect(screen.queryByRole("tab", { name: "Files" })).toBeNull();
-    expect(screen.queryByRole("tab", { name: "Versions" })).toBeNull();
-    expect(screen.queryByRole("tab", { name: "Diff" })).toBeNull();
+  it("uses the shared skeleton while SKILL.md loads", () => {
+    render(<TestTabs readmeContent={null} />);
+    expect(screen.getByRole("status", { name: "Loading tab content" })).toBeTruthy();
   });
 
   it("keeps relative skill README links inside the viewed skill", () => {
-    const { container } = renderReadme(
-      [
-        "[Google Mail](references/google-mail/README.md)",
-        "[External](https://example.com/docs)",
-        "[Usage](#usage)",
-        "[Traversal](../references/README.md)",
-      ].join("\n\n"),
+    const { container } = render(
+      <TestTabs
+        readmeContent={[
+          "[Google Mail](references/google-mail/README.md)",
+          "[External](https://example.com/docs)",
+          "[Usage](#usage)",
+          "[Traversal](../references/README.md)",
+        ].join("\n\n")}
+      />,
     );
-
     expect(screen.getByRole("link", { name: "Google Mail" }).getAttribute("href")).toBe(
       "/api/v1/skills/api-gateway/file?path=references%2Fgoogle-mail%2FREADME.md",
     );
@@ -205,334 +72,73 @@ describe("SkillDetailTabs README links", () => {
   });
 
   it("keeps relative README links in the viewed owner namespace", () => {
-    renderReadmeForOwner("[Usage](docs/Usage.md)");
-
+    render(<TestTabs ownerHandle="clawkit" readmeContent="[Usage](docs/Usage.md)" />);
     expect(screen.getByRole("link", { name: "Usage" }).getAttribute("href")).toBe(
       "/api/v1/skills/api-gateway/file?path=docs%2FUsage.md&ownerHandle=clawkit",
     );
   });
 
-  it("keeps relative Skill Card links in the viewed owner namespace", () => {
-    render(
-      <SkillDetailTabs
-        activeTab="skill-card"
-        setActiveTab={vi.fn()}
-        readmeContent="# API Gateway"
-        readmeError={null}
-        skillCardContent="[Evidence](reports/card.md)"
-        skillCardError={null}
-        hasSkillCard={true}
-        latestFiles={[]}
-        latestVersionId={null}
-        skill={{ slug: "api-gateway", tags: {} } as Doc<"skills">}
-        ownerHandle="clawkit"
-        onCompareIntent={vi.fn()}
-        diffVersions={undefined}
-        versions={undefined}
-        nixPlugin={false}
-        clawdis={undefined}
-        osLabels={[]}
-      />,
-    );
-
-    expect(screen.getByRole("link", { name: "Evidence" }).getAttribute("href")).toBe(
-      "/api/v1/skills/api-gateway/file?path=reports%2Fcard.md&ownerHandle=clawkit",
-    );
-  });
-
-  it("keeps version download links in the viewed owner namespace", () => {
-    render(
-      <SkillDetailTabs
-        activeTab="versions"
-        setActiveTab={vi.fn()}
-        readmeContent="# API Gateway"
-        readmeError={null}
-        skillCardContent={null}
-        skillCardError={null}
-        hasSkillCard={false}
-        latestFiles={[]}
-        latestVersionId={null}
-        skill={{ slug: "api-gateway", tags: {} } as Doc<"skills">}
-        ownerHandle="clawkit"
-        onCompareIntent={vi.fn()}
-        diffVersions={undefined}
-        versions={[
-          {
-            _id: "skillVersions:1",
-            _creationTime: 1,
-            skillId: "skills:1",
-            version: "1.0.0",
-            changelog: "Initial release",
-            files: [],
-            createdBy: "users:owner",
-            createdAt: 1,
-          } as unknown as Doc<"skillVersions">,
-        ]}
-        nixPlugin={false}
-        clawdis={undefined}
-        osLabels={[]}
-      />,
-    );
-
-    const href = screen.getByRole("link", { name: "Download version v1.0.0" }).getAttribute("href");
-    const url = new URL(href ?? "", "https://clawhub.ai");
-    expect(url.pathname).toBe("/api/v1/download");
-    expect(url.searchParams.get("slug")).toBe("api-gateway");
-    expect(url.searchParams.get("ownerHandle")).toBe("clawkit");
-    expect(url.searchParams.get("version")).toBe("1.0.0");
-  });
-
   it("uses a custom README link resolver when provided", () => {
     render(
-      <SkillDetailTabs
-        activeTab="readme"
-        setActiveTab={vi.fn()}
+      <TestTabs
         readmeContent="[Source doc](references/install.md)"
-        readmeError={null}
-        skillCardContent={null}
-        skillCardError={null}
-        hasSkillCard={false}
-        latestFiles={[]}
-        latestVersionId={null}
-        skill={{ slug: "api-gateway" } as Doc<"skills">}
-        onCompareIntent={vi.fn()}
-        diffVersions={undefined}
-        versions={undefined}
-        nixPlugin={false}
-        clawdis={undefined}
-        osLabels={[]}
         readmeHrefResolver={(href) => `https://github.com/NVIDIA/skills/blob/abc/${href}`}
       />,
     );
-
     expect(screen.getByRole("link", { name: "Source doc" }).getAttribute("href")).toBe(
       "https://github.com/NVIDIA/skills/blob/abc/references/install.md",
     );
   });
-
-  it("adds Clawdis metadata to the existing skill detail tabs", () => {
-    function TestSkillDetailTabs() {
-      const [activeTab, setActiveTab] = useState<DetailTab>("runtime");
-      return (
-        <SkillDetailTabs
-          activeTab={activeTab}
-          setActiveTab={setActiveTab}
-          readmeContent="# API Gateway"
-          readmeError={null}
-          skillCardContent={null}
-          skillCardError={null}
-          hasSkillCard={false}
-          latestFiles={[]}
-          latestVersionId={null}
-          skill={{ slug: "api-gateway" } as Doc<"skills">}
-          onCompareIntent={vi.fn()}
-          diffVersions={undefined}
-          versions={undefined}
-          nixPlugin={false}
-          osLabels={["macOS"]}
-          clawdis={
-            {
-              requires: { env: ["TODOIST_API_TOKEN"] },
-              install: [{ kind: "brew", formula: "ripgrep", bins: ["rg"] }],
-              dependencies: [{ name: "ripgrep", type: "brew", url: "https://example.com/rg" }],
-              links: { homepage: "https://example.com" },
-            } as ClawdisSkillMetadata
-          }
-        />
-      );
-    }
-
-    render(<TestSkillDetailTabs />);
-
-    expect(screen.getByRole("tab", { name: "Requirements" })).toBeTruthy();
-    expect(screen.getByRole("tab", { name: "Dependencies" })).toBeTruthy();
-    expect(screen.getByRole("tab", { name: "Install" })).toBeTruthy();
-    expect(screen.getByRole("tab", { name: "Links" })).toBeTruthy();
-    expect(screen.getByText("TODOIST_API_TOKEN")).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("tab", { name: "Dependencies" }));
-
-    expect(screen.getByText("ripgrep")).toBeTruthy();
-    expect(screen.getByRole("link", { name: /example\.com\/rg/ })).toBeTruthy();
-  });
-
-  it("shows a Skill Card tab only when a generated card file exists", () => {
-    render(
-      <SkillDetailTabs
-        activeTab="skill-card"
-        setActiveTab={vi.fn()}
-        readmeContent="# API Gateway"
-        readmeError={null}
-        skillCardContent={["# Skill Card", "", "Generated."].join("\n")}
-        skillCardError={null}
-        hasSkillCard={true}
-        latestFiles={
-          [
-            {
-              path: "skill-card.md",
-              size: 24,
-              storageId: "_storage:card",
-              sha256: "a".repeat(64),
-            },
-          ] as Doc<"skillVersions">["files"]
-        }
-        latestVersionId={null}
-        skill={{ slug: "api-gateway" } as Doc<"skills">}
-        onCompareIntent={vi.fn()}
-        diffVersions={undefined}
-        versions={undefined}
-        nixPlugin={false}
-        clawdis={undefined}
-        osLabels={[]}
-      />,
-    );
-
-    expect(screen.getByRole("tab", { name: "Skill Card" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Skill Card" })).toBeTruthy();
-    expect(
-      screen
-        .getByRole("link", { name: "NVIDIA's trust-card pattern for agent skills" })
-        .getAttribute("href"),
-    ).toBe("https://docs.nvidia.com/skills/skill-cards");
-  });
-
-  it("renders safe raw HTML in generated Skill Cards", () => {
-    render(
-      <SkillDetailTabs
-        activeTab="skill-card"
-        setActiveTab={vi.fn()}
-        readmeContent="# API Gateway"
-        readmeError={null}
-        skillCardContent={["## Description:<br/>", "", "line one<br/>line two"].join("\n")}
-        skillCardError={null}
-        hasSkillCard={true}
-        latestFiles={[]}
-        latestVersionId={null}
-        skill={{ slug: "api-gateway" } as Doc<"skills">}
-        onCompareIntent={vi.fn()}
-        diffVersions={undefined}
-        versions={undefined}
-        nixPlugin={false}
-        clawdis={undefined}
-        osLabels={[]}
-      />,
-    );
-
-    expect(screen.getByText(/line one/)).toBeTruthy();
-    expect(screen.getByText(/line two/)).toBeTruthy();
-    expect(screen.queryByText(/<br/i)).toBeNull();
-  });
 });
-
-describe("SkillDetailTabs evaluation tab", () => {
-  it("opens a dedicated evaluation panel without replacing the existing tabs", () => {
-    function TestTabs() {
-      const [activeTab, setActiveTab] = useState<DetailTab>("readme");
-      return (
-        <SkillDetailTabs
-          activeTab={activeTab}
-          setActiveTab={setActiveTab}
-          onCompareIntent={vi.fn()}
-          readmeContent="# Demo"
-          readmeError={null}
-          skillCardContent="# Skill Card"
-          skillCardError={null}
-          hasSkillCard={true}
-          latestFiles={[]}
-          latestVersionId={null}
-          skill={
-            {
-              _id: "skills:demo",
-              slug: "demo",
-              displayName: "Demo",
-              tags: {},
-            } as unknown as Doc<"skills">
-          }
-          diffVersions={undefined}
-          versions={undefined}
-          nixPlugin={false}
-          showArchiveTabs={false}
-          clawdis={undefined}
-          osLabels={[]}
-          evaluationContent={<div>Native SkillEvaluator report</div>}
-        />
-      );
-    }
-
-    render(<TestTabs />);
-    const tablist = screen.getByRole("tablist", { name: "Skill detail tabs" });
-    expect(
-      within(tablist)
-        .getAllByRole("tab")
-        .map((tab) => tab.textContent),
-    ).toEqual(["SKILL.md", "Evals", "Skill Card"]);
-
-    fireEvent.click(screen.getByRole("tab", { name: "Evals" }));
-
-    expect(screen.getByRole("tabpanel", { name: "Evals" }).textContent).toContain(
-      "Native SkillEvaluator report",
-    );
-    expect(screen.getByRole("tab", { name: "SKILL.md" })).toBeTruthy();
-  });
-});
-
-function tabContractProps(overrides: Partial<ComponentProps<typeof SkillDetailTabs>> = {}) {
-  return {
-    activeTab: "readme" as const,
-    setActiveTab: vi.fn(),
-    onCompareIntent: vi.fn(),
-    readmeContent: "# Tab contract",
-    readmeError: null,
-    skillCardContent: null,
-    skillCardError: null,
-    hasSkillCard: false,
-    latestFiles: [],
-    latestVersionId: null,
-    skill: { slug: "tab-contract", tags: {} } as Doc<"skills">,
-    diffVersions: undefined,
-    versions: undefined,
-    nixPlugin: false,
-    clawdis: undefined,
-    osLabels: [],
-    ...overrides,
-  };
-}
 
 describe("skill detail tab contracts", () => {
-  it("keeps the complete header order and stable panel identifiers", () => {
-    const props = tabContractProps({
-      hasSkillCard: true,
-      evaluationContent: <p>Evaluation result</p>,
-      versions: [{}, {}] as Doc<"skillVersions">[],
-      clawdis: {
-        requires: { bins: ["tool"] },
-        dependencies: [{ name: "tool" }],
-        install: [{ kind: "brew", formula: "tool" }],
-        links: { homepage: "https://example.com" },
-      } as ClawdisSkillMetadata,
+  beforeEach(() => {
+    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      callback(0);
+      return 1;
     });
-    render(<SkillDetailTabs {...props} />);
-    const tabs = within(screen.getByRole("tablist")).getAllByRole("tab");
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    window.history.replaceState(null, "", "/");
+  });
+  it("keeps the complete header order and stable panel identifiers", () => {
+    render(
+      <TestTabs
+        evaluationContent={<p>Evaluation result</p>}
+        clawdis={
+          {
+            requires: { env: ["TODOIST_API_TOKEN"] },
+            dependencies: [{ name: "ripgrep", type: "brew", url: "https://example.com/rg" }],
+            install: [{ kind: "brew", formula: "ripgrep", bins: ["rg"] }],
+            links: { homepage: "https://example.com" },
+          } as ClawdisSkillMetadata
+        }
+      />,
+    );
+    const tabs = within(screen.getByRole("tablist", { name: "Skill detail tabs" })).getAllByRole(
+      "tab",
+    );
     expect(tabs.map((tab) => [tab.textContent, tab.id, tab.getAttribute("aria-controls")])).toEqual(
       [
         ["readme", "SKILL.md"],
         ["evaluation", "Evals"],
-        ["skill-card", "Skill Card"],
-        ["files", "Files"],
-        ["compare", "Diff"],
-        ["versions", "Versions"],
         ["runtime", "Requirements"],
         ["dependencies", "Dependencies"],
         ["install", "Install"],
         ["links", "Links"],
-      ].map(([id, label]) => [label, `skill-tab-${id}`, `skill-tabpanel-${id}`]),
+      ].map(([id, label]) => [label, "skill-tab-" + id, "skill-tabpanel-" + id]),
     );
     expect(screen.queryByText("Evaluation result")).toBeNull();
-    const compare = screen.getByRole("tab", { name: "Diff" });
-    fireEvent.mouseEnter(compare);
-    fireEvent.focus(compare);
-    expect(props.onCompareIntent).toHaveBeenCalledTimes(2);
-    expect(screen.queryByRole("tabpanel", { name: "Diff" })).toBeNull();
+    fireEvent.click(screen.getByRole("tab", { name: "Evals" }));
+    expect(screen.getByRole("tabpanel", { name: "Evals" }).textContent).toBe("Evaluation result");
+    fireEvent.click(screen.getByRole("tab", { name: "Requirements" }));
+    expect(screen.getByText("TODOIST_API_TOKEN")).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "Dependencies" }));
+    expect(screen.getByText("ripgrep")).toBeTruthy();
+    expect(screen.getByRole("link", { name: /example\.com\/rg/ })).toBeTruthy();
   });
 
   it.each([
@@ -543,45 +149,42 @@ describe("skill detail tab contracts", () => {
     [{ install: [{}] }, "Install"],
     [{ links: { homepage: " " } }, "Links"],
   ])("retains raw declared metadata presence for %j", (clawdis, label) => {
-    render(<SkillDetailTabs {...tabContractProps({ clawdis: clawdis as ClawdisSkillMetadata })} />);
+    render(<TestTabs clawdis={clawdis as ClawdisSkillMetadata} />);
     expect(screen.getByRole("tab", { name: label as string })).toBeTruthy();
   });
 
   it("retains an OS-only runtime tab even without a metadata object", () => {
-    render(
-      <SkillDetailTabs {...tabContractProps({ activeTab: "runtime", osLabels: ["macOS"] })} />,
-    );
+    render(<TestTabs initialTab="runtime" osLabels={["macOS"]} />);
     expect(screen.getByRole("tab", { name: "Requirements" })).toBeTruthy();
     expect(screen.getByRole("tabpanel", { name: "Requirements" }).textContent).toBe("");
   });
 
-  it("keeps a selected comparison panel while its header is unavailable", () => {
-    render(<SkillDetailTabs {...tabContractProps({ activeTab: "compare", versions: [] })} />);
-    expect(screen.queryByRole("tab", { name: "Diff" })).toBeNull();
-    expect(document.getElementById("skill-tabpanel-compare")).toBeTruthy();
-    expect(screen.getByRole("status", { name: "Loading tab content" })).toBeTruthy();
-  });
+  it.each(["readme", "evaluation", "runtime", "dependencies", "install", "links"])(
+    "recognizes the #%s tab hash",
+    (id) => {
+      expect(skillTabFromHash("#" + id)).toBe(id);
+    },
+  );
 
-  it("updates the hash without losing the current query or scroll position", () => {
+  it.each(["skill-card", "card", "files", "compare", "diff", "versions"])(
+    "does not resolve #%s to an inline tab",
+    (id) => {
+      expect(skillTabFromHash("#" + id)).toBeNull();
+    },
+  );
+
+  it("updates and clears the tab hash without losing the current query or scroll position", () => {
     window.history.replaceState(null, "", "/maker/skills/tab-contract?q=kept");
-    const frame = vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
-      callback(0);
-      return 1;
-    });
-    const scroll = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
-    try {
-      const props = tabContractProps({ versions: [{}, {}] as Doc<"skillVersions">[] });
-      render(<SkillDetailTabs {...props} />);
-      fireEvent.click(screen.getByRole("tab", { name: "Diff" }));
-      expect(props.setActiveTab).toHaveBeenCalledWith("compare");
-      expect(window.location.pathname + window.location.search + window.location.hash).toBe(
-        "/maker/skills/tab-contract?q=kept#diff",
-      );
-      expect(scroll).toHaveBeenCalledWith(window.scrollX, window.scrollY);
-    } finally {
-      frame.mockRestore();
-      scroll.mockRestore();
-      window.history.replaceState(null, "", "/");
-    }
+
+    render(<TestTabs evaluationContent={<p>Evaluation result</p>} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Evals" }));
+    expect(window.location.pathname + window.location.search + window.location.hash).toBe(
+      "/maker/skills/tab-contract?q=kept#evaluation",
+    );
+    expect(window.scrollTo).toHaveBeenCalledWith(window.scrollX, window.scrollY);
+    fireEvent.click(screen.getByRole("tab", { name: "SKILL.md" }));
+    expect(window.location.pathname + window.location.search + window.location.hash).toBe(
+      "/maker/skills/tab-contract?q=kept",
+    );
   });
 });

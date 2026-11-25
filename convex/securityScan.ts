@@ -283,9 +283,6 @@ const internalRefs = internal as unknown as {
     updateVersionAigAnalysisInternal: unknown;
     updateVersionSkillSpectorAnalysisInternal: unknown;
   };
-  skillCards: {
-    enqueueForVersionInternal: unknown;
-  };
 };
 
 function assertWorkerToken(token: string) {
