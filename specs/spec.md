@@ -162,6 +162,12 @@ tooling checkout retains its `.git` directory for `actions/checkout` post-action
 cleanup. Relocation failures stop the workflow before publishing; moving tooling
 does not change caller content or source provenance.
 
+The reusable package-publish workflow keeps tooling files outside local package
+inputs, including repository-root packages. It retains the original tooling
+checkout `.git` for post-action cleanup and stops before publishing if relocation
+fails. Inspector and identity verification use the relocated tooling; caller
+content, source provenance, and authorization remain unchanged.
+
 Local fixture data lives in `convex/devSeed.ts` and `fixtures/public-corpus/`.
 
 ## Versioning + tags

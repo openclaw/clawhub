@@ -1878,6 +1878,9 @@ describe("package commands", () => {
       );
       await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
 
+      await mkdir(join(folder, "clawhub-source", ".git"), { recursive: true });
+      await writeFile(join(folder, "clawhub-source", ".git", "config"), "[core]\n", "utf8");
+
       httpMocks.apiRequestForm.mockResolvedValueOnce({
         ok: true,
         packageId: "pkg_1",
@@ -4083,6 +4086,9 @@ describe("package commands", () => {
         );
         await writeFile(join(folder, "dist", "plugin.wasm"), "binary", "utf8");
 
+        await mkdir(join(folder, "clawhub-source", ".git"), { recursive: true });
+        await writeFile(join(folder, "clawhub-source", ".git", "config"), "[core]\n", "utf8");
+
         httpMocks.apiRequestForm.mockResolvedValueOnce({
           ok: true,
           packageId: "pkg_bundle",
@@ -4150,6 +4156,9 @@ describe("package commands", () => {
         );
         await writeFile(join(folder, "dist", "index.js"), "export default {};\n", "utf8");
 
+        await mkdir(join(folder, "clawhub-source", ".git"), { recursive: true });
+        await writeFile(join(folder, "clawhub-source", ".git", "config"), "[core]\n", "utf8");
+
         httpMocks.apiRequestForm.mockResolvedValueOnce({
           ok: true,
           packageId: "pkg_code",
@@ -4173,6 +4182,9 @@ describe("package commands", () => {
         expect(uploaded).toBeDefined();
         if (!uploaded) throw new Error("Expected uploaded ClawPack");
         const packed = parseClawPack(new Uint8Array(await uploaded.arrayBuffer()));
+        expect(packed.entries.some((entry) => entry.path.startsWith("clawhub-source/"))).toBe(
+          false,
+        );
         for (const host of ["codex", "claude", "cursor"]) {
           const path = `.${host}-plugin/plugin.json`;
           const entry = packed.entries.find((file) => file.path === path);
