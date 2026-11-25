@@ -1,9 +1,7 @@
 name: Skill Card Worker
 
 on:
-  workflow_run:
-    workflows: ["Security Scan Codex Worker"]
-    types: [completed]
+  # Automatic card generation is retired. Retain an explicit operator dispatch only.
   workflow_dispatch:
     inputs:
       fixture-only:
@@ -28,7 +26,7 @@ permissions:
 
 jobs:
   skill-card-worker:
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.fixture-only != true }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture-only != true }}
     name: Skill Card worker shard ${{ matrix.shard }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 60
