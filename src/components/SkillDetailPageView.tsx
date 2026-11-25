@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { Bookmark, BookOpenText, Flag, Settings, ShieldCheck, Upload } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import type { SkillPublicationProgress } from "../../convex/lib/skillPublicationProgress";
 import type { ActivityTrend } from "../lib/activityTrend";
@@ -18,7 +18,6 @@ import { buildPublisherProfileHref } from "../lib/ownerRoute";
 import { presentationTitle } from "../lib/presentationTitle";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { getClawHubSiteUrl } from "../lib/site";
-import { skillTabFromHash } from "../lib/skillDetailTabs";
 import { useHeroCreatorPublisher } from "../lib/useHeroCreatorPublisher";
 import { cn } from "../lib/utils";
 import {
@@ -37,7 +36,6 @@ import { SkillCommandLineCard } from "./SkillInstallSurface";
 import { SkillPublicationNotice } from "./SkillPublicationNotice";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "./ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import "./skill-catalog-detail.css";
 
@@ -100,7 +98,6 @@ export type SkillDetailViewSkill = {
   githubCurrentCommit?: string;
   githubCurrentStatus?: PublicSkill["githubCurrentStatus"];
   githubScanStatus?: PublicSkill["githubScanStatus"];
-  githubHasSkillCard?: boolean;
   categories?: string[];
   inferredCategories?: string[];
   latestVersionId?: Id<"skillVersions">;
@@ -171,6 +168,8 @@ export type SkillDetailPageViewProps = {
   postInstallContent?: ReactNode;
   securityAuditHref?: string;
   overview?: ReactNode;
+  versionHistory?: ReactNode;
+  footer?: ReactNode;
   activityTrend?: ActivityTrend | null;
   newVersionHref?: string | null;
   settingsHref?: string | null;
@@ -226,6 +225,8 @@ export function SkillDetailPageView({
   postInstallContent,
   securityAuditHref,
   overview,
+  versionHistory,
+  footer,
   activityTrend,
   newVersionHref,
   settingsHref,
@@ -401,9 +402,8 @@ export function SkillDetailPageView({
     </>
   );
 
-  const packageDetails = (
+  const metadata = (
     <>
-      {children}
       {hasPluginBundle ? (
         <div className="skill-panel bundle-card">
           <div className="bundle-header">
@@ -551,6 +551,7 @@ export function SkillDetailPageView({
 
       <CatalogDetailLayout
         className="skill-catalog-detail"
+        footer={footer}
         breadcrumb={
           breadcrumbSkillHref ? (
             <nav className="catalog-detail__breadcrumb" aria-label="Skill breadcrumbs">
@@ -629,30 +630,16 @@ export function SkillDetailPageView({
                       />
                     </CatalogDetailFact>
                   )}
-                  <CatalogDetailFact
-                    label={showArchiveMetadata && latestVersion?.version ? "Version" : "Files"}
-                  >
-                    <SkillReleaseDetails
-                      key={skill.slug}
-                      name={displayName}
-                      version={showArchiveMetadata ? latestVersion?.version : undefined}
-                    >
-                      {packageDetails}
-                      <div className="skill-catalog-facts">
-                        {creatorPublisher?.official && !officialSkill && (
-                          <CatalogDetailFact label="Publisher">
-                            <span>Official publisher</span>
-                          </CatalogDetailFact>
-                        )}
-                        <CatalogDetailFact label={downloads.label}>
-                          {downloads.value}
-                        </CatalogDetailFact>
-                        {repository && (
-                          <CatalogDetailFact label="Repository">{repository}</CatalogDetailFact>
-                        )}
-                      </div>
-                    </SkillReleaseDetails>
-                  </CatalogDetailFact>
+                  {showArchiveMetadata && latestVersion?.version && (
+                    <CatalogDetailFact label="Version">{latestVersion.version}</CatalogDetailFact>
+                  )}
+                  {creatorPublisher?.official && !officialSkill && (
+                    <CatalogDetailFact label="Publisher">Official publisher</CatalogDetailFact>
+                  )}
+                  {repository && (
+                    <CatalogDetailFact label="Repository">{repository}</CatalogDetailFact>
+                  )}
+                  <CatalogDetailFact label={downloads.label}>{downloads.value}</CatalogDetailFact>
                   {Number.isFinite(updatedAt.valueOf()) && (
                     <CatalogDetailFact label="Updated">
                       <time dateTime={updatedAt.toISOString()}>
@@ -677,6 +664,7 @@ export function SkillDetailPageView({
                 </div>
 
                 <div className="skill-catalog-secondary-actions">
+                  {versionHistory}
                   {showBookmarkAction && renderStarAction()}
                   {renderSidebarActions()}
                 </div>
@@ -717,7 +705,8 @@ export function SkillDetailPageView({
         {nixPlugin && (
           <p>Bundles the skill pack, CLI binary, and config requirements in one Nix install.</p>
         )}
-        {renderSidebarContent ? packageDetails : null}
+        {metadata}
+        {children}
       </CatalogDetailLayout>
       {pageOverlays}
     </main>
@@ -771,54 +760,6 @@ function SkillCatalogTile({
         <BookOpenText size={26} />
       )}
     </span>
-  );
-}
-
-function SkillReleaseDetails({
-  children,
-  name,
-  version,
-}: {
-  children: ReactNode;
-  name: string;
-  version?: string;
-}) {
-  const [open, setOpen] = useState(false);
-  useEffect(() => {
-    // Existing file, diff and version URLs must open their tab, not a hidden panel.
-    const sync = () => setOpen(skillTabFromHash(window.location.hash) !== null);
-    sync();
-    window.addEventListener("hashchange", sync);
-    return () => window.removeEventListener("hashchange", sync);
-  }, []);
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        if (!next && skillTabFromHash(window.location.hash) !== null)
-          window.history.replaceState(
-            window.history.state,
-            "",
-            window.location.pathname + window.location.search,
-          );
-      }}
-    >
-      <DialogTrigger asChild>
-        <button
-          type="button"
-          className="catalog-detail__release"
-          aria-label={version ? "View release " + version : "View files"}
-        >
-          {version ?? "View files"}
-        </button>
-      </DialogTrigger>
-      <DialogContent className="skill-release-dialog">
-        <DialogTitle>Release details</DialogTitle>
-        <DialogDescription>{name}</DialogDescription>
-        {children}
-      </DialogContent>
-    </Dialog>
   );
 }
 

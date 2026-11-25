@@ -185,10 +185,8 @@ describe("SkillDetailPageView", () => {
     );
 
     expect(container.querySelector(".catalog-detail__icon .lucide-book-open-text")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "View files" }));
-    const taxonomy = screen
-      .getByRole("dialog", { name: "Release details" })
-      .querySelector(".skill-hero-taxonomy-row");
+    expect(screen.queryByRole("button", { name: "View files" })).toBeNull();
+    const taxonomy = container.querySelector(".skill-hero-taxonomy-row");
     expect(taxonomy).toBeTruthy();
     expect(taxonomy?.textContent).toContain("Synced from skills.sh");
     expect(taxonomy?.textContent).toContain("Development");
@@ -235,12 +233,7 @@ describe("SkillDetailPageView", () => {
     const image = container.querySelector(".catalog-detail__icon img");
     if (_kind === "hosted") expect(image?.getAttribute("src")).toBe(icon);
     else expect(image).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "View files" }));
-    expect(
-      screen
-        .getByRole("dialog", { name: "Release details" })
-        .querySelector(".skill-hero-taxonomy-row .skill-category-icon"),
-    ).toBeTruthy();
+    expect(container.querySelector(".skill-hero-taxonomy-row .skill-category-icon")).toBeTruthy();
   });
 });
 

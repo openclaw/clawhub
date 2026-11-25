@@ -1,8 +1,5 @@
 /* Skill-specific parts of Control UI's skills/clawhub-skill-page.tsx. The page grid,
  * breadcrumb, hero, rail fact rows and theme are shared by CatalogDetailLayout. */
-.skill-catalog-detail {
-  --skill-readme-clamp: 170px;
-}
 .skill-catalog-detail .catalog-detail__icon {
   background: color-mix(in srgb, var(--detail-card) 50%, light-dark(#f8f8f8, #0e1015));
 }
@@ -83,37 +80,6 @@
   letter-spacing: 0;
   text-transform: none;
 }
-.skill-catalog-detail .skill-catalog-well {
-  padding: 22px 24px;
-  border-radius: calc(16px * var(--detail-radius-scale));
-  background: var(--detail-tone);
-}
-.skill-catalog-detail .skill-catalog-well:has(> button) {
-  padding-bottom: 16px;
-}
-.skill-catalog-detail
-  .skill-catalog-well[data-clamped="true"]
-  .skill-catalog-well-body:not(:focus-within) {
-  max-height: var(--skill-readme-clamp);
-  overflow: hidden;
-  mask-image: linear-gradient(black 62%, transparent 100%);
-}
-.skill-catalog-detail .skill-catalog-well > button {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  margin-top: 10px;
-  padding: 0;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--detail-muted);
-  font: inherit;
-  font-size: 13.5px;
-}
-.skill-catalog-detail .skill-catalog-well > button:hover {
-  color: var(--detail-strong);
-}
 .skill-catalog-detail .skill-catalog-secondary-actions {
   display: flex;
   flex-wrap: wrap;
@@ -124,14 +90,6 @@
   margin: 0;
   padding: 0;
   border: 0;
-}
-.skill-release-dialog .tab-card {
-  width: 100%;
-  min-width: 0;
-}
-.skill-release-dialog .tab-header {
-  display: flex;
-  overflow-x: auto;
 }
 .skill-catalog-detail .catalog-detail__fact:has(.downloads-metric-label-row) dt,
 .skill-catalog-detail .catalog-detail__fact:has(.downloads-metric-label-row) dd {
@@ -306,16 +264,9 @@
   .skill-catalog-detail .skill-catalog-byline .skill-catalog-owner-name {
     flex-shrink: 1;
   }
-  .skill-catalog-detail .skill-catalog-well {
-    padding: 16px;
-  }
-  .skill-catalog-detail .skill-catalog-well > button {
-    margin: 2px 0 -8px;
-    padding: 8px 14px 8px 0;
-  }
 }
 
-.skill-release-dialog[data-slot="dialog-content"] {
+.skill-version-history-dialog[data-slot="dialog-content"] {
   grid-template-columns: minmax(0, 1fr);
   width: min(900px, calc(100vw - 32px));
   max-height: 85dvh;

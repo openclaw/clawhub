@@ -40,12 +40,6 @@ describe("SkillDetailPageView", () => {
     return node as HTMLElement;
   }
 
-  function openReleaseDetails() {
-    const rail = screen.getByRole("complementary");
-    fireEvent.click(within(rail).getByRole("button", { name: /^View (release .+|files)$/i }));
-    return screen.getByRole("dialog", { name: "Release details" });
-  }
-
   function heroCreatorRoot(container: HTMLElement) {
     const node = container.querySelector(".skill-catalog-byline");
     if (!node) throw new Error("Missing .skill-catalog-byline");
@@ -140,7 +134,7 @@ describe("SkillDetailPageView", () => {
     expect(within(heroCreatorRoot(container)).getByText("Local")).toBeTruthy();
     expect(within(heroCreatorRoot(container)).getByText("@local")).toBeTruthy();
     expect(within(sidebarStatsRoot(container)).queryByText("Creator")).toBeNull();
-    expect(within(sidebarStatsRoot(container)).queryByText("Downloads")).toBeNull();
+    expect(within(sidebarStatsRoot(container)).getByText("Downloads")).toBeTruthy();
     expect(container.querySelector('a[href="/local"]')).toBeTruthy();
     expect(screen.getByRole("link", { name: "Skills" }).getAttribute("href")).toBe("/skills");
     expect(
@@ -158,7 +152,7 @@ describe("SkillDetailPageView", () => {
       ],
     });
 
-    const taxonomy = openReleaseDetails().querySelector(".skill-category-meta-list");
+    const taxonomy = screen.getByLabelText("Categories");
     expect(taxonomy).toBeTruthy();
     expect(taxonomy?.textContent).toContain("Automation");
     expect(taxonomy?.textContent).toContain("Development");
@@ -204,7 +198,7 @@ describe("SkillDetailPageView", () => {
       },
     });
 
-    const details = within(openReleaseDetails());
+    const details = within(screen.getByRole("complementary"));
 
     expect(details.getByText("Downloads")).toBeTruthy();
     expect(details.getByText("12")).toBeTruthy();
@@ -221,16 +215,14 @@ describe("SkillDetailPageView", () => {
   it("shows the labeled all-time count before the trend is available", () => {
     renderHeader();
 
-    const details = within(openReleaseDetails());
+    const details = within(screen.getByRole("complementary"));
 
     expect(details.getByText("Downloads")).toBeTruthy();
     expect(screen.queryByText("30-day Installs")).toBeNull();
     expect(details.getByText("All time")).toBeTruthy();
     expect(details.getByText("2")).toBeTruthy();
     expect(
-      screen
-        .getByRole("dialog", { name: "Release details" })
-        .querySelector(".metric-trend-card-skeleton"),
+      screen.getByRole("complementary").querySelector(".metric-trend-card-skeleton"),
     ).toBeNull();
     expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
   });
@@ -259,7 +251,7 @@ describe("SkillDetailPageView", () => {
       },
     });
 
-    const details = within(openReleaseDetails());
+    const details = within(screen.getByRole("complementary"));
 
     expect(details.getByText("30 days")).toBeTruthy();
     fireEvent.click(details.getByRole("tab", { name: "All time" }));
@@ -287,8 +279,8 @@ describe("SkillDetailPageView", () => {
       },
     });
 
-    const dialog = openReleaseDetails();
-    const chart = within(dialog).getByRole("img", {
+    const rail = screen.getByRole("complementary");
+    const chart = within(rail).getByRole("img", {
       name: "Daily downloads over the last 30 days",
     });
     chart.getBoundingClientRect = () =>
@@ -307,7 +299,7 @@ describe("SkillDetailPageView", () => {
     fireEvent.pointerMove(chart, { clientX: 100 });
 
     expect(screen.getByText(/11 downloads$/)).toBeTruthy();
-    expect(dialog.querySelectorAll(".metric-trend-marker-line")).toHaveLength(1);
+    expect(rail.querySelectorAll(".metric-trend-marker-line")).toHaveLength(1);
   });
 
   it("distinguishes an official publisher from an official skill", () => {
@@ -320,10 +312,10 @@ describe("SkillDetailPageView", () => {
 
     const creator = container.querySelector(".skill-catalog-byline");
     expect(creator?.querySelector(".official-badge-icon-only")).toBeNull();
-    expect(within(openReleaseDetails()).getByText("Official publisher")).toBeTruthy();
+    expect(within(screen.getByRole("complementary")).getByText("Official publisher")).toBeTruthy();
   });
 
-  it("retains canonical linked topics in release details", () => {
+  it("keeps canonical topic links on the listing", () => {
     renderHeader({
       skill: {
         ...skill,
@@ -331,9 +323,11 @@ describe("SkillDetailPageView", () => {
       },
     });
 
-    const dialog = openReleaseDetails();
-    expect(within(dialog).getByLabelText("Topics").textContent).toContain("#google-workspace");
-    expect(within(dialog).getByLabelText("Topics").textContent).toContain("#email");
+    const topics = screen.getByLabelText("Topics");
+    expect(
+      within(topics).getByRole("link", { name: "View skills tagged #google-workspace" }),
+    ).toBeTruthy();
+    expect(within(topics).getByRole("link", { name: "View skills tagged #email" })).toBeTruthy();
   });
 
   it("shows a New version action for managers above Settings", () => {
@@ -369,7 +363,7 @@ describe("SkillDetailPageView", () => {
   it("hides archive-only metadata for source-backed skills", () => {
     const { container } = renderHeader({ showArchiveMetadata: false });
 
-    expect(within(sidebarStatsRoot(container)).queryByText("Downloads")).toBeNull();
+    expect(within(sidebarStatsRoot(container)).getByText("Downloads")).toBeTruthy();
     expect(within(sidebarStatsRoot(container)).queryByText("Creator")).toBeNull();
     expect(within(heroCreatorRoot(container)).getByText("Local")).toBeTruthy();
     expect(within(sidebarStatsRoot(container)).getByText("Updated")).toBeTruthy();
@@ -390,7 +384,7 @@ describe("SkillDetailPageView", () => {
       showArchiveMetadata: false,
     });
 
-    const details = within(openReleaseDetails());
+    const details = within(screen.getByRole("complementary"));
 
     expect(details.getByText("Repository")).toBeTruthy();
     const repoLink = details.getByRole("link", { name: "NVIDIA/skills" });
@@ -485,7 +479,7 @@ describe("SkillDetailPageView", () => {
     expect(screen.queryByText(/Review the scan results before using/i)).toBeNull();
   });
 
-  it("keeps the catalog summary concise and the full description in release details", () => {
+  it("keeps the catalog summary concise with an inline full-description disclosure", () => {
     renderHeader({
       latestVersion: {
         _id: "skillVersions:demo" as Id<"skillVersions">,
@@ -507,8 +501,10 @@ describe("SkillDetailPageView", () => {
     expect(screen.getByText("Demo summary").closest(".catalog-detail__summary")).toBeTruthy();
     const description =
       "Full uploaded description with more operational context than the short summary.";
-    expect(screen.queryByText(description)).toBeNull();
-    expect(within(openReleaseDetails()).getByText(description)).toBeTruthy();
+    const disclosure = screen.getByText(description).closest("details");
+    expect(disclosure).toBeTruthy();
+    expect(disclosure?.open).toBe(false);
+    expect(disclosure?.querySelector("summary")?.textContent).toBe("Full description");
   });
 
   it("prefers the resolved presentation summary for the latest version", () => {
@@ -534,9 +530,8 @@ describe("SkillDetailPageView", () => {
     });
 
     expect(screen.getByText("Demo summary").closest(".catalog-detail__summary")).toBeTruthy();
-    const details = within(openReleaseDetails());
-    expect(details.getByText("Feed-ready OpenAI summary.")).toBeTruthy();
-    expect(details.queryByText("Full uploaded description.")).toBeNull();
+    expect(screen.getByText("Feed-ready OpenAI summary.").closest("details")).toBeTruthy();
+    expect(screen.queryByText("Full uploaded description.")).toBeNull();
   });
 
   it("keeps the download action hidden on the detail header", () => {
@@ -554,7 +549,7 @@ describe("SkillDetailPageView", () => {
     });
 
     expect(screen.queryByRole("link", { name: "Download" })).toBeNull();
-    expect(within(sidebarStatsRoot(container)).queryByText("Downloads")).toBeNull();
+    expect(within(sidebarStatsRoot(container)).getByText("Downloads")).toBeTruthy();
   });
 
   it("falls back to legacy parsed frontmatter description when present", () => {
@@ -578,7 +573,7 @@ describe("SkillDetailPageView", () => {
 
     expect(screen.getByText("Demo summary").closest(".catalog-detail__summary")).toBeTruthy();
     expect(
-      within(openReleaseDetails()).getByText("Legacy full description from parsed frontmatter."),
+      screen.getByText("Legacy full description from parsed frontmatter.").closest("details"),
     ).toBeTruthy();
   });
 });

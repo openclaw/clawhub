@@ -21,6 +21,7 @@ export function CatalogDetailLayout(props: {
   summary?: ReactNode;
   sidebar: ReactNode;
   children: ReactNode;
+  footer?: ReactNode;
   className?: string;
 }) {
   const headingId = useId();
@@ -45,6 +46,7 @@ export function CatalogDetailLayout(props: {
         </div>
         <aside className="catalog-detail__sidebar">{props.sidebar}</aside>
       </div>
+      {props.footer}
     </section>
   );
 }

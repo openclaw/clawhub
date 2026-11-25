@@ -193,7 +193,7 @@ This note preserves the complete UI direction established during the June 2026 d
 
 Public Skill, Plugin and Template details show one inline install card at the top of the metadata rail (stacked on small screens). There is no install action in the header or intermediate install dialog. Blocked Templates keep their repair guidance and cannot offer a native handoff.
 
-The audit verdict and its meter are one hoverable, keyboard-focusable link to the listing’s actual public report. Version metadata opens release files and management controls without a separate Package contents, Package details or Activity & details row.
+The audit verdict and its meter are one hoverable, keyboard-focusable link to the listing’s actual public report. Public listing pages do not expose a generic release-file browser. On a Skill page, show the publisher’s SKILL.md followed by Related skills in the footer; do not substitute a generated Skill Card or put recommendations in a dialog. Version history and authorized release management are separate from browsing files.
 
 For eligible hosted listings, the card opens on **CLI** and the **Desktop**
 tab holds the text-only **Install in OpenClaw** link. CLI comes first because

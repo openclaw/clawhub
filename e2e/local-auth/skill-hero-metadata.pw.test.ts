@@ -51,8 +51,8 @@ test.describe("skill date hydration", () => {
     expect(response?.status()).toBe(200);
     const selector = '[aria-label="Skill metadata"] time[datetime]';
     const server = await page.evaluate(
-      ({ html, selector }) => {
-        const time = new DOMParser().parseFromString(html, "text/html").querySelector(selector);
+      ({ html, selector: timeSelector }) => {
+        const time = new DOMParser().parseFromString(html, "text/html").querySelector(timeSelector);
         return { iso: time?.getAttribute("datetime"), label: time?.textContent };
       },
       { html: await response!.text(), selector },
@@ -111,10 +111,9 @@ test("owner metadata save persists categories and topics after reload", async ({
 
   await page.goto(detailHref, { waitUntil: "domcontentloaded" });
   await waitForHydration(page);
-  await page.getByRole("button", { name: /^View release / }).click();
-  const metadata = page
-    .getByRole("dialog", { name: "Release details" })
-    .getByLabel("Skill taxonomy");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const metadata = page.getByLabel("Skill taxonomy");
+  await expect(metadata).toBeVisible();
   const persisted = expect.configure({ soft: true });
   await persisted
     .poll(async () => (await metadata.locator(".skill-category-meta-link").allInnerTexts()).sort())
