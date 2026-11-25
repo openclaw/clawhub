@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Scanner runtime: prepare the ClawScan 0.4.0 source and immutable image binding for host skills, whole plugins and Templates, preserving exact source and binary checks.
+
 - Scanner installation: pin test-tool dependencies and wheel hashes for each scanner so upstream package releases cannot silently change the qualified host environment.
 
 - CI: deploy the permanent Test environment from the `next` branch instead of `main`. A push to `next` deploys after CI passes for that commit; a manual dispatch deploys the exact current `next` commit. Merging to `main` no longer deploys Test.

@@ -19,11 +19,11 @@ import { describe, expect, it } from "vitest";
 const run = promisify(execFile);
 const scripts = resolve("scripts/security");
 const pin = "c3cfaf1515a47685786d72f031c714b1e5d9b34e";
-const candidate = "56bf1d9e3bd5247a0622acef8699dc69a10f2938";
-const candidateTree = "92d8daba5c181560b4a73e71557b8d54e67e62b9";
-const runtimeTree = "ddfec1285eaf19beb3043e9e5ad043a0d274cb53";
+const candidate = "9bc83753a6f1af7ff077917262190ada0152891b";
+const candidateTree = "c08631fa26a49ac711b828a4ead389ded92b2fa5";
+const runtimeTree = "9f1aa0ad7bba119153550651bb74c1ab4576808a";
 const image =
-  "ghcr.io/openclaw/clawscan-runtime@sha256:d494938b84a9f0da40504f611eec472d4637c755b5cef87b123daf8a2014545c";
+  "ghcr.io/openclaw/clawscan-runtime@sha256:5036a4a3d62175f85092c20736cba96c89ecc45b9ddf74e8ba7a0462d8b396ed";
 
 async function installFixture() {
   // Exercise command assertions with an installer name inside the temporary path.

@@ -3,13 +3,13 @@ import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { qualifiedNativeCommand, assertQualifiedNativeArtifact } from "./clawscan-native-runtime";
 
-// Reviewed host producer from ClawScan #155. Its ordinary profile is unchanged.
-// The scanner-tools tree/image is identical to qualified runtime run 42292655384;
-// the host binary, not an image-resident ClawScan CLI, selects the new profile.
+// ClawScan 0.4.0 candidate, bound to native runtime run 45562677164.
+// The matching host binary selects the built-in profile; scanner tools run
+// inside this source-bound immutable image.
 // No mutable image tag or host MCP fallback.
-export const QUALIFIED_PLUGIN_SOURCE = "56bf1d9e3bd5247a0622acef8699dc69a10f2938";
+export const QUALIFIED_PLUGIN_SOURCE = "9bc83753a6f1af7ff077917262190ada0152891b";
 export const QUALIFIED_PLUGIN_IMAGE =
-  "ghcr.io/openclaw/clawscan-runtime@sha256:d494938b84a9f0da40504f611eec472d4637c755b5cef87b123daf8a2014545c";
+  "ghcr.io/openclaw/clawscan-runtime@sha256:5036a4a3d62175f85092c20736cba96c89ecc45b9ddf74e8ba7a0462d8b396ed";
 
 // Capability discovery is followed by source/binary verification before execution.
 // The old pin has no override, so it keeps its existing scanner/target behavior.

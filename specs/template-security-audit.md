@@ -36,15 +36,23 @@ execution is an operational failure, never an invented malicious verdict.
 Suspicious findings retain the existing publication behavior; malicious blocks.
 Secret scanning, claim/lease/fingerprint checks and Docker cleanup remain gates.
 
-## Qualified host producer and scanner tools
+## Candidate host producer and scanner tools
 
-Both workers bind Template dispatch to merged ClawScan source
-`56bf1d9e3bd5247a0622acef8699dc69a10f2938` ([ClawScan #155](https://github.com/openclaw/clawscan/pull/155)),
-source tree `92d8daba5c181560b4a73e71557b8d54e67e62b9`.
-Its ordinary skill/plugin profiles are unchanged. The native scanner-tools tree
-`ddfec1285eaf19beb3043e9e5ad043a0d274cb53` is identical to the previously
-qualified image
+The ClawScan 0.4.0 draft binds both workers to merged source
+`9bc83753a6f1af7ff077917262190ada0152891b` ([ClawScan #223](https://github.com/openclaw/clawscan/pull/223)),
+source tree `c08631fa26a49ac711b828a4ead389ded92b2fa5`, runtime tree
+`9f1aa0ad7bba119153550651bb74c1ab4576808a`, and immutable image
+`ghcr.io/openclaw/clawscan-runtime@sha256:5036a4a3d62175f85092c20736cba96c89ecc45b9ddf74e8ba7a0462d8b396ed`.
+Native image publication, real host installation and both workers' source/binary
+admission are verified without provider calls. Full native consumer qualification
+and version-tag image selection remain pending. See `plugin-qualified-runtime.md`.
+
+The previous binding was source `56bf1d9e3bd5247a0622acef8699dc69a10f2938`
+([ClawScan #155](https://github.com/openclaw/clawscan/pull/155)), source tree
+`92d8daba5c181560b4a73e71557b8d54e67e62b9`, runtime tree
+`ddfec1285eaf19beb3043e9e5ad043a0d274cb53`, and image
 `ghcr.io/openclaw/clawscan-runtime@sha256:d494938b84a9f0da40504f611eec472d4637c755b5cef87b123daf8a2014545c`.
+That earlier source and its measured evidence remain historical records.
 
 ClawHub runs the installed **host Go binary**, which embeds/selects the built-in
 Template profile and dispatches AIG/Codex commands inside the scanner-tools
