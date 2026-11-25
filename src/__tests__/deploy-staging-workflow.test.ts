@@ -50,7 +50,7 @@ describe("Staging deploy workflow", () => {
     const revision = namedStep(deploy, "Resolve staging revision");
     const wait = namedStep(deploy, "Wait for successful staging CI");
 
-    expect(ci.on.push.branches).toEqual(["main", "staging"]);
+    expect(ci.on.push.branches).toEqual(["main", "staging", "next"]);
     expect(workflow.on.push.branches).toEqual(["staging"]);
     expect(workflow.on.workflow_dispatch.inputs.expected_sha).toEqual(
       expect.objectContaining({ required: true, type: "string" }),
