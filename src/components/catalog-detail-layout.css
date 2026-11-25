@@ -11,9 +11,6 @@
   margin: 0;
   padding: 28px 16px 40px;
 }
-body:has(.catalog-detail-page) {
-  background: light-dark(#f8f8f8, #0e1015);
-}
 @media (max-width: 640px) {
   .catalog-detail-page {
     padding: 12px 12px 40px;
