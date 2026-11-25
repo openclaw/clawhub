@@ -1,6 +1,6 @@
 /* @vitest-environment node */
 import { execFile } from "node:child_process";
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -16,6 +16,56 @@ import {
 
 const event =
   '[clawscan-progress] {"schemaVersion":"clawscan-progress-v1","event":"child_event","phase":"judge","elapsedMs":12,"pid":42,"sequence":1,"childEvent":"item.started","childItem":"command_execution","childState":"in_progress","command":"PRIVATE","stderr":"PRIVATE","key":"PRIVATE"}';
+
+it("stages matching installer inputs for the workflow-selected consumer", async () => {
+  const workflow = parseYaml(
+    await readFile(".github/workflows/clawscan-judge-diagnostic.yml", "utf8"),
+  );
+  const step = workflow.jobs.diagnostic.steps.find(
+    (entry: { name?: string }) => entry.name === "Select bounded installer source",
+  );
+  const root = await mkdtemp(join(tmpdir(), "diagnostic-installer-inputs-"));
+  try {
+    const source = join(root, "scripts/security");
+    await mkdir(source, { recursive: true });
+    const files = [
+      "install-clawscan.sh",
+      "install-clawscan-scanners.sh",
+      "clawscan-install-source.sh",
+      "clawscan-source-commit.txt",
+      "aig-worker-requirements.txt",
+      "skillspector-pydantic-requirements.txt",
+      "test_skillspector_serialization.py",
+      "aig-test-requirements.txt",
+      "skillspector-test-requirements.txt",
+    ];
+    for (const file of files)
+      await writeFile(
+        join(source, file),
+        file === "install-clawscan.sh" ? "exit 0\n" : `${file}\n`,
+      );
+    const envFile = join(root, "env");
+    await promisify(execFile)("/bin/bash", ["-c", step.run], {
+      cwd: root,
+      env: {
+        PATH: process.env.PATH,
+        RUNNER_TEMP: root,
+        GITHUB_ENV: envFile,
+        SOURCE_CHOICE: "reviewed",
+        FIXTURE_CHOICE: "tiny",
+      },
+    });
+    const installer = (await readFile(envFile, "utf8"))
+      .trim()
+      .replace(/^DIAGNOSTIC_INSTALLER=/, "");
+    for (const file of files)
+      expect(await readFile(join(installer, file), "utf8")).toBe(
+        await readFile(join(source, file), "utf8"),
+      );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 it("retains only safe live diagnostics through actual process-group kill; progress is never a verdict", async () => {
   const root = await mkdtemp(join(tmpdir(), "diagnostic-cli-test-"));

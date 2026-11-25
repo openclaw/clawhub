@@ -164,6 +164,8 @@ describe("reviewed ClawScan installation", () => {
         for (const file of [
           "clawscan-install-source.sh",
           "skillspector-pydantic-requirements.txt",
+          "skillspector-test-requirements.txt",
+          "aig-test-requirements.txt",
           "test_skillspector_serialization.py",
         ]) {
           await copyFile(join(scripts, file), join(scriptDir, file));
@@ -258,6 +260,14 @@ describe("reviewed ClawScan installation", () => {
           );
         }
         for (const scanner of [first, second]) {
+          const testTools = commands.indexOf(
+            "--require-hashes -r " + scriptDir + "/" + scanner + "-test-requirements.txt",
+          );
+          const adapterCheck = commands.indexOf(
+            "-m pytest -q " + runtime + "/tests/test_" + scanner + "_responses.py",
+          );
+          expect(testTools).toBeGreaterThan(-1);
+          expect(adapterCheck).toBeGreaterThan(testTools);
           expect(commands).toContain(
             "apply --check " + runtime + "/patches/" + scanner + "-responses.patch",
           );

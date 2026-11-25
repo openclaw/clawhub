@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Scanner installation: pin test-tool dependencies and wheel hashes for each scanner so upstream package releases cannot silently change the qualified host environment.
+
 - CI: deploy the permanent Test environment from the `next` branch instead of `main`. A push to `next` deploys after CI passes for that commit; a manual dispatch deploys the exact current `next` commit. Merging to `main` no longer deploys Test.
 
 - Management: show Publisher abuse for unsupported view links instead of an empty page. Selected skill and plugin links keep their existing precedence.
