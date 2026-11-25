@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Skill publishing: keep reusable-workflow tooling out of repository-root skills while preserving checkout cleanup.
+
 - Package publishing: exclude reusable-workflow tooling from local root packages while preserving checkout cleanup.
 
 - Scanner installation: pin test-tool dependencies and wheel hashes for each scanner so upstream package releases cannot silently change the qualified host environment.

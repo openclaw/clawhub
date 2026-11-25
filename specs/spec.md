@@ -156,6 +156,12 @@ GitHub imports validate publish metadata and resolve the owner before storing
 selected files. They use the same persistence signal to end request cleanup;
 failed stores or pre-persistence publication remove only that import's uploads.
 
+The reusable skill-publish workflow keeps its tooling files outside the caller's
+publish input, including when the skill lives at the repository root. The original
+tooling checkout retains its `.git` directory for `actions/checkout` post-action
+cleanup. Relocation failures stop the workflow before publishing; moving tooling
+does not change caller content or source provenance.
+
 The reusable package-publish workflow keeps tooling files outside local package
 inputs, including repository-root packages. It retains the original tooling
 checkout `.git` for post-action cleanup and stops before publishing if relocation
