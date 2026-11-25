@@ -18,7 +18,7 @@ import type { TemplateWorkspaceContents } from "../lib/templateDetail";
 import type { TemplateDisplayInventory } from "../lib/templateDisplayInventory";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { stripFrontmatter } from "./skillDetailUtils";
-import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "./ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "./ui/dialog";
 
 // Match the catalog's 2,048 character plain-text preview. Expansion uses the actual file.
 function excerpt(markdown: string) {
@@ -208,12 +208,12 @@ function CapabilitySection({
   label,
   icon: Icon,
   rows,
-  detailsInDialog = false,
+  dialog,
 }: {
   label: string;
   icon: LucideIcon;
   rows: Row[];
-  detailsInDialog?: boolean;
+  dialog?: "metadata" | "automation";
 }) {
   if (!rows.length) return null;
   return (
@@ -233,21 +233,42 @@ function CapabilitySection({
               <ChevronRight className="template-catalog-chevron" aria-hidden="true" />
             </>
           );
-          return row.preview || detailsInDialog ? (
+          return row.preview || dialog ? (
             <Dialog key={row.key}>
               <DialogTrigger asChild>
                 <button type="button" className="template-catalog-row">
                   {rowContent}
                 </button>
               </DialogTrigger>
-              <DialogContent className="template-catalog-file-dialog" aria-describedby={undefined}>
-                <DialogTitle>{row.name}</DialogTitle>
-                {row.preview ? (
-                  <SkillDocument source={row.preview} />
-                ) : (
-                  <div className="template-catalog-plugin-info">{row.details}</div>
-                )}
-              </DialogContent>
+              {dialog === "automation" ? (
+                <DialogContent
+                  className="template-automation-dialog"
+                  {...(!row.description && { "aria-describedby": undefined })}
+                >
+                  <header>
+                    <span className="template-automation-dialog-icon">
+                      <Icon aria-hidden="true" />
+                    </span>
+                    <div>
+                      <DialogTitle>{row.name}</DialogTitle>
+                      {row.description && <DialogDescription>{row.description}</DialogDescription>}
+                    </div>
+                  </header>
+                  <div className="template-automation-dialog-body">{row.details}</div>
+                </DialogContent>
+              ) : (
+                <DialogContent
+                  className="template-catalog-file-dialog"
+                  aria-describedby={undefined}
+                >
+                  <DialogTitle>{row.name}</DialogTitle>
+                  {row.preview ? (
+                    <SkillDocument source={row.preview} />
+                  ) : (
+                    <div className="template-catalog-plugin-info">{row.details}</div>
+                  )}
+                </DialogContent>
+              )}
             </Dialog>
           ) : (
             <details key={row.key}>
@@ -282,6 +303,7 @@ export function TemplateReleaseInventory({
   dependencies,
   workspace,
   personality,
+  documentLoading,
 }: {
   display?: TemplateDisplayInventory;
   packageName: string;
@@ -290,6 +312,7 @@ export function TemplateReleaseInventory({
   dependencies: TemplateDependencyInventory;
   workspace: TemplateWorkspaceContents | null;
   personality: ReactNode;
+  documentLoading: boolean;
 }) {
   const packages = (kind: "skill" | "plugin"): Row[] =>
     dependencies
@@ -361,7 +384,14 @@ export function TemplateReleaseInventory({
     ].join(" · "),
     details: (
       <>
-        <p className="template-catalog-job-message">{manifest?.automations?.[index]?.message}</p>
+        {documentLoading ? (
+          <p role="status">Loading instructions…</p>
+        ) : (
+          <p className="template-catalog-job-message">
+            {manifest?.automations?.[index]?.message ||
+              "Instructions are unavailable for this release."}
+          </p>
+        )}
         <small>
           Declared schedule: {job.schedule} · {job.timezone}
         </small>
@@ -389,7 +419,7 @@ export function TemplateReleaseInventory({
       />
       <CapabilitySection
         label="Plugins"
-        detailsInDialog
+        dialog="metadata"
         icon={Plug}
         rows={[
           ...packages("plugin"),
@@ -402,7 +432,7 @@ export function TemplateReleaseInventory({
           })),
         ]}
       />
-      <CapabilitySection label="Automations" icon={Clock} rows={automations} />
+      <CapabilitySection label="Automations" dialog="automation" icon={Clock} rows={automations} />
     </section>
   );
 }
