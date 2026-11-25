@@ -1186,11 +1186,7 @@ function PluginDetailPageContent({ name, loaderData, pendingNotice }: PluginDeta
   return (
     <main className="catalog-detail-page plugin-detail-page">
       <CatalogDetailLayout
-        className={
-          pkg.isOfficial && pkg.icon
-            ? "plugin-catalog-page plugin-catalog-page--official-art"
-            : "plugin-catalog-page"
-        }
+        className="plugin-catalog-page"
         breadcrumb={
           <CatalogDetailBreadcrumb
             href={isPlugin ? "/plugins" : "/skills"}
@@ -1203,7 +1199,6 @@ function PluginDetailPageContent({ name, loaderData, pendingNotice }: PluginDeta
             kind={isPlugin ? "plugin" : "skill"}
             label={title}
             imageUrl={pkg.icon}
-            publisherImageUrl={owner?.image}
             tone="muted"
           />
         }

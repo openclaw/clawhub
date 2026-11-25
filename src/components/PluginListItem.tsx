@@ -87,8 +87,6 @@ export function PluginListItem({
             label={displayName}
             imageUrl={item.icon}
             rasterAssetUrl={item.iconAssetUrl}
-            publisherImageUrl={item.ownerImage}
-            categorySlug={primaryCategory?.slug}
             size="md"
           />
           <div className="skill-card-identity">
@@ -147,8 +145,6 @@ export function PluginListItem({
         label={displayName}
         imageUrl={item.icon}
         rasterAssetUrl={item.iconAssetUrl}
-        publisherImageUrl={item.ownerImage}
-        categorySlug={primaryCategory?.slug}
       />
       <div className="skill-list-item-body">
         <div className="skill-list-item-main">

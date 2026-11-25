@@ -681,7 +681,11 @@ describe("plugin detail route", () => {
           ...loaderDataMock.detail.package!,
           icon: "https://cdn.example.test/icons/package.svg",
         },
-        owner: null,
+        owner: {
+          handle: "demo-owner",
+          displayName: "Demo Owner",
+          image: "https://cdn.example.test/avatar.png",
+        },
       },
       version: {
         package: {
@@ -710,9 +714,9 @@ describe("plugin detail route", () => {
       <PluginDetailPage name="demo-plugin" loaderData={loaderDataMock} />,
     );
 
-    const hero = container.querySelector(".catalog-detail__hero");
-    expect(hero).toBeTruthy();
-    expect(hero?.querySelector('img[src$="/package.svg"], img[src$="/manifest.svg"]')).toBeNull();
+    const tile = container.querySelector(".catalog-detail__hero .catalog-detail__icon");
+    expect(tile?.querySelector(".marketplace-icon-glyph.lucide-plug")).toBeTruthy();
+    expect(tile?.querySelector("img")).toBeNull();
   });
 
   it("loads and appends the next active release page", async () => {

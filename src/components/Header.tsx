@@ -1087,12 +1087,7 @@ function TypeaheadRowIcon({ item }: { item: TypeaheadItem }) {
     const label = presentationTitle(item.result.plugin.displayName, item.result.plugin.name);
     return (
       <span className="navbar-search-typeahead-icon" aria-hidden="true">
-        <MarketplaceIcon
-          kind="plugin"
-          label={label}
-          categorySlug={item.result.plugin.categories?.[0]}
-          size="xs"
-        />
+        <MarketplaceIcon kind="plugin" label={label} size="xs" />
       </span>
     );
   }
