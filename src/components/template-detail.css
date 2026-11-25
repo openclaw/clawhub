@@ -106,14 +106,6 @@
   margin-bottom: 20px;
 }
 
-.template-detail-install .skill-install-panel-title {
-  margin: 0;
-  font-family: inherit;
-  font-size: 17.28px;
-  font-weight: 700;
-  line-height: 21.6px;
-}
-
 .template-detail-install .skill-install-command-shell {
   background: var(--oc-bg-surface);
 }

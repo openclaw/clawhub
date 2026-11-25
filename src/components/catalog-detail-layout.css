@@ -152,6 +152,16 @@ body:has(.catalog-detail-page) {
   gap: 22px;
   font-size: 12px;
 }
+.catalog-detail__sidebar .skill-install-command-card {
+  padding-inline: 0;
+}
+.catalog-detail__sidebar .skill-install-panel-title {
+  font-family: inherit;
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: normal;
+}
 .catalog-detail__fact {
   display: flex;
   flex-direction: column;
