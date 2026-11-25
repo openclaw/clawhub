@@ -478,7 +478,7 @@ describe("Header", () => {
     expect(creatorRowText).toContain("@local");
     expect(creatorRowText).not.toContain("/ Org");
     expect(skillGroup.querySelector("svg.lucide-wrench")).not.toBeNull();
-    expect(pluginGroup.querySelector("svg.lucide-message-circle")).not.toBeNull();
+    expect(pluginGroup.querySelector("svg.marketplace-icon-glyph.lucide-plug")).not.toBeNull();
     expect(creatorGroup.querySelector("svg.lucide-building-2")).not.toBeNull();
     expect(typeahead.querySelector("svg.lucide-package")).toBeNull();
     expect(screen.queryByRole("tablist", { name: "Result type" })).toBeNull();

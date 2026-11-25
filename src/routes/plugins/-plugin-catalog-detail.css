@@ -13,18 +13,6 @@
   transform: none;
   box-shadow: none;
 }
-.plugin-catalog-page .catalog-detail__icon .marketplace-icon-image-backed {
-  padding: 14px;
-}
-.plugin-catalog-page .catalog-detail__icon .marketplace-icon-image {
-  padding: 0;
-  background: transparent;
-  object-fit: contain;
-}
-/* Control UI insets official package artwork a further 10% inside the tile. */
-.plugin-catalog-page--official-art .catalog-detail__icon .marketplace-icon-image {
-  padding: 10%;
-}
 .plugin-catalog-page .catalog-detail__publisher .official-badge-icon-only {
   flex: none;
   color: light-dark(#1d4ed8, #60a5fa);

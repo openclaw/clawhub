@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
-import { getPluginCategoryBySlug, getSkillIconCategoryForSkill } from "../lib/categories";
+import { getSkillIconCategoryForSkill } from "../lib/categories";
 import { getCategoryIconComponent, UNRESOLVED_SKILL_CATEGORY_ICON } from "../lib/categoryIcons";
 import { MARKETPLACE_KIND_ICONS, type MarketplaceIconKind } from "../lib/marketplaceIcons";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
@@ -9,8 +9,6 @@ type MarketplaceIconProps = {
   label: string;
   imageUrl?: string | null;
   rasterAssetUrl?: string | null;
-  publisherImageUrl?: string | null;
-  categorySlug?: string | null;
   skill?: {
     categories?: readonly string[] | null;
     inferredCategories?: readonly string[] | null;
@@ -23,11 +21,6 @@ type MarketplaceIconProps = {
   size?: "xs" | "sm" | "md";
   tone?: "default" | "muted";
 };
-
-// Match the artwork, not the publisher: bundled plugins can use their own logos.
-// Content addressing also prevents double-padding a future, already-inset replacement.
-const OPENCLAW_PLUGIN_ICON =
-  "/api/v1/skill-icons/79e24bf179e94e005912591a67ecdf30f04df50204ff5fa5fed06a8e8eb88532";
 
 const TONES = [
   { accent: "oklch(0.63 0.16 42)", wash: "oklch(0.95 0.04 42)" },
@@ -47,8 +40,6 @@ export function MarketplaceIcon({
   label,
   imageUrl,
   rasterAssetUrl,
-  publisherImageUrl,
-  categorySlug,
   skill,
   size = "sm",
   tone = "default",
@@ -57,22 +48,18 @@ export function MarketplaceIcon({
   const [failedImageUrls, setFailedImageUrls] = useState<string[]>([]);
   useEffect(() => {
     setFailedImageUrls((failed) => (failed.length ? [] : failed));
-  }, [imageUrl, rasterAssetUrl, publisherImageUrl]);
+  }, [imageUrl, rasterAssetUrl]);
 
   const skillCategory = kind === "skill" && skill ? getSkillIconCategoryForSkill(skill) : null;
-  const pluginCategory = kind === "plugin" ? getPluginCategoryBySlug(categorySlug) : null;
   const Icon =
     kind === "skill" && skill
       ? (getCategoryIconComponent(skillCategory?.icon) ?? UNRESOLVED_SKILL_CATEGORY_ICON)
-      : kind === "plugin" && pluginCategory
-        ? (getCategoryIconComponent(pluginCategory.icon) ?? MARKETPLACE_KIND_ICONS.plugin)
-        : MARKETPLACE_KIND_ICONS[kind];
+      : MARKETPLACE_KIND_ICONS[kind];
   const hashedTone = hashTone(label);
   // Legacy remote manifest URLs are not bundled icons; publisher profiles are a separate source.
   const isProfile = kind === "user" || kind === "org";
   const hostedIcon = isHostedSkillPresentationIcon(imageUrl);
-  const supportedImageUrl =
-    isProfile || hostedIcon ? imageUrl : kind === "plugin" ? publisherImageUrl : null;
+  const supportedImageUrl = isProfile || hostedIcon ? imageUrl : null;
   const directRasterUrl =
     (kind === "plugin" || kind === "template") &&
     hostedIcon &&
@@ -100,11 +87,7 @@ export function MarketplaceIcon({
     <span
       className={`marketplace-icon marketplace-icon-${kind} marketplace-icon-${size}${
         tone === "muted" ? " marketplace-icon-muted" : ""
-      }${visibleImageUrl ? " marketplace-icon-image-backed" : ""}${
-        kind === "plugin" && visibleImageUrl && imageUrl === OPENCLAW_PLUGIN_ICON
-          ? " marketplace-icon-openclaw"
-          : ""
-      }`}
+      }${visibleImageUrl ? " marketplace-icon-image-backed" : ""}`}
       style={
         {
           "--marketplace-icon-accent": hashedTone.accent,

@@ -160,14 +160,7 @@ function HomeListingPluginRow({
       }`}
     >
       <span className="home-v2-listing-row-icon" aria-hidden="true">
-        <MarketplaceIcon
-          kind="plugin"
-          label={name}
-          imageUrl={plugin.icon}
-          publisherImageUrl={plugin.ownerImage}
-          categorySlug={plugin.categories?.[0]}
-          size="sm"
-        />
+        <MarketplaceIcon kind="plugin" label={name} imageUrl={plugin.icon} size="sm" />
       </span>
       <div className="home-v2-listing-row-body">
         <div className="home-v2-listing-row-title">

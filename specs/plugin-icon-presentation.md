@@ -1,7 +1,5 @@
 # Plugin icon presentation
 
-The bundled OpenClaw lobster artwork should have breathing room inside its dark tile wherever `MarketplaceIcon` renders a plugin (catalog cards and rows, home listings, publisher listings, and search results). Keep the outer icon and surrounding layout dimensions unchanged.
+Plugin artwork fills its existing rounded tile edge to edge, without UI-added padding or stretching. Keep the outer tile and surrounding layout dimensions unchanged. The tile clips the artwork to its shape; the image preserves its aspect ratio. Do not inset artwork by publisher, official status, or asset digest.
 
-Apply the 10% internal inset to the exact content-addressed artwork, not to all official plugins or all images: many OpenClaw plugins have distinct logos with their own spacing. The original bundled `assets/icon.png` has SHA-256 `79e24bf179e94e005912591a67ecdf30f04df50204ff5fa5fed06a8e8eb88532`; its solid background is `#0b0d12`. Padding belongs on the image so muted container backgrounds cannot produce a mismatched border around the artwork.
-
-Do not rewrite immutable hosted assets or historical package metadata for a presentation adjustment. A replacement artwork with a new digest does not inherit this correction automatically, preventing double-padding if the replacement already includes margins. Publisher avatars, skill icons, unrelated plugin logos, and error fallback glyphs retain their existing treatment.
+Only supported bundled artwork represents a plugin. If it is absent, unsupported, or fails to load, render the standard plugin plug glyph rather than substituting the publisher avatar or a category glyph. Publisher identity and category badges are separate from the icon tile. Keep the existing trusted image sources and raster-to-hosted retry, and do not rewrite hosted assets or package metadata for presentation changes.
