@@ -87,7 +87,15 @@ real-adapter tests as that ClawScan revision's runtime image:
 - The source pins are read from the reviewed ClawScan Dockerfile and checked as
   full commit IDs, so host/image implementations cannot silently drift. Patch
   applicability and the real installed adapter tests are mandatory install gates.
-- The maintained resolver is pinned to uv 0.13.5. Pytest 9.0.2 is test-only. Source
+- The maintained resolver is pinned to uv 0.13.5. Pytest 9.0.2 is test-only; its
+  complete dependency set is pinned with wheel hashes in scanner-specific
+  `*-test-requirements.txt` files. These preserve the observed host inventories:
+  AIG uses packaging 26.3 and Pygments 2.21.0; SkillSpector keeps packaging 26.2
+  and Pygments 2.20.0 from its runtime lock. Test-tool installation must not
+  silently resolve newer dependencies before the adapter checks. Private installer
+  copies must include the source verifier, runtime and test locks, and serialization
+  probe from the same consumer checkout; original-runtime receipts include their
+  hashes. Recovery-approved diagnostic consumer revisions remain frozen. Source
   revisions and runtime dependencies are pinned; Python isolated-build backend
   dependencies are not claimed to be fully hash-reproducible. The AIG hash lock
   additionally admits the published macOS arm64 CPython 3.12 wheels for `jiter`

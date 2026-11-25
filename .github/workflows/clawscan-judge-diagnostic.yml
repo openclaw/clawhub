@@ -179,7 +179,11 @@ jobs:
           set -euo pipefail
           if [ "$FIXTURE_CHOICE" = small-timeout-paired ] && [ "$SOURCE_CHOICE" != reviewed ]; then exit 1; fi
           installer=$(mktemp -d "$RUNNER_TEMP/clawscan-diagnostic-installer.XXXXXX")
-          cp scripts/security/install-clawscan.sh scripts/security/install-clawscan-scanners.sh scripts/security/aig-worker-requirements.txt scripts/security/clawscan-source-commit.txt "$installer/"
+          cp scripts/security/install-clawscan.sh scripts/security/install-clawscan-scanners.sh \
+            scripts/security/clawscan-install-source.sh scripts/security/clawscan-source-commit.txt \
+            scripts/security/aig-worker-requirements.txt scripts/security/skillspector-pydantic-requirements.txt \
+            scripts/security/aig-test-requirements.txt scripts/security/skillspector-test-requirements.txt \
+            scripts/security/test_skillspector_serialization.py "$installer/"
           case "$SOURCE_CHOICE" in
             reviewed) ;;
             incident) printf '%s\n' e9d0e9e05506d9e9aa9725fe2f4da20e2870db9b > "$installer/clawscan-source-commit.txt" ;;

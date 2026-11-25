@@ -17,6 +17,9 @@ it("stages the complete compatibility installer bundle before executing it", asy
   try {
     vi.mocked(runWorkerCommand).mockImplementationOnce(async () => {
       for (const file of [
+        "clawscan-install-source.sh",
+        "aig-test-requirements.txt",
+        "skillspector-test-requirements.txt",
         "skillspector-pydantic-requirements.txt",
         "test_skillspector_serialization.py",
       ]) {
