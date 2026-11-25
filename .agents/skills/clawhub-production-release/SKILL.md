@@ -12,12 +12,8 @@ the app or publish the CLI.
 
 - Run production workflows from `main`.
 - Re-read the workflow and exact `main` SHA immediately before dispatch.
-- Require a successful `Deploy Test` workflow for that exact SHA before
-  dispatching an app production deploy. This is an operator check until the
-  production workflow enforces the gate directly.
-- Test deploys from `next`, not `main`. A `Deploy Test` run for a `main` SHA
-  exists only if `next` pointed at that commit when it deployed. A Test run of
-  a different commit does not satisfy the gate.
+- Test deploys from `next` and is not a production release gate. Do not wait
+  for, require, or manufacture a `Deploy Test` run for the `main` SHA.
 - Do not treat a green workflow alone as proof. Record the workflow URL, exact
   deployed SHA, and live-surface verification.
 - Do not add one-off migrations or repairs to the deploy workflow. Run
@@ -31,24 +27,8 @@ the app or publish the CLI.
 The workflow is `.github/workflows/deploy.yml`.
 
 1. Confirm the selected commit is on `origin/main` and record its SHA.
-2. Find the successful Test deployment for that exact SHA and record its URL:
-
-```bash
-gh run list \
-  --repo openclaw/clawhub \
-  --workflow deploy-test.yml \
-  --branch next \
-  --commit <MAIN_SHA> \
-  --status success \
-  --limit 1
-```
-
-If no successful exact-SHA Test run exists, stop and ask the owner before
-releasing production. `Deploy Test` cannot be run from `main`. Never force-push
-or delete and recreate `next` to manufacture a qualifying run.
-
-3. Run the required pre-merge or release validation for the changed surface.
-4. Dispatch one target:
+2. Run the required pre-merge or release validation for the changed surface.
+3. Dispatch one target:
 
 ```bash
 gh workflow run deploy.yml \
@@ -70,12 +50,11 @@ Choose `full`, `backend`, or `frontend`:
 Set `allow_deleting_large_indexes=true` only after reviewing the Convex index
 deletion and explicitly accepting it.
 
-5. Capture the workflow run URL and wait for completion.
-6. Verify the run used the expected SHA.
-7. Verify the affected live route, API, or backend contract on
+4. Capture the workflow run URL and wait for completion.
+5. Verify the run used the expected SHA.
+6. Verify the affected live route, API, or backend contract on
    `https://clawhub.ai`.
-8. Report the Test workflow URL, production workflow URL, deployed SHA, target,
-   and live proof.
+7. Report the production workflow URL, deployed SHA, target, and live proof.
 
 The workflow uses the GitHub `Production` environment. Backend deploys require
 the environment secret `CONVEX_DEPLOY_KEY`. The optional
