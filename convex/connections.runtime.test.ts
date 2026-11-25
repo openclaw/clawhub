@@ -394,7 +394,8 @@ describe("connections relay", () => {
     // Ada's connection gives Grace's session, on the same chat key, no tools.
     const adaTools = await (await relay(t, "clh_ada")).text();
     const graceTools = await (await relay(t, "clh_grace")).text();
-    expect(adaTools).toContain("GRANOLA_MCP_LIST_MEETINGS");
+    expect(adaTools).toContain("GRANOLA_MCP_GET_ACCOUNT_INFO");
+    expect(adaTools).not.toMatch(/MEETING|TRANSCRIPT/);
     expect(graceTools).not.toContain("GRANOLA_MCP");
     expect(graceTools).toContain("Method not found");
   });

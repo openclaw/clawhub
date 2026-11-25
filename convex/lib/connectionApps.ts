@@ -20,22 +20,10 @@ export const CONNECTION_APPS: readonly ConnectionApp[] = [
   {
     id: "granola",
     name: "Granola",
-    description: "Read your Granola meeting notes, summaries and transcripts.",
+    description: "Read your Granola account information. Meeting content is not included.",
     toolkit: "granola_mcp",
-    // Each tool carries Composio's `readOnlyHint` tag (checked 2026-11-23).
-    // Granola's create/update tools (folders, notes, titles, summaries,
-    // workspace switch, feedback) are deliberately absent.
-    tools: [
-      "GRANOLA_MCP_GET_ACCOUNT_INFO",
-      "GRANOLA_MCP_LIST_MEETINGS",
-      "GRANOLA_MCP_GET_MEETINGS",
-      "GRANOLA_MCP_SEARCH_MEETINGS",
-      "GRANOLA_MCP_QUERY_GRANOLA_MEETINGS",
-      "GRANOLA_MCP_LIST_MEETING_FOLDERS",
-      "GRANOLA_MCP_LIST_TEMPLATES",
-      "GRANOLA_MCP_GET_MEETING_TRANSCRIPT",
-      "GRANOLA_MCP_SEARCH_TRANSCRIPTS",
-    ],
+    // The Test proof needs account metadata only, not meeting names, notes or transcripts.
+    tools: ["GRANOLA_MCP_GET_ACCOUNT_INFO"],
   },
 ];
 

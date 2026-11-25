@@ -10,21 +10,11 @@ import {
 } from "./connectionApps";
 
 describe("connection app catalog", () => {
-  it("exposes only the reviewed read-only Granola tools", () => {
+  it("exposes only Granola account metadata in the proof", () => {
     expect(CONNECTION_APPS.map((app) => app.id)).toEqual(["granola"]);
     const granola = getConnectionApp("granola");
     expect(granola?.toolkit).toBe("granola_mcp");
-    expect(granola?.tools).toEqual([
-      "GRANOLA_MCP_GET_ACCOUNT_INFO",
-      "GRANOLA_MCP_LIST_MEETINGS",
-      "GRANOLA_MCP_GET_MEETINGS",
-      "GRANOLA_MCP_SEARCH_MEETINGS",
-      "GRANOLA_MCP_QUERY_GRANOLA_MEETINGS",
-      "GRANOLA_MCP_LIST_MEETING_FOLDERS",
-      "GRANOLA_MCP_LIST_TEMPLATES",
-      "GRANOLA_MCP_GET_MEETING_TRANSCRIPT",
-      "GRANOLA_MCP_SEARCH_TRANSCRIPTS",
-    ]);
+    expect(granola?.tools).toEqual(["GRANOLA_MCP_GET_ACCOUNT_INFO"]);
     // Granola's write tools all carry one of these verbs.
     for (const tool of granola?.tools ?? []) {
       expect(tool).not.toMatch(/ADD|CREATE|UPDATE|REMOVE|DELETE|GENERATE|SWITCH|FEEDBACK/);
@@ -80,7 +70,7 @@ describe("session tool configuration", () => {
 
   it("changes the config key when the connected set changes", () => {
     expect(sessionConfigKey(["granola"])).not.toBe(sessionConfigKey([]));
-    expect(sessionConfigKey(["granola"])).toContain("GRANOLA_MCP_LIST_MEETINGS");
+    expect(sessionConfigKey(["granola"])).toContain("GRANOLA_MCP_GET_ACCOUNT_INFO");
   });
 
   it("enables the app's toolkit on a sign-in session", () => {

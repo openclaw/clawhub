@@ -98,7 +98,7 @@ describe("composio sessions", () => {
       execute: { enable_multi_execute: false },
     });
     expect(call?.body).toMatchObject({
-      tools: { granola_mcp: { enable: expect.arrayContaining(["GRANOLA_MCP_LIST_MEETINGS"]) } },
+      tools: { granola_mcp: { enable: ["GRANOLA_MCP_GET_ACCOUNT_INFO"] } },
     });
   });
 
