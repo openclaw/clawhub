@@ -288,11 +288,6 @@
   margin: 0;
   white-space: pre-wrap;
 }
-.template-automation-dialog-body small {
-  display: block;
-  margin-top: 14px;
-  color: var(--ink-soft);
-}
 .template-catalog-file-dialog[data-slot="dialog-content"] {
   grid-template-columns: minmax(0, 1fr);
   overflow-wrap: anywhere;
