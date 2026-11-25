@@ -103,9 +103,35 @@ test("mobile Skill pages show SKILL.md inline and keep version history separate"
       Boolean(el.closest('button, a, [role="button"], [role="link"]')),
     ),
   ).toBe(false);
-  await expect(metadata.getByText("Downloads", { exact: true })).toBeVisible();
+  const releasePath = `/api/v1/skills/${encodeURIComponent(payload.skill.slug)}/versions/${encodeURIComponent(version)}?${new URLSearchParams({ ownerHandle: payload.owner.handle })}`;
+  const releaseResponse = await request.get(seedApiUrl(releasePath));
+  expect(releaseResponse.ok()).toBe(true);
+  const { version: releaseDetail } = await releaseResponse.json();
+  await expect(metadata.locator("dt")).toHaveText([
+    ...(releaseDetail.security ? ["Security check"] : []),
+    "Version",
+    ...(payload.skill.updatedAt !== undefined ? ["Updated"] : []),
+    ...(payload.latestVersion?.license ? ["License"] : []),
+    ...(payload.metadata?.os?.length ? ["Platforms"] : []),
+  ]);
+  await expect(rail.getByText("Downloads", { exact: true })).toHaveCount(0);
+  await expect(rail.getByRole("tablist", { name: "Download period" })).toHaveCount(0);
+  await expect(rail.getByRole("img", { name: /downloads/i })).toHaveCount(0);
+  await expect(rail.getByRole("button", { name: /Version history|Bookmark|Report/i })).toHaveCount(
+    0,
+  );
 
-  await page.getByRole("button", { name: "Version history", exact: true }).click();
+  const actions = page.getByRole("group", { name: "Skill actions" });
+  const related = page.getByRole("heading", { name: "Related skills", exact: true });
+  if (await related.isVisible()) {
+    const relatedBox = await related.boundingBox();
+    const actionBox = await actions.boundingBox();
+    if (!relatedBox || !actionBox || !documentBox)
+      throw new Error("Expected a rendered Skill footer");
+    expect(relatedBox.y).toBeGreaterThanOrEqual(documentBox.y + documentBox.height - 1);
+    expect(actionBox.y).toBeGreaterThan(relatedBox.y + relatedBox.height);
+  }
+  await actions.getByRole("button", { name: "Version history", exact: true }).click();
   const history = page.getByRole("dialog", { name: "Version history", exact: true });
   const release = history.getByRole("button", {
     name: `Show changelog for v${version}`,

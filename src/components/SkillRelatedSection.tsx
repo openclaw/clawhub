@@ -46,7 +46,7 @@ export function SkillRelatedSection({
 
   return (
     <footer
-      className={`related-skills-section${isCompact ? " related-skills-section-compact detail-mobile-related" : ""}`}
+      className={`related-skills-section${isCompact ? " related-skills-section-compact" : ""}`}
       aria-labelledby="related-skills-heading"
     >
       <div className="related-skills-header">

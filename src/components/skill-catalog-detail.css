@@ -61,7 +61,7 @@
   align-items: center;
   height: 26px;
   padding: 0 10px;
-  border-radius: 10px;
+  border-radius: calc(8px * var(--detail-radius-scale));
   background: var(--detail-tone);
   font-size: 12.5px;
 }
@@ -84,16 +84,52 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 8px 18px;
+  border-top: 1px solid var(--detail-rule);
+  padding-top: 12px;
+  color: var(--detail-muted);
+  font-size: 12.5px;
 }
-.skill-catalog-detail .skill-catalog-secondary-actions .skill-sidebar-actions {
-  margin: 0;
-  padding: 0;
-  border: 0;
+.skill-catalog-detail .skill-catalog-secondary-actions .skill-sidebar-action-link {
+  padding-block: 6px;
+  color: inherit;
+  font: inherit;
 }
-.skill-catalog-detail .catalog-detail__fact:has(.downloads-metric-label-row) dt,
-.skill-catalog-detail .catalog-detail__fact:has(.downloads-metric-label-row) dd {
-  display: block;
+.skill-catalog-detail .skill-catalog-security-score {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--detail-strong);
+  font-weight: 500;
+  text-decoration: none;
+}
+.skill-catalog-security-score .security-audit-meter {
+  grid-template-columns: repeat(3, 14px);
+  height: 4px;
+  gap: 3px;
+}
+.skill-catalog-security-score .security-audit-meter span {
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--detail-text) 14%, transparent);
+}
+.skill-catalog-security-score .security-audit-meter[data-level="3"] span {
+  background: light-dark(#166534, #22c55e);
+}
+.skill-catalog-security-score .security-audit-meter[data-level="2"] span:nth-child(-n + 2) {
+  background: light-dark(#92400e, #f59e0b);
+}
+.skill-catalog-security-score .security-audit-meter[data-level="1"] span:first-child {
+  background: light-dark(#b91c1c, #f87171);
+}
+.skill-catalog-detail a.skill-catalog-security-score:hover > span:first-child {
+  text-decoration: underline;
+}
+.skill-catalog-detail a.skill-catalog-security-score:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.skill-catalog-detail .catalog-detail__fact dd:has(.skill-catalog-chip) {
+  gap: 6px;
 }
 .skill-catalog-detail .skill-catalog-markdown {
   width: 100%;
@@ -256,11 +292,15 @@
   }
   .skill-catalog-detail
     .skill-catalog-facts
-    > :has(.skill-catalog-chip, a, .metric-trend-value-row, .downloads-metric-label-row) {
+    > :has(.skill-catalog-chip, .skill-catalog-security-score) {
     grid-column: 1/-1;
   }
 }
 @container (max-width:560px) {
+  .skill-catalog-detail a.skill-catalog-security-score {
+    margin-block: -7px;
+    padding-block: 7px;
+  }
   .skill-catalog-detail .catalog-detail__hero {
     flex-wrap: nowrap;
     align-items: center;

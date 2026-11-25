@@ -18,10 +18,6 @@ vi.mock("@tanstack/react-router", () => ({
   }) => <a href={`${to}?${new URLSearchParams(search).toString()}`}>{children}</a>,
 }));
 
-vi.mock("../lib/useHeroCreatorPublisher", () => ({
-  useHeroCreatorPublisher: ({ owner }: { owner?: unknown }) => owner,
-}));
-
 describe("SkillsShCatalogDetailPage", () => {
   it("shows skills.sh provenance and simple security audit rows", () => {
     const { container } = render(<SkillsShCatalogDetailPage entry={makeEntry()} />);
@@ -40,8 +36,8 @@ describe("SkillsShCatalogDetailPage", () => {
       "https://skills.sh/patrick-erichsen/skills/html",
     );
     expect(screen.getByText("Synced from").closest("a")).toBeNull();
-    expect(screen.getAllByText("100").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Downloads").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Downloads")).toBeNull();
+    expect(screen.queryByText("100")).toBeNull();
     expect(screen.queryByText("Upstream installs")).toBeNull();
     expect(screen.getByText("HTML Artifact Chooser Build useful artifacts.")).toBeTruthy();
     expect(container.querySelector(".catalog-detail__content")).toBeTruthy();

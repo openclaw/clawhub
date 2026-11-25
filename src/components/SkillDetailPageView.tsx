@@ -1,10 +1,10 @@
 import { Link } from "@tanstack/react-router";
 import type { ClawdisSkillMetadata } from "clawhub-schema";
+import { getSkillReleaseScanStatus, normalizeSecurityStatus } from "clawhub-schema/securityAudit";
 import { Bookmark, BookOpenText, Flag, Settings, ShieldCheck, Upload } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import type { SkillPublicationProgress } from "../../convex/lib/skillPublicationProgress";
-import type { ActivityTrend } from "../lib/activityTrend";
 import { getSkillBadges, isSkillOfficial } from "../lib/badges";
 import { BrowseCategoryIcon } from "../lib/browseCategoryIcons";
 import {
@@ -13,24 +13,17 @@ import {
   formatCatalogTopicLabel,
   type SkillCategory,
 } from "../lib/categories";
-import { formatSkillStatsTriplet } from "../lib/numberFormat";
+import { formatCompactStat } from "../lib/numberFormat";
 import { buildPublisherProfileHref } from "../lib/ownerRoute";
 import { presentationTitle } from "../lib/presentationTitle";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { getClawHubSiteUrl } from "../lib/site";
-import { useHeroCreatorPublisher } from "../lib/useHeroCreatorPublisher";
 import { cn } from "../lib/utils";
-import {
-  CatalogDetailLayout,
-  CatalogDetailFact,
-  CatalogDetailBreadcrumb,
-  useCatalogDateFormatter,
-} from "./CatalogDetailLayout";
+import { CatalogDetailLayout, CatalogDetailBreadcrumb } from "./CatalogDetailLayout";
 import { DETAIL_HERO_TOPIC_LIMIT } from "./DetailPageShell";
-import { DetailSecuritySummary, DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
-import { useDownloadsSidebarMetricBlock } from "./DownloadsMetricCard";
 import { InlineMarkdownSummary } from "./InlineMarkdownSummary";
 import { OfficialBadge } from "./OfficialBadge";
+import { SkillCatalogFacts } from "./SkillCatalogFacts";
 import { buildSkillInstallTarget } from "./skillDetailUtils";
 import { SkillCommandLineCard } from "./SkillInstallSurface";
 import { SkillPublicationNotice } from "./SkillPublicationNotice";
@@ -170,7 +163,6 @@ export type SkillDetailPageViewProps = {
   overview?: ReactNode;
   versionHistory?: ReactNode;
   footer?: ReactNode;
-  activityTrend?: ActivityTrend | null;
   newVersionHref?: string | null;
   settingsHref?: string | null;
   showArchiveMetadata?: boolean;
@@ -227,7 +219,6 @@ export function SkillDetailPageView({
   overview,
   versionHistory,
   footer,
-  activityTrend,
   newVersionHref,
   settingsHref,
   showArchiveMetadata = true,
@@ -246,14 +237,12 @@ export function SkillDetailPageView({
   pageOverlays,
   children,
 }: SkillDetailPageViewProps) {
-  const formattedStats = formatSkillStatsTriplet(skill.stats);
   const installOwnerId = owner?._id ?? skill.ownerPublisherId ?? skill.ownerUserId ?? null;
   const hasOwnerActions = Boolean(newVersionHref) || Boolean(settingsHref);
   const showReportAction = showReportActionOverride ?? (!canManage || isStaff);
   const badges = getSkillBadges(skill);
   const titleBadges = badges.filter((badge) => badge !== "Official");
   const officialSkill = isSkillOfficial(skill);
-  const creatorPublisher = useHeroCreatorPublisher({ owner, skillOfficial: officialSkill });
   const showHeroMeta = Boolean((forkOf && forkOfHref) || canonicalHref);
   const showTitleBadges = titleBadges.length > 0;
   const headerDescription = skill.summary?.trim() || getLatestVersionDescription(latestVersion);
@@ -315,31 +304,10 @@ export function SkillDetailPageView({
           fill={isAuthenticated && isStarred ? "currentColor" : "none"}
         />
         {isAuthenticated && isStarred ? "Unbookmark" : "Bookmark"}
-        <span className="skill-action-count">{formattedStats.stars}</span>
+        <span className="skill-action-count">{formatCompactStat(skill.stats.stars)}</span>
       </button>
     </SignedInActionTooltip>
   );
-
-  const renderSidebarActions = () => {
-    if (!showReportAction) return null;
-    return (
-      <div className="skill-sidebar-actions skill-sidebar-actions-secondary">
-        <SignedInActionTooltip
-          isAuthenticated={isAuthenticated}
-          message="You must be signed in to report a skill"
-        >
-          <button
-            type="button"
-            className="skill-sidebar-action-link"
-            onClick={isAuthenticated ? onOpenReport : onRequireSignIn}
-          >
-            <Flag size={14} aria-hidden="true" />
-            Report
-          </button>
-        </SignedInActionTooltip>
-      </div>
-    );
-  };
 
   const managementToolbar =
     hasOwnerActions || isStaff || staffVisibilityAlert ? (
@@ -383,15 +351,14 @@ export function SkillDetailPageView({
     breadcrumbOwnerHref === undefined && ownerHandle
       ? buildPublisherProfileHref(ownerHandle)
       : breadcrumbOwnerHref;
-  const downloads = useDownloadsSidebarMetricBlock({
-    allTimeDownloads: skill.stats.downloads,
-    activityTrend: activityTrend?.downloads,
-  });
+  const scanStatus = latestVersion
+    ? getSkillReleaseScanStatus(latestVersion)
+    : skill.installKind === "github" && skill.githubScanStatus
+      ? normalizeSecurityStatus(skill.githubScanStatus)
+      : null;
   const repository = getGitHubRepositoryLink(skill);
   const linkedIdentity = ownerHandle || owner?.displayName;
   const platforms = (latestVersion?.parsed?.clawdis as ClawdisSkillMetadata | undefined)?.os;
-  const dateFormatter = useCatalogDateFormatter();
-  const updatedAt = new Date(skill.updatedAt);
   const fullDescription = getLatestVersionDescription(latestVersion);
   const identity = (
     <>
@@ -551,7 +518,50 @@ export function SkillDetailPageView({
 
       <CatalogDetailLayout
         className="skill-catalog-detail"
-        footer={footer}
+        footer={
+          renderSidebarContent ? (
+            footer
+          ) : (
+            <>
+              {footer}
+              {(repository ||
+                versionHistory ||
+                showBookmarkAction ||
+                showReportAction ||
+                (!scanStatus && securityAuditHref)) && (
+                <div
+                  className="skill-catalog-secondary-actions"
+                  role="group"
+                  aria-label="Skill actions"
+                >
+                  {repository && <span>Repository: {repository}</span>}
+                  {!scanStatus && securityAuditHref && (
+                    <a className="skill-sidebar-action-link" href={securityAuditHref}>
+                      Full security report
+                    </a>
+                  )}
+                  {versionHistory}
+                  {showBookmarkAction && renderStarAction()}
+                  {showReportAction && (
+                    <SignedInActionTooltip
+                      isAuthenticated={isAuthenticated}
+                      message="You must be signed in to report a skill"
+                    >
+                      <button
+                        type="button"
+                        className="skill-sidebar-action-link"
+                        onClick={isAuthenticated ? onOpenReport : onRequireSignIn}
+                      >
+                        <Flag size={14} aria-hidden="true" />
+                        Report
+                      </button>
+                    </SignedInActionTooltip>
+                  )}
+                </div>
+              )}
+            </>
+          )
+        }
         breadcrumb={
           breadcrumbSkillHref ? (
             <nav className="catalog-detail__breadcrumb" aria-label="Skill breadcrumbs">
@@ -617,58 +627,14 @@ export function SkillDetailPageView({
             {renderSidebarContent ? (
               renderSidebarContent()
             ) : (
-              <>
-                <div className="skill-catalog-facts" role="group" aria-label="Skill metadata">
-                  {securityAuditHref && (
-                    <CatalogDetailFact
-                      label={<DetailSecuritySummaryLabel label="Security check" />}
-                    >
-                      <DetailSecuritySummary
-                        llmAnalysis={latestVersion?.llmAnalysis}
-                        githubScanStatus={!latestVersion ? skill.githubScanStatus : null}
-                        auditHref={securityAuditHref}
-                      />
-                    </CatalogDetailFact>
-                  )}
-                  {showArchiveMetadata && latestVersion?.version && (
-                    <CatalogDetailFact label="Version">{latestVersion.version}</CatalogDetailFact>
-                  )}
-                  {creatorPublisher?.official && !officialSkill && (
-                    <CatalogDetailFact label="Publisher">Official publisher</CatalogDetailFact>
-                  )}
-                  {repository && (
-                    <CatalogDetailFact label="Repository">{repository}</CatalogDetailFact>
-                  )}
-                  <CatalogDetailFact label={downloads.label}>{downloads.value}</CatalogDetailFact>
-                  {Number.isFinite(updatedAt.valueOf()) && (
-                    <CatalogDetailFact label="Updated">
-                      <time dateTime={updatedAt.toISOString()}>
-                        {dateFormatter.format(updatedAt)}
-                      </time>
-                    </CatalogDetailFact>
-                  )}
-                  {showArchiveMetadata && latestVersion?.parsed?.license && (
-                    <CatalogDetailFact label="License">
-                      {latestVersion.parsed.license}
-                    </CatalogDetailFact>
-                  )}
-                  {platforms?.length ? (
-                    <CatalogDetailFact label="Platforms">
-                      {platforms.map((os) => (
-                        <span className="skill-catalog-chip" key={os}>
-                          {os}
-                        </span>
-                      ))}
-                    </CatalogDetailFact>
-                  ) : null}
-                </div>
-
-                <div className="skill-catalog-secondary-actions">
-                  {versionHistory}
-                  {showBookmarkAction && renderStarAction()}
-                  {renderSidebarActions()}
-                </div>
-              </>
+              <SkillCatalogFacts
+                status={scanStatus}
+                auditHref={securityAuditHref}
+                version={showArchiveMetadata ? latestVersion?.version : undefined}
+                updatedAt={skill.updatedAt}
+                license={showArchiveMetadata ? latestVersion?.parsed?.license : undefined}
+                platforms={platforms}
+              />
             )}
           </>
         }

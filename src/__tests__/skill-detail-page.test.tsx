@@ -731,116 +731,26 @@ describe("SkillDetailPage", () => {
     expect(summary?.querySelector("code.skill-summary-inline-code")?.textContent).toBe("gh");
   });
 
-  it("loads skill activity graphs through a deferred one-shot query", async () => {
-    const activityTrend = {
-      installs: {
-        range: "daily" as const,
-        days: 30,
-        total: 5,
-        points: [
-          { day: 20_451, value: 1 },
-          { day: 20_452, value: 0 },
-          { day: 20_453, value: 2 },
-          { day: 20_454, value: 1 },
-          { day: 20_455, value: 1 },
-        ],
-      },
-      downloads: {
-        range: "daily" as const,
-        days: 30,
-        total: 12,
-        points: [
-          { day: 20_451, value: 1 },
-          { day: 20_452, value: 0 },
-          { day: 20_453, value: 4 },
-          { day: 20_454, value: 3 },
-          { day: 20_455, value: 4 },
-        ],
-      },
-    };
-    const initialData = {
-      result: makeWeatherSkillResult(),
-      readme: "# Weather",
-      readmeError: null,
-    };
-    const response = deferred<typeof activityTrend>();
-    convexQueryMock.mockReturnValueOnce(response.promise);
-
-    const { rerender } = render(<SkillDetailPage slug="weather" initialData={initialData} />);
-
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(screen.getByText("Downloads")).toBeTruthy();
-    expect(screen.queryByText("30-day Installs")).toBeNull();
-    expect(document.querySelector(".metric-trend-card-skeleton")).toBeNull();
-    expect(screen.getByText("All time")).toBeTruthy();
-    expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
-    expect(
-      useQueryMock.mock.calls.some(
-        ([query]) => getFunctionName(query as never) === "skills:getActivityTrendForSlug",
-      ),
-    ).toBe(false);
-
-    await waitFor(() => expect(convexQueryMock).toHaveBeenCalled());
-    await act(async () => {
-      response.resolve(activityTrend);
-      await response.promise;
-    });
-    rerender(<SkillDetailPage slug="weather" initialData={initialData} />);
-
-    expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
-    expect(screen.getByRole("img", { name: "Daily downloads over the last 30 days" })).toBeTruthy();
-    expect(document.querySelector(".metric-trend-card-skeleton")).toBeNull();
-    expect(
-      convexQueryMock.mock.calls.some((call) => {
-        const query = call[0];
-        const args = call[1];
-        return (
-          getFunctionName(query as never) === "skills:getActivityTrendForSlug" &&
-          typeof args === "object" &&
-          args !== null &&
-          "slug" in args &&
-          args.slug === "weather" &&
-          "endDay" in args &&
-          typeof args.endDay === "number" &&
-          "ownerHandle" in args &&
-          args.ownerHandle === "steipete"
-        );
-      }),
-    ).toBe(true);
-  });
-
-  it("passes the loader owner id to deferred activity trends when no public owner handle is available", async () => {
-    const initialData = {
-      result: {
-        ...makeWeatherSkillResult(),
-        owner: null,
-      },
-      readme: "# Weather",
-      readmeError: null,
-      lookupOwnerHandle: "users:1",
-    };
-
-    render(<SkillDetailPage slug="weather" canonicalOwner="users:1" initialData={initialData} />);
-
-    await waitFor(() => expect(convexQueryMock).toHaveBeenCalled());
-
-    expect(
-      convexQueryMock.mock.calls.some((call) => {
-        const query = call[0];
-        const args = call[1];
-        return (
-          getFunctionName(query as never) === "skills:getActivityTrendForSlug" &&
-          typeof args === "object" &&
-          args !== null &&
-          "slug" in args &&
-          args.slug === "weather" &&
-          "endDay" in args &&
-          typeof args.endDay === "number" &&
-          "ownerHandle" in args &&
-          args.ownerHandle === "users:1"
-        );
-      }),
-    ).toBe(true);
+  it("does not fetch a download trend for the discovered Skill facts", async () => {
+    vi.useFakeTimers();
+    try {
+      render(
+        <SkillDetailPage
+          slug="weather"
+          initialData={{ result: makeWeatherSkillResult(), readme: "# Weather", readmeError: null }}
+        />,
+      );
+      await act(() => vi.advanceTimersByTimeAsync(1_000));
+      expect(screen.queryByText("Downloads")).toBeNull();
+      expect(
+        [...useQueryMock.mock.calls, ...convexQueryMock.mock.calls].some(
+          ([query, args]) =>
+            args !== "skip" && getFunctionName(query as never) === "skills:getActivityTrendForSlug",
+        ),
+      ).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("does not spin forever when a source-backed skill has no stored version", async () => {
@@ -1288,10 +1198,9 @@ describe("SkillDetailPage", () => {
     expect(screen.queryByRole("tab", { name: "ClawHub" })).toBeNull();
     expect(screen.queryByText(/After install, inspect the skill metadata/i)).toBeNull();
     expect(screen.getAllByText("Security check").length).toBeGreaterThan(0);
-    const audit = sidebar.getByRole("link", { name: /View Security Audit.*Pending/i });
+    const audit = sidebar.getByRole("link", { name: "Full security report: Pending" });
     expect(audit.getAttribute("href")).toBe("/steipete/skills/weather/security-audit");
     expect(within(audit).getByText("Pending")).toBeTruthy();
-    expect(audit.textContent).not.toMatch(/audit/i);
     const sidebarLabels = Array.from(sidebarMetadata.querySelectorAll("dt"), (label) =>
       label.textContent?.trim(),
     );
@@ -1309,10 +1218,10 @@ describe("SkillDetailPage", () => {
         heroCreator.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(
-      screen.getByRole("button", {
+      screen.queryByRole("button", {
         name: "Security checks for vulnerabilities and agentic risk",
       }),
-    ).toBeTruthy();
+    ).toBeNull();
     expect(screen.queryByText("No risk analysis has been recorded yet.")).toBeNull();
     expect(screen.queryByText(/Like a lobster shell, security has layers/i)).toBeNull();
     expect(screen.queryByRole("button", { name: "Rescan" })).toBeNull();
@@ -1379,9 +1288,8 @@ describe("SkillDetailPage", () => {
     );
 
     expect((await screen.findAllByText("Security check")).length).toBeGreaterThan(0);
-    const audit = screen.getByRole("link", { name: /View Security Audit.*Review/i });
+    const audit = screen.getByRole("link", { name: "Full security report: Review" });
     expect(within(audit).getByText("Review")).toBeTruthy();
-    expect(audit.textContent).not.toMatch(/audit/i);
     expect(screen.queryByText(/reviewed by staff and cleared/i)).toBeNull();
     expect(screen.queryByText("Cleared")).toBeNull();
   });

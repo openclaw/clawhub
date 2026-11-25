@@ -29,10 +29,6 @@ vi.mock("@tanstack/react-router", () => ({
   },
 }));
 
-vi.mock("../lib/useHeroCreatorPublisher", () => ({
-  useHeroCreatorPublisher: ({ owner }: { owner?: PublicPublisher | null }) => owner,
-}));
-
 describe("SkillDetailPageView", () => {
   function sidebarStatsRoot(container: HTMLElement) {
     const node = container.querySelector(".catalog-detail__sidebar");
@@ -134,7 +130,7 @@ describe("SkillDetailPageView", () => {
     expect(within(heroCreatorRoot(container)).getByText("Local")).toBeTruthy();
     expect(within(heroCreatorRoot(container)).getByText("@local")).toBeTruthy();
     expect(within(sidebarStatsRoot(container)).queryByText("Creator")).toBeNull();
-    expect(within(sidebarStatsRoot(container)).getByText("Downloads")).toBeTruthy();
+    expect(within(sidebarStatsRoot(container)).queryByText("Downloads")).toBeNull();
     expect(container.querySelector('a[href="/local"]')).toBeTruthy();
     expect(screen.getByRole("link", { name: "Skills" }).getAttribute("href")).toBe("/skills");
     expect(
@@ -178,130 +174,6 @@ describe("SkillDetailPageView", () => {
     expect(container.querySelectorAll(".skill-catalog-byline")).toHaveLength(1);
   });
 
-  it("shows the 30-day downloads graph from activity data", () => {
-    renderHeader({
-      activityTrend: {
-        downloads: {
-          range: "daily",
-          days: 30,
-          total: 12,
-          points: [
-            { day: 20_451, value: 1 },
-            { day: 20_452, value: 0 },
-            { day: 20_453, value: 4 },
-            { day: 20_454, value: 2 },
-            { day: 20_455, value: 0 },
-            { day: 20_456, value: 3 },
-            { day: 20_457, value: 2 },
-          ],
-        },
-      },
-    });
-
-    const details = within(screen.getByRole("complementary"));
-
-    expect(details.getByText("Downloads")).toBeTruthy();
-    expect(details.getByText("12")).toBeTruthy();
-    expect(details.getByRole("tablist", { name: "Download period" })).toBeTruthy();
-    expect(details.getByRole("tab", { name: "30d" }).getAttribute("aria-selected")).toBe("true");
-    expect(screen.queryByText("30-day Installs")).toBeNull();
-    expect(screen.queryByText("5")).toBeNull();
-    expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
-    expect(
-      details.getByRole("img", { name: "Daily downloads over the last 30 days" }),
-    ).toBeTruthy();
-  });
-
-  it("shows the labeled all-time count before the trend is available", () => {
-    renderHeader();
-
-    const details = within(screen.getByRole("complementary"));
-
-    expect(details.getByText("Downloads")).toBeTruthy();
-    expect(screen.queryByText("30-day Installs")).toBeNull();
-    expect(details.getByText("All time")).toBeTruthy();
-    expect(details.getByText("2")).toBeTruthy();
-    expect(
-      screen.getByRole("complementary").querySelector(".metric-trend-card-skeleton"),
-    ).toBeNull();
-    expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
-  });
-
-  it("switches download period tabs and updates the chart label", () => {
-    renderHeader({
-      skill: {
-        ...skill,
-        stats: { ...skill.stats, downloads: 500 },
-      },
-      activityTrend: {
-        downloads: {
-          range: "daily",
-          days: 30,
-          total: 12,
-          points: [
-            { day: 20_451, value: 1 },
-            { day: 20_452, value: 2 },
-            { day: 20_453, value: 3 },
-            { day: 20_454, value: 1 },
-            { day: 20_455, value: 1 },
-            { day: 20_456, value: 2 },
-            { day: 20_457, value: 2 },
-          ],
-        },
-      },
-    });
-
-    const details = within(screen.getByRole("complementary"));
-
-    expect(details.getByText("30 days")).toBeTruthy();
-    fireEvent.click(details.getByRole("tab", { name: "All time" }));
-    expect(details.getByRole("tab", { name: "All time" }).getAttribute("aria-selected")).toBe(
-      "true",
-    );
-    expect(details.getByText("500")).toBeTruthy();
-    fireEvent.click(details.getByRole("tab", { name: "7d" }));
-    expect(details.getByText("7 days")).toBeTruthy();
-  });
-
-  it("shows the nearest daily download graph point and line marker on hover", () => {
-    renderHeader({
-      activityTrend: {
-        downloads: {
-          range: "daily",
-          days: 30,
-          total: 12,
-          points: [
-            { day: 20_451, value: 1 },
-            { day: 20_452, value: 0 },
-            { day: 20_453, value: 11 },
-          ],
-        },
-      },
-    });
-
-    const rail = screen.getByRole("complementary");
-    const chart = within(rail).getByRole("img", {
-      name: "Daily downloads over the last 30 days",
-    });
-    chart.getBoundingClientRect = () =>
-      ({
-        x: 0,
-        y: 0,
-        left: 0,
-        top: 0,
-        right: 100,
-        bottom: 34,
-        width: 100,
-        height: 34,
-        toJSON: () => ({}),
-      }) satisfies DOMRect;
-
-    fireEvent.pointerMove(chart, { clientX: 100 });
-
-    expect(screen.getByText(/11 downloads$/)).toBeTruthy();
-    expect(rail.querySelectorAll(".metric-trend-marker-line")).toHaveLength(1);
-  });
-
   it("distinguishes an official publisher from an official skill", () => {
     const { container } = renderHeader({
       owner: {
@@ -312,7 +184,8 @@ describe("SkillDetailPageView", () => {
 
     const creator = container.querySelector(".skill-catalog-byline");
     expect(creator?.querySelector(".official-badge-icon-only")).toBeNull();
-    expect(within(screen.getByRole("complementary")).getByText("Official publisher")).toBeTruthy();
+    expect(within(screen.getByRole("complementary")).queryByText("Official publisher")).toBeNull();
+    expect(within(heroCreatorRoot(container)).getByText("Local")).toBeTruthy();
   });
 
   it("keeps canonical topic links on the listing", () => {
@@ -363,7 +236,7 @@ describe("SkillDetailPageView", () => {
   it("hides archive-only metadata for source-backed skills", () => {
     const { container } = renderHeader({ showArchiveMetadata: false });
 
-    expect(within(sidebarStatsRoot(container)).getByText("Downloads")).toBeTruthy();
+    expect(within(sidebarStatsRoot(container)).queryByText("Downloads")).toBeNull();
     expect(within(sidebarStatsRoot(container)).queryByText("Creator")).toBeNull();
     expect(within(heroCreatorRoot(container)).getByText("Local")).toBeTruthy();
     expect(within(sidebarStatsRoot(container)).getByText("Updated")).toBeTruthy();
@@ -386,8 +259,11 @@ describe("SkillDetailPageView", () => {
 
     const details = within(screen.getByRole("complementary"));
 
-    expect(details.getByText("Repository")).toBeTruthy();
-    const repoLink = details.getByRole("link", { name: "NVIDIA/skills" });
+    expect(details.queryByText("Repository")).toBeNull();
+    const repoLink = within(screen.getByRole("group", { name: "Skill actions" })).getByRole(
+      "link",
+      { name: "NVIDIA/skills" },
+    );
     expect(repoLink.getAttribute("href")).toBe("https://github.com/NVIDIA/skills");
   });
 
@@ -427,25 +303,16 @@ describe("SkillDetailPageView", () => {
     expect(within(sidebarStatsRoot(container)).queryByRole("link", { name: "Manage" })).toBeNull();
   });
 
-  it("places Report in the sidebar instead of the management toolbar", () => {
-    const { container } = renderHeader();
-
-    const toolbar = container.querySelector(".skill-management-toolbar");
-    expect(toolbar).toBeNull();
+  it("keeps social controls after the related skills footer, outside the facts", () => {
+    renderHeader({ footer: <footer>Related skills</footer> });
+    const actions = screen.getByRole("group", { name: "Skill actions" });
     expect(
-      within(sidebarStatsRoot(container)).getByRole("button", { name: "Report" }),
+      screen.getByText("Related skills").compareDocumentPosition(actions) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-  });
-
-  it("exposes Bookmark and Report directly on the rail without an activity disclosure", () => {
-    renderHeader();
-    const rail = within(screen.getByRole("complementary"));
-    expect(screen.queryByText("Activity & details")).toBeNull();
-    expect(rail.getByRole("button", { name: "Report" }).closest("details")).toBeNull();
-    const bookmark = rail.getByRole("button", { name: "Bookmark skill" });
-    expect(bookmark.closest("details")).toBeNull();
-    expect(bookmark.querySelector(".lucide-bookmark")).toBeTruthy();
-    expect(bookmark.querySelector(".lucide-star")).toBeNull();
+    expect(within(actions).getByRole("button", { name: "Report" })).toBeTruthy();
+    expect(within(actions).getByRole("button", { name: "Bookmark skill" })).toBeTruthy();
+    expect(screen.getByRole("complementary").contains(actions)).toBe(false);
   });
 
   it("presents the active bookmark control as an Unbookmark action", () => {
@@ -459,9 +326,7 @@ describe("SkillDetailPageView", () => {
   it("keeps one Bookmark control on mobile", () => {
     setViewportWidth(390);
     renderHeader();
-    expect(
-      within(screen.getByRole("complementary")).getAllByRole("button", { name: "Bookmark skill" }),
-    ).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Bookmark skill" })).toHaveLength(1);
   });
 
   it("does not render a separate warning banner for scanner warnings", () => {
@@ -549,7 +414,7 @@ describe("SkillDetailPageView", () => {
     });
 
     expect(screen.queryByRole("link", { name: "Download" })).toBeNull();
-    expect(within(sidebarStatsRoot(container)).getByText("Downloads")).toBeTruthy();
+    expect(within(sidebarStatsRoot(container)).queryByText("Downloads")).toBeNull();
   });
 
   it("falls back to legacy parsed frontmatter description when present", () => {

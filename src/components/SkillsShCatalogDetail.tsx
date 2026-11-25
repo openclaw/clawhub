@@ -1,6 +1,5 @@
 import { ShieldAlert } from "lucide-react";
 import { getSkillCategoriesForSkill } from "../lib/categories";
-import { formatCompactStat } from "../lib/numberFormat";
 import {
   isSkillsShCatalogInstallable,
   type SkillsShCatalogDetail,
@@ -169,15 +168,6 @@ function SkillsShSidebar({ entry }: { entry: SkillsShCatalogDetail }) {
         ariaLabel="skills.sh metadata"
         density="compact"
         blocks={[
-          {
-            label: "Downloads",
-            value: (
-              <span title={`${entry.upstreamInstalls.toLocaleString()} downloads`}>
-                {formatCompactStat(entry.upstreamInstalls)}
-              </span>
-            ),
-            large: true,
-          },
           {
             label: "Repository",
             value: (

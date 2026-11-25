@@ -8,7 +8,6 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
-import { getActivityTrendEndDay } from "../lib/activityTrend";
 import {
   captureAnalyticsOperation,
   emitAnalytics,
@@ -26,7 +25,6 @@ import type { SkillBySlugResult, SkillPageInitialData } from "../lib/skillPage";
 import { resolveGitHubSkillReadmeHref } from "../lib/skillReadmeLinks";
 import { clearAuthError } from "../lib/useAuthError";
 import { useAuthStatus } from "../lib/useAuthStatus";
-import { useDeferredSkillActivityTrend } from "../lib/useDeferredActivityTrend";
 import { DetailBody, DetailPageShell } from "./DetailPageShell";
 import { GenericNotFoundPage } from "./GenericNotFoundPage";
 import { SkillDetailSkeleton } from "./skeletons/SkillDetailSkeleton";
@@ -382,20 +380,8 @@ export function SkillDetailPage({
           ...(ownerHandle ? { ownerHandle } : {}),
         }).toString()}`
       : null;
-  const activityTrendOwnerHandle =
-    ownerHandle ?? liveLookupOwnerHandle ?? (owner?._id ? String(owner._id) : null);
-  const activityTrendEndDay = getActivityTrendEndDay();
   const canonicalOwnerParam =
     typeof canonicalOwner === "string" ? canonicalOwner.trim().toLowerCase() : null;
-  const { trend: activityTrend } = useDeferredSkillActivityTrend(
-    skill
-      ? {
-          slug: skill.slug,
-          endDay: activityTrendEndDay,
-          ...(activityTrendOwnerHandle ? { ownerHandle: activityTrendOwnerHandle } : {}),
-        }
-      : null,
-  );
   const wantsCanonicalRedirect = Boolean(
     ownerParam &&
     ((result?.resolvedSlug && result.resolvedSlug !== slug) ||
@@ -848,7 +834,6 @@ export function SkillDetailPage({
           variant="compact"
         />
       }
-      activityTrend={activityTrend}
       newVersionHref={newVersionHref}
       settingsHref={settingsHref}
       showArchiveMetadata={!isGitHubBackedSkill}

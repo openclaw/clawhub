@@ -13,10 +13,6 @@ vi.mock("@tanstack/react-router", () => ({
   ),
 }));
 
-vi.mock("../lib/useHeroCreatorPublisher", () => ({
-  useHeroCreatorPublisher: () => null,
-}));
-
 describe("SkillDetailPageView", () => {
   afterEach(cleanup);
 
@@ -52,6 +48,61 @@ describe("SkillDetailPageView", () => {
       expect(screen.queryByRole("dialog")).toBeNull();
     },
   );
+
+  it("shows only the available discovered Skill facts in registry order", () => {
+    const props = makeInstallableProps();
+    render(
+      <TooltipProvider>
+        <SkillDetailPageView
+          {...props}
+          skill={{ ...props.skill, updatedAt: new Date(2026, 4, 11, 12).getTime() }}
+          latestVersion={{
+            ...props.latestVersion,
+            parsed: { frontmatter: {}, license: "MIT-0", clawdis: { os: ["darwin", "linux"] } },
+            llmAnalysis: { status: "malicious", checkedAt: 1 },
+          }}
+          securityAuditHref="/publisher/skills/demo/security-audit"
+          versionHistory={<button type="button">Version history</button>}
+        />
+      </TooltipProvider>,
+    );
+    const rail = within(screen.getByRole("complementary"));
+    expect(rail.getAllByRole("term").map((el) => el.textContent)).toEqual([
+      "Security check",
+      "Version",
+      "Updated",
+      "License",
+      "Platforms",
+    ]);
+    expect(rail.getAllByRole("definition").map((el) => el.textContent)).toEqual([
+      "Blocked",
+      "1.0.0",
+      "May 11, 2026",
+      "MIT-0",
+      "darwinlinux",
+    ]);
+    expect(
+      rail.getByRole("link", { name: "Full security report: Blocked" }).getAttribute("href"),
+    ).toBe("/publisher/skills/demo/security-audit");
+    for (const name of ["Version history", "Bookmark skill", "Report"]) {
+      expect(rail.queryByRole("button", { name })).toBeNull();
+      expect(screen.getByRole("button", { name })).toBeTruthy();
+    }
+  });
+
+  it("does not invent a pending security scan, license or platforms for a bare release", () => {
+    render(
+      <TooltipProvider>
+        <SkillDetailPageView
+          {...makeInstallableProps()}
+          securityAuditHref="/publisher/skills/demo/security-audit"
+        />
+      </TooltipProvider>,
+    );
+    const rail = within(screen.getByRole("complementary"));
+    expect(rail.getAllByRole("term").map((el) => el.textContent)).toEqual(["Version", "Updated"]);
+    expect(screen.getByRole("link", { name: "Full security report" })).toBeTruthy();
+  });
 
   it("offers only an owner-qualified identity intent for a current hosted skill", () => {
     render(
