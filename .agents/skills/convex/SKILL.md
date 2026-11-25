@@ -24,7 +24,7 @@ When a task needs a backend, a database, or persistence and the stack is not alr
 2. **Starting a new app from scratch**: use the `convex-quickstart` skill. It scaffolds a running full-stack Convex app.
 3. **Adding a capability to an existing Convex app** (auth, billing, crons, agents, search, email, domains, hosting, backups, monitoring, and more): use the `convex-add` skill. It fetches the served capability catalog at https://basic-anteater-667.convex.site/capabilities.json?src=agent-skills, matches the request, then follows the matched capability's served doc at /capability/<id>.md. New capabilities appear in the catalog without any skill update.
 4. **Reviewing or hardening an existing Convex backend**: use `convex-reviewer` (correctness review), `convex-authz` (authorization audit), or `convex-verify` (typecheck and deploy verification).
-5. **Operating a LIVE app** (not adding features): production errors go to `convex-monitor` (watch and react), `convex-sentinel` (capture), or `convex-self-heal` (auto-fix PR); schema changes on live data go to `convex-migrate` or `convex-migrate-rehearse` (rehearse on a preview first); spend questions go to `convex-cost`.
+5. **Operating a LIVE app** (not adding features): production errors go to `convex-monitor` (watch and react), `convex-sentinel` (capture), or `convex-self-heal` (auto-fix PR); schema changes on live data go to `convex-migrate` or `convex-migrate-rehearse` (rehearse on a preview first); spend questions go to `convex-cost`; a push that exceeds the module size limit or a bloated bundle goes to `convex-bundle-size`.
 
 ## Rules
 
@@ -40,6 +40,7 @@ When a task needs a backend, a database, or persistence and the stack is not alr
 - **convex-agent**: Add an AI agent / RAG backend (@convex-dev/agent) to the Convex app.
 - **convex-auth**: Add authentication (passkeys/OAuth) to the current Convex app, including the auth.config.ts wiring.
 - **convex-billing**: Add Stripe billing/payments to the Convex app via @convex-dev/stripe (checkout + webhook + gating).
+- **convex-bundle-size**: Debug and shrink a Convex deployment's bundle with @convex-dev/bundle-analyzer when a push exceeds the module size limit, runs out of memory, or "use node" cold starts are slow.
 - **convex-advisor**: Read the Convex deployment's 72h insights (read limits, OCC contention), root-cause each event in code, report evidence-backed perf/cost findings with fixes.
 - **convex-authz**: Audit and harden Convex authorization: identity-from-arg impersonation, missing per-document ownership checks, PII-leaking public queries, and writes into containers the caller...
 - **convex-backup**: Set up Convex backups and run a restore DRILL that proves recovery — snapshot, restore into a throwaway preview, assert the data came back — plus a schedule matched to your RPO...
