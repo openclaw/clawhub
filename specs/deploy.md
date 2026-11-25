@@ -151,13 +151,10 @@ Test has these limits:
 - `test-template-canary-prepublication.yml` requires the Test backend commit to
   equal the `main` commit it runs from. It fails closed unless `next` is at that
   exact commit and deployed.
-- A Deploy Test run for a `main` commit exists only if `next` pointed at that
-  commit when it deployed. Release gates that require an exact-SHA Deploy Test
-  for a `main` commit, in other specs and in the production release skill, can
-  be met only that way. After a squash or rebase, the new `main` SHA may not
-  have such a run. In that case, stop the production release. Do not count a
-  different SHA, force-push `next`, or delete and recreate it to qualify a
-  release.
+- A production release does not require a Deploy Test run for the selected
+  `main` SHA. Leave `next` unchanged and follow the
+  [production release skill](../.agents/skills/clawhub-production-release/SKILL.md)
+  for authorization, validation, and live verification.
 - The CLAW-563, 577, 583, 589, and 590 proof jobs in `deploy-test.yml` are
   retired. Their branches are merged and deleted, and the jobs cannot run.
 
