@@ -266,6 +266,22 @@ for (const route of publicRouteCases()) {
   });
 }
 
+for (const colorScheme of ["light", "dark"] as const) {
+  test(`shared catalog detail keeps the site body background in ${colorScheme}`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme });
+    await stubExternalMediaInVitePreview(page);
+    await page.goto("/plugins");
+    await waitForHydration(page);
+    const body = page.locator("body");
+    const siteBackground = await body.evaluate((el) => getComputedStyle(el).backgroundColor);
+    await page.goto("/plugins/@openclaw/codex");
+    await expect(page.locator(".catalog-detail")).toBeVisible();
+    await expect(body).toHaveCSS("background-color", siteBackground);
+  });
+}
+
 test("plugin catalog rail keeps browse links and audit reachable at phone and desktop widths", async ({
   page,
 }) => {
