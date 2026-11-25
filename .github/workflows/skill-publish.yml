@@ -158,8 +158,21 @@ jobs:
           ref: ${{ steps.clawhub_source.outputs.ref }}
           path: clawhub-source
 
+      # actions/checkout only writes inside the caller's workspace. A skill published from the
+      # repository root (skill_path: ".") would then contain this checkout and upload it as
+      # skill files. Keep only .git at the original path for checkout's post-action cleanup.
+      - name: Move ClawHub source out of the caller workspace
+        run: |
+          mkdir "$RUNNER_TEMP/clawhub-source"
+          shopt -s dotglob nullglob
+          for entry in "$GITHUB_WORKSPACE/clawhub-source/"*; do
+            if [[ "${entry##*/}" != .git ]]; then
+              mv "$entry" "$RUNNER_TEMP/clawhub-source/"
+            fi
+          done
+
       - name: Install ClawHub CLI dependencies
-        working-directory: clawhub-source
+        working-directory: ${{ runner.temp }}/clawhub-source
         run: bun install --frozen-lockfile
 
       - name: Validate publish mode inputs
@@ -224,7 +237,7 @@ jobs:
           from pathlib import Path
 
           workspace = Path(os.environ["GITHUB_WORKSPACE"]).resolve()
-          cli_entry = workspace / "clawhub-source" / "packages" / "clawhub" / "src" / "cli.ts"
+          cli_entry = Path(os.environ["RUNNER_TEMP"]) / "clawhub-source" / "packages" / "clawhub" / "src" / "cli.ts"
           if not cli_entry.is_file():
               raise SystemExit(f"Missing ClawHub CLI entrypoint at {cli_entry}")
 
