@@ -256,9 +256,9 @@ jobs:
               e2e/local-auth/plugin-api-retirements.pw.test.ts
               e2e/local-auth/package-ssr-identity.pw.test.ts
               e2e/local-auth/version-delete.pw.test.ts
-          - name: publish-generated-card
+          - name: publish-scan-without-card
             specs: e2e/local-auth/publish-skill-lifecycle.pw.test.ts
-            grep: publishing a skill queues scan
+            grep: publishing a skill queues scan but no Skill Card
           - name: publish-new-version
             specs: e2e/local-auth/publish-skill-lifecycle.pw.test.ts
             grep: skill publishers can create a skill|owner sees (failed publication|failed checks|incomplete checks)
