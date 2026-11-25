@@ -1,6 +1,15 @@
 /* @vitest-environment node */
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
@@ -47,6 +56,14 @@ function runPublish(stdout: string, { skillPath = "" } = {}) {
     const cliDir = join(workspace, "clawhub-source", "packages", "clawhub", "src");
     mkdirSync(cliDir, { recursive: true });
     writeFileSync(join(cliDir, "cli.ts"), "// CLI subprocess is a receipt fixture.\n");
+    const checkout = join(workspace, "clawhub-source");
+    const git = (args: string[]) => spawnSync("git", args, { cwd: checkout, encoding: "utf8" });
+    expect(git(["-c", "init.templateDir=", "init", "--quiet"]).status).toBe(0);
+    expect(git(["config", "--local", "clawhub.fixture", "preserved"]).status).toBe(0);
+    const gitConfig = readFileSync(join(checkout, ".git", "config"), "utf8");
+    writeFileSync(join(checkout, ".fixture-hidden"), "hidden file\n");
+    mkdirSync(join(checkout, ".fixture-dir"));
+    writeFileSync(join(checkout, ".fixture-dir", "nested"), "hidden directory\n");
     if (!publishStep?.run || !moveStep?.run) throw new Error("Missing skill publish workflow step");
     const env = {
       ...process.env,
@@ -72,23 +89,74 @@ function runPublish(stdout: string, { skillPath = "" } = {}) {
       PUBLISH_TEST_SEEN: seenFile,
     };
     let status: number | null = null;
-    for (const step of [moveStep, publishStep]) {
-      const child = spawnSync("bash", ["-c", step.run], { cwd: workspace, encoding: "utf8", env });
+    for (const [index, run] of [moveStep.run, publishStep.run].entries()) {
+      const child = spawnSync("bash", ["-e", "-c", run], {
+        cwd: workspace,
+        encoding: "utf8",
+        env,
+      });
       if (child.error) throw child.error;
-      if (step === publishStep) status = child.status;
+      if (index === 0) expect(child.status, child.stderr).toBe(0);
+      else status = child.status;
     }
     const output = JSON.parse(readFileSync(join(runnerTemp, "skill-publish.json"), "utf8"));
     const seen = JSON.parse(readFileSync(seenFile, "utf8")) as {
       argv: string[];
       checkoutInWorkspace: boolean;
     };
-    return { status, output, seen, workspace };
+    const configPath = join(checkout, ".git", "config");
+    return {
+      status,
+      output,
+      seen,
+      workspace,
+      gitConfig,
+      retainedConfig: existsSync(configPath) ? readFileSync(configPath, "utf8") : null,
+      retainedGit: git(["config", "--local", "--get", "clawhub.fixture"]),
+      retainedEntries: existsSync(checkout) ? readdirSync(checkout).sort() : [],
+      movedEntries: readdirSync(join(runnerTemp, "clawhub-source")).sort(),
+      movedHiddenFile: readFileSync(join(runnerTemp, "clawhub-source", ".fixture-hidden"), "utf8"),
+      movedHiddenDirectoryFile: readFileSync(
+        join(runnerTemp, "clawhub-source", ".fixture-dir", "nested"),
+        "utf8",
+      ),
+    };
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 }
 
 describe("skill publish workflow receipts", () => {
+  it("stops when a tooling entry cannot be moved", () => {
+    mkdirSync(".artifacts", { recursive: true });
+    const root = mkdtempSync(join(process.cwd(), ".artifacts/skill-publish-move-test-"));
+    try {
+      const workspace = join(root, "workspace");
+      const runnerTemp = join(root, "runner-temp");
+      const bin = join(root, "bin");
+      mkdirSync(join(workspace, "clawhub-source"), { recursive: true });
+      mkdirSync(runnerTemp);
+      mkdirSync(bin);
+      writeFileSync(join(workspace, "clawhub-source", "tooling"), "tooling\n");
+      writeFileSync(join(bin, "mv"), "#!/bin/sh\nexit 42\n");
+      chmodSync(join(bin, "mv"), 0o755);
+      if (!moveStep?.run) throw new Error("Missing skill publish workflow move step");
+      const child = spawnSync("bash", ["-e", "-c", moveStep.run], {
+        cwd: workspace,
+        env: {
+          ...process.env,
+          PATH: `${bin}:${process.env.PATH}`,
+          GITHUB_WORKSPACE: workspace,
+          RUNNER_TEMP: runnerTemp,
+        },
+      });
+      expect(child.status).toBe(42);
+      expect(readFileSync(join(workspace, "clawhub-source", "tooling"), "utf8")).toBe("tooling\n");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it.each([
     ["pending-publication", "pendingPublication"],
     ["submitted", "submitted"],
@@ -122,10 +190,24 @@ describe("skill publish workflow receipts", () => {
     const result = runPublish(JSON.stringify(receipt), { skillPath: "." });
     expect(result.status).toBe(0);
     expect(result.output.published).toEqual([receipt]);
-    expect(result.seen.checkoutInWorkspace).toBe(false);
+    expect(result.seen.checkoutInWorkspace).toBe(true);
     const [cliEntry, , workdir] = result.seen.argv;
     expect(workdir).toBe(result.workspace);
     expect(relative(result.workspace, cliEntry).startsWith("..")).toBe(true);
     expect(result.seen.argv[result.seen.argv.indexOf("publish") + 1]).toBe(".");
+  });
+
+  it("preserves checkout metadata for the post action while moving all working-tree entries", () => {
+    const result = runPublish(JSON.stringify({ status: "would-publish", slug: "demo" }), {
+      skillPath: ".",
+    });
+    expect(result.status).toBe(0);
+    expect(result.retainedEntries).toEqual([".git"]);
+    expect(result.retainedConfig).toBe(result.gitConfig);
+    expect(result.retainedGit.status).toBe(0);
+    expect(result.retainedGit.stdout.trim()).toBe("preserved");
+    expect(result.movedEntries).toEqual([".fixture-dir", ".fixture-hidden", "packages"]);
+    expect(result.movedHiddenFile).toBe("hidden file\n");
+    expect(result.movedHiddenDirectoryFile).toBe("hidden directory\n");
   });
 });

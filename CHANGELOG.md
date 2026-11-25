@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Skill publishing: keep reusable-workflow tooling out of repository-root skills while preserving checkout cleanup.
+
 - Management: show Publisher abuse for unsupported view links instead of an empty page. Selected skill and plugin links keep their existing precedence.
 
 - Link previews: release the rendered image and renderer after PNG generation, including when rendering fails.

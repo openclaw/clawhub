@@ -160,9 +160,16 @@ jobs:
 
       # actions/checkout only writes inside the caller's workspace. A skill published from the
       # repository root (skill_path: ".") would then contain this checkout and upload it as
-      # skill files, so move it out before anything is installed into it.
+      # skill files. Keep only .git at the original path for checkout's post-action cleanup.
       - name: Move ClawHub source out of the caller workspace
-        run: mv "$GITHUB_WORKSPACE/clawhub-source" "$RUNNER_TEMP/clawhub-source"
+        run: |
+          mkdir "$RUNNER_TEMP/clawhub-source"
+          shopt -s dotglob nullglob
+          for entry in "$GITHUB_WORKSPACE/clawhub-source/"*; do
+            if [[ "${entry##*/}" != .git ]]; then
+              mv "$entry" "$RUNNER_TEMP/clawhub-source/"
+            fi
+          done
 
       - name: Install ClawHub CLI dependencies
         working-directory: ${{ runner.temp }}/clawhub-source
