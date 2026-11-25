@@ -775,9 +775,10 @@ test("clean skill publish stays private until TruffleHog and ClawScan pass", asy
   await expect(page.getByText("Pending publication", { exact: true })).toBeVisible();
   await expect(page.getByText(/not yet public or installable/i)).toBeVisible();
   await expect(page.getByRole("article", { name: "Install" })).toHaveCount(0);
-  await page.getByRole("button", { name: "View files", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Release details" });
-  await expect(dialog.getByText("Files pending security checks")).toBeVisible();
+  await expect(page.getByRole("tabpanel", { name: "SKILL.md" })).toContainText(
+    "The SKILL.md preview will be available when publication completes.",
+  );
+  await expect(page.getByRole("button", { name: "View files", exact: true })).toHaveCount(0);
   await page.screenshot({
     path: testInfo.outputPath("owner-pending-publication.png"),
     fullPage: true,
@@ -1002,28 +1003,10 @@ test("skill publishers can create a skill and publish a new version", async ({
   });
 
   await expectCurrentVersion(page, "1.0.1");
-  await page.getByRole("button", { name: "View release 1.0.1" }).click();
-  const dialog = page.getByRole("dialog", { name: "Release details" });
-  await dialog.getByRole("tab", { name: "Files" }).click();
-  await expect(page.getByRole("button", { name: /main\.tf/i })).toBeVisible();
-  await expect(page.getByRole("button", { name: /terraform\.tfvars/i })).toBeVisible();
-  await expect(page.getByRole("button", { name: /assets\/payload\.bin/i })).toBeVisible();
-
-  await page.getByRole("button", { name: /main\.tf/i }).click();
-  await expect(page.locator("pre.file-viewer-code")).toContainText(
-    'resource "null_resource" "demo" {}',
+  await expect(page.getByRole("tabpanel", { name: "SKILL.md" })).toContainText(
+    "This second release payload",
   );
-  await page.getByRole("button", { name: "Back to file list" }).click();
-
-  await page.getByRole("button", { name: /assets\/payload\.bin/i }).click();
-  await expect(
-    page.getByText("This file is available to download but cannot be previewed as text."),
-  ).toBeVisible();
-  const downloadLink = page.getByRole("link", { name: "Download payload.bin" });
-  const downloadHref = await downloadLink.getAttribute("href");
-  expect(downloadHref).toContain(
-    `/api/v1/skills/${slug}/file?path=assets%2Fpayload.bin&ownerHandle=${ownerHandle}`,
-  );
+  await expect(page.getByRole("tab", { name: "Files", exact: true })).toHaveCount(0);
 
   const rawResponse = await page.request.get(
     `${convexSiteUrl()}/api/v1/skills/${slug}/file?path=assets%2Fpayload.bin&ownerHandle=${ownerHandle}`,
@@ -1032,16 +1015,22 @@ test("skill publishers can create a skill and publish a new version", async ({
   expect(new Uint8Array(await rawResponse.body())).toEqual(Uint8Array.from([0, 1, 2, 255]));
   expect(rawResponse.headers()["content-disposition"]).toContain("attachment");
   expect(rawResponse.headers()["x-content-type-options"]).toBe("nosniff");
+  await page.getByRole("button", { name: "Version history", exact: true }).click();
+  const history = page.getByRole("dialog", { name: "Version history" });
+  await expect(history.getByText(/^v1\.0\.1\b/).first()).toBeVisible();
+  await expect(history.getByText(/^v1\.0\.0\b/).first()).toBeVisible();
+  const archiveHref = await history.locator('a[href*="version=1.0.1"]').getAttribute("href");
+  expect(archiveHref).toBeTruthy();
+  const archive = await page.request.get(new URL(archiveHref!, convexSiteUrl()).href);
+  expect(archive.status()).toBe(200);
+  const files = unzipSync(new Uint8Array(await archive.body()));
+  expect(strFromU8(files["main.tf"])).toBe('resource "null_resource" "demo" {}\n');
+  expect(strFromU8(files["terraform.tfvars"])).toBe('region = "us-east-1"\n');
+  expect(files["assets/payload.bin"]).toEqual(Uint8Array.from([0, 1, 2, 255]));
   await page.screenshot({
-    path: testInfo.outputPath("mixed-skill-files.png"),
+    path: testInfo.outputPath("published-version-history.png"),
     fullPage: true,
   });
-
-  await page.getByRole("button", { name: "Back to file list" }).click();
-  await page.getByRole("tab", { name: "Versions" }).click();
-  await expect(page.getByRole("heading", { name: "Versions" })).toBeVisible();
-  await expect(page.getByText(/^v1\.0\.1\b/).first()).toBeVisible();
-  await expect(page.getByText(/^v1\.0\.0\b/).first()).toBeVisible();
 
   await expectHealthyPublishPage(page, errors);
 });
