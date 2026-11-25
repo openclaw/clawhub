@@ -239,6 +239,11 @@ Local fixture data lives in `convex/devSeed.ts` and `fixtures/public-corpus/`.
 - Account settings: name + delete account (permanent, non-recoverable; published skills stay public).
 - Admin: user role management + badge approvals + audit log.
 
+Management view selection defaults to Publisher abuse when `view` is absent or
+unsupported, including raw search values retained by the router. A selected
+skill takes precedence over a selected plugin; both take precedence over `view`.
+View selection does not rewrite the URL.
+
 The skill README request belongs to the current stored version. Equivalent live
 skill snapshots and publishing loading/result state must not restart it. Reuse
 SSR text (including an empty string) or errors for the matching version; reject

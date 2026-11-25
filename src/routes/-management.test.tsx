@@ -11,7 +11,7 @@ const useMutationMock = vi.fn();
 const useActionMock = vi.fn();
 const convexClientMock = { query: vi.fn() };
 const navigateMock = vi.fn();
-let searchState: Record<string, string | undefined> = {};
+let searchState: Record<string, unknown> = {};
 let authUser: { _id: string; handle: string; role: "admin" | "moderator" | "user" } = {
   _id: "users:admin",
   handle: "admin",
@@ -1409,23 +1409,44 @@ describe("Management", () => {
   });
 
   it.each(["constructor", "__proto__", "toString", "Skills", " skills", "skills ", "missing", ""])(
-    "rejects the unsupported view %j without changing the default",
+    "omits the unsupported view %j from validated search",
     (view) => {
       const url = new URL("/management", "https://example.invalid");
       url.searchParams.set("view", view);
-      searchState = validateManagementSearch(Object.fromEntries(url.searchParams));
-      expect(searchState).toEqual({});
-
-      const { container } = render(<Management />);
-
-      expect(container.querySelector(".management-breadcrumb strong")?.textContent).toBe(
-        "Publisher abuse",
-      );
+      expect(validateManagementSearch(Object.fromEntries(url.searchParams))).toEqual({});
     },
   );
 
   it.each([undefined, null, 1, {}, ["skills"]])("rejects a non-string view %j", (view) => {
     expect(validateManagementSearch({ view })).toEqual({});
+  });
+
+  it.each(
+    [
+      "constructor",
+      "__proto__",
+      "toString",
+      "Skills",
+      " skills",
+      "skills ",
+      "missing",
+      "",
+      undefined,
+      null,
+      1,
+      {},
+      ["skills"],
+    ].map((view) => [view]),
+  )("shows the default view when raw search retains %j", (view) => {
+    const rawSearch = { view };
+    searchState = { ...rawSearch, ...validateManagementSearch(rawSearch) };
+
+    const { container } = render(<Management />);
+
+    expect(container.querySelector(".management-breadcrumb strong")?.textContent).toBe(
+      "Publisher abuse",
+    );
+    expect(screen.getByRole("heading", { name: "Publisher abuse review" })).toBeTruthy();
   });
 
   it.each([
@@ -1434,8 +1455,10 @@ describe("Management", () => {
     [{ view: "reports", plugin: "example-plugin" }, "Plugins"],
     [{ view: "reports", skill: " ", plugin: "example-plugin" }, "Plugins"],
     [{ view: "reports", skill: " ", plugin: " " }, "Content reports"],
+    [{ view: "constructor", skill: "owned-skill", plugin: "example-plugin" }, "Skills"],
+    [{ view: "constructor", plugin: "example-plugin" }, "Plugins"],
   ])("preserves selected item precedence for %j", (search, label) => {
-    searchState = validateManagementSearch(search);
+    searchState = { ...search, ...validateManagementSearch(search) };
 
     const { container } = render(<Management />);
 
