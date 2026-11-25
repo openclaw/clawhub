@@ -252,6 +252,36 @@ describe("Header", () => {
     signInMock.mockResolvedValue({ signingIn: true });
   });
 
+  it("fills the sticky header only while the page is scrolled down", () => {
+    const scrollY = vi.spyOn(window, "scrollY", "get");
+    try {
+      scrollY.mockReturnValue(0);
+      render(<Header />);
+      const header = screen.getByRole("banner");
+      expect(header.hasAttribute("data-scrolled")).toBe(false);
+
+      scrollY.mockReturnValue(1);
+      fireEvent.scroll(window);
+      expect(header.getAttribute("data-scrolled")).toBe("true");
+
+      scrollY.mockReturnValue(0);
+      fireEvent.scroll(window);
+      expect(header.hasAttribute("data-scrolled")).toBe(false);
+    } finally {
+      scrollY.mockRestore();
+    }
+  });
+
+  it("reads the existing scroll position when mounted", () => {
+    const scrollY = vi.spyOn(window, "scrollY", "get").mockReturnValue(200);
+    try {
+      render(<Header />);
+      expect(screen.getByRole("banner").getAttribute("data-scrolled")).toBe("true");
+    } finally {
+      scrollY.mockRestore();
+    }
+  });
+
   it("renders calm text-only content links in the top navbar", () => {
     setModeMock.mockClear();
 
