@@ -488,6 +488,18 @@ export const RETENTION_POLICIES = {
     prune: "usage-time validation plus pending retention cleanup",
     retention: "Transfer invitation TTL.",
   }),
+  appConnections: permanent(
+    "Current app-connection state per user and app; the tokens themselves are held by Composio.",
+  ),
+  appConnectionSessions: ephemeral(
+    "Per-chat Composio sessions are dropped once a chat goes quiet.",
+    {
+      expirationField: "expirationTime",
+      expirationIndex: "by_expiration_time",
+      prune: "connections.pruneExpiredSessionsInternal",
+      retention: "30 days after the chat last used the session.",
+    },
+  ),
 } satisfies Record<TableNames, RetentionPolicy>;
 
 export function getRetentionPolicy(tableName: TableNames) {

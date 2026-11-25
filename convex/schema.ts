@@ -4064,6 +4064,47 @@ const skillOwnershipTransfers = defineTable({
   .index("by_from_user_status", ["fromUserId", "status"])
   .index("by_skill_status", ["skillId", "status"]);
 
+// One row per user and connectable app (see convex/lib/connectionApps.ts).
+// `connected` is only ever written after the server has confirmed an active
+// account for this user with Composio; browser-supplied hints never set it.
+const appConnections = defineTable({
+  userId: v.id("users"),
+  app: v.string(),
+  status: v.union(v.literal("disconnected"), v.literal("pending"), v.literal("connected")),
+  // Composio connected account: the verified one when connected, the one
+  // being signed in while pending.
+  connectedAccountId: v.optional(v.string()),
+  accountLabel: v.optional(v.string()),
+  // Why the last sign-in or connection ended without a connection.
+  lastError: v.optional(
+    v.union(v.literal("failed"), v.literal("cancelled"), v.literal("expired"), v.literal("lost")),
+  ),
+  attemptId: v.optional(v.string()),
+  attemptStartedAt: v.optional(v.number()),
+  // Composio session used only to start sign-ins for this app.
+  linkSessionId: v.optional(v.string()),
+  verifiedAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+}).index("by_user_app", ["userId", "app"]);
+
+// One Composio session per user and OpenClaw chat. Lookups are always by the
+// authenticated user plus chat key, so a chat key alone never selects a row.
+const appConnectionSessions = defineTable({
+  userId: v.id("users"),
+  chatKey: v.string(),
+  composioSessionId: v.string(),
+  mcpUrl: v.string(),
+  // Tool configuration the Composio session was last given.
+  configKey: v.string(),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+  // Sliding expiry, extended while the chat keeps using the session.
+  expirationTime: v.number(),
+})
+  .index("by_user_chat_key", ["userId", "chatKey"])
+  .index("by_expiration_time", ["expirationTime"]);
+
 const searchAggregateStates = defineTable({
   key: v.literal("plugin"),
   cursor: v.union(v.string(), v.null()),
@@ -4302,4 +4343,6 @@ export default defineSchema({
   userSkillInstalls,
   userPackageInstalls,
   skillOwnershipTransfers,
+  appConnections,
+  appConnectionSessions,
 });

@@ -278,6 +278,14 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1" && process.env.CLAWHUB_PREVIEW !==
     { batchSize: RETENTION_STANDARD_BATCH_SIZE },
   );
 
+  // Reads an empty index range unless app connections are in use.
+  crons.interval(
+    "app-connection-session-retention-prune",
+    { hours: 24 },
+    internal.connections.pruneExpiredSessionsInternal,
+    {},
+  );
+
   crons.interval(
     "skill-publish-upload-retention-prune",
     { hours: 1 },

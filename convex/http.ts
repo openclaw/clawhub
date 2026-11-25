@@ -1,6 +1,7 @@
 import { ApiRoutes, LegacyApiRoutes } from "clawhub-schema/routes";
 import { httpRouter } from "convex/server";
 import { auth } from "./auth";
+import { CONNECTIONS_MCP_PATH_PREFIX } from "./lib/connectionApps";
 import { installRateLimitedRoutes } from "./lib/httpRouteRateLimit";
 import { lazyHttpAction } from "./lib/lazyHttpAction";
 import { get as templateCatalogPageHttp } from "./templateCatalogPageHttp";
@@ -176,6 +177,9 @@ const verifyDocsSessionV1Http = lazyHttpAction(
   async () => (await import("./httpApiV1")).verifyDocsSessionV1Http,
 );
 const whoamiV1Http = lazyHttpAction(async () => (await import("./httpApiV1")).whoamiV1Http);
+const connectionsMcpV1Http = lazyHttpAction(
+  async () => (await import("./httpApiV1")).connectionsMcpV1Http,
+);
 const contentRightsV1Http = lazyHttpAction(
   async () => (await import("./httpApiV1")).contentRightsV1Http,
 );
@@ -304,6 +308,13 @@ for (const [path, method, handler] of [
   [{ pathPrefix: `${ApiRoutes.transfers}/` }, "GET", transfersGetRouterV1Http],
   [{ path: ApiRoutes.publishers }, "POST", createPublisherV1Http],
   [{ path: ApiRoutes.whoami }, "GET", whoamiV1Http],
+  // App-connections MCP relay. POST only; the other methods are registered so
+  // they answer 405 (or 404 while the feature is not configured).
+  [{ pathPrefix: CONNECTIONS_MCP_PATH_PREFIX }, "POST", connectionsMcpV1Http],
+  [{ pathPrefix: CONNECTIONS_MCP_PATH_PREFIX }, "GET", connectionsMcpV1Http],
+  [{ pathPrefix: CONNECTIONS_MCP_PATH_PREFIX }, "PUT", connectionsMcpV1Http],
+  [{ pathPrefix: CONNECTIONS_MCP_PATH_PREFIX }, "PATCH", connectionsMcpV1Http],
+  [{ pathPrefix: CONNECTIONS_MCP_PATH_PREFIX }, "DELETE", connectionsMcpV1Http],
   [{ pathPrefix: `${ApiRoutes.contentRights}/` }, "GET", contentRightsV1Http],
   [{ path: "/api/v1/operator/skills-sh/catalog-test" }, "GET", skillsShCatalogTestV1Http],
   [{ pathPrefix: "/api/v1/skills-sh/" }, "GET", skillsShCatalogPublicV1Http],

@@ -148,8 +148,10 @@ function mockSignedInSettings({
   },
   membersLoading = false,
   deletionInventoryLoading = false,
+  connections = null,
 }: {
   search?: Record<string, unknown>;
+  connections?: FunctionReturnType<typeof api.connections.getMine>;
   memberships?: Array<typeof orgMembership | typeof personalMembership>;
   members?: typeof orgMembers;
   membersLoading?: boolean;
@@ -219,6 +221,7 @@ function mockSignedInSettings({
     if (queryName === "users:me") return signedInUser;
     if (args === "skip") return undefined;
     if (queryName === "tokens:listMine") return [];
+    if (queryName === "connections:getMine") return connections;
     if (queryName === "publishers:listMine") return memberships;
     if (queryName === "githubOrgMemberships:listMine") return githubOrgMemberships;
     if (queryName === "rolloutCapabilities:getPublicCapabilities") {
@@ -885,6 +888,59 @@ describe("Settings", () => {
       });
     });
     expect(toast.success).toHaveBeenCalledWith("GitHub sync deleted (0 skills deleted)");
+  });
+
+  it("has no Connections section when app connections are not configured", () => {
+    mockSignedInSettings({ search: { view: "connections" }, connections: null });
+
+    render(<Settings />);
+
+    expect(screen.queryByRole("button", { name: "Connections" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Granola" })).toBeNull();
+    // The unknown view falls back to the default section.
+    expect(screen.getByLabelText("Display name")).toBeTruthy();
+  });
+
+  it("shows the Connections section and confirms a returned sign-in with the server", async () => {
+    const verify = vi.fn().mockResolvedValue({ status: "connected" });
+    useActionMock.mockImplementation((action) => {
+      const name = getFunctionName(action);
+      if (name === "connections:verify") return verify;
+      if (name === "connections:listTools") return vi.fn().mockResolvedValue([]);
+      return vi.fn().mockResolvedValue({ status: "disconnected" });
+    });
+    mockSignedInSettings({
+      search: { view: "connections", app: "granola", attempt: "attempt-1", status: "success" },
+      connections: {
+        apps: [
+          {
+            id: "granola",
+            name: "Granola",
+            description: "Read your Granola meeting notes, summaries and transcripts.",
+            status: "pending",
+            accountLabel: null,
+            lastError: null,
+            attemptStartedAt: 1,
+            tools: [],
+          },
+        ],
+      },
+    });
+
+    render(<Settings />);
+
+    expect(screen.getByRole("button", { name: "Connections" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Granola" })).toBeTruthy();
+    await waitFor(() =>
+      expect(verify).toHaveBeenCalledWith({ app: "granola", attemptId: "attempt-1" }),
+    );
+    // The single-use return parameters are dropped from the URL once handled.
+    await waitFor(() =>
+      expect(navigateMock).toHaveBeenCalledWith({
+        search: { view: "connections" },
+        replace: true,
+      }),
+    );
   });
 
   it("does not let non-official publishers access GitHub sync sources", () => {
