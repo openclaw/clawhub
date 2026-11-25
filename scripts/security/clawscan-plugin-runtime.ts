@@ -3,13 +3,13 @@ import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { qualifiedNativeCommand, assertQualifiedNativeArtifact } from "./clawscan-native-runtime";
 
-// ClawScan 0.4.0 candidate, bound to native runtime run 45562677164.
+// ClawScan 0.4.0 candidate, bound to native runtime run 45565644265.
 // The matching host binary selects the built-in profile; scanner tools run
 // inside this source-bound immutable image.
 // No mutable image tag or host MCP fallback.
 export const QUALIFIED_PLUGIN_SOURCE = "9bc83753a6f1af7ff077917262190ada0152891b";
 export const QUALIFIED_PLUGIN_IMAGE =
-  "ghcr.io/openclaw/clawscan-runtime@sha256:5036a4a3d62175f85092c20736cba96c89ecc45b9ddf74e8ba7a0462d8b396ed";
+  "ghcr.io/openclaw/clawscan-runtime@sha256:c7723e88a47f4ff61530a7f3140b0c72f51293ab8514435c7c3aeb518a8000b1";
 
 // Capability discovery is followed by source/binary verification before execution.
 // The old pin has no override, so it keeps its existing scanner/target behavior.

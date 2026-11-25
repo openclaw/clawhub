@@ -1,11 +1,11 @@
 # Shared installer-only qualification binding. Sourced after script_dir is set.
 # ClawScan 0.4.0 candidate from merged openclaw/clawscan#223.
-# Both native architectures and immutable index: runtime run 45562677164.
+# Both native architectures and immutable index: runtime run 45565644265.
 # Verify the matching host and scanner-tools trees before installation.
 qualified_source_commit=9bc83753a6f1af7ff077917262190ada0152891b
 qualified_source_tree=c08631fa26a49ac711b828a4ead389ded92b2fa5
 qualified_runtime_tree=9f1aa0ad7bba119153550651bb74c1ab4576808a
-qualified_runtime_image=ghcr.io/openclaw/clawscan-runtime@sha256:5036a4a3d62175f85092c20736cba96c89ecc45b9ddf74e8ba7a0462d8b396ed
+qualified_runtime_image=ghcr.io/openclaw/clawscan-runtime@sha256:c7723e88a47f4ff61530a7f3140b0c72f51293ab8514435c7c3aeb518a8000b1
 
 select_clawscan_source() {
   default_commit=$(cat "$script_dir/clawscan-source-commit.txt")

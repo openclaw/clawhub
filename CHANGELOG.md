@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Scanner runtime: prepare the ClawScan 0.4.0 source and immutable image binding for host skills, whole plugins and Templates, preserving exact source and binary checks.
+- Scanner runtime: prepare the ClawScan 0.4.0 source and released immutable image binding for host skills, whole plugins and Templates, preserving exact source and binary checks.
 
 - Scanner installation: pin test-tool dependencies and wheel hashes for each scanner so upstream package releases cannot silently change the qualified host environment.
 

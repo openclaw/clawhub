@@ -42,10 +42,11 @@ The ClawScan 0.4.0 draft binds both workers to merged source
 `9bc83753a6f1af7ff077917262190ada0152891b` ([ClawScan #223](https://github.com/openclaw/clawscan/pull/223)),
 source tree `c08631fa26a49ac711b828a4ead389ded92b2fa5`, runtime tree
 `9f1aa0ad7bba119153550651bb74c1ab4576808a`, and immutable image
-`ghcr.io/openclaw/clawscan-runtime@sha256:5036a4a3d62175f85092c20736cba96c89ecc45b9ddf74e8ba7a0462d8b396ed`.
-Native image publication, real host installation and both workers' source/binary
-admission are verified without provider calls. Full native consumer qualification
-and version-tag image selection remain pending. See `plugin-qualified-runtime.md`.
+`ghcr.io/openclaw/clawscan-runtime@sha256:c7723e88a47f4ff61530a7f3140b0c72f51293ab8514435c7c3aeb518a8000b1`.
+Version-tag image publication, real host installation and both workers'
+source/binary admission are verified without provider calls. The final tag image
+also passed its separate offline consumer runtime checks. Full native consumer
+qualification remains pending. See `plugin-qualified-runtime.md`.
 
 The previous binding was source `56bf1d9e3bd5247a0622acef8699dc69a10f2938`
 ([ClawScan #155](https://github.com/openclaw/clawscan/pull/155)), source tree

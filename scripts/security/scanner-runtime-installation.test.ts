@@ -23,7 +23,7 @@ const candidate = "9bc83753a6f1af7ff077917262190ada0152891b";
 const candidateTree = "c08631fa26a49ac711b828a4ead389ded92b2fa5";
 const runtimeTree = "9f1aa0ad7bba119153550651bb74c1ab4576808a";
 const image =
-  "ghcr.io/openclaw/clawscan-runtime@sha256:5036a4a3d62175f85092c20736cba96c89ecc45b9ddf74e8ba7a0462d8b396ed";
+  "ghcr.io/openclaw/clawscan-runtime@sha256:c7723e88a47f4ff61530a7f3140b0c72f51293ab8514435c7c3aeb518a8000b1";
 
 async function installFixture() {
   // Exercise command assertions with an installer name inside the temporary path.

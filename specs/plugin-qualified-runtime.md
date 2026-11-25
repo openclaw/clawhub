@@ -10,13 +10,14 @@ promotion, live worker rollout, historical rewrite, bulk requeue or data migrati
 - Merged ClawScan source: 9bc83753a6f1af7ff077917262190ada0152891b ([PR #223](https://github.com/openclaw/clawscan/pull/223)).
 - Source tree: c08631fa26a49ac711b828a4ead389ded92b2fa5.
 - Runtime tree: 9f1aa0ad7bba119153550651bb74c1ab4576808a.
-- Immutable image: ghcr.io/openclaw/clawscan-runtime@sha256:5036a4a3d62175f85092c20736cba96c89ecc45b9ddf74e8ba7a0462d8b396ed.
+- Immutable image: ghcr.io/openclaw/clawscan-runtime@sha256:c7723e88a47f4ff61530a7f3140b0c72f51293ab8514435c7c3aeb518a8000b1.
 - Native amd64/arm64 publication and installed CLI qualification:
-  https://github.com/openclaw/clawscan/actions/runs/45562677164.
+  https://github.com/openclaw/clawscan/actions/runs/45565644265.
 
-This is the qualified main-build image for the exact release source. Prefer the
-version-tag image after its native publication is verified; recheck any differing
-release image inputs before replacing these qualified bytes.
+This is the verified v0.4.0 tag image for the exact release source. Its retained
+manifest and independent registry readback bind both native platforms and their
+provenance to that source. Filesystem layers differ from the earlier main build;
+the tag image passed its own consumer runtime checks below.
 
 Plugins run one whole-artifact AIG MCP audit in that immutable Docker image.
 Skills use SkillSpector plus AIG; the shared judge reads scanner reports only.
@@ -39,7 +40,7 @@ sh scripts/security/install-clawscan-scanners.sh aig-mcp \
   9bc83753a6f1af7ff077917262190ada0152891b
 
 docker run --rm --pull never --network none --entrypoint /bin/sh \
-  ghcr.io/openclaw/clawscan-runtime@sha256:5036a4a3d62175f85092c20736cba96c89ecc45b9ddf74e8ba7a0462d8b396ed \
+  ghcr.io/openclaw/clawscan-runtime@sha256:c7723e88a47f4ff61530a7f3140b0c72f51293ab8514435c7c3aeb518a8000b1 \
   -ec 'aig-mcp-scan --help >/dev/null; codex --help >/dev/null'
 ```
 
@@ -69,7 +70,9 @@ candidate. Independent registry readback verified the immutable index bytes,
 both platform manifests/configs and the exact source revision. The retained
 manifest artifact agrees with that readback and both native smoke proofs.
 
-The real installer passed on an isolated Ubuntu 24.04 amd64 Testbox with Python
+The real installer passed against the same host source and earlier main-build
+image `sha256:5036a4a3d62175f85092c20736cba96c89ecc45b9ddf74e8ba7a0462d8b396ed`
+on an isolated Ubuntu 24.04 amd64 Testbox with Python
 3.12.16 and Go 1.27.3: 24 historical judge tests, 212 SkillSpector tests and 259
 AIG adapter tests. The immutable image passed its network-disabled MCP CLI and
 Codex version checks. Both worker lanes accepted the real clean source and its
@@ -84,6 +87,13 @@ expectation changed for that runner repair.
 These checks make no provider calls. Full native Template consumer qualification
 remains required before landing; image publication, SDK tests and admission
 checks do not establish provider or production acceptance.
+
+The final tag image was separately pulled by immutable digest on a fresh Ubuntu
+24.04 amd64 Testbox. Its source/version labels, MCP CLI, AIG MCP 0.2.0 and Codex
+0.164.0 passed with container networking disabled. The root image reports
+SkillSpector 2.12.0 and OpenAI SDK 2.54.0; those image packages do not replace the
+separately locked host scanner environments. Testbox workflow:
+https://github.com/openclaw/clawhub/actions/runs/45566877707.
 
 ### Historical provider qualification
 
