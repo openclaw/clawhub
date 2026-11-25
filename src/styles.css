@@ -589,9 +589,12 @@ code {
   position: sticky;
   top: 0;
   z-index: 10;
-  /* Sticky navigation must obscure page content in every route and scroll state. */
-  background: var(--nav-bg);
   border-bottom: 1px solid var(--line);
+}
+
+.navbar[data-scrolled="true"] {
+  /* Keep page content from showing through the sticky navigation as it scrolls beneath it. */
+  background: var(--nav-bg);
 }
 
 .app-shell:has(

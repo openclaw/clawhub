@@ -20,7 +20,7 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { api } from "../../convex/_generated/api";
 import {
   emitPublicSearchSubmission,
@@ -67,6 +67,15 @@ const THEME_MODE_ITEMS = [
   { mode: "dark", label: "Dark theme", Icon: Moon },
 ] as const;
 const CLAWHUB_BRAND_MARK_SRC = "/logo-transparent.png";
+
+function subscribeToWindowScroll(onScroll: () => void) {
+  window.addEventListener("scroll", onScroll, { passive: true });
+  return () => window.removeEventListener("scroll", onScroll);
+}
+
+function isPageScrolled() {
+  return window.scrollY > 0;
+}
 
 function useAppleSearchShortcut() {
   const [isApple, setIsApple] = useState(true);
@@ -141,6 +150,7 @@ export default function Header() {
   const { theme, mode, setMode } = useThemeMode();
   const navigate = useNavigate();
   const location = useLocation();
+  const isScrolled = useSyncExternalStore(subscribeToWindowScroll, isPageScrolled, () => false);
 
   const avatar = me?.image ?? (me?.email ? gravatarUrl(me.email) : undefined);
   const rawHandle = me?.handle ?? me?.displayName ?? "user";
@@ -463,7 +473,7 @@ export default function Header() {
   };
 
   return (
-    <header className="navbar navbar-calm">
+    <header className="navbar navbar-calm" data-scrolled={isScrolled ? "true" : undefined}>
       <div className="navbar-inner">
         <div className="navbar-top">
           <div className="navbar-calm-start">
