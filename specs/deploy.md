@@ -134,9 +134,13 @@ two workflows share no trigger, environment, or concurrency group.
 - Deploy Test and `Reserve Test` share the `deploy-test` concurrency group, so a
   reservation still holds back a Test deploy.
 
-One-time configuration: the GitHub `Test` environment must permit the `next`
-branch. Keep `main` permitted. The Test workers, `Reserve Test`, `Preview Proof`,
-and the Test template canary run from `main` in that environment.
+One-time configuration: follow the OpenClaw ID staging branch policy. Protect
+`next` against deletion and non-fast-forward updates before granting it access
+to the GitHub `Test` environment. Ordinary repository writers can push; there
+is no separate deploy team. Writers can change the workflow that uses Test
+credentials, so this policy applies to Test only. Keep `main` permitted: the
+Test workers, `Reserve Test`, `Preview Proof`, and the Test template canary
+run from `main` in that environment.
 
 Because Test no longer tracks `main`, automation that runs from `main` against
 Test has these limits:
@@ -150,9 +154,10 @@ Test has these limits:
 - A Deploy Test run for a `main` commit exists only if `next` pointed at that
   commit when it deployed. Release gates that require an exact-SHA Deploy Test
   for a `main` commit, in other specs and in the production release skill, can
-  be met only that way. Squash and rebase merges give `main` new commit IDs, so
-  this needs `next` to be moved to the `main` commit. Moving it when it holds
-  commits that `main` lacks rewrites `next`; that is an owner decision.
+  be met only that way. After a squash or rebase, the new `main` SHA may not
+  have such a run. In that case, stop the production release. Do not count a
+  different SHA, force-push `next`, or delete and recreate it to qualify a
+  release.
 - The CLAW-563, 577, 583, 589, and 590 proof jobs in `deploy-test.yml` are
   retired. Their branches are merged and deleted, and the jobs cannot run.
 

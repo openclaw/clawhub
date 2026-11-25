@@ -44,8 +44,8 @@ gh run list \
 ```
 
 If no successful exact-SHA Test run exists, stop and ask the owner before
-releasing production. `Deploy Test` cannot be run from `main`. Do not move or
-rewrite `next` to create the run unless the owner asks for that.
+releasing production. `Deploy Test` cannot be run from `main`. Never force-push
+or delete and recreate `next` to manufacture a qualifying run.
 
 3. Run the required pre-merge or release validation for the changed surface.
 4. Dispatch one target:
