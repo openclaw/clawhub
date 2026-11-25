@@ -191,15 +191,11 @@ This note preserves the complete UI direction established during the June 2026 d
 
 ## Identity-only native Install handoff
 
-The public catalog detail header owns the install action at every viewport.
-Plugins use **Install**, Templates use **Add**, and hosted skills use **Add**
-when eligible or **Install options** when only fallback instructions are available.
-Opening the action shows one install dialog; it neither launches OpenClaw nor
-installs anything. The desktop rail contains metadata and listing utilities,
-not a second install card. Mobile uses the same action, not a duplicate card
-before the content. Blocked Templates keep their repair guidance on the page.
+Public Skill, Plugin and Template details show one inline install card at the top of the metadata rail (stacked on small screens). There is no install action in the header or intermediate install dialog. Blocked Templates keep their repair guidance and cannot offer a native handoff.
 
-For eligible hosted listings, the dialog opens on **CLI** and the **Desktop**
+The audit verdict and its meter are one hoverable, keyboard-focusable link to the listing’s actual public report. Version metadata opens release files and management controls without a separate Package contents, Package details or Activity & details row.
+
+For eligible hosted listings, the card opens on **CLI** and the **Desktop**
 tab holds the text-only **Install in OpenClaw** link. CLI comes first because
 the website cannot detect whether the installed app supports the handoff. Keep
 the flat CLI | Desktop toggle and the command shell with its `$` marker and

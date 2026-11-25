@@ -49,21 +49,6 @@
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-.skill-catalog-detail .skill-catalog-add {
-  height: 36px;
-  min-height: 36px;
-  padding: 0 18px;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  background: var(--detail-primary);
-  box-shadow: 0 1px 3px light-dark(rgb(189 69 49 / 8%), rgb(209 60 60 / 8%));
-  color: white;
-  letter-spacing: -0.01em;
-  font: inherit;
-  font-size: 13.5px;
-  font-weight: 500;
-  line-height: normal;
-}
 .skill-catalog-detail .skill-catalog-add:hover {
   background: light-dark(#aa3d2b, #c22e2e);
 }
@@ -129,21 +114,6 @@
 .skill-catalog-detail .skill-catalog-well > button:hover {
   color: var(--detail-strong);
 }
-.skill-catalog-page .skill-catalog-more {
-  min-width: 0;
-  color: var(--detail-muted, var(--ink-soft));
-  font-size: 13.5px;
-}
-.skill-catalog-page .skill-catalog-more > summary {
-  width: fit-content;
-  cursor: pointer;
-}
-.skill-catalog-page .skill-catalog-more[open] > summary {
-  margin-bottom: 16px;
-}
-.skill-catalog-page .skill-catalog-more[open] > :not(summary) + :not(summary) {
-  margin-top: 22px;
-}
 .skill-catalog-detail .skill-catalog-secondary-actions {
   display: flex;
   flex-wrap: wrap;
@@ -155,11 +125,11 @@
   padding: 0;
   border: 0;
 }
-.skill-catalog-page .skill-catalog-contents .tab-card {
+.skill-release-dialog .tab-card {
   width: 100%;
   min-width: 0;
 }
-.skill-catalog-page .skill-catalog-contents .tab-header {
+.skill-release-dialog .tab-header {
   display: flex;
   overflow-x: auto;
 }
@@ -316,9 +286,6 @@
     flex-wrap: nowrap;
     align-items: center;
   }
-  .skill-catalog-detail .catalog-detail__actions {
-    flex: none;
-  }
   .skill-catalog-detail .catalog-detail__actions .skill-catalog-add {
     width: auto;
     height: 38px;
@@ -348,10 +315,10 @@
   }
 }
 
-/* The website's files, versions and related listings remain accessible without
-   pushing the catalog rail below the package controls on a phone. */
-.skill-catalog-page > .skill-catalog-contents {
-  width: 100%;
-  max-width: 1088px;
-  margin: 32px auto 0;
+.skill-release-dialog[data-slot="dialog-content"] {
+  grid-template-columns: minmax(0, 1fr);
+  width: min(900px, calc(100vw - 32px));
+  max-height: 85dvh;
+  overflow: auto;
+  overflow-wrap: anywhere;
 }

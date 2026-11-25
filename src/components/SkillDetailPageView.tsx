@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { Bookmark, BookOpenText, Flag, Settings, ShieldCheck, Upload } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import type { SkillPublicationProgress } from "../../convex/lib/skillPublicationProgress";
 import type { ActivityTrend } from "../lib/activityTrend";
@@ -18,6 +18,7 @@ import { buildPublisherProfileHref } from "../lib/ownerRoute";
 import { presentationTitle } from "../lib/presentationTitle";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { getClawHubSiteUrl } from "../lib/site";
+import { skillTabFromHash } from "../lib/skillDetailTabs";
 import { useHeroCreatorPublisher } from "../lib/useHeroCreatorPublisher";
 import { cn } from "../lib/utils";
 import {
@@ -602,22 +603,6 @@ export function SkillDetailPageView({
             {titleAccessory}
           </>
         }
-        actions={
-          installCommandCard && installContent === undefined ? (
-            <Dialog>
-              <DialogTrigger asChild>
-                <button type="button" className="skill-catalog-add">
-                  {canOpenInstall ? "Add" : "Install options"}
-                </button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogTitle>Install {displayName}</DialogTitle>
-                <DialogDescription>Choose how to install this skill.</DialogDescription>
-                {installCommandCard}
-              </DialogContent>
-            </Dialog>
-          ) : undefined
-        }
         summary={
           headerDescription && (
             <span data-analytics-public-detail="">
@@ -626,70 +611,82 @@ export function SkillDetailPageView({
           )
         }
         sidebar={
-          renderSidebarContent ? (
-            renderSidebarContent()
-          ) : (
-            <>
-              <div className="skill-catalog-facts" role="group" aria-label="Skill metadata">
-                {securityAuditHref && (
-                  <CatalogDetailFact label={<DetailSecuritySummaryLabel label="Security check" />}>
-                    <DetailSecuritySummary
-                      llmAnalysis={latestVersion?.llmAnalysis}
-                      githubScanStatus={!latestVersion ? skill.githubScanStatus : null}
-                      auditHref={securityAuditHref}
-                    />
-                  </CatalogDetailFact>
-                )}
-                {showArchiveMetadata && latestVersion?.version && (
-                  <CatalogDetailFact label="Version">{latestVersion.version}</CatalogDetailFact>
-                )}
-                {Number.isFinite(updatedAt.valueOf()) && (
-                  <CatalogDetailFact label="Updated">
-                    <time dateTime={updatedAt.toISOString()}>
-                      {dateFormatter.format(updatedAt)}
-                    </time>
-                  </CatalogDetailFact>
-                )}
-                {showArchiveMetadata && latestVersion?.parsed?.license && (
-                  <CatalogDetailFact label="License">
-                    {latestVersion.parsed.license}
-                  </CatalogDetailFact>
-                )}
-                {platforms?.length ? (
-                  <CatalogDetailFact label="Platforms">
-                    {platforms.map((os) => (
-                      <span className="skill-catalog-chip" key={os}>
-                        {os}
-                      </span>
-                    ))}
-                  </CatalogDetailFact>
-                ) : null}
-              </div>
-              <details className="skill-catalog-more">
-                <summary>Activity &amp; details</summary>
-                <div className="skill-catalog-facts">
-                  {creatorPublisher?.official && !officialSkill && (
-                    <CatalogDetailFact label="Publisher">
-                      <span>Official publisher</span>
+          <>
+            {installCommandCard}
+            {renderSidebarContent ? (
+              renderSidebarContent()
+            ) : (
+              <>
+                <div className="skill-catalog-facts" role="group" aria-label="Skill metadata">
+                  {securityAuditHref && (
+                    <CatalogDetailFact
+                      label={<DetailSecuritySummaryLabel label="Security check" />}
+                    >
+                      <DetailSecuritySummary
+                        llmAnalysis={latestVersion?.llmAnalysis}
+                        githubScanStatus={!latestVersion ? skill.githubScanStatus : null}
+                        auditHref={securityAuditHref}
+                      />
                     </CatalogDetailFact>
                   )}
-                  <CatalogDetailFact label={downloads.label}>{downloads.value}</CatalogDetailFact>
-                  {repository && (
-                    <CatalogDetailFact label="Repository">{repository}</CatalogDetailFact>
+                  <CatalogDetailFact
+                    label={showArchiveMetadata && latestVersion?.version ? "Version" : "Files"}
+                  >
+                    <SkillReleaseDetails
+                      key={skill.slug}
+                      name={displayName}
+                      version={showArchiveMetadata ? latestVersion?.version : undefined}
+                    >
+                      {packageDetails}
+                      <div className="skill-catalog-facts">
+                        {creatorPublisher?.official && !officialSkill && (
+                          <CatalogDetailFact label="Publisher">
+                            <span>Official publisher</span>
+                          </CatalogDetailFact>
+                        )}
+                        <CatalogDetailFact label={downloads.label}>
+                          {downloads.value}
+                        </CatalogDetailFact>
+                        {repository && (
+                          <CatalogDetailFact label="Repository">{repository}</CatalogDetailFact>
+                        )}
+                      </div>
+                    </SkillReleaseDetails>
+                  </CatalogDetailFact>
+                  {Number.isFinite(updatedAt.valueOf()) && (
+                    <CatalogDetailFact label="Updated">
+                      <time dateTime={updatedAt.toISOString()}>
+                        {dateFormatter.format(updatedAt)}
+                      </time>
+                    </CatalogDetailFact>
                   )}
+                  {showArchiveMetadata && latestVersion?.parsed?.license && (
+                    <CatalogDetailFact label="License">
+                      {latestVersion.parsed.license}
+                    </CatalogDetailFact>
+                  )}
+                  {platforms?.length ? (
+                    <CatalogDetailFact label="Platforms">
+                      {platforms.map((os) => (
+                        <span className="skill-catalog-chip" key={os}>
+                          {os}
+                        </span>
+                      ))}
+                    </CatalogDetailFact>
+                  ) : null}
                 </div>
+
                 <div className="skill-catalog-secondary-actions">
                   {showBookmarkAction && renderStarAction()}
                   {renderSidebarActions()}
                 </div>
-              </details>
-            </>
-          )
+              </>
+            )}
+          </>
         }
       >
         {heroNotice}
         {overview}
-        {installContent !== undefined ? installCommandCard : null}
         {postInstallContent}
         {showHeroMeta ? (
           <div className="skill-hero-meta-row" aria-label="Skill lineage">
@@ -722,7 +719,6 @@ export function SkillDetailPageView({
         )}
         {renderSidebarContent ? packageDetails : null}
       </CatalogDetailLayout>
-      {!renderSidebarContent && <SkillPackageDetails>{packageDetails}</SkillPackageDetails>}
       {pageOverlays}
     </main>
   );
@@ -778,28 +774,51 @@ function SkillCatalogTile({
   );
 }
 
-function SkillPackageDetails({ children }: { children: ReactNode }) {
-  const details = useRef<HTMLDetailsElement>(null);
+function SkillReleaseDetails({
+  children,
+  name,
+  version,
+}: {
+  children: ReactNode;
+  name: string;
+  version?: string;
+}) {
+  const [open, setOpen] = useState(false);
   useEffect(() => {
-    // Keep existing file, diff and version deep links visible on initial load and navigation.
-    const showLinkedTab = () => {
-      if (
-        details.current &&
-        /^#(?:readme|files|skill-card|card|evaluation|compare|diff|versions|runtime|dependencies|install|links)$/iu.test(
-          window.location.hash,
-        )
-      )
-        details.current.open = true;
-    };
-    showLinkedTab();
-    window.addEventListener("hashchange", showLinkedTab);
-    return () => window.removeEventListener("hashchange", showLinkedTab);
+    // Existing file, diff and version URLs must open their tab, not a hidden panel.
+    const sync = () => setOpen(skillTabFromHash(window.location.hash) !== null);
+    sync();
+    window.addEventListener("hashchange", sync);
+    return () => window.removeEventListener("hashchange", sync);
   }, []);
   return (
-    <details ref={details} className="skill-catalog-more skill-catalog-contents">
-      <summary>Package contents</summary>
-      {children}
-    </details>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next && skillTabFromHash(window.location.hash) !== null)
+          window.history.replaceState(
+            window.history.state,
+            "",
+            window.location.pathname + window.location.search,
+          );
+      }}
+    >
+      <DialogTrigger asChild>
+        <button
+          type="button"
+          className="catalog-detail__release"
+          aria-label={version ? "View release " + version : "View files"}
+        >
+          {version ?? "View files"}
+        </button>
+      </DialogTrigger>
+      <DialogContent className="skill-release-dialog">
+        <DialogTitle>Release details</DialogTitle>
+        <DialogDescription>{name}</DialogDescription>
+        {children}
+      </DialogContent>
+    </Dialog>
   );
 }
 

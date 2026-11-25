@@ -295,22 +295,10 @@ export function TemplateDetailPage({
             {detail.owner?.official && <OfficialBadge iconOnly size={14} />}
           </>
         }
-        actions={
-          <Dialog>
-            <DialogTrigger asChild>
-              <button type="button" className="template-catalog-add" disabled={!ready}>
-                Add
-              </button>
-            </DialogTrigger>
-            <DialogContent aria-describedby={undefined}>
-              <DialogTitle>Add Template</DialogTitle>
-              {installSurface}
-            </DialogContent>
-          </Dialog>
-        }
         summary={description}
         sidebar={
           <>
+            {installSurface}
             <CatalogDetailFact label={<DetailSecuritySummaryLabel />}>
               <DetailSecuritySummary
                 auditHref={auditHref}
@@ -346,7 +334,6 @@ export function TemplateDetailPage({
         }
       >
         {pendingNotice}
-        {!ready && !documentLoading && installSurface}
         {documentLoading && <p role="status">Loading Template instructions…</p>}
         {documentResult?.failed && (
           <p role="alert">

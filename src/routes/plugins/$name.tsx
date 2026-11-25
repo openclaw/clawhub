@@ -61,7 +61,6 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "../../components/ui/dialog";
 import { getActivityTrendEndDay } from "../../lib/activityTrend";
 import { formatRetryDelay } from "../../lib/formatRetryDelay";
@@ -1227,31 +1226,6 @@ function PluginDetailPageContent({ name, loaderData, pendingNotice }: PluginDeta
             </>
           ) : undefined
         }
-        actions={
-          isPlugin ? (
-            <Dialog>
-              <DialogTrigger asChild>
-                <button
-                  className="plugin-catalog-action plugin-catalog-action--primary"
-                  type="button"
-                  disabled={isDownloadBlocked}
-                  aria-describedby={isDownloadBlocked ? "plugin-blocked-notice" : undefined}
-                >
-                  Install
-                </button>
-              </DialogTrigger>
-              {!isDownloadBlocked ? (
-                <DialogContent className="plugin-install-dialog">
-                  <DialogHeader>
-                    <DialogTitle>Install {title}</DialogTitle>
-                    <DialogDescription>Choose an install method.</DialogDescription>
-                  </DialogHeader>
-                  {installCommandCard}
-                </DialogContent>
-              ) : null}
-            </Dialog>
-          ) : undefined
-        }
         summary={
           pkg.summary ? (
             <p data-analytics-public-detail="">
@@ -1261,46 +1235,38 @@ function PluginDetailPageContent({ name, loaderData, pendingNotice }: PluginDeta
         }
         sidebar={
           <>
+            {!isDownloadBlocked && installCommandCard}
             <PluginCatalogRail
+              releaseDetails={
+                <PluginPackageDetails
+                  version={pkg.latestVersion ?? latestRelease?.version}
+                  downloadHref={pkg.latestVersion && !isDownloadBlocked ? downloadPath : null}
+                  name={title}
+                  activeTab={activeTab}
+                  onTab={selectTab}
+                  activity={activityPanel}
+                  configuration={configurationPanel}
+                  compatibility={compatibilityPanel}
+                  versionsPanel={versionsPanel}
+                />
+              }
               pkg={pkg}
               release={latestRelease}
               ownerHandle={owner?.handle}
               onEditTopics={manageContext ? () => setIsCatalogMetadataDialogOpen(true) : undefined}
             />
-            <div className="plugin-catalog-utilities">
-              {newVersionHref ? (
+            {newVersionHref ? (
+              <div className="plugin-catalog-utilities">
                 <a className="plugin-catalog-utility" href={newVersionHref}>
                   <Upload size={14} aria-hidden="true" />
                   New version
                 </a>
-              ) : null}
-              <PluginPackageDetails
-                downloadHref={pkg.latestVersion && !isDownloadBlocked ? downloadPath : null}
-                name={title}
-                activeTab={activeTab}
-                onTab={selectTab}
-                activity={activityPanel}
-                configuration={configurationPanel}
-                compatibility={compatibilityPanel}
-                versionsPanel={versionsPanel}
-              />
-            </div>
+              </div>
+            ) : null}
           </>
         }
       >
         {pendingNotice}
-        {!isDownloadBlocked &&
-          (!isPlugin ? (
-            installCommandCard
-          ) : (
-            <noscript>
-              <p>Install via CLI:</p>
-              <pre>
-                <code>{installCommand}</code>
-              </pre>
-              {pkg.latestVersion ? <a href={downloadPath}>Download</a> : null}
-            </noscript>
-          ))}
         {isDownloadBlocked ? (
           <div id="plugin-blocked-notice" role="status">
             <Badge variant="destructive">Download blocked</Badge>

@@ -467,11 +467,6 @@ function openReleaseBrowser() {
   return within(screen.getByRole("dialog", { name: "Release files" }));
 }
 
-function openInstallOptions() {
-  fireEvent.click(screen.getByRole("button", { name: "Add" }));
-  return within(screen.getByRole("dialog", { name: "Add Template" }));
-}
-
 function renderTemplate(
   options: {
     status?: NonNullable<PackageDetailResponse["package"]>["scanStatus"];
@@ -632,7 +627,6 @@ describe("Template detail composition and interactions", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     await act(async () => finish(templateContents));
-    openInstallOptions();
     expect(
       screen
         .getByRole("button", { name: "Copy template install command" })
@@ -655,16 +649,20 @@ describe("Template detail composition and interactions", () => {
     }
   });
 
-  it("opens the single guarded install card from Add without taking up rail space", () => {
+  it("offers CLI and desktop install directly in the sidebar without an Add or Install proxy", () => {
     renderTemplate();
-    expect(screen.queryByRole("article", { name: "Install" })).toBeNull();
-    const dialog = openInstallOptions();
-    expect(dialog.getByRole("article", { name: "Install" })).toBeTruthy();
-    fireEvent.click(dialog.getByRole("button", { name: "Desktop" }));
-    expect(dialog.getByRole("link", { name: "Install in OpenClaw" }).getAttribute("href")).toBe(
-      "openclaw://templates/install?name=%40maker%2Frelease-brief",
-    );
-    expect(document.querySelectorAll(".skill-install-command-card")).toHaveLength(1);
+    const sidebar = screen.getByRole("complementary");
+    const card = screen.getByRole("article", { name: "Install" });
+    expect(sidebar.contains(card)).toBe(true);
+    expect(screen.queryByRole("button", { name: /^(Add|Install)$/i })).toBeNull();
+    expect(
+      within(card).getByRole("button", { name: "Copy template install command" }),
+    ).toBeTruthy();
+    fireEvent.click(within(card).getByRole("button", { name: "Desktop" }));
+    expect(
+      within(card).getByRole("link", { name: "Install in OpenClaw" }).getAttribute("href"),
+    ).toBe("openclaw://templates/install?name=%40maker%2Frelease-brief");
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it.each([
@@ -745,14 +743,13 @@ describe("Template detail composition and interactions", () => {
     },
   );
 
-  it("matches the template overview and routes Audit to this release", () => {
+  it("matches the template overview and links the security verdict to this release", () => {
     renderTemplate();
     expect(screen.getByRole("navigation", { name: "Breadcrumb" }).textContent).toBe(
       "TemplatesRelease Brief",
     );
     expect(screen.queryByRole("tablist")).toBeNull();
     expect(screen.getByRole("link", { name: "@maker" }).getAttribute("href")).toBe("/maker");
-    expect(screen.getByRole("button", { name: "Add" }).hasAttribute("disabled")).toBe(false);
     expect(screen.getByText("Engineering")).toBeTruthy();
     expect(screen.queryByText(/schemaVersion/)).toBeNull();
     const facts = within(screen.getByRole("complementary"));
@@ -761,10 +758,12 @@ describe("Template detail composition and interactions", () => {
     );
     expect(facts.getByText(localDate)).toBeTruthy();
     expect(facts.getByText("0.1.0")).toBeTruthy();
-    expect(facts.getByRole("link", { name: "View Security Audit" }).getAttribute("href")).toBe(
+    const audit = facts.getByRole("link", { name: /View Security Audit.*Unavailable/i });
+    expect(audit.getAttribute("href")).toBe(
       "/maker/templates/release-brief/security-audit?version=0.1.0",
     );
-    expect(facts.getByText("Audit")).toBeTruthy();
+    expect(within(audit).getByText("Unavailable")).toBeTruthy();
+    expect(facts.queryByText(/^Audit$/i)).toBeNull();
   });
 
   it("reads a bundled skill's pinned SKILL.md only when its capability row opens", async () => {
@@ -798,6 +797,40 @@ describe("Template detail composition and interactions", () => {
     expect(url.pathname).toBe("/api/v1/skills/release-search/card");
     expect(url.searchParams.get("ownerHandle")).toBe("maker");
     expect(url.searchParams.get("version")).toBe("1.2.3");
+  });
+
+  it("opens the corresponding release metadata for each row in the Plugins section", () => {
+    const workspacePath = ".openclaw/extensions/alerts/openclaw.plugin.json";
+    renderTemplate({
+      contents:
+        "---\n" +
+        JSON.stringify({
+          ...manifest,
+          plugins: [...manifest.plugins, { path: "plugins/handoff" }],
+          workspace: { files: [{ source: "workspace/alerts.json", path: workspacePath }] },
+          mcpServers: {
+            filings: {
+              url: "https://example.test/mcp",
+              transport: "streamable-http",
+              auth: "oauth",
+            },
+          },
+        }) +
+        "\n---\n# Release instructions",
+    });
+    const plugins = within(screen.getByRole("region", { name: "Plugins" }));
+    for (const [name, metadata] of [
+      ["@maker/release-alerts", "2.0.0"],
+      ["plugins/handoff", "Bundled · plugins/handoff"],
+      ["alerts", "Workspace file · " + workspacePath],
+      ["filings", "MCP server"],
+    ] as const) {
+      fireEvent.click(plugins.getByRole("button", { name: (label) => label.startsWith(name) }));
+      const dialog = screen.getByRole("dialog", { name });
+      expect(dialog.textContent).toContain(metadata);
+      fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+      expect(screen.queryByRole("dialog")).toBeNull();
+    }
   });
 
   it("renders actual pinned package dependencies and automation configuration", () => {
@@ -964,7 +997,6 @@ describe("Template detail composition and interactions", () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
     renderTemplate({ name: "release-brief" });
-    openInstallOptions();
     fireEvent.click(screen.getByRole("button", { name: "Copy template install command" }));
     await waitFor(() =>
       expect(writeText).toHaveBeenCalledWith("openclaw templates add @maker/release-brief"),
@@ -986,8 +1018,6 @@ describe("Template detail composition and interactions", () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
     renderTemplate();
-    openInstallOptions();
-    fireEvent.click(screen.getByRole("button", { name: "CLI" }));
     const button = screen.getByRole("button", { name: "Copy template install command" });
     fireEvent.click(button);
     await waitFor(() => expect(button.getAttribute("data-copy-state")).toBe("copied"));
@@ -1071,8 +1101,6 @@ describe("Template detail composition and interactions", () => {
       value: { writeText: vi.fn().mockRejectedValue(new Error("Denied")) },
     });
     renderTemplate();
-    openInstallOptions();
-    fireEvent.click(screen.getByRole("button", { name: "CLI" }));
     const button = screen.getByRole("button", { name: "Copy template install command" });
     fireEvent.click(button);
     await waitFor(() => expect(button.getAttribute("data-copy-state")).toBe("failed"));
@@ -1089,23 +1117,25 @@ describe("Template detail composition and interactions", () => {
     (status, auditStatus, label, level) => {
       const summary = "Release audit details remain available.";
       renderTemplate({ status, llmAnalysis: { status: auditStatus, checkedAt: 1, summary } });
-      const install = screen.getByRole("region", { name: "Install Template" });
+      const metadata = screen.getByRole("complementary");
+      const install = within(metadata).getByRole("region", { name: "Install Template" });
+      expect(within(install).queryByRole("button", { name: "Desktop" })).toBeNull();
+      expect(screen.queryByRole("button", { name: /^(Add|Install)$/i })).toBeNull();
       expect(install.querySelector("p")).toBeNull();
       expect(install.querySelector(".template-detail-install-warning")).toBeNull();
       expect(within(install).queryByRole("alert")).toBeNull();
       expect(within(install).queryByRole("status")).toBeNull();
-      const metadata = screen.getByRole("complementary");
       expect(within(metadata).getByText("Security audit")).toBeTruthy();
-      expect(within(metadata).getByText(label)).toBeTruthy();
       expect(within(metadata).getByText(summary)).toBeTruthy();
-      const link = within(metadata).getByRole("link", { name: "View Security Audit" });
+      const link = within(metadata).getByRole("link", {
+        name: new RegExp("View Security Audit.*" + label, "i"),
+      });
+      expect(within(link).getByText(label)).toBeTruthy();
       expect(link.closest("[title]")?.getAttribute("title")).toBe(summary);
       expect(document.getElementById(link.getAttribute("aria-describedby")!)?.textContent).toBe(
         summary,
       );
-      expect(metadata.querySelector(".security-audit-meter")?.getAttribute("data-level")).toBe(
-        level,
-      );
+      expect(link.querySelector(".security-audit-meter")?.getAttribute("data-level")).toBe(level);
       expect(screen.queryByRole("button", { name: "Copy template install command" })).toBeNull();
       expect(screen.queryByRole("link", { name: "Install in OpenClaw" })).toBeNull();
       expect(document.querySelector(".skill-install-command")?.textContent).toBe(

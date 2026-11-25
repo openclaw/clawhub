@@ -20,9 +20,6 @@
   height: 60%;
   stroke-width: 1.55px;
 }
-.template-catalog-detail .catalog-detail__actions {
-  flex: none;
-}
 .template-catalog-detail .catalog-detail__publisher a {
   align-content: center;
   min-height: 24px;
@@ -32,25 +29,8 @@
 .template-catalog-detail .catalog-detail__publisher a:hover {
   text-decoration: underline;
 }
-.template-catalog-detail .template-catalog-add {
-  height: 36px;
-  min-height: 36px;
-  padding: 0 18px;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  background: var(--detail-primary);
-  box-shadow: 0 1px 3px color-mix(in srgb, var(--detail-primary) 8%, transparent);
-  letter-spacing: -0.01em;
-  color: #fff;
-  font: 500 13.5px/normal var(--font-body);
-  cursor: pointer;
-}
 .template-catalog-detail .template-catalog-add:not(:disabled):hover {
   background: light-dark(#a83c29, #e44c4c);
-}
-.template-catalog-detail .template-catalog-add:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 .template-catalog-category {
   display: inline-flex;
@@ -269,10 +249,19 @@
   display: block;
   margin: 8px 28px 0 46px;
 }
-.template-catalog-file-dialog {
+.template-catalog-file-dialog[data-slot="dialog-content"] {
+  grid-template-columns: minmax(0, 1fr);
+  overflow-wrap: anywhere;
   width: min(720px, calc(100vw - 32px));
   max-height: 84dvh;
   overflow-y: auto;
+}
+.template-catalog-plugin-info a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.template-catalog-plugin-info p {
+  margin-top: 12px;
 }
 .template-catalog-browse {
   justify-self: start;
@@ -295,11 +284,6 @@
   .template-catalog-detail .catalog-detail__publisher a {
     margin-block: -6px;
     padding-block: 6px;
-  }
-  .template-catalog-detail .template-catalog-add {
-    height: 38px;
-    min-height: 38px;
-    padding: 0 14px;
   }
   .template-catalog-personality {
     --template-readme-clamp: 120px;

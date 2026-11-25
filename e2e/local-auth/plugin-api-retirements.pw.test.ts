@@ -23,9 +23,10 @@ test("retirement notices stay off plugin pages and remain available in the manag
   ]);
   await page.goto("/plugins/local-api-retirement-plugin", { waitUntil: "domcontentloaded" });
   await waitForHydration(page);
+  const install = page.getByRole("complementary").getByRole("article", { name: "Install" });
   const notice = page.getByRole("region", { name: "OpenClaw API updates" });
   await expect(page.getByRole("heading", { name: "Local API Retirement Example" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Install", exact: true })).toBeVisible();
+  await expect(install).toBeVisible();
   await expect(notice).toHaveCount(0);
   await expect(page.getByText("API details", { exact: true })).toHaveCount(0);
   await expect(page.getByText(/This plugin is incompatible/)).toHaveCount(0);
@@ -34,7 +35,7 @@ test("retirement notices stay off plugin pages and remain available in the manag
     await page.screenshot({ path: testInfo.outputPath("after-desktop.png"), fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(notice).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Install", exact: true })).toBeVisible();
+    await expect(install).toBeVisible();
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     ).toBe(true);
@@ -50,10 +51,10 @@ test("retirement notices stay off plugin pages and remain available in the manag
   await waitForHydration(page);
   await expect(page.getByRole("heading", { name: "Local Current API Example" })).toBeVisible();
   await expect(notice).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Install", exact: true })).toBeVisible();
+  await expect(install).toBeVisible();
 
   await page.goto("/plugins/local-api-retirement-incompatible", { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("button", { name: "Install", exact: true })).toBeVisible();
+  await expect(install).toBeVisible();
   await expect(notice).toHaveCount(0);
   await expect(
     page.getByText("This plugin is incompatible with OpenClaw versions greater than 2026.10.1."),
@@ -62,7 +63,7 @@ test("retirement notices stay off plugin pages and remain available in the manag
   await signInAsLocalPersona(page, "owner");
   await page.goto("/plugins/local-api-retirement-plugin", { waitUntil: "domcontentloaded" });
   await waitForHydration(page);
-  await expect(page.getByRole("button", { name: "Install", exact: true })).toBeVisible();
+  await expect(install).toBeVisible();
   await expect(notice).toHaveCount(0);
   await page.goto("/dashboard");
   await waitForHydration(page);

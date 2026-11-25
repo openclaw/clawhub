@@ -1,6 +1,6 @@
 /* @vitest-environment jsdom */
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeSkillDetailPageViewProps } from "../__tests__/helpers/skillDetailPageView";
@@ -34,7 +34,7 @@ describe("SkillDetailPageView", () => {
   });
 
   it.each([false, true])(
-    "opens exactly one command card from the hero on desktop and mobile (%s)",
+    "shows exactly one inline install card in the sidebar on desktop and mobile (%s)",
     (mobile) => {
       vi.stubGlobal("matchMedia", () => ({
         matches: mobile,
@@ -46,10 +46,10 @@ describe("SkillDetailPageView", () => {
           <SkillDetailPageView {...makeMinimalProps()} />
         </TooltipProvider>,
       );
-      fireEvent.click(screen.getByRole("button", { name: "Install options" }));
       const card = screen.getByRole("article", { name: "Install" });
-      expect(card.closest('[role="dialog"]')).toBeTruthy();
-      expect(document.querySelectorAll(".skill-install-command-card")).toHaveLength(1);
+      expect(screen.getByRole("complementary").contains(card)).toBe(true);
+      expect(screen.queryByRole("button", { name: /^(Add|Install|Install options)$/ })).toBeNull();
+      expect(screen.queryByRole("dialog")).toBeNull();
     },
   );
 
@@ -59,12 +59,13 @@ describe("SkillDetailPageView", () => {
         <SkillDetailPageView {...makeInstallableProps()} />
       </TooltipProvider>,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Add" }));
-    fireEvent.click(screen.getByRole("button", { name: "Desktop" }));
-    const link = screen.getByRole("link", { name: "Install in OpenClaw" });
+    const card = within(screen.getByRole("complementary")).getByRole("article", {
+      name: "Install",
+    });
+    fireEvent.click(within(card).getByRole("button", { name: "Desktop" }));
+    const link = within(card).getByRole("link", { name: "Install in OpenClaw" });
     expect(link.getAttribute("href")).toBe("openclaw://skills/install?name=%40publisher%2Fdemo");
-    expect(link.closest('[role="dialog"]')).not.toBeNull();
-    expect(link.closest(".skill-install-command-card")).not.toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(link.querySelector("svg")).toBeNull();
   });
 
@@ -101,8 +102,7 @@ describe("SkillDetailPageView", () => {
       </TooltipProvider>,
     );
     expect(screen.queryByRole("button", { name: "Add" })).toBeNull();
-    const options = screen.queryByRole("button", { name: "Install options" });
-    if (options) fireEvent.click(options);
+    expect(screen.queryByRole("button", { name: "Install options" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Desktop" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Install in OpenClaw" })).toBeNull();
   });
@@ -115,8 +115,7 @@ describe("SkillDetailPageView", () => {
       </TooltipProvider>,
     );
     expect(screen.queryByRole("button", { name: "Add" })).toBeNull();
-    const options = screen.queryByRole("button", { name: "Install options" });
-    if (options) fireEvent.click(options);
+    expect(screen.queryByRole("button", { name: "Install options" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Desktop" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Install in OpenClaw" })).toBeNull();
   });
@@ -186,7 +185,10 @@ describe("SkillDetailPageView", () => {
     );
 
     expect(container.querySelector(".catalog-detail__icon .lucide-book-open-text")).toBeTruthy();
-    const taxonomy = container.querySelector(".skill-hero-taxonomy-row");
+    fireEvent.click(screen.getByRole("button", { name: "View files" }));
+    const taxonomy = screen
+      .getByRole("dialog", { name: "Release details" })
+      .querySelector(".skill-hero-taxonomy-row");
     expect(taxonomy).toBeTruthy();
     expect(taxonomy?.textContent).toContain("Synced from skills.sh");
     expect(taxonomy?.textContent).toContain("Development");
@@ -233,7 +235,12 @@ describe("SkillDetailPageView", () => {
     const image = container.querySelector(".catalog-detail__icon img");
     if (_kind === "hosted") expect(image?.getAttribute("src")).toBe(icon);
     else expect(image).toBeNull();
-    expect(container.querySelector(".skill-hero-taxonomy-row .skill-category-icon")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "View files" }));
+    expect(
+      screen
+        .getByRole("dialog", { name: "Release details" })
+        .querySelector(".skill-hero-taxonomy-row .skill-category-icon"),
+    ).toBeTruthy();
   });
 });
 

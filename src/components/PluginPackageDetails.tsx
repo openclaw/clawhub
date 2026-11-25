@@ -1,4 +1,3 @@
-import { Package } from "lucide-react";
 import { useRef, useState, useEffect, type ReactNode } from "react";
 import {
   Dialog,
@@ -26,6 +25,7 @@ export function pluginDetailTabFromHash(hash: string): PluginDetailTab | null {
 // Keep it reachable (including existing deep links) without displacing the catalog overview.
 export function PluginPackageDetails({
   name,
+  version,
   downloadHref,
   activeTab,
   onTab,
@@ -35,6 +35,7 @@ export function PluginPackageDetails({
   versionsPanel,
 }: {
   name: string;
+  version?: string | null;
   downloadHref: string | null;
   activeTab: PluginDetailTab | null;
   onTab: (tab: PluginDetailTab | null) => void;
@@ -60,16 +61,19 @@ export function PluginPackageDetails({
     if (selected === "versions") setVisitedVersions(true);
   }, [selected]);
   return (
-    <Dialog open={activeTab !== null} onOpenChange={(open) => onTab(open ? "activity" : null)}>
+    <Dialog open={activeTab !== null} onOpenChange={(open) => onTab(open ? "versions" : null)}>
       <DialogTrigger asChild>
-        <button className="plugin-catalog-utility" type="button">
-          <Package size={14} aria-hidden="true" />
-          Package details
+        <button
+          className="catalog-detail__release"
+          type="button"
+          aria-label={version ? "View release " + version : "View releases"}
+        >
+          {version ?? "View releases"}
         </button>
       </DialogTrigger>
       <DialogContent className="plugin-package-dialog">
         <DialogHeader>
-          <DialogTitle>Package details</DialogTitle>
+          <DialogTitle>Release details</DialogTitle>
           <DialogDescription>{name}</DialogDescription>
         </DialogHeader>
         {downloadHref ? (

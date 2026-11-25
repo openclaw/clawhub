@@ -1,4 +1,5 @@
 import { ArrowUpRight, Pencil, Plus } from "lucide-react";
+import type { ReactNode } from "react";
 import {
   buildPluginCategoryBrowseHref,
   buildPluginTopicBrowseHref,
@@ -64,11 +65,13 @@ export function PluginCatalogRail({
   pkg,
   release,
   ownerHandle,
+  releaseDetails,
   onEditTopics,
 }: {
   pkg: NonNullable<PackageDetailResponse["package"]>;
   release: PackageVersionDetail["version"];
   ownerHandle?: string | null;
+  releaseDetails: ReactNode;
   onEditTopics?: () => void;
 }) {
   const publishedDate = useCatalogDateFormatter();
@@ -77,7 +80,6 @@ export function PluginCatalogRail({
   );
   const topics = (pkg.topics ?? []).map((topic) => topic.trim()).filter(Boolean);
   const repo = repositoryLink((release?.verification ?? pkg.verification)?.sourceRepo);
-  const version = pkg.latestVersion ?? release?.version;
   const blocked =
     pkg.scanStatus === "malicious" || release?.verification?.scanStatus === "malicious";
   return (
@@ -94,7 +96,7 @@ export function PluginCatalogRail({
           />
         </CatalogDetailFact>
       ) : null}
-      {version ? <CatalogDetailFact label="Version">{version}</CatalogDetailFact> : null}
+      <CatalogDetailFact label="Version">{releaseDetails}</CatalogDetailFact>
       <CatalogDetailFact label="Updated">
         <time dateTime={new Date(pkg.updatedAt).toISOString()}>
           {publishedDate.format(pkg.updatedAt)}

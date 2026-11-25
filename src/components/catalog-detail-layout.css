@@ -122,12 +122,6 @@ body:has(.catalog-detail-page) {
   font-size: 13.5px;
   line-height: 1.4;
 }
-.catalog-detail__actions {
-  display: flex;
-  align-items: center;
-  flex: none;
-  gap: 10px;
-}
 .catalog-detail__content {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 248px;
@@ -220,12 +214,26 @@ body:has(.catalog-detail-page) {
   .catalog-detail__title-row h1 {
     font-size: 20px;
   }
-  .catalog-detail__actions {
-    flex: 1 1 100%;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
   .catalog-detail__summary {
     line-height: 1.55;
   }
+}
+
+.catalog-detail__release {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--detail-rule);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.catalog-detail__release:is(:hover, :focus-visible) {
+  text-decoration-color: currentColor;
+}
+.catalog-detail__release:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
 }

@@ -299,14 +299,12 @@ function versionToggle(page: Parameters<typeof expectNoFatalErrorUi>[0], version
 
 async function ensureVersionsTab(page: Parameters<typeof expectNoFatalErrorUi>[0]) {
   await recoverFromTransientErrorScreen(page);
-  const versions = page.getByRole("tab", { name: "Versions", exact: true });
-  if (!(await versions.isVisible())) {
-    const contents = page.locator(".skill-catalog-contents:not([open]) > summary");
-    const details = page.getByRole("button", { name: "Package details", exact: true });
-    if (await contents.isVisible()) await contents.click();
-    else if (await details.isVisible()) await details.click();
-  }
-  await versions.click({ timeout: 30_000 });
+  const dialog = page.getByRole("dialog", { name: "Release details" });
+  const trigger = page.getByRole("button", { name: /^View release / });
+  // Radix briefly hides both from accessibility while a nested confirmation closes.
+  await expect(dialog.or(trigger).first()).toBeVisible();
+  if (await trigger.isVisible()) await trigger.click();
+  await dialog.getByRole("tab", { name: "Versions", exact: true }).click({ timeout: 30_000 });
 }
 
 async function openDeleteDialog(page: Parameters<typeof expectNoFatalErrorUi>[0]) {

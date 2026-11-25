@@ -10,6 +10,7 @@ import {
 } from "react";
 import { fetchPackageFile } from "../lib/packageApi";
 import { MarkdownPreview } from "./MarkdownPreview";
+import { stripFrontmatter } from "./skillDetailUtils";
 import {
   Dialog,
   DialogContent,
@@ -224,7 +225,7 @@ function SkillPreview({
     return <p role="alert">Failed to load skill markdown: {result.error}</p>;
   if (version && !result) return <p role="status">Loading skill markdown...</p>;
   if (!result?.content) return <p>Skill markdown is unavailable.</p>;
-  return <MarkdownPreview>{result.content}</MarkdownPreview>;
+  return <MarkdownPreview>{stripFrontmatter(result.content)}</MarkdownPreview>;
 }
 
 function SkillRow({
@@ -248,7 +249,7 @@ function SkillRow({
           />
         </button>
       </DialogTrigger>
-      <DialogContent className="max-h-[85vh] w-[min(920px,92vw)] overflow-auto">
+      <DialogContent className="catalog-skill-preview-dialog">
         <DialogHeader>
           <DialogTitle>{skill.name}</DialogTitle>
           <DialogDescription>{skill.skillMdPath}</DialogDescription>

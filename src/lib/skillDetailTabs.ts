@@ -18,6 +18,27 @@ export type DetailTab =
   | SkillInstallTabId;
 export type SkillDetailTab = { id: DetailTab; label: string };
 
+export function skillTabFromHash(hash: string): DetailTab | null {
+  const tab = hash.replace(/^#/, "").toLowerCase();
+  if (tab === "card") return "skill-card";
+  if (tab === "diff") return "compare";
+  switch (tab) {
+    case "readme":
+    case "skill-card":
+    case "evaluation":
+    case "files":
+    case "compare":
+    case "versions":
+    case "runtime":
+    case "dependencies":
+    case "install":
+    case "links":
+      return tab;
+    default:
+      return null;
+  }
+}
+
 export function isSkillInstallTab(id: DetailTab): id is SkillInstallTabId {
   return id in installTabLabels;
 }

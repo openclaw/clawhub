@@ -86,13 +86,16 @@ describe("restored UI design contract", () => {
     );
   });
 
-  it("separates right-rail install content from metadata without changing its spacing", () => {
-    const css = read("src/styles.css");
-    const divider = cssRule(css, ".template-detail-metadata > .template-detail-install::after");
-    expect(css).toContain(".skill-hero-sidebar-stack > .skill-install-command-card::after,");
-    expect(divider).toContain("bottom: -12px");
-    expect(divider).toContain("border-bottom: 1px solid var(--line)");
-    expect(divider).toContain("pointer-events: none");
+  it("separates the inline install rail from the overview on narrow screens", () => {
+    const css = read("src/components/catalog-detail-layout.css");
+    const narrow = balancedCssBlock(
+      css,
+      css.indexOf("@container (max-width: 768px)"),
+      "narrow catalog",
+    );
+    const rail = cssRule(narrow, ".catalog-detail__sidebar");
+    expect(rail).toContain("position: static");
+    expect(rail).toContain("border-top: 1px solid var(--detail-rule)");
   });
 
   const rootRoute = () => read("src/routes/__root.tsx");

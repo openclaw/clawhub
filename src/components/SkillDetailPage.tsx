@@ -22,7 +22,7 @@ import { hasPostPublishSearch } from "../lib/postPublishSearch";
 import { canManageSkill, isModerator } from "../lib/roles";
 import { handleSignInError } from "../lib/signInError";
 import { skillCardLoadKey } from "../lib/skillCards";
-import { buildSkillDetailTabs, type DetailTab } from "../lib/skillDetailTabs";
+import { buildSkillDetailTabs, skillTabFromHash, type DetailTab } from "../lib/skillDetailTabs";
 import type { SkillBySlugResult, SkillPageInitialData } from "../lib/skillPage";
 import { resolveGitHubSkillReadmeHref } from "../lib/skillReadmeLinks";
 import { clearAuthError } from "../lib/useAuthError";
@@ -71,24 +71,6 @@ type GitHubBackedSkillFields = {
   githubPath?: string | null;
   githubScanStatus?: string | null;
 };
-
-function tabFromHash(hash: string): DetailTab {
-  const normalized = hash.replace(/^#/, "").toLowerCase();
-  if (normalized === "files") return "files";
-  if (normalized === "skill-card" || normalized === "card") return "skill-card";
-  if (normalized === "evaluation") return "evaluation";
-  if (normalized === "compare" || normalized === "diff") return "compare";
-  if (normalized === "versions") return "versions";
-  if (
-    normalized === "runtime" ||
-    normalized === "dependencies" ||
-    normalized === "install" ||
-    normalized === "links"
-  ) {
-    return normalized;
-  }
-  return "readme";
-}
 
 function formatReportError(error: unknown) {
   if (error && typeof error === "object" && "data" in error) {
@@ -565,7 +547,7 @@ export function SkillDetailPage({
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
     const syncTabFromHash = () => {
-      setActiveTab(tabFromHash(window.location.hash));
+      setActiveTab(skillTabFromHash(window.location.hash) ?? "readme");
     };
     syncTabFromHash();
     window.addEventListener("hashchange", syncTabFromHash);
@@ -593,7 +575,10 @@ export function SkillDetailPage({
 
   useEffect(() => {
     setActiveTab((prev) => {
-      const hashTab = typeof window === "undefined" ? "readme" : tabFromHash(window.location.hash);
+      const hashTab =
+        typeof window === "undefined"
+          ? "readme"
+          : (skillTabFromHash(window.location.hash) ?? "readme");
       if (hashTab !== "readme" && validTabIds.has(hashTab)) return hashTab;
       return validTabIds.has(prev) ? prev : "readme";
     });

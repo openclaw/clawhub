@@ -275,10 +275,13 @@ test("plugin catalog rail keeps browse links and audit reachable at phone and de
   await waitForHydration(page);
   const detail = page.locator(".catalog-detail");
   const rail = detail.locator("aside");
+  const install = rail.getByRole("article", { name: "Install" });
+  await expect(detail.getByRole("button", { name: /^(Add|Install)$/ })).toHaveCount(0);
   await expect(rail.getByLabel("Categories").getByRole("link").first()).toBeVisible();
   await expect(rail.getByLabel("Topics").getByRole("link").first()).toBeVisible();
   for (const width of [320, 600, 1280]) {
     await page.setViewportSize({ width, height: 900 });
+    await expect(install).toBeVisible();
     const main = await detail.locator(".catalog-detail__main").boundingBox();
     const facts = await rail.boundingBox();
     expect(main).not.toBeNull();
@@ -289,7 +292,9 @@ test("plugin catalog rail keeps browse links and audit reachable at phone and de
       width + 1,
     );
   }
-  const audit = rail.getByRole("link", { name: "View Security Audit" });
+  const audit = rail.getByRole("link", { name: /^View Security Audit.+/ });
+  await expect(audit.locator(".security-audit-meter")).toBeVisible();
+  await expect(audit).not.toContainText(/Audit/);
   await expect(audit).toHaveAttribute("href", /\/openclaw\/plugins\/codex\/security-audit(?:\?|$)/);
   await audit.click();
   await expect(page).toHaveURL(/\/openclaw\/plugins\/codex\/security-audit(?:\?|$)/);

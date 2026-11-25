@@ -84,8 +84,11 @@ test("archive detail tabs can be selected on mobile", async ({ page, request }) 
     payload.latestVersion,
     "mobile archive tabs require an archived skill fixture",
   ).toBeTruthy();
-  await page.getByText("Package contents", { exact: true }).click();
-  const tabs = page.getByRole("tablist", { name: "Skill detail tabs" });
+  await page
+    .getByRole("button", { name: `View release ${payload.latestVersion!.version}`, exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Release details" });
+  const tabs = dialog.getByRole("tablist", { name: "Skill detail tabs" });
   for (const tabName of ["SKILL.md", "Files", "Versions"]) {
     const tab = tabs.getByRole("tab", { name: tabName, exact: true });
     await tab.scrollIntoViewIfNeeded();

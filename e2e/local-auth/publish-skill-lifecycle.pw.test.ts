@@ -386,7 +386,8 @@ test("publishing a skill queues scan, queues skill-card generation, and shows th
   const detailUrl = page.url().split("#", 1)[0];
   await page.goto(`${detailUrl}#skill-card`, { waitUntil: "domcontentloaded" });
   await waitForHydration(page);
-  const skillCardTab = page.getByRole("tab", { name: "Skill Card" });
+  const dialog = page.getByRole("dialog", { name: "Release details" });
+  const skillCardTab = dialog.getByRole("tab", { name: "Skill Card" });
   await expect(skillCardTab).toHaveAttribute("aria-selected", "true", {
     timeout: 30_000,
   });
@@ -775,9 +776,10 @@ test("clean skill publish stays private until TruffleHog and ClawScan pass", asy
   );
   await expect(page.getByText("Pending publication", { exact: true })).toBeVisible();
   await expect(page.getByText(/not yet public or installable/i)).toBeVisible();
-  await page.getByText("Package contents", { exact: true }).click();
-  await expect(page.getByText("Files pending security checks")).toBeVisible();
   await expect(page.getByRole("article", { name: "Install" })).toHaveCount(0);
+  await page.getByRole("button", { name: "View files", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Release details" });
+  await expect(dialog.getByText("Files pending security checks")).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("owner-pending-publication.png"),
     fullPage: true,
@@ -1002,8 +1004,9 @@ test("skill publishers can create a skill and publish a new version", async ({
   });
 
   await expectCurrentVersion(page, "1.0.1");
-  await page.getByText("Package contents", { exact: true }).click();
-  await page.getByRole("tab", { name: "Files" }).click();
+  await page.getByRole("button", { name: "View release 1.0.1" }).click();
+  const dialog = page.getByRole("dialog", { name: "Release details" });
+  await dialog.getByRole("tab", { name: "Files" }).click();
   await expect(page.getByRole("button", { name: /main\.tf/i })).toBeVisible();
   await expect(page.getByRole("button", { name: /terraform\.tfvars/i })).toBeVisible();
   await expect(page.getByRole("button", { name: /assets\/payload\.bin/i })).toBeVisible();

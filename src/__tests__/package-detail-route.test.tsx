@@ -160,19 +160,22 @@ async function loadRoute() {
   };
 }
 
-function openInstall() {
-  fireEvent.click(screen.getByRole("button", { name: "Install" }));
-  return within(screen.getByRole("dialog")).getByRole("article", { name: "Install" });
+function getInstallCard() {
+  return within(screen.getByRole("complementary")).getByRole("article", { name: "Install" });
 }
 
-function openPackageDetails() {
-  fireEvent.click(screen.getByRole("button", { name: "Package details" }));
-  return screen.getByRole("dialog");
+function openVersions(name: string | RegExp = /^View releases?\b/) {
+  const metadata = screen.getByRole("group", { name: "Plugin metadata" });
+  fireEvent.click(within(metadata).getByRole("button", { name }));
+  const dialog = screen.getByRole("dialog", { name: "Release details" });
+  expect(within(dialog).getByRole("tab", { name: "Versions", selected: true })).toBeTruthy();
+  return dialog;
 }
 
-function openVersions() {
-  const dialog = openPackageDetails();
-  fireEvent.click(within(dialog).getByRole("tab", { name: "Versions" }));
+function openActivity() {
+  const dialog = openVersions();
+  fireEvent.click(within(dialog).getByRole("tab", { name: "Activity" }));
+  return dialog;
 }
 
 function closeDialog() {
@@ -258,7 +261,7 @@ describe("plugin detail route", () => {
     vi.unstubAllGlobals();
   });
 
-  it("opens Install with CLI first and a Desktop action for published plugins", async () => {
+  it("shows CLI first and a Desktop action inline for published plugins", async () => {
     loaderDataMock.detail.package = {
       ...loaderDataMock.detail.package!,
       name: "@owner/scoped-plugin",
@@ -269,8 +272,8 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    expect(screen.queryByRole("article", { name: "Install" })).toBeNull();
-    const card = openInstall();
+    const card = getInstallCard();
+    expect(screen.queryByRole("dialog")).toBeNull();
     const options = within(card).getByRole("group", { name: "Install option" });
     expect(
       within(options)
@@ -283,11 +286,10 @@ describe("plugin detail route", () => {
     expect(
       within(card).getByRole("link", { name: "Install in OpenClaw" }).getAttribute("href"),
     ).toBe("openclaw://plugins/install?name=%40owner%2Fscoped-plugin");
-    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("renders one install action, inline README and package details in the metadata rail", async () => {
+  it("renders one inline install card, the README, and a release button in the metadata rail", async () => {
     loaderDataMock.detail.package!.latestVersion = "1.0.0";
     loaderDataMock.readme = "Getting started with Demo";
     const route = await loadRoute();
@@ -297,22 +299,21 @@ describe("plugin detail route", () => {
     const heading = screen.getByRole("heading", { level: 1, name: "Demo Plugin" });
     const hero = heading.closest<HTMLElement>(".catalog-detail__hero");
     expect(hero?.closest(".catalog-detail")).toBeTruthy();
-    expect(within(hero!).getAllByRole("button")).toEqual([
-      within(hero!).getByRole("button", { name: "Install" }),
-    ]);
-    expect(within(hero!).queryByRole("link", { name: "Download" })).toBeNull();
-    const detailsTrigger = within(screen.getByRole("complementary")).getByRole("button", {
-      name: "Package details",
-    });
-    expect(detailsTrigger.textContent).toBe("Package details");
+    expect(within(hero!).queryByRole("button", { name: /^(?:Add|Install)$/i })).toBeNull();
+    expect(within(hero!).queryByRole("link", { name: /^(?:Add|Install|Download)$/i })).toBeNull();
+    expect(screen.getAllByRole("article", { name: "Install" })).toEqual([getInstallCard()]);
+    expect(screen.queryByText("Package details")).toBeNull();
     expect(screen.queryByRole("tablist")).toBeNull();
     expect(screen.getByText("Getting started with Demo")).toBeTruthy();
-    expect(
-      within(screen.getByRole("complementary")).getByRole("group", { name: "Plugin metadata" }),
-    ).toBeTruthy();
-    expect(
-      within(openPackageDetails()).getByRole("link", { name: "Download" }).getAttribute("href"),
-    ).toBe("/api/v1/packages/demo-plugin/download?version=1.0.0");
+    const rail = within(screen.getByRole("complementary"));
+    const metadata = within(rail.getByRole("group", { name: "Plugin metadata" }));
+    expect(metadata.getByRole("button", { name: "View release 1.0.0" }).textContent).toBe("1.0.0");
+    const dialog = openVersions("View release 1.0.0");
+    expect(within(dialog).getByRole("link", { name: "Download" }).getAttribute("href")).toBe(
+      "/api/v1/packages/demo-plugin/download?version=1.0.0",
+    );
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it.each([
@@ -334,7 +335,7 @@ describe("plugin detail route", () => {
       const route = await loadRoute();
       const Component = route.__config.component as ComponentType;
       render(<Component />);
-      const card = openInstall();
+      const card = getInstallCard();
       fireEvent.click(within(card).getByRole("button", { name: "Desktop" }));
       expect(
         within(card).getByRole("link", { name: "Install in OpenClaw" }).getAttribute("href"),
@@ -377,20 +378,26 @@ describe("plugin detail route", () => {
       const Component = route.__config.component as ComponentType;
       render(<Component />);
       if (state !== "skill") {
-        const dialog = openPackageDetails();
+        const releaseButton =
+          state === "unpublished"
+            ? "View releases"
+            : state === "beta-only"
+              ? "View release 1.1.0-beta.1"
+              : "View release 1.0.0";
+        const dialog = openVersions(releaseButton);
         expect(within(dialog).queryByRole("link", { name: "Download" })).toBeNull();
         closeDialog();
       }
       if (state === "malicious package" || state === "malicious release") {
-        const install = screen.getByRole("button", { name: "Install" });
-        expect(install.hasAttribute("disabled")).toBe(true);
-        fireEvent.click(install);
+        expect(screen.getByText("Download blocked")).toBeTruthy();
+        expect(screen.queryByRole("article", { name: "Install" })).toBeNull();
+        expect(screen.queryByRole("button", { name: "Install" })).toBeNull();
+        expect(screen.queryByRole("button", { name: /Copy plugin install/ })).toBeNull();
         expect(screen.queryByRole("dialog")).toBeNull();
         expect(screen.queryByRole("link", { name: "Install in OpenClaw" })).toBeNull();
         return;
       }
-      const card =
-        state === "skill" ? screen.getByRole("article", { name: "Install" }) : openInstall();
+      const card = getInstallCard();
       expect(within(card).queryByRole("button", { name: "Desktop" })).toBeNull();
       expect(within(card).queryByRole("link", { name: "Install in OpenClaw" })).toBeNull();
       expect(within(card).getByRole("button", { name: "CLI", pressed: true })).toBeTruthy();
@@ -418,7 +425,7 @@ describe("plugin detail route", () => {
 
       render(<Component />);
 
-      const card = openInstall();
+      const card = getInstallCard();
       fireEvent.click(within(card).getByRole("button", { name: "CLI" }));
       const command = `openclaw plugins install clawhub:${target}`;
       expect(card.querySelector("pre")?.textContent).toBe(command);
@@ -445,14 +452,14 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    const card = screen.getByRole("article", { name: "Install" });
+    const card = getInstallCard();
     const command = "openclaw skills install @demo-owner/demo-skill";
     expect(card.querySelector("pre")?.textContent).toBe(command);
     fireEvent.click(within(card).getByRole("button", { name: "Copy skill install command" }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(command));
   });
 
-  it("expands and collapses the inline README without opening package details", async () => {
+  it("expands and collapses the inline README without opening release details", async () => {
     // jsdom does not lay out text. Give the README a measured height larger than its clamp.
     vi.spyOn(Element.prototype, "scrollHeight", "get").mockReturnValue(560);
     loaderDataMock.readme = Array.from({ length: 120 }, (_, i) => "README line " + i).join("\n");
@@ -475,7 +482,9 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    expect(within(openPackageDetails()).queryByRole("link", { name: "Download" })).toBeNull();
+    expect(
+      within(openVersions("View releases")).queryByRole("link", { name: "Download" }),
+    ).toBeNull();
   });
 
   it("keeps browse links for canonical topics and categories in plugin metadata", async () => {
@@ -572,9 +581,7 @@ describe("plugin detail route", () => {
     render(<Component />);
 
     expect(fetchPackageVersions).not.toHaveBeenCalled();
-    const dialog = openPackageDetails();
-    expect(fetchPackageVersions).not.toHaveBeenCalled();
-    fireEvent.click(within(dialog).getByRole("tab", { name: "Versions" }));
+    openVersions();
 
     await waitFor(() => expect(fetchPackageVersions).toHaveBeenCalledTimes(1));
     expect(fetchPackageVersions).toHaveBeenCalledWith("demo-plugin", {
@@ -952,7 +959,17 @@ describe("plugin detail route", () => {
         },
       },
     };
-    vi.mocked(fetchPackageFile).mockResolvedValueOnce("# Research\n\nDeep research assistant.");
+    vi.mocked(fetchPackageFile).mockResolvedValueOnce(
+      [
+        "---",
+        "name: research",
+        "description: Collect and verify source material.",
+        "---",
+        "# Research",
+        "",
+        "Compare the original sources before summarizing.",
+      ].join("\n"),
+    );
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
 
@@ -972,13 +989,12 @@ describe("plugin detail route", () => {
     expect(within(disclosure).getByText("OAuth")).toBeTruthy();
     expect(within(disclosure).getByText("streamable-http")).toBeTruthy();
 
-    const dialog = openPackageDetails();
+    const dialog = openVersions();
     expect(
       within(within(dialog).getByRole("tablist", { name: "Plugin detail tabs" }))
         .getAllByRole("tab")
         .map((tab) => tab.textContent),
     ).toEqual(["Activity", "Configuration", "Compatibility", "Versions"]);
-    expect(within(dialog).getByRole("tab", { name: "Activity", selected: true })).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("tab", { name: "Compatibility" }));
     expect(screen.getByText("OpenClaw plugin API")).toBeTruthy();
     expect(screen.getByText("^2.0.0")).toBeTruthy();
@@ -1005,7 +1021,13 @@ describe("plugin detail route", () => {
         "1.2.3",
       );
     });
-    expect(await within(screen.getByRole("dialog")).findByText(/# Research/)).toBeTruthy();
+    const preview = screen.getByRole("dialog", { name: "research" });
+    expect(
+      await within(preview).findByText(/Compare the original sources before summarizing/),
+    ).toBeTruthy();
+    expect(preview.textContent).toContain("# Research");
+    expect(preview.textContent).not.toContain("name: research");
+    expect(preview.textContent).not.toContain("Collect and verify source material.");
   });
 
   it("keeps loaded releases and allows retry when loading more fails", async () => {
@@ -1138,7 +1160,7 @@ describe("plugin detail route", () => {
   });
 
   it.each(["Activity", "Configuration", "Compatibility"])(
-    "opens package details directly on the %s hash",
+    "opens release details directly on the %s hash without loading versions",
     async (tab) => {
       loaderDataMock.version = {
         package: null,
@@ -1156,18 +1178,20 @@ describe("plugin detail route", () => {
           },
         },
       };
+      loaderDataMock.versions = undefined;
       window.history.replaceState(null, "", "#" + tab.toLowerCase());
       const route = await loadRoute();
       const Component = route.__config.component as ComponentType;
       render(<Component />);
-      const dialog = await screen.findByRole("dialog");
+      const dialog = await screen.findByRole("dialog", { name: "Release details" });
       expect(within(dialog).getByRole("tab", { name: tab, selected: true })).toBeTruthy();
+      expect(fetchPackageVersions).not.toHaveBeenCalled();
       closeDialog();
       expect(screen.queryByRole("dialog")).toBeNull();
     },
   );
 
-  it("opens release history in package details from the versions hash", async () => {
+  it("opens release history in release details from the versions hash", async () => {
     window.location.hash = "#versions";
     loaderDataMock = {
       ...loaderDataMock,
@@ -1188,7 +1212,7 @@ describe("plugin detail route", () => {
     const Component = route.__config.component as ComponentType;
 
     render(<Component />);
-    const dialog = await screen.findByRole("dialog");
+    const dialog = await screen.findByRole("dialog", { name: "Release details" });
     expect(within(dialog).getByRole("tab", { name: "Versions", selected: true })).toBeTruthy();
     await within(dialog).findByRole("button", { name: "Show changelog for v1.0.0" });
     expect(fetchPackageVersions).toHaveBeenCalledTimes(1);
@@ -1329,7 +1353,7 @@ describe("plugin detail route", () => {
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
     render(<Component />);
-    const dialog = openPackageDetails();
+    const dialog = openActivity();
     expect(within(dialog).getByRole("tab", { name: "Activity", selected: true })).toBeTruthy();
     expect(within(dialog).queryByText("30-day Installs")).toBeNull();
     expect(dialog.querySelectorAll(".metric-trend-card-skeleton")).toHaveLength(1);
@@ -1377,7 +1401,7 @@ describe("plugin detail route", () => {
     expect(rail.getByText("Downloads")).toBeTruthy();
     expect(rail.queryByText("Code Plugin")).toBeNull();
     expect(rail.queryByRole("img", { name: "Daily downloads over the last 30 days" })).toBeNull();
-    const activity = within(openPackageDetails());
+    const activity = within(openActivity());
     expect(activity.getByText(/code plugin/i)).toBeTruthy();
     expect(
       await activity.findByRole("img", { name: "Daily downloads over the last 30 days" }),
@@ -1423,7 +1447,7 @@ describe("plugin detail route", () => {
     const Component = route.__config.component as ComponentType;
     render(<Component />);
     const metadata = screen.getByLabelText("Plugin metadata");
-    const dialog = openPackageDetails();
+    const dialog = openActivity();
     await waitFor(() => expect(dialog.querySelector(".metric-trend-card-skeleton")).toBeNull());
     expect(within(dialog).getByText("1.2k")).toBeTruthy();
     expect(
@@ -1484,7 +1508,7 @@ describe("plugin detail route", () => {
     render(<Component />);
 
     const newVersionLink = screen.getByRole("link", { name: "New version" });
-    expect(within(openPackageDetails()).getByRole("link", { name: "Download" })).toBeTruthy();
+    expect(within(openVersions()).getByRole("link", { name: "Download" })).toBeTruthy();
     closeDialog();
     expect(newVersionLink.getAttribute("href")).toBe(
       "/plugins/publish?ownerHandle=demo-owner&name=demo-plugin&displayName=Demo+Plugin",
@@ -1803,8 +1827,11 @@ describe("plugin detail route", () => {
         "Repository",
         "Topics",
       ]);
-      const audit = within(metadata).getByRole("link", { name: /^view security audit$/i });
-      expect(within(metadata).getByText(verdict)).toBeTruthy();
+      const audit = within(metadata).getByRole("link", {
+        name: new RegExp(`View Security Audit.*${verdict}`, "i"),
+      });
+      expect(audit.textContent?.trim()).toBe(verdict);
+      expect(within(metadata).queryByText(/^Audit$/i)).toBeNull();
       expect(audit.getAttribute("href")).toBe("/plugins/demo-plugin/security-audit");
       expect(
         within(metadata).getByRole("button", {
@@ -1919,7 +1946,7 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    const dialog = openPackageDetails();
+    const dialog = openVersions();
     expect(within(dialog).getByRole("link", { name: "Download" }).getAttribute("href")).toBe(
       "/api/v1/packages/demo-plugin/versions/1.0.0/artifact/download",
     );
@@ -1928,7 +1955,7 @@ describe("plugin detail route", () => {
     expect(within(dialog).getByText("demo-plugin-1.0.0.tgz")).toBeTruthy();
     expect(within(dialog).getByText("sha512-demo")).toBeTruthy();
     closeDialog();
-    const card = openInstall();
+    const card = getInstallCard();
     expect(card.querySelector("pre")?.textContent).toBe(
       "openclaw plugins install clawhub:demo-plugin@latest",
     );
@@ -1980,7 +2007,7 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    const dialog = openPackageDetails();
+    const dialog = openVersions();
     expect(within(dialog).getByRole("link", { name: "Download" }).getAttribute("href")).toBe(
       "/api/v1/packages/demo-plugin/download?version=1.0.0",
     );
@@ -2055,8 +2082,8 @@ describe("plugin detail route", () => {
     ).toBeNull();
     expect(screen.queryByRole("region", { name: "OpenClaw API updates" })).toBeNull();
     expect(screen.queryByText("API details")).toBeNull();
-    expect(screen.getByRole("button", { name: "Install" })).toBeTruthy();
-    openPackageDetails();
+    expect(getInstallCard()).toBeTruthy();
+    openVersions();
     expect(screen.queryByRole("tab", { name: /Validation/ })).toBeNull();
     expect(screen.queryByText("missing-expected-seam")).toBeNull();
   });

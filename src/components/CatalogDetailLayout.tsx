@@ -18,7 +18,6 @@ export function CatalogDetailLayout(props: {
   icon: ReactNode;
   title: ReactNode;
   publisher?: ReactNode;
-  actions?: ReactNode;
   summary?: ReactNode;
   sidebar: ReactNode;
   children: ReactNode;
@@ -38,7 +37,6 @@ export function CatalogDetailLayout(props: {
           </div>
           {props.publisher && <div className="catalog-detail__publisher">{props.publisher}</div>}
         </div>
-        {props.actions && <div className="catalog-detail__actions">{props.actions}</div>}
       </header>
       <div className="catalog-detail__content">
         <div className="catalog-detail__main">

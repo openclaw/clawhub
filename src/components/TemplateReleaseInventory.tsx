@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { fetchPackageFile } from "../lib/packageApi";
+import { buildPluginDetailHref } from "../lib/pluginRoutes";
 import { publicApiUrl } from "../lib/publicApiUrl";
 import type { TemplateWorkspaceContents } from "../lib/templateDetail";
 import type { TemplateDisplayInventory } from "../lib/templateDisplayInventory";
@@ -162,10 +163,12 @@ function CapabilitySection({
   label,
   icon: Icon,
   rows,
+  detailsInDialog = false,
 }: {
   label: string;
   icon: LucideIcon;
   rows: Row[];
+  detailsInDialog?: boolean;
 }) {
   if (!rows.length) return null;
   return (
@@ -185,7 +188,7 @@ function CapabilitySection({
               <ChevronRight className="template-catalog-chevron" aria-hidden="true" />
             </>
           );
-          return row.preview ? (
+          return row.preview || detailsInDialog ? (
             <Dialog key={row.key}>
               <DialogTrigger asChild>
                 <button type="button" className="template-catalog-row">
@@ -194,7 +197,11 @@ function CapabilitySection({
               </DialogTrigger>
               <DialogContent className="template-catalog-file-dialog" aria-describedby={undefined}>
                 <DialogTitle>{row.name}</DialogTitle>
-                <SkillDocument source={row.preview} />
+                {row.preview ? (
+                  <SkillDocument source={row.preview} />
+                ) : (
+                  <div className="template-catalog-plugin-info">{row.details}</div>
+                )}
               </DialogContent>
             </Dialog>
           ) : (
@@ -261,6 +268,11 @@ export function TemplateReleaseInventory({
           ) : (
             <>
               {kind === "plugin" ? "Plugin" : "Skill"} · {entry.version}
+              {kind === "plugin" && (
+                <p>
+                  <a href={buildPluginDetailHref(entry.ref)}>View plugin on ClawHub</a>
+                </p>
+              )}
             </>
           ),
       }));
@@ -332,11 +344,17 @@ export function TemplateReleaseInventory({
       />
       <CapabilitySection
         label="Plugins"
+        detailsInDialog
         icon={Plug}
         rows={[
           ...packages("plugin"),
           ...workspaceRows("plugins"),
-          ...mcp.map((name) => ({ key: "mcp:" + name, name, description: "MCP", details: "MCP" })),
+          ...mcp.map((name) => ({
+            key: "mcp:" + name,
+            name,
+            description: "MCP",
+            details: "This Template declares this MCP server as an integration.",
+          })),
         ]}
       />
       <CapabilitySection label="Automations" icon={Clock} rows={automations} />

@@ -61,41 +61,6 @@
 .plugin-catalog-page .catalog-detail__summary p {
   margin: 0;
 }
-.plugin-catalog-page .plugin-catalog-action {
-  display: inline-flex;
-  justify-content: center;
-  align-items: center;
-  gap: 6px;
-  height: 36px;
-  min-height: 36px;
-  padding: 0 18px;
-  border: 1px solid var(--oc-border-subtle);
-  border-radius: calc(8px * var(--detail-radius-scale, 1));
-  background: var(--detail-card);
-  color: var(--detail-text);
-  font: 500 13.5px/normal var(--font-body);
-  text-decoration: none;
-  white-space: nowrap;
-  cursor: pointer;
-}
-.plugin-catalog-page .plugin-catalog-action:hover {
-  background: var(--detail-tone);
-}
-.plugin-catalog-page .plugin-catalog-action--primary {
-  background: var(--detail-primary);
-  color: white;
-  border-color: var(--detail-primary);
-  letter-spacing: -0.01em;
-  box-shadow: 0 1px 3px color-mix(in srgb, var(--detail-primary) 8%, transparent);
-}
-.plugin-catalog-page .plugin-catalog-action--primary:not(:disabled):hover {
-  background: var(--accent-deep);
-  border-color: var(--accent-deep);
-}
-.plugin-catalog-page .plugin-catalog-action:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
 .plugin-catalog-page .plugin-catalog-utilities {
   display: flex;
   flex-wrap: wrap;
@@ -124,7 +89,6 @@
 }
 .plugin-catalog-page
   :is(
-    .plugin-catalog-action,
     .plugin-catalog-utility,
     .plugin-catalog-repo,
     .plugin-catalog-chips a,
@@ -201,11 +165,6 @@
   max-height: 85dvh;
   overflow: auto;
 }
-.plugin-install-dialog {
-  width: min(560px, calc(100vw - 32px));
-  max-height: 85dvh;
-  overflow: auto;
-}
 .plugin-package-dialog .plugin-package-dialog__download {
   width: fit-content;
   color: var(--ink);
@@ -274,13 +233,6 @@
   }
 }
 @container (max-width:560px) {
-  .plugin-catalog-page .plugin-catalog-action--primary {
-    height: 38px;
-    min-height: 38px;
-    padding: 0 14px;
-    flex: 1 1 100%;
-    min-width: 0;
-  }
   .plugin-catalog-page .plugin-catalog-repo {
     margin-block: -7px;
     padding-block: 7px;

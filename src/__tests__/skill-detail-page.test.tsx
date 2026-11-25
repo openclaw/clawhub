@@ -50,8 +50,20 @@ const convexClientMock = { query: convexQueryMock };
 const getReadmeMock = vi.fn();
 const getSkillCardMock = vi.fn();
 
-function getDesktopSkillTabs() {
-  return within(screen.getByRole("tablist", { name: "Skill detail tabs", hidden: true }));
+function getReleaseTabs() {
+  const dialog = screen.getByRole("dialog", { name: "Release details" });
+  return within(within(dialog).getByRole("tablist", { name: "Skill detail tabs" }));
+}
+
+function setInitialHash(hash: string) {
+  window.history.replaceState(null, "", window.location.pathname + window.location.search + hash);
+}
+
+function openReleaseDetails(version?: string) {
+  fireEvent.click(
+    screen.getByRole("button", { name: version ? `View release ${version}` : "View files" }),
+  );
+  return within(screen.getByRole("dialog", { name: "Release details" }));
 }
 
 vi.mock("convex/react", () => ({
@@ -224,7 +236,7 @@ describe("SkillDetailPage", () => {
   }
 
   beforeEach(() => {
-    window.location.hash = "";
+    setInitialHash("");
     useQueryMock.mockReset();
     useQueriesMock.mockClear();
     useMutationMock.mockReset();
@@ -254,7 +266,7 @@ describe("SkillDetailPage", () => {
     vi.useRealTimers();
   });
 
-  it("renders the verified card and current release notes before opening package contents", async () => {
+  it("renders the verified card and current release notes before opening release details", async () => {
     const initialData = makeInitialData();
     initialData.result!.latestVersion = makeWeatherVersion({
       changelog: "New release notes.",
@@ -266,12 +278,20 @@ describe("SkillDetailPage", () => {
     const well = document.querySelector(".skill-catalog-well");
     expect(well?.textContent).toContain("Generated release summary.");
     expect(screen.getByRole("heading", { name: "Latest: v1.0.0" })).toBeTruthy();
-    expect(document.querySelector(".skill-catalog-contents")?.hasAttribute("open")).toBe(false);
+    expect(screen.getByText("New release notes.")).toBeTruthy();
+    expect(screen.queryByText("Package contents")).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Release details" })).toBeNull();
+    expect(screen.queryByRole("tablist", { name: "Skill detail tabs" })).toBeNull();
+    const release = openReleaseDetails("1.0.0");
+    expect(release.getByRole("tab", { name: "Files" })).toBeTruthy();
+    expect(release.getByRole("tab", { name: "Versions" })).toBeTruthy();
+    fireEvent.click(release.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog", { name: "Release details" })).toBeNull();
     expect(getSkillCardMock).toHaveBeenCalledExactlyOnceWith({ versionId });
   });
 
   it.each(["#card", "#skill-card"])("opens the generated card alias %s", async (hash) => {
-    window.location.hash = hash;
+    setInitialHash(hash);
     getSkillCardMock.mockResolvedValue({ text: "# Generated card" });
     const initialData = makeInitialData();
     initialData.result!.latestVersion = makeWeatherVersion({
@@ -280,9 +300,7 @@ describe("SkillDetailPage", () => {
     render(<SkillDetailPage slug="weather" initialData={initialData} />);
     await waitFor(() =>
       expect(
-        getDesktopSkillTabs()
-          .getByRole("tab", { name: "Skill Card" })
-          .getAttribute("aria-selected"),
+        getReleaseTabs().getByRole("tab", { name: "Skill Card" }).getAttribute("aria-selected"),
       ).toBe("true"),
     );
     expect(
@@ -295,7 +313,7 @@ describe("SkillDetailPage", () => {
   it.each(["#diff", "#compare"])(
     "opens comparison alias %s only once versions make it available",
     async (hash) => {
-      window.location.hash = hash;
+      setInitialHash(hash);
       let releases: Doc<"skillVersions">[] | undefined;
       useQueryMock.mockImplementation((query: unknown, args: unknown) => {
         if (args === "skip") return undefined;
@@ -303,7 +321,7 @@ describe("SkillDetailPage", () => {
       });
       const initialData = makeInitialData();
       const { rerender } = render(<SkillDetailPage slug="weather" initialData={initialData} />);
-      expect(getDesktopSkillTabs().queryByRole("tab", { name: "Diff" })).toBeNull();
+      expect(getReleaseTabs().queryByRole("tab", { name: "Diff" })).toBeNull();
       releases = [
         makeWeatherVersion(),
         makeWeatherVersion({ _id: "skillVersions:2" as Id<"skillVersions"> }),
@@ -311,22 +329,48 @@ describe("SkillDetailPage", () => {
       rerender(<SkillDetailPage slug="weather" initialData={initialData} />);
       await waitFor(() =>
         expect(
-          getDesktopSkillTabs().getByRole("tab", { name: "Diff" }).getAttribute("aria-selected"),
+          getReleaseTabs().getByRole("tab", { name: "Diff" }).getAttribute("aria-selected"),
         ).toBe("true"),
       );
     },
   );
 
-  it.each(["#unknown", "#runtime", "#skill-card"])(
-    "keeps unavailable hash %s on README",
-    (hash) => {
-      window.location.hash = hash;
-      render(<SkillDetailPage slug="weather" initialData={makeInitialData()} />);
-      expect(
-        getDesktopSkillTabs().getByRole("tab", { name: "SKILL.md" }).getAttribute("aria-selected"),
-      ).toBe("true");
-    },
-  );
+  it("ignores an unknown hash and opens on README from the release button", () => {
+    setInitialHash("#unknown");
+    render(<SkillDetailPage slug="weather" initialData={makeInitialData()} />);
+    expect(screen.queryByRole("dialog", { name: "Release details" })).toBeNull();
+    const release = openReleaseDetails("2.0.0");
+    expect(release.getByRole("tab", { name: "SKILL.md", selected: true })).toBeTruthy();
+  });
+
+  it.each([
+    ["#files", "Files"],
+    ["#versions", "Versions"],
+  ])("opens release details on the %s deep link", (hash, tabName) => {
+    setInitialHash(hash);
+    render(<SkillDetailPage slug="weather" initialData={makeInitialData()} />);
+    expect(getReleaseTabs().getByRole("tab", { name: tabName, selected: true })).toBeTruthy();
+  });
+
+  it("opens release details on a hash change and clears the hash when dismissed", () => {
+    render(<SkillDetailPage slug="weather" initialData={makeInitialData()} />);
+    expect(screen.queryByRole("dialog", { name: "Release details" })).toBeNull();
+    setInitialHash("#files");
+    fireEvent(window, new HashChangeEvent("hashchange"));
+    expect(getReleaseTabs().getByRole("tab", { name: "Files", selected: true })).toBeTruthy();
+    const release = within(screen.getByRole("dialog", { name: "Release details" }));
+    fireEvent.click(release.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog", { name: "Release details" })).toBeNull();
+    expect(window.location.hash).toBe("");
+  });
+
+  it.each(["#runtime", "#skill-card"])("keeps unavailable hash %s on README", (hash) => {
+    setInitialHash(hash);
+    render(<SkillDetailPage slug="weather" initialData={makeInitialData()} />);
+    expect(
+      getReleaseTabs().getByRole("tab", { name: "SKILL.md" }).getAttribute("aria-selected"),
+    ).toBe("true");
+  });
 
   it("shows a loading indicator while loading", () => {
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
@@ -359,8 +403,9 @@ describe("SkillDetailPage", () => {
     expect(screen.queryByText(/Loading skill/i)).toBeNull();
     expect((await screen.findAllByRole("heading", { name: "Weather" })).length).toBeGreaterThan(0);
     expect(screen.getByText(/Get current weather\./i)).toBeTruthy();
-    expect(screen.getByRole("tab", { name: "Files" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Diff" })).toBeNull();
+    const release = openReleaseDetails("1.0.0");
+    expect(release.getByRole("tab", { name: "Files" })).toBeTruthy();
+    expect(release.queryByRole("tab", { name: "Diff" })).toBeNull();
   });
 
   it("bounds version eligibility reads and loads full history only in Versions", async () => {
@@ -404,7 +449,8 @@ describe("SkillDetailPage", () => {
       ),
     ).toBe(false);
 
-    fireEvent.click(await screen.findByRole("tab", { name: "Versions" }));
+    const release = openReleaseDetails("2.0.0");
+    fireEvent.click(release.getByRole("tab", { name: "Versions" }));
 
     await waitFor(() =>
       expect(
@@ -503,7 +549,8 @@ describe("SkillDetailPage", () => {
 
     render(<SkillDetailPage slug="doca-dpa" canonicalOwner="nvidia" />);
 
-    expect(getDesktopSkillTabs().getByRole("tab", { name: "Evals" })).toBeTruthy();
+    openReleaseDetails();
+    expect(getReleaseTabs().getByRole("tab", { name: "Evals" })).toBeTruthy();
   });
 
   it("looks up Evals from the canonical skill when detail data uses a projected id", () => {
@@ -579,6 +626,7 @@ describe("SkillDetailPage", () => {
       />,
     );
 
+    openReleaseDetails();
     expect(useQueryMock).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -587,13 +635,14 @@ describe("SkillDetailPage", () => {
         sourcePath: "skills/doca-dpa",
       }),
     );
-    expect(getDesktopSkillTabs().getByRole("tab", { name: "Evals" })).toBeTruthy();
+    expect(getReleaseTabs().getByRole("tab", { name: "Evals" })).toBeTruthy();
   });
 
   it("hides Evals when the current skill version has no completed result", () => {
     render(<SkillDetailPage slug="github-skill" initialData={makeInitialData(true)} />);
 
-    expect(getDesktopSkillTabs().queryByRole("tab", { name: "Evals" })).toBeNull();
+    openReleaseDetails();
+    expect(getReleaseTabs().queryByRole("tab", { name: "Evals" })).toBeNull();
   });
 
   it("hides Evals when the optional evaluation query fails", () => {
@@ -601,12 +650,13 @@ describe("SkillDetailPage", () => {
 
     render(<SkillDetailPage slug="github-skill" initialData={makeInitialData(true)} />);
 
-    expect(getDesktopSkillTabs().queryByRole("tab", { name: "Evals" })).toBeNull();
+    openReleaseDetails();
+    expect(getReleaseTabs().queryByRole("tab", { name: "Evals" })).toBeNull();
     expect(screen.queryByText("Something went wrong")).toBeNull();
   });
 
   it("opens an evaluation deep link after its result finishes loading", async () => {
-    window.location.hash = "#evaluation";
+    setInitialHash("#evaluation");
     let evaluationResult: Record<string, unknown> | undefined;
     useQueryMock.mockImplementation((query: unknown, args: unknown) => {
       if (args === "skip") return undefined;
@@ -615,10 +665,10 @@ describe("SkillDetailPage", () => {
       }
       return undefined;
     });
-    const page = <SkillDetailPage slug="github-skill" initialData={makeInitialData(true)} />;
-    const { rerender } = render(page);
+    const initialData = makeInitialData(true);
+    const { rerender } = render(<SkillDetailPage slug="github-skill" initialData={initialData} />);
 
-    expect(getDesktopSkillTabs().queryByRole("tab", { name: "Evals" })).toBeNull();
+    expect(getReleaseTabs().queryByRole("tab", { name: "Evals" })).toBeNull();
 
     evaluationResult = {
       source: {
@@ -651,11 +701,11 @@ describe("SkillDetailPage", () => {
       },
       completedAt: Date.parse("2026-08-18T00:00:00Z"),
     };
-    rerender(page);
+    rerender(<SkillDetailPage slug="github-skill" initialData={initialData} />);
 
     await waitFor(() =>
       expect(
-        getDesktopSkillTabs().getByRole("tab", { name: "Evals" }).getAttribute("aria-selected"),
+        getReleaseTabs().getByRole("tab", { name: "Evals" }).getAttribute("aria-selected"),
       ).toBe("true"),
     );
     expect(screen.getByRole("tabpanel", { name: "Evals" })).toBeTruthy();
@@ -743,20 +793,19 @@ describe("SkillDetailPage", () => {
       readme: "# Weather",
       readmeError: null,
     };
-    convexQueryMock.mockResolvedValueOnce(activityTrend);
+    const response = deferred<typeof activityTrend>();
+    convexQueryMock.mockReturnValueOnce(response.promise);
 
-    const { container, rerender } = render(
-      <SkillDetailPage slug="weather" initialData={initialData} />,
-    );
+    const { rerender } = render(<SkillDetailPage slug="weather" initialData={initialData} />);
 
-    expect(screen.getByRole("tab", { name: "Files" })).toBeTruthy();
-    expect(screen.getAllByText("Downloads").length).toBeGreaterThan(0);
-    expect(screen.queryByText("30-day Installs")).toBeNull();
-    expect(
-      container.querySelectorAll(".detail-sidebar-stats .metric-trend-card-skeleton"),
-    ).toHaveLength(0);
-    expect(screen.getAllByText("All time").length).toBeGreaterThan(0);
-    expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
+    const release = openReleaseDetails("1.0.0");
+    const dialog = screen.getByRole("dialog", { name: "Release details" });
+    expect(release.getByRole("tab", { name: "Files" })).toBeTruthy();
+    expect(release.getByText("Downloads")).toBeTruthy();
+    expect(release.queryByText("30-day Installs")).toBeNull();
+    expect(dialog.querySelector(".metric-trend-card-skeleton")).toBeNull();
+    expect(release.getByText("All time")).toBeTruthy();
+    expect(release.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
     expect(
       useQueryMock.mock.calls.some(
         ([query]) => getFunctionName(query as never) === "skills:getActivityTrendForSlug",
@@ -764,11 +813,17 @@ describe("SkillDetailPage", () => {
     ).toBe(false);
 
     await waitFor(() => expect(convexQueryMock).toHaveBeenCalled());
+    await act(async () => {
+      response.resolve(activityTrend);
+      await response.promise;
+    });
     rerender(<SkillDetailPage slug="weather" initialData={initialData} />);
 
-    expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
-    expect(screen.getByRole("img", { name: "Daily downloads over the last 30 days" })).toBeTruthy();
-    expect(container.querySelectorAll(".metric-trend-card-skeleton")).toHaveLength(0);
+    expect(release.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
+    expect(
+      release.getByRole("img", { name: "Daily downloads over the last 30 days" }),
+    ).toBeTruthy();
+    expect(dialog.querySelector(".metric-trend-card-skeleton")).toBeNull();
     expect(
       convexQueryMock.mock.calls.some((call) => {
         const query = call[0];
@@ -876,10 +931,15 @@ describe("SkillDetailPage", () => {
 
     expect((await screen.findAllByText("Pending")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Security check").length).toBeGreaterThan(0);
+    openReleaseDetails();
     expect(screen.queryByText("Loading README...")).toBeNull();
   });
 
   describe("README request ownership", () => {
+    beforeEach(() => {
+      setInitialHash("#readme");
+    });
+
     it.each([
       { name: "text", readme: "# Existing README", readmeError: null },
       { name: "empty text", readme: "", readmeError: null },
@@ -1015,6 +1075,7 @@ describe("SkillDetailPage", () => {
   });
 
   it("clears stale README content when navigating to a skill with no stored version", async () => {
+    setInitialHash("#readme");
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
       return undefined;
@@ -1140,6 +1201,7 @@ describe("SkillDetailPage", () => {
       />,
     );
 
+    openReleaseDetails();
     expect(await screen.findByText("Deploy it.")).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: "Skill Card" }));
     expect(
@@ -1190,6 +1252,7 @@ describe("SkillDetailPage", () => {
       />,
     );
 
+    openReleaseDetails("1.0.0");
     expect(await screen.findByRole("tab", { name: "Files" })).toBeTruthy();
     expect(screen.queryByRole("tab", { name: "Skill Card" })).toBeNull();
   });
@@ -1212,7 +1275,7 @@ describe("SkillDetailPage", () => {
 
     expect(await screen.findByRole("tab", { name: "Files" })).toBeTruthy();
     expect(
-      getDesktopSkillTabs().getByRole("tab", { name: "SKILL.md" }).getAttribute("aria-selected"),
+      getReleaseTabs().getByRole("tab", { name: "SKILL.md" }).getAttribute("aria-selected"),
     ).toBe("true");
 
     rerender(
@@ -1277,6 +1340,7 @@ describe("SkillDetailPage", () => {
     rerender(<SkillDetailPage slug="weather" initialData={{ ...data }} />);
     expect(getSkillCardMock).toHaveBeenCalledExactlyOnceWith({ versionId });
 
+    openReleaseDetails("2.0.0");
     fireEvent.click(screen.getByRole("tab", { name: "Skill Card" }));
     await act(async () => {
       pending.resolve({ text: "# Skill Card\n\nOnly one completed request." });
@@ -1320,6 +1384,7 @@ describe("SkillDetailPage", () => {
       />,
     );
     expect(getSkillCardMock.mock.calls).toEqual([[{ versionId }], [{ versionId: nextVersionId }]]);
+    openReleaseDetails("3.0.0");
     fireEvent.click(screen.getByRole("tab", { name: "Skill Card" }));
     await act(async () => {
       oldRead.resolve({ text: "# Skill Card\n\nStale card content." });
@@ -1410,6 +1475,7 @@ describe("SkillDetailPage", () => {
       />,
     );
 
+    openReleaseDetails("1.0.0");
     expect(await screen.findByRole("heading", { name: "Related skills" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "View Automation skills" }).getAttribute("href")).toBe(
       "/skills?category=automation",
@@ -1421,7 +1487,7 @@ describe("SkillDetailPage", () => {
     expect(screen.getByText(/Compose agent workflow pipelines\./i)).toBeTruthy();
   });
 
-  it("opens the owner-qualified CLI and Desktop choices from Add and links the canonical audit", async () => {
+  it("offers owner-qualified CLI and Desktop choices in the sidebar and links the verdict to the audit", async () => {
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
       return undefined;
@@ -1465,14 +1531,11 @@ describe("SkillDetailPage", () => {
       />,
     );
 
-    fireEvent.click(await screen.findByRole("button", { name: "Add" }));
-    await screen.findByRole("heading", { name: "Install" });
-    const sidebarMetadata = document.querySelector(
-      '.catalog-detail__sidebar [aria-label="Skill metadata"]',
-    );
-    expect(sidebarMetadata).toBeTruthy();
-
-    const installCard = screen.getByRole("article", { name: "Install" });
+    expect(screen.queryByRole("button", { name: /^(?:Add|Install|Install options)$/i })).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const sidebar = within(screen.getByRole("complementary"));
+    const sidebarMetadata = sidebar.getByRole("group", { name: "Skill metadata" });
+    const installCard = sidebar.getByRole("article", { name: "Install" });
     const install = within(installCard);
     expect(install.getByRole("button", { name: "CLI" }).getAttribute("aria-pressed")).toBe("true");
     expect(installCard.querySelector("pre code")?.textContent).toBe(
@@ -1493,12 +1556,12 @@ describe("SkillDetailPage", () => {
     expect(screen.queryByText("npx clawhub@latest install @steipete/weather")).toBeNull();
     expect(screen.queryByRole("tab", { name: "ClawHub" })).toBeNull();
     expect(screen.queryByText(/After install, inspect the skill metadata/i)).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(screen.getAllByText("Security check").length).toBeGreaterThan(0);
-    expect(screen.getByRole("link", { name: "View Security Audit" }).getAttribute("href")).toBe(
-      "/steipete/skills/weather/security-audit",
-    );
-    const sidebarLabels = Array.from(sidebarMetadata?.querySelectorAll("dt") ?? [], (label) =>
+    const audit = sidebar.getByRole("link", { name: /View Security Audit.*Pending/i });
+    expect(audit.getAttribute("href")).toBe("/steipete/skills/weather/security-audit");
+    expect(within(audit).getByText("Pending")).toBeTruthy();
+    expect(audit.textContent).not.toMatch(/audit/i);
+    const sidebarLabels = Array.from(sidebarMetadata.querySelectorAll("dt"), (label) =>
       label.textContent?.trim(),
     );
     const securityAuditLabelIndex = sidebarLabels.findIndex((label) =>
@@ -1522,8 +1585,8 @@ describe("SkillDetailPage", () => {
     expect(screen.queryByText("No risk analysis has been recorded yet.")).toBeNull();
     expect(screen.queryByText(/Like a lobster shell, security has layers/i)).toBeNull();
     expect(screen.queryByRole("button", { name: "Rescan" })).toBeNull();
-    fireEvent.click(screen.getByText("Package contents"));
-    expect(screen.getByRole("tab", { name: "Files" })).toBeTruthy();
+    expect(screen.queryByText("Package contents")).toBeNull();
+    expect(openReleaseDetails("1.0.0").getByRole("tab", { name: "Files" })).toBeTruthy();
   });
 
   it("shows the version scanner verdict even with legacy clean moderation metadata", async () => {
@@ -1582,8 +1645,9 @@ describe("SkillDetailPage", () => {
     );
 
     expect((await screen.findAllByText("Security check")).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Review").length).toBeGreaterThan(0);
-    expect(screen.getByRole("link", { name: "View Security Audit" })).toBeTruthy();
+    const audit = screen.getByRole("link", { name: /View Security Audit.*Review/i });
+    expect(within(audit).getByText("Review")).toBeTruthy();
+    expect(audit.textContent).not.toMatch(/audit/i);
     expect(screen.queryByText(/reviewed by staff and cleared/i)).toBeNull();
     expect(screen.queryByText("Cleared")).toBeNull();
   });
@@ -1703,10 +1767,13 @@ describe("SkillDetailPage", () => {
     expect((await screen.findAllByRole("heading", { name: "Weather" })).length).toBeGreaterThan(0);
     expect(screen.getByText("Pending publication")).toBeTruthy();
     expect(screen.getByText(/not yet public or installable/i)).toBeTruthy();
-    expect(screen.getByText("Files pending security checks")).toBeTruthy();
-    expect(screen.queryByText("No README available")).toBeNull();
     expect(screen.queryByRole("article", { name: "Install" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^(?:Add|Install|Desktop)$/i })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Install in OpenClaw" })).toBeNull();
     expect(screen.queryByText("Skill hidden")).toBeNull();
+    const files = openReleaseDetails();
+    expect(files.getByText("Files pending security checks")).toBeTruthy();
+    expect(files.queryByText("No README available")).toBeNull();
   });
 
   it("redirects legacy routes to canonical owner/slug", async () => {
@@ -2171,9 +2238,9 @@ describe("SkillDetailPage", () => {
       });
 
       render(<SkillDetailPage slug="weather" />);
-      fireEvent.click(await screen.findByRole("tab", { name: "Versions" }));
+      fireEvent.click(openReleaseDetails("2.0.0").getByRole("tab", { name: "Versions" }));
 
-      expect(screen.getByText("Latest")).toBeTruthy();
+      expect(await screen.findByText("Latest")).toBeTruthy();
       expect(screen.queryByRole("button", { name: "Delete version 2.0.0" })).toBeNull();
       const deleteAction = screen.queryByRole("button", { name: "Delete version 1.0.0" });
       if (shouldShowDelete) {
@@ -2235,9 +2302,9 @@ describe("SkillDetailPage", () => {
     });
 
     render(<SkillDetailPage slug="weather" />);
-    fireEvent.click(await screen.findByRole("tab", { name: "Versions" }));
+    fireEvent.click(openReleaseDetails("2.0.0").getByRole("tab", { name: "Versions" }));
 
-    expect(screen.getByText("Latest")).toBeTruthy();
+    expect(await screen.findByText("Latest")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Delete version/ })).toBeNull();
   });
 
@@ -2363,6 +2430,7 @@ describe("SkillDetailPage", () => {
     render(<SkillDetailPage slug="ip-publisher" />);
 
     expect((await screen.findAllByText("IP Publisher")).length).toBeGreaterThan(0);
+    openReleaseDetails("1.0.8");
     expect(screen.queryByText("Version tags")).toBeNull();
     expect(screen.queryByText("knowledge-base")).toBeNull();
     expect(screen.queryByText("content-rewrite")).toBeNull();
@@ -2424,6 +2492,7 @@ describe("SkillDetailPage", () => {
     render(<SkillDetailPage slug="ip-publisher" />);
 
     expect((await screen.findAllByText("IP Publisher")).length).toBeGreaterThan(0);
+    openReleaseDetails("1.0.8");
     expect(screen.queryByText("Version tags")).toBeNull();
     expect(screen.queryByText("Historical tags")).toBeNull();
     expect(screen.queryByText("content-rewrite")).toBeNull();
@@ -2461,8 +2530,9 @@ describe("SkillDetailPage", () => {
     await waitFor(() =>
       expect(document.querySelector(".catalog-detail__title-row h1")?.textContent).toBe("Weather"),
     );
-    expect(getDesktopSkillTabs().getByRole("tab", { name: "SKILL.md" })).toBeTruthy();
-    expect(getDesktopSkillTabs().getByRole("tab", { name: "Files" })).toBeTruthy();
+    openReleaseDetails("1.0.0");
+    expect(getReleaseTabs().getByRole("tab", { name: "SKILL.md" })).toBeTruthy();
+    expect(getReleaseTabs().getByRole("tab", { name: "Files" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /diff/i })).toBeNull();
 
     expect(
