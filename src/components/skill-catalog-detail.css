@@ -238,9 +238,15 @@
     grid-template-rows: auto 1fr;
     row-gap: 32px;
   }
-  .catalog-detail__content--with-footer > .catalog-detail__summary { grid-area: summary; }
-  .catalog-detail__content--with-footer > .catalog-detail__sidebar { grid-area: sidebar; }
-  .catalog-detail__content--with-footer > .catalog-detail__main { grid-area: main; }
+  .catalog-detail__content--with-footer > .catalog-detail__summary {
+    grid-area: summary;
+  }
+  .catalog-detail__content--with-footer > .catalog-detail__sidebar {
+    grid-area: sidebar;
+  }
+  .catalog-detail__content--with-footer > .catalog-detail__main {
+    grid-area: main;
+  }
 }
 @container (max-width:768px) {
   .skill-catalog-detail .skill-catalog-facts {
