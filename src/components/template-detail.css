@@ -154,7 +154,6 @@
   min-width: 0;
   overflow-x: auto;
   border-bottom: 1px solid var(--line);
-  scrollbar-width: thin;
 }
 
 .template-detail-tabs > button {

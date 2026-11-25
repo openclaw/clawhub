@@ -113,7 +113,9 @@
   --diff-diagonal: #a1a1a118;
   --diff-border: rgba(255, 255, 255, 0.1);
   --diff-line-number: #6b6b6b;
-  --diff-scrollbar-rgb: 161, 161, 161;
+  --scrollbar-thumb: color-mix(in srgb, var(--ink) 27%, transparent);
+  --scrollbar-thumb-over: color-mix(in srgb, var(--ink) 35%, transparent);
+  --scrollbar-thumb-hover: color-mix(in srgb, var(--ink) 56%, transparent);
   --gold: #fbbf24;
   --line: var(--oc-border-subtle);
   --border-ui: var(--oc-border-subtle);
@@ -256,7 +258,6 @@
   --diff-diagonal: #5252520a;
   --diff-border: rgba(0, 0, 0, 0.08);
   --diff-line-number: #9ca3af;
-  --diff-scrollbar-rgb: 115, 115, 115;
 }
 
 @media (prefers-color-scheme: light) {
@@ -318,7 +319,6 @@
     --diff-diagonal: #5252520a;
     --diff-border: rgba(0, 0, 0, 0.08);
     --diff-line-number: #9ca3af;
-    --diff-scrollbar-rgb: 115, 115, 115;
   }
 }
 
@@ -346,6 +346,68 @@ body {
 
 html {
   scrollbar-gutter: stable;
+}
+
+/* Keep touch and forced-colors scrollbars native. On desktop, a non-auto
+ * scrollbar-color overrides the thumb pseudo-element, including its hover. */
+@media (hover: hover) and (forced-colors: none) {
+  .browse-sidebar {
+    --scrollbar-thumb: transparent;
+  }
+
+  .browse-sidebar:is(:hover, :has(:focus-visible)) {
+    --scrollbar-thumb: var(--scrollbar-thumb-over);
+  }
+
+  :where(
+    .browse-sidebar,
+    .browse-category-options,
+    .dashboard-review-sheet-scroll,
+    .file-viewer-body,
+    .navbar-search-typeahead-results,
+    .publisher-profile-members-menu-list,
+    .template-detail-tabs
+  ) {
+    --scrollbar-size: 10px;
+
+    @supports not selector(::-webkit-scrollbar-thumb) {
+      scrollbar-width: thin;
+    }
+  }
+
+  @supports selector(::-webkit-scrollbar-thumb) {
+    ::-webkit-scrollbar {
+      width: var(--scrollbar-size, auto);
+      height: var(--scrollbar-size, auto);
+    }
+
+    ::-webkit-scrollbar-track,
+    ::-webkit-scrollbar-corner {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-button {
+      display: none;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      border: 2px solid transparent;
+      border-radius: var(--r-pill);
+      background: var(--scrollbar-thumb) padding-box;
+    }
+
+    ::-webkit-scrollbar-thumb:hover,
+    ::-webkit-scrollbar-thumb:active {
+      background-color: var(--scrollbar-thumb-hover);
+    }
+  }
+
+  @supports not selector(::-webkit-scrollbar-thumb) {
+    html,
+    .browse-sidebar {
+      scrollbar-color: var(--scrollbar-thumb) transparent;
+    }
+  }
 }
 
 [data-sonner-toast][data-styled="true"] .clawhub-toast-close {
@@ -8082,119 +8144,25 @@ a.skills-sh-security-audit-row:focus-visible {
   background: var(--border-ui) !important;
 }
 
+.diff-monaco .scrollbar,
 .diff-monaco .monaco-diff-editor .diffOverview {
-  background: rgba(var(--diff-scrollbar-rgb), 0.08) !important;
-}
-
-.diff-monaco .monaco-diff-editor .diffOverview .diffViewport,
-.diff-monaco .monaco-diff-editor .diffViewport {
-  background: rgba(var(--diff-scrollbar-rgb), 0.2) !important;
-  background-color: rgba(var(--diff-scrollbar-rgb), 0.2) !important;
-}
-
-.diff-monaco .monaco-diff-editor .diffOverview .diffViewport:hover,
-.diff-monaco .monaco-diff-editor .diffViewport:hover {
-  background: rgba(var(--diff-scrollbar-rgb), 0.28) !important;
-  background-color: rgba(var(--diff-scrollbar-rgb), 0.28) !important;
-}
-
-.diff-monaco .monaco-diff-editor .diffOverview .diffViewport:active,
-.diff-monaco .monaco-diff-editor .diffViewport:active {
-  background: rgba(var(--diff-scrollbar-rgb), 0.36) !important;
-  background-color: rgba(var(--diff-scrollbar-rgb), 0.36) !important;
-}
-
-.diff-monaco .monaco-scrollable-element.modified-in-monaco-diff-editor .slider,
-.diff-monaco .monaco-scrollable-element.modified-in-monaco-diff-editor .slider.active {
-  background: rgba(var(--diff-scrollbar-rgb), 0.22) !important;
-  background-color: rgba(var(--diff-scrollbar-rgb), 0.22) !important;
-}
-
-.diff-monaco .monaco-scrollable-element.modified-in-monaco-diff-editor .slider:hover {
-  background: rgba(var(--diff-scrollbar-rgb), 0.3) !important;
-  background-color: rgba(var(--diff-scrollbar-rgb), 0.3) !important;
-}
-
-.diff-monaco .scrollbar.vertical,
-.diff-monaco .monaco-scrollable-element .scrollbar.vertical,
-.diff-monaco .invisible.scrollbar.vertical.fade {
   background: transparent !important;
 }
 
-.diff-monaco .scrollbar.vertical > .slider,
-.diff-monaco .monaco-scrollable-element .scrollbar.vertical > .slider,
-.diff-monaco .invisible.scrollbar.vertical.fade > .slider,
-.diff-monaco .scrollbar.vertical > .slider:hover,
-.diff-monaco .monaco-scrollable-element .scrollbar.vertical > .slider:hover,
-.diff-monaco .invisible.scrollbar.vertical.fade > .slider:hover,
-.diff-monaco .scrollbar.vertical > .slider.active,
-.diff-monaco .monaco-scrollable-element .scrollbar.vertical > .slider.active,
-.diff-monaco .invisible.scrollbar.vertical.fade > .slider.active {
-  background: rgba(var(--diff-scrollbar-rgb), 0.24) !important;
-  background-color: rgba(var(--diff-scrollbar-rgb), 0.24) !important;
+.diff-monaco .scrollbar > .slider,
+.diff-monaco .monaco-diff-editor .diffOverview .diffViewport {
+  background: var(--scrollbar-thumb) !important;
 }
 
-.diff-monaco .monaco-diff-editor .diffOverview canvas.diffOverviewRuler,
-.diff-monaco .monaco-diff-editor .diffOverview canvas.original.diffOverviewRuler,
-.diff-monaco .monaco-diff-editor .diffOverview canvas.modified.diffOverviewRuler {
+.diff-monaco .scrollbar > .slider:hover,
+.diff-monaco .scrollbar > .slider.active,
+.diff-monaco .monaco-diff-editor .diffOverview .diffViewport:hover,
+.diff-monaco .monaco-diff-editor .diffOverview .diffViewport:active {
+  background: var(--scrollbar-thumb-hover) !important;
+}
+
+.diff-monaco .monaco-diff-editor .diffOverview canvas.diffOverviewRuler {
   opacity: 1 !important;
-}
-
-[data-theme-resolved="dark"] .diff-monaco .monaco-diff-editor .diffOverview {
-  background: rgba(var(--diff-scrollbar-rgb), 0.12) !important;
-}
-
-[data-theme-resolved="dark"] .diff-monaco .monaco-diff-editor .diffOverview .diffViewport,
-[data-theme-resolved="dark"] .diff-monaco .monaco-diff-editor .diffViewport {
-  background: rgba(var(--diff-scrollbar-rgb), 0.28) !important;
-  background-color: rgba(var(--diff-scrollbar-rgb), 0.28) !important;
-}
-
-[data-theme-resolved="dark"] .diff-monaco .monaco-diff-editor .diffOverview .diffViewport:hover,
-[data-theme-resolved="dark"] .diff-monaco .monaco-diff-editor .diffViewport:hover {
-  background: rgba(var(--diff-scrollbar-rgb), 0.36) !important;
-  background-color: rgba(var(--diff-scrollbar-rgb), 0.36) !important;
-}
-
-[data-theme-resolved="dark"] .diff-monaco .scrollbar.vertical > .slider,
-[data-theme-resolved="dark"] .diff-monaco .monaco-scrollable-element .scrollbar.vertical > .slider,
-[data-theme-resolved="dark"] .diff-monaco .invisible.scrollbar.vertical.fade > .slider,
-[data-theme-resolved="dark"] .diff-monaco .scrollbar.vertical > .slider:hover,
-[data-theme-resolved="dark"]
-  .diff-monaco
-  .monaco-scrollable-element
-  .scrollbar.vertical
-  > .slider:hover,
-[data-theme-resolved="dark"] .diff-monaco .invisible.scrollbar.vertical.fade > .slider:hover,
-[data-theme-resolved="dark"] .diff-monaco .scrollbar.vertical > .slider.active,
-[data-theme-resolved="dark"]
-  .diff-monaco
-  .monaco-scrollable-element
-  .scrollbar.vertical
-  > .slider.active,
-[data-theme-resolved="dark"] .diff-monaco .invisible.scrollbar.vertical.fade > .slider.active {
-  background: rgba(var(--diff-scrollbar-rgb), 0.32) !important;
-  background-color: rgba(var(--diff-scrollbar-rgb), 0.32) !important;
-}
-
-[data-theme-resolved="dark"]
-  .diff-monaco
-  .monaco-scrollable-element.modified-in-monaco-diff-editor
-  .slider,
-[data-theme-resolved="dark"]
-  .diff-monaco
-  .monaco-scrollable-element.modified-in-monaco-diff-editor
-  .slider.active {
-  background: rgba(var(--diff-scrollbar-rgb), 0.3) !important;
-  background-color: rgba(var(--diff-scrollbar-rgb), 0.3) !important;
-}
-
-[data-theme-resolved="dark"]
-  .diff-monaco
-  .monaco-scrollable-element.modified-in-monaco-diff-editor
-  .slider:hover {
-  background: rgba(var(--diff-scrollbar-rgb), 0.38) !important;
-  background-color: rgba(var(--diff-scrollbar-rgb), 0.38) !important;
 }
 
 .diff-empty {
@@ -9094,8 +9062,6 @@ a.skills-sh-security-audit-row:focus-visible {
   background: color-mix(in srgb, var(--surface) 82%, var(--bg) 18%);
   overflow: auto;
   padding: 12px 16px 16px;
-  scrollbar-color: var(--ink-soft) transparent;
-  scrollbar-width: thin;
 }
 
 .file-viewer-code {
@@ -9115,22 +9081,6 @@ a.skills-sh-security-audit-row:focus-visible {
   overflow-wrap: anywhere;
   word-break: break-word;
   overflow-x: hidden;
-}
-
-.file-viewer-body::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-
-.file-viewer-body::-webkit-scrollbar-thumb {
-  border: 2px solid transparent;
-  border-radius: var(--r-btn);
-  background: var(--ink-soft);
-  background-clip: padding-box;
-}
-
-.file-viewer-body::-webkit-scrollbar-track {
-  background: transparent;
 }
 
 .file-viewer-empty {
@@ -10415,6 +10365,7 @@ a.skills-sh-security-audit-row:focus-visible {
 
 .markdown .markdown-code-block pre,
 .tab-body .markdown .markdown-code-block pre {
+  --scrollbar-size: 8px;
   margin: 0;
   border: 0;
   border-radius: 0;
@@ -10443,19 +10394,6 @@ a.skills-sh-security-audit-row:focus-visible {
 
 .markdown .markdown-code-block pre[data-wrap="true"] {
   overflow-x: hidden;
-}
-
-.markdown .markdown-code-block pre::-webkit-scrollbar {
-  height: 8px;
-}
-
-.markdown .markdown-code-block pre::-webkit-scrollbar-track {
-  background: color-mix(in srgb, var(--surface-muted) 72%, var(--bg));
-}
-
-.markdown .markdown-code-block pre::-webkit-scrollbar-thumb {
-  border-radius: var(--r-pill);
-  background: color-mix(in srgb, var(--ink-soft) 38%, transparent);
 }
 
 .tab-body .markdown table {
@@ -13474,10 +13412,10 @@ body:has(.browse-page-borderless-header) .navbar {
 
 .catalog-browse-page .browse-controls {
   gap: var(--oc-space-3);
-  margin-bottom: var(--oc-space-4);
+  margin-bottom: var(--oc-space-6);
 }
 
-.catalog-browse-page :is(.browse-sidebar, .skill-list-item) {
+.catalog-browse-page .skill-list-item {
   border-color: var(--line);
 }
 
@@ -13865,23 +13803,6 @@ body:has(.browse-page-borderless-header) .navbar {
   list-style: none;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-color: color-mix(in srgb, var(--ink-soft) 60%, transparent) transparent;
-  scrollbar-width: thin;
-}
-
-.browse-category-options::-webkit-scrollbar {
-  width: 8px;
-}
-
-.browse-category-options::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.browse-category-options::-webkit-scrollbar-thumb {
-  border: 2px solid transparent;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--ink-soft) 56%, transparent);
-  background-clip: content-box;
 }
 
 .browse-category-option-wrap {
@@ -14460,12 +14381,46 @@ body:has(.browse-page-borderless-header) .navbar {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  padding-top: 4px;
-  padding-right: 16px;
-  border-right: 1px solid var(--line);
+  padding-block: 4px;
+  padding-inline-end: 16px;
   max-height: calc(100vh - var(--browse-sticky-top) - var(--space-4));
   overflow-y: auto;
-  scrollbar-width: thin;
+  scrollbar-gutter: stable;
+  scroll-padding-block: 32px;
+}
+
+@media (forced-colors: none) {
+  .browse-sidebar[data-scroll-up],
+  .browse-sidebar[data-scroll-down] {
+    /* Keep the native scrollbar outside the faded content, including in RTL. */
+    mask-image:
+      linear-gradient(
+        to bottom,
+        transparent,
+        #000 var(--browse-fade-top, 0px),
+        #000 calc(100% - var(--browse-fade-bottom, 0px)),
+        transparent
+      ),
+      linear-gradient(#000, #000), linear-gradient(#000, #000);
+    mask-size:
+      100% 100%,
+      12px 100%,
+      12px 100%;
+    mask-position: center, left, right;
+    mask-repeat: no-repeat;
+  }
+
+  .browse-sidebar[data-scroll-up] {
+    --browse-fade-top: 24px;
+  }
+
+  .browse-sidebar[data-scroll-down] {
+    --browse-fade-bottom: 32px;
+  }
+
+  .browse-sidebar:has(:focus-visible) {
+    mask-image: none;
+  }
 }
 
 .sidebar-section {
@@ -14544,6 +14499,10 @@ body:has(.browse-page-borderless-header) .navbar {
 }
 
 @media (max-width: 1080px) {
+  .catalog-browse-page .browse-controls {
+    margin-bottom: var(--oc-space-5);
+  }
+
   .browse-layout-with-sidebar {
     grid-template-columns: minmax(0, 1fr);
     gap: 0;
@@ -14783,10 +14742,8 @@ body:has(.browse-page-borderless-header) .navbar {
     display: none;
     position: static;
     max-height: none;
-    border-right: none;
-    border-bottom: 1px solid var(--line);
     padding-top: 0;
-    padding-right: 0;
+    padding-inline-end: 0;
     padding-bottom: 16px;
     flex-direction: column;
     gap: 8px;
@@ -18894,7 +18851,6 @@ a[class*="rounded-full"] {
   flex-direction: column;
   overflow-y: auto;
   max-height: min(680px, calc(100vh - 112px));
-  scrollbar-width: thin;
 }
 
 .navbar-search-typeahead-section {
@@ -20555,23 +20511,6 @@ a[class*="rounded-full"] {
   height: 100%;
   overflow: auto;
   padding: 22px;
-  scrollbar-color: color-mix(in srgb, var(--ink-soft) 46%, transparent) transparent;
-  scrollbar-width: thin;
-}
-
-.dashboard-review-sheet-scroll::-webkit-scrollbar {
-  width: 8px;
-}
-
-.dashboard-review-sheet-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.dashboard-review-sheet-scroll::-webkit-scrollbar-thumb {
-  border: 2px solid transparent;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--ink-soft) 46%, transparent);
-  background-clip: padding-box;
 }
 
 .dashboard-review-scroll-fade {

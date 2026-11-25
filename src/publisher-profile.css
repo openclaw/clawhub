@@ -552,23 +552,6 @@
   max-height: min(15rem, 44vh);
   padding: 8px;
   overflow-y: auto;
-  scrollbar-color: color-mix(in srgb, var(--ink-soft) 42%, transparent) transparent;
-  scrollbar-width: thin;
-}
-
-.publisher-profile-members-menu-list::-webkit-scrollbar {
-  width: 8px;
-}
-
-.publisher-profile-members-menu-list::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.publisher-profile-members-menu-list::-webkit-scrollbar-thumb {
-  border: 2px solid transparent;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--ink-soft) 42%, transparent);
-  background-clip: padding-box;
 }
 
 .publisher-profile-members-menu-list [data-slot="dropdown-menu-item"] {
