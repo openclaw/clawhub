@@ -57,9 +57,7 @@ export const Route = createFileRoute("/templates/")({
 });
 
 function TemplatesPending() {
-  return (
-    <BrowseResultsSkeleton label="Template" showCategoryColumn={false} downloadsOnly count={12} />
-  );
+  return <BrowseResultsSkeleton showCategoryColumn={false} downloadsOnly count={12} />;
 }
 
 function TemplatesIndex() {
@@ -144,11 +142,6 @@ function TemplateResults({
     <>
       {rows.length ? (
         <div className="browse-list-stack">
-          <div className="browse-list-head browse-list-head-simple" aria-hidden="true">
-            <span className="browse-list-head-icon-spacer" />
-            <span className="browse-list-head-label">Template</span>
-            <span className="browse-list-head-label browse-list-head-stat">Downloads</span>
-          </div>
           <div className="results-list">{rows}</div>
         </div>
       ) : (

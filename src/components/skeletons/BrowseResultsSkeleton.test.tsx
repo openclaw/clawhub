@@ -7,14 +7,13 @@ describe("BrowseResultsSkeleton", () => {
   it.each(["list", "grid"] as const)(
     "preserves icon placeholders by default for %s consumers",
     (variant) => {
-      render(<BrowseResultsSkeleton count={2} label="Plugin" variant={variant} />);
+      render(<BrowseResultsSkeleton count={2} variant={variant} />);
 
       const loadingResults = screen.getByRole("status", { name: "Loading results" });
       if (variant === "list") {
-        expect(loadingResults.querySelector(".browse-list-head-stat")?.textContent).toBe(
-          "Downloads",
-        );
-        expect(loadingResults.querySelector(".browse-list-head-icon-spacer")).not.toBeNull();
+        expect(loadingResults.children).toHaveLength(1);
+        expect(loadingResults.firstElementChild?.classList.contains("results-list")).toBe(true);
+        expect(loadingResults.querySelectorAll(".browse-results-skeleton-row")).toHaveLength(2);
         expect(loadingResults.querySelectorAll(".browse-results-skeleton-icon")).toHaveLength(2);
         expect(loadingResults.querySelector(".skill-list-item-no-icon")).toBeNull();
       } else {

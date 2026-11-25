@@ -331,7 +331,7 @@ function PluginsIndexPending() {
           disabled
         />
         <div className="browse-results">
-          <BrowseResultsSkeleton label="Plugin" showCategoryColumn={false} />
+          <BrowseResultsSkeleton showCategoryColumn={false} />
         </div>
       </div>
     </main>
@@ -609,7 +609,7 @@ function PluginsIndex() {
         />
         <div className="browse-results">
           {isLoading ? (
-            <BrowseResultsSkeleton label="Plugin" showCategoryColumn={false} />
+            <BrowseResultsSkeleton showCategoryColumn={false} />
           ) : apiError ? (
             <div className="empty-state">
               <PackageSearch size={22} className="empty-state-icon" aria-hidden="true" />
@@ -640,11 +640,6 @@ function PluginsIndex() {
             </div>
           ) : (
             <div className="browse-list-stack">
-              <div className="browse-list-head browse-list-head-simple" aria-hidden="true">
-                <span className="browse-list-head-icon-spacer" />
-                <span className="browse-list-head-label">Plugin</span>
-                <span className="browse-list-head-label browse-list-head-stat">Downloads</span>
-              </div>
               <div className="results-list">
                 {visibleItems.map((item) => (
                   <PluginListItem key={item.name} item={item} variant="list" />

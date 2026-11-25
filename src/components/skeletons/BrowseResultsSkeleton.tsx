@@ -2,10 +2,8 @@ import { Skeleton } from "../ui/skeleton";
 
 type BrowseResultsSkeletonProps = {
   count?: number;
-  label?: string;
   showIcon?: boolean;
   variant?: "list" | "grid";
-  showColumnHead?: boolean;
   showCategoryColumn?: boolean;
   downloadsOnly?: boolean;
   /** Set false where the loaded rows show no download count, so loading matches them. */
@@ -14,10 +12,8 @@ type BrowseResultsSkeletonProps = {
 
 export function BrowseResultsSkeleton({
   count = 6,
-  label = "Skill",
   showIcon = true,
   variant = "list",
-  showColumnHead = true,
   showCategoryColumn = true,
   downloadsOnly = false,
   showStats = true,
@@ -58,29 +54,6 @@ export function BrowseResultsSkeleton({
 
   return (
     <div className="browse-list-stack" role="status" aria-label="Loading results">
-      {showColumnHead ? (
-        <div
-          className={`browse-list-head${
-            showCategoryColumn
-              ? showIcon
-                ? ""
-                : " browse-list-head-no-icon"
-              : showIcon
-                ? " browse-list-head-simple"
-                : " browse-list-head-simple-no-icon"
-          }`}
-          aria-hidden="true"
-        >
-          {showIcon ? <span className="browse-list-head-icon-spacer" /> : null}
-          <span className="browse-list-head-label">{label}</span>
-          {showCategoryColumn ? (
-            <span className="browse-list-head-label browse-list-head-category">Category</span>
-          ) : null}
-          {showStats ? (
-            <span className="browse-list-head-label browse-list-head-stat">Downloads</span>
-          ) : null}
-        </div>
-      ) : null}
       <div className="results-list">
         {Array.from({ length: count }, (_, i) => (
           <div
