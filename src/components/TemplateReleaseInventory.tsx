@@ -382,20 +382,13 @@ export function TemplateReleaseInventory({
       job.timezone,
       job.enabled ? "Enabled" : "Disabled",
     ].join(" · "),
-    details: (
-      <>
-        {documentLoading ? (
-          <p role="status">Loading instructions…</p>
-        ) : (
-          <p className="template-catalog-job-message">
-            {manifest?.automations?.[index]?.message ||
-              "Instructions are unavailable for this release."}
-          </p>
-        )}
-        <small>
-          Declared schedule: {job.schedule} · {job.timezone}
-        </small>
-      </>
+    details: documentLoading ? (
+      <p role="status">Loading instructions…</p>
+    ) : (
+      <p className="template-catalog-job-message">
+        {manifest?.automations?.[index]?.message ||
+          "Instructions are unavailable for this release."}
+      </p>
     ),
   }));
   if (workspace?.heartbeat)

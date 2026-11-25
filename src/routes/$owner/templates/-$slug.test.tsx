@@ -901,7 +901,7 @@ describe("Template detail composition and interactions", () => {
     }
   });
 
-  it("shows the declared schedule and instructions on the named automation", () => {
+  it("shows the readable schedule and instructions without a duplicate cron footer", () => {
     renderTemplate();
     const automation = within(screen.getByRole("region", { name: "Automations" }));
     const trigger = automation.getByRole("button", { name: /^Weekday release brief/ });
@@ -909,7 +909,8 @@ describe("Template detail composition and interactions", () => {
     fireEvent.click(trigger);
     const job = screen.getByRole("dialog", { name: "Weekday release brief" });
     expect(job.textContent).toContain("Weekdays at 9:00 AM · America/Los_Angeles · Disabled");
-    expect(job.textContent).toContain("Declared schedule: 0 9 * * 1-5 · America/Los_Angeles");
+    expect(job.textContent).not.toContain("Declared schedule:");
+    expect(job.textContent).not.toContain("0 9 * * 1-5");
     expect(job.textContent).toContain("Summarize the approved release sources.");
     const close = within(job).getByRole("button", { name: "Close" });
     fireEvent.click(close);
