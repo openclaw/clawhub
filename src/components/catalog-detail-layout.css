@@ -22,7 +22,8 @@ body:has(.catalog-detail-page) {
 
 /* Public counterpart of Control UI's plugins.css detail rail. All three listing
    types share the same reading measure and respond to the rail, not the window. */
-.catalog-detail {
+.catalog-detail,
+.catalog-skill-preview-dialog {
   --detail-radius-scale: 1;
   --detail-primary: light-dark(#bd4531, #d13c3c);
   --detail-text: light-dark(#353535, #bcbcc0);
@@ -33,6 +34,8 @@ body:has(.catalog-detail-page) {
   --detail-rule: color-mix(in srgb, var(--detail-text) 8%, transparent);
   --font-body:
     "Instrument Sans Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+.catalog-detail {
   container-type: inline-size;
   display: grid;
   gap: 30px;
@@ -49,7 +52,8 @@ body:has(.catalog-detail-page) {
   -webkit-font-smoothing: antialiased;
 }
 @supports (corner-shape: superellipse(1.5)) {
-  .catalog-detail {
+  .catalog-detail,
+  .catalog-skill-preview-dialog {
     --detail-radius-scale: 1.25;
   }
 }

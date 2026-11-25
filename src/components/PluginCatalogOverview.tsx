@@ -1,28 +1,13 @@
 import type { PluginManifestSummary } from "clawhub-schema";
-import {
-  Fragment,
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
-import { fetchPackageFile } from "../lib/packageApi";
+import { Fragment, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { MarkdownPreview } from "./MarkdownPreview";
-import { stripFrontmatter } from "./skillDetailUtils";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "./ui/dialog";
+import { PluginSkillPreview } from "./PluginSkillPreview";
+import { Dialog, DialogTrigger } from "./ui/dialog";
 import "./PluginCatalogOverview.css";
 
 type OverviewProps = {
   manifest: PluginManifestSummary | null;
+  publisherHandle?: string;
   packageName: string;
   version: string | null;
   readme: string | null;
@@ -195,67 +180,34 @@ function RowContent({
   );
 }
 
-function SkillPreview({
-  packageName,
-  version,
-  path,
-}: {
-  packageName: string;
-  version: string | null;
-  path: string;
-}) {
-  const [result, setResult] = useState<{ content: string | null } | { error: string } | null>(null);
-  useEffect(() => {
-    if (!version) return undefined;
-    // Ignore late reads after closing the dialog or changing the selected release/skill.
-    let active = true;
-    fetchPackageFile(packageName, path, version).then(
-      (content) => {
-        if (active) setResult({ content });
-      },
-      (error: unknown) => {
-        if (active) setResult({ error: error instanceof Error ? error.message : "Unknown error." });
-      },
-    );
-    return () => {
-      active = false;
-    };
-  }, [packageName, path, version]);
-  if (result && "error" in result)
-    return <p role="alert">Failed to load skill markdown: {result.error}</p>;
-  if (version && !result) return <p role="status">Loading skill markdown...</p>;
-  if (!result?.content) return <p>Skill markdown is unavailable.</p>;
-  return <MarkdownPreview>{stripFrontmatter(result.content)}</MarkdownPreview>;
-}
-
 function SkillRow({
   packageName,
   version,
+  publisherHandle,
   skill,
-}: {
-  packageName: string;
-  version: string | null;
-  skill: BundledSkill;
-}) {
+}: Pick<OverviewProps, "packageName" | "version" | "publisherHandle"> & { skill: BundledSkill }) {
+  const row = (
+    <RowContent
+      path={iconPaths.book}
+      name={skill.name}
+      description={skill.description}
+      chevron={Boolean(version)}
+    />
+  );
+  if (!version) return <div className="catalog-row">{row}</div>;
   return (
     <Dialog>
       <DialogTrigger asChild>
         <button type="button" className="catalog-row" aria-label={`Preview ${skill.name}`}>
-          <RowContent
-            path={iconPaths.book}
-            name={skill.name}
-            description={skill.description}
-            chevron
-          />
+          {row}
         </button>
       </DialogTrigger>
-      <DialogContent className="catalog-skill-preview-dialog">
-        <DialogHeader>
-          <DialogTitle>{skill.name}</DialogTitle>
-          <DialogDescription>{skill.skillMdPath}</DialogDescription>
-        </DialogHeader>
-        <SkillPreview packageName={packageName} version={version} path={skill.skillMdPath} />
-      </DialogContent>
+      <PluginSkillPreview
+        skill={skill}
+        packageName={packageName}
+        version={version}
+        publisherHandle={publisherHandle}
+      />
     </Dialog>
   );
 }
@@ -355,6 +307,7 @@ function ReadmeWell({ readme, assetBaseUrl }: { readme: string; assetBaseUrl?: s
 
 export function PluginCatalogOverview({
   manifest,
+  publisherHandle,
   packageName,
   version,
   readme,
@@ -387,6 +340,7 @@ export function PluginCatalogOverview({
               packageName={packageName}
               version={version}
               skill={skill}
+              publisherHandle={publisherHandle}
             />
           ))}
         </CapabilitySection>

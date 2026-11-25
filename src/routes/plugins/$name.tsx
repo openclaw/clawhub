@@ -1281,6 +1281,7 @@ function PluginDetailPageContent({ name, loaderData, pendingNotice }: PluginDeta
         {validationPanel}
         <PluginCatalogOverview
           manifest={pluginManifestSummary}
+          publisherHandle={publisherHandle}
           packageName={pkg.name}
           version={latestRelease?.version ?? pkg.latestVersion ?? null}
           readme={readme}

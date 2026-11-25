@@ -901,6 +901,7 @@ describe("plugin detail route", () => {
           ...loaderDataMock.detail.package!,
           name: "example-ai-plugin",
           displayName: "Example AI Plugin",
+          ownerHandle: "example-publisher",
           latestVersion: "1.2.3",
         },
         owner: null,
@@ -1022,10 +1023,11 @@ describe("plugin detail route", () => {
       );
     });
     const preview = screen.getByRole("dialog", { name: "research" });
+    expect(within(preview).getByText("@example-publisher")).toBeTruthy();
     expect(
       await within(preview).findByText(/Compare the original sources before summarizing/),
     ).toBeTruthy();
-    expect(preview.textContent).toContain("# Research");
+    expect(within(preview).getByRole("heading", { level: 1, name: "Research" })).toBeTruthy();
     expect(preview.textContent).not.toContain("name: research");
     expect(preview.textContent).not.toContain("Collect and verify source material.");
   });

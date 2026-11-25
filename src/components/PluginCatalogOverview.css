@@ -385,11 +385,3 @@
     padding: 8px 14px 8px 0;
   }
 }
-
-.catalog-skill-preview-dialog[data-slot="dialog-content"] {
-  grid-template-columns: minmax(0, 1fr);
-  width: min(820px, calc(100vw - 32px));
-  max-height: 85dvh;
-  overflow: auto;
-  overflow-wrap: anywhere;
-}
