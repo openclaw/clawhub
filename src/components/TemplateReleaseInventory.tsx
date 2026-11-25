@@ -1,3 +1,4 @@
+import { type } from "arktype";
 import type { TemplateDependencyInventory, TemplateManifest } from "clawhub-schema";
 import {
   ChevronDown,
@@ -9,12 +10,14 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { sha256Hex } from "../../convex/lib/hash";
 import { fetchPackageFile } from "../lib/packageApi";
 import { buildPluginDetailHref } from "../lib/pluginRoutes";
 import { publicApiUrl } from "../lib/publicApiUrl";
 import type { TemplateWorkspaceContents } from "../lib/templateDetail";
 import type { TemplateDisplayInventory } from "../lib/templateDisplayInventory";
 import { MarkdownPreview } from "./MarkdownPreview";
+import { stripFrontmatter } from "./skillDetailUtils";
 import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "./ui/dialog";
 
 // Match the catalog's 2,048 character plain-text preview. Expansion uses the actual file.
@@ -30,13 +33,7 @@ function excerpt(markdown: string) {
     .slice(0, 2048);
 }
 
-export function TemplatePersonality({
-  markdown,
-  fileAction,
-}: {
-  markdown: string;
-  fileAction: ReactNode;
-}) {
+export function TemplatePersonality({ markdown }: { markdown: string }) {
   const [expanded, setExpanded] = useState(false);
   const [clamped, setClamped] = useState(false);
   const id = useId();
@@ -59,7 +56,17 @@ export function TemplatePersonality({
     <section className="template-catalog-personality" aria-label="Personality">
       <div className="template-catalog-label">
         <h2>Personality</h2>
-        {fileAction}
+        <Dialog>
+          <DialogTrigger asChild>
+            <button type="button" className="template-catalog-file">
+              SOUL.md
+            </button>
+          </DialogTrigger>
+          <DialogContent className="template-catalog-file-dialog" aria-describedby={undefined}>
+            <DialogTitle>SOUL.md</DialogTitle>
+            <MarkdownPreview className="template-catalog-document">{markdown}</MarkdownPreview>
+          </DialogContent>
+        </Dialog>
       </div>
       <div className="template-catalog-well">
         <div
@@ -107,21 +114,55 @@ type Row = {
   preview?: PreviewSource;
 };
 
+const verifiedSource = type({
+  slug: "string",
+  publisherHandle: "string",
+  version: "string",
+  resolvedFrom: "'version'",
+  artifact: { files: type({ path: "string", sha256: "string" }).array() },
+});
+
 async function readSkillDocument(source: PreviewSource, signal: AbortSignal) {
   if ("package" in source) return fetchPackageFile(source.package, source.path, source.version);
-  const ref = /^(?:@?([^/]+)\/)?([^/]+)$/.exec(source.skill);
-  if (!ref) return null;
-  const url = publicApiUrl("/api/v1/skills/" + encodeURIComponent(ref[2]) + "/card");
-  if (ref[1]) url.searchParams.set("ownerHandle", ref[1]);
-  url.searchParams.set("version", source.version);
-  const response = await fetch(url, {
-    credentials: "same-origin",
-    signal,
-    headers: { Accept: "text/markdown" },
-  });
-  if ([403, 404, 415, 423].includes(response.status)) return null;
-  if (!response.ok) throw new Error("Skill preview unavailable");
-  return await response.text();
+  // Bare references lack a publisher pin. Never guess the Template's owner or use latest.
+  const ref = /^@([a-z0-9][a-z0-9._-]*)\/([a-z0-9][a-z0-9._-]*)$/.exec(source.skill);
+  if (!ref || !source.version.trim()) return null;
+  const [, owner, slug] = ref;
+  const get = async (route: "verify" | "file") => {
+    const url = publicApiUrl("/api/v1/skills/" + encodeURIComponent(slug) + "/" + route);
+    url.searchParams.set("ownerHandle", owner);
+    url.searchParams.set("version", source.version);
+    if (route === "file") {
+      url.searchParams.set("path", "SKILL.md");
+      url.searchParams.set("preview", "1");
+    }
+    const response = await fetch(url, { signal, credentials: "omit" });
+    if ([403, 404, 409, 410, 413, 415, 423].includes(response.status)) return null;
+    if (!response.ok) throw new Error("Skill preview unavailable");
+    return response;
+  };
+  // Scoped registry aliases can resolve across publishers after a merge. Check the
+  // canonical release and its source-file digest, not the generated card or its status.
+  const metadata = await get("verify");
+  if (!metadata) return null;
+  const verified = verifiedSource(await metadata.json());
+  if (
+    verified instanceof type.errors ||
+    verified.publisherHandle !== owner ||
+    verified.slug !== slug ||
+    verified.version !== source.version
+  )
+    return null;
+  const { files } = verified.artifact;
+  const file =
+    files.find((f) => f.path === "SKILL.md") ??
+    files.find((f) => f.path.toLowerCase() === "skill.md");
+  if (!file || !/^[a-f0-9]{64}$/.test(file.sha256)) return null;
+  const response = await get("file");
+  if (!response) return null;
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if ((await sha256Hex(bytes)) !== file.sha256) return null;
+  return new TextDecoder().decode(bytes);
 }
 
 function SkillDocument({ source }: { source: PreviewSource }) {
@@ -156,7 +197,11 @@ function SkillDocument({ source }: { source: PreviewSource }) {
     );
   if (read.contents === undefined) return <p role="status">Loading skill…</p>;
   if (read.contents === null) return <p>Skill preview is unavailable for this release.</p>;
-  return <MarkdownPreview className="template-catalog-document">{read.contents}</MarkdownPreview>;
+  return (
+    <MarkdownPreview className="template-catalog-document">
+      {stripFrontmatter(read.contents)}
+    </MarkdownPreview>
+  );
 }
 
 function CapabilitySection({

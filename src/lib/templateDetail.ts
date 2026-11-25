@@ -20,7 +20,7 @@ export function parseTemplateDocument(contents: string | null): {
   }
 }
 
-export type TemplateWorkspaceEntry = { name: string; path: string };
+type TemplateWorkspaceEntry = { name: string; path: string };
 export type TemplateWorkspaceContents = {
   skills: TemplateWorkspaceEntry[];
   plugins: TemplateWorkspaceEntry[];

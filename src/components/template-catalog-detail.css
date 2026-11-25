@@ -263,11 +263,6 @@
 .template-catalog-plugin-info p {
   margin-top: 12px;
 }
-.template-catalog-browse {
-  justify-self: start;
-  text-decoration: underline;
-  cursor: pointer;
-}
 .template-catalog-detail :is(summary, button, a):focus-visible {
   outline: 2px solid var(--oc-focus-ring);
   outline-offset: 2px;
