@@ -156,6 +156,12 @@ GitHub imports validate publish metadata and resolve the owner before storing
 selected files. They use the same persistence signal to end request cleanup;
 failed stores or pre-persistence publication remove only that import's uploads.
 
+The reusable package-publish workflow keeps tooling files outside local package
+inputs, including repository-root packages. It retains the original tooling
+checkout `.git` for post-action cleanup and stops before publishing if relocation
+fails. Inspector and identity verification use the relocated tooling; caller
+content, source provenance, and authorization remain unchanged.
+
 Local fixture data lives in `convex/devSeed.ts` and `fixtures/public-corpus/`.
 
 ## Versioning + tags

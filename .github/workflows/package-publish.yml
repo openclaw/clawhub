@@ -215,8 +215,19 @@ jobs:
           ref: ${{ steps.clawhub_source.outputs.ref }}
           path: clawhub-source
 
+      # Keep tooling outside local package inputs, while checkout retains its metadata for cleanup.
+      - name: Move ClawHub source out of the caller workspace
+        run: |
+          mkdir "$RUNNER_TEMP/clawhub-source"
+          shopt -s dotglob nullglob
+          for entry in "$GITHUB_WORKSPACE/clawhub-source/"*; do
+            if [[ "${entry##*/}" != .git ]]; then
+              mv "$entry" "$RUNNER_TEMP/clawhub-source/"
+            fi
+          done
+
       - name: Install ClawHub CLI dependencies
-        working-directory: clawhub-source
+        working-directory: ${{ runner.temp }}/clawhub-source
         run: bun install --frozen-lockfile
 
       - name: Validate publish mode inputs
@@ -512,7 +523,7 @@ jobs:
                   inspect_subdir = source_path or github_source["path"]
 
           cli_entry = (
-              Path(os.environ["GITHUB_WORKSPACE"])
+              Path(os.environ["RUNNER_TEMP"])
               / "clawhub-source"
               / "packages"
               / "clawhub"
@@ -728,8 +739,8 @@ jobs:
             echo "::warning::Plugin Inspector skipped because $inspect_root is not a plugin root."
             exit 0
           fi
-          bun run --cwd "$GITHUB_WORKSPACE/clawhub-source/packages/clawhub" build
-          node "$GITHUB_WORKSPACE/clawhub-source/packages/clawhub/bin/clawdhub.js" package validate "$inspect_root" --out "$RUNNER_TEMP/plugin-inspector"
+          bun run --cwd "$RUNNER_TEMP/clawhub-source/packages/clawhub" build
+          node "$RUNNER_TEMP/clawhub-source/packages/clawhub/bin/clawdhub.js" package validate "$inspect_root" --out "$RUNNER_TEMP/plugin-inspector"
 
       - name: Upload plugin inspector reports
         if: always()
@@ -760,7 +771,7 @@ jobs:
         run: |
           node <<'NODE'
           const { appendFileSync, lstatSync, readFileSync } = require("node:fs");
-          const { parentArtifactName, parseTrustedToolingIdentity, parseRecoveryApprovalReceipt } = require(`${process.env.GITHUB_WORKSPACE}/clawhub-source/.github/scripts/verify-trusted-tooling-identity.cjs`);
+          const { parentArtifactName, parseTrustedToolingIdentity, parseRecoveryApprovalReceipt } = require(`${process.env.RUNNER_TEMP}/clawhub-source/.github/scripts/verify-trusted-tooling-identity.cjs`);
           const identity = parseTrustedToolingIdentity(process.env.TRUSTED_TOOLING_IDENTITY_JSON);
           let child = identity;
           const path = process.env.RECOVERY_APPROVAL_RECEIPT_PATH;
@@ -802,7 +813,7 @@ jobs:
           GITHUB_SHA: ${{ github.sha }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
           GITHUB_ACTOR: ${{ github.actor }}
-        run: node "$GITHUB_WORKSPACE/clawhub-source/.github/scripts/verify-trusted-tooling-identity.cjs"
+        run: node "$RUNNER_TEMP/clawhub-source/.github/scripts/verify-trusted-tooling-identity.cjs"
 
       - name: Run package publish
         env:

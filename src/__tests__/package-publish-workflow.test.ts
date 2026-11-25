@@ -36,13 +36,13 @@ describe("package publish workflow", () => {
     );
     expect(workflow).toContain("node-version: 24.22.1");
     expect(workflow).toContain(
-      'bun run --cwd "$GITHUB_WORKSPACE/clawhub-source/packages/clawhub" build',
+      'bun run --cwd "$RUNNER_TEMP/clawhub-source/packages/clawhub" build',
     );
     expect(workflow).toContain(
-      'node "$GITHUB_WORKSPACE/clawhub-source/packages/clawhub/bin/clawdhub.js" package validate "$inspect_root" --out "$RUNNER_TEMP/plugin-inspector"',
+      'node "$RUNNER_TEMP/clawhub-source/packages/clawhub/bin/clawdhub.js" package validate "$inspect_root" --out "$RUNNER_TEMP/plugin-inspector"',
     );
     expect(workflow).not.toContain(
-      'bun "$GITHUB_WORKSPACE/clawhub-source/packages/clawhub/src/cli.ts" package validate',
+      'bun "$RUNNER_TEMP/clawhub-source/packages/clawhub/src/cli.ts" package validate',
     );
     expect(workflow).not.toContain('config_path = root / ".plugin-inspector.json"');
     expect(workflow).not.toContain("generated_config_path.write_text(str(config_path)");
