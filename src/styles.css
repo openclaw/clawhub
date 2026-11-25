@@ -12516,49 +12516,6 @@ a.agentic-risk-finding-title:focus-visible {
   background: transparent;
 }
 
-.browse-list-head {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) 180px 190px;
-  gap: 16px 20px;
-  align-items: center;
-  padding: 0 4px 8px;
-  margin-bottom: 2px;
-  border-bottom: 1px solid color-mix(in srgb, var(--line) 76%, transparent);
-}
-
-.browse-list-head-icon-spacer {
-  width: 27px;
-}
-
-.browse-list-head-no-icon {
-  grid-template-columns: minmax(0, 1fr) 180px 190px;
-}
-
-.browse-list-head-simple {
-  grid-template-columns: auto minmax(0, 1fr) 190px;
-}
-
-.browse-list-head-simple-no-icon {
-  grid-template-columns: minmax(0, 1fr) 190px;
-}
-
-.browse-list-head-publishers {
-  grid-template-columns: minmax(0, 1fr) minmax(160px, auto);
-}
-
-.browse-list-head-label {
-  color: color-mix(in srgb, var(--ink-soft) 62%, transparent);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.07em;
-  line-height: 1;
-  text-transform: uppercase;
-}
-
-.browse-list-head-stat {
-  justify-self: end;
-}
-
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -12902,8 +12859,7 @@ a.agentic-risk-finding-title:focus-visible {
     grid-template-columns: minmax(0, 1fr) auto;
   }
 
-  .browse-page .skill-list-item-taxonomy,
-  .browse-page .browse-list-head-category {
+  .browse-page .skill-list-item-taxonomy {
     display: none;
   }
 
@@ -12912,35 +12868,6 @@ a.agentic-risk-finding-title:focus-visible {
   }
 
   .browse-page .skill-list-item-no-icon .skill-list-item-meta {
-    grid-column: 2;
-  }
-
-  .browse-page .browse-list-head {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-  }
-
-  .browse-page .browse-list-head-label:nth-of-type(2) {
-    grid-column: 2;
-  }
-
-  .browse-page .browse-list-head-stat {
-    grid-column: 3;
-  }
-
-  .browse-page .browse-list-head-no-icon {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .browse-page .browse-list-head-no-icon .browse-list-head-category {
-    display: none;
-  }
-
-  .browse-page .browse-list-head-no-icon .browse-list-head-label:first-child {
-    grid-column: 1;
-  }
-
-  .browse-page .browse-list-head-no-icon .browse-list-head-stat {
-    display: initial;
     grid-column: 2;
   }
 
@@ -13361,10 +13288,6 @@ a.agentic-risk-finding-title:focus-visible {
     gap: 12px;
   }
 
-  .browse-list-head {
-    display: none;
-  }
-
   .skill-list-item-meta {
     grid-column: 1;
     justify-content: flex-start;
@@ -13492,7 +13415,7 @@ body:has(.browse-page-borderless-header) .navbar {
   margin-bottom: var(--oc-space-6);
 }
 
-.catalog-browse-page :is(.browse-list-head, .skill-list-item) {
+.catalog-browse-page .skill-list-item {
   border-color: var(--line);
 }
 
@@ -14606,41 +14529,6 @@ body:has(.browse-page-borderless-header) .navbar {
     padding: 10px 8px;
   }
 
-  .browse-page .browse-list-head {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 12px;
-    padding: 0 8px 8px;
-    margin-bottom: 0;
-  }
-
-  .browse-page .browse-list-head-icon-spacer,
-  .browse-page .browse-list-head-category {
-    display: none;
-  }
-
-  .browse-page .browse-list-head-label:nth-of-type(2) {
-    grid-column: 1;
-  }
-
-  .browse-page .browse-list-head-stat {
-    grid-column: 2;
-    justify-self: end;
-  }
-
-  .browse-page .browse-list-head-no-icon .browse-list-head-category {
-    display: none;
-  }
-
-  .browse-page .browse-list-head-no-icon .browse-list-head-label:first-child {
-    grid-column: 1;
-  }
-
-  .browse-page .browse-list-head-no-icon .browse-list-head-stat {
-    display: initial;
-    grid-column: 2;
-  }
-
   .browse-page .skill-list-item > .marketplace-icon,
   .skills-browse-page .browse-results-grid .skill-card-header > .marketplace-icon,
   .plugins-browse-page .browse-results-grid .skill-card-header > .marketplace-icon,
@@ -14706,24 +14594,20 @@ body:has(.browse-page-borderless-header) .navbar {
     display: none;
   }
 
-  .templates-browse-page .skill-list-item,
-  .templates-browse-page .browse-list-head {
+  .templates-browse-page .skill-list-item {
     grid-template-columns: 27px minmax(0, 1fr) auto;
   }
 
   .templates-browse-page .skill-list-item > .marketplace-icon,
-  .templates-browse-page .browse-results-skeleton-icon,
-  .templates-browse-page .browse-list-head-icon-spacer {
+  .templates-browse-page .browse-results-skeleton-icon {
     display: inline-flex;
   }
 
-  .templates-browse-page .skill-list-item-body,
-  .templates-browse-page .browse-list-head-label:nth-of-type(2) {
+  .templates-browse-page .skill-list-item-body {
     grid-column: 2;
   }
 
-  .templates-browse-page .skill-list-item-meta,
-  .templates-browse-page .browse-list-head-stat {
+  .templates-browse-page .skill-list-item-meta {
     grid-column: 3;
   }
 
@@ -15356,57 +15240,6 @@ a.search-empty-action {
   color: var(--hv2-text);
   border-bottom-color: var(--hv2-text);
   font-weight: 600;
-}
-
-.home-v2-listing-head {
-  --home-v2-listing-copy-max: min(54rem, 60vw);
-  display: grid;
-  grid-template-columns: minmax(0, var(--home-v2-listing-copy-max)) 1fr auto;
-  gap: 16px 20px;
-  align-items: center;
-  padding: 0 4px 8px;
-  margin-bottom: 2px;
-  border-bottom: 1px solid color-mix(in srgb, var(--hv2-border) 65%, transparent);
-}
-
-.home-v2-listing-head.has-no-stats {
-  grid-template-columns: minmax(0, var(--home-v2-listing-copy-max)) 1fr;
-}
-
-.home-v2-listing-head-with-icon {
-  grid-template-columns: auto minmax(0, var(--home-v2-listing-copy-max)) 1fr auto;
-}
-
-.home-v2-listing-head-icon-spacer {
-  grid-column: 1;
-  width: 34px;
-  flex-shrink: 0;
-}
-
-.home-v2-listing-head-label,
-.home-v2-listing-head-stat {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--hv2-text-tertiary);
-}
-
-.home-v2-listing-head-with-icon .home-v2-listing-head-label {
-  grid-column: 2;
-}
-
-.home-v2-listing-head-with-icon .home-v2-listing-head-stat {
-  grid-column: 4;
-}
-
-.home-v2-listing-head-label {
-  grid-column: 1;
-}
-
-.home-v2-listing-head-stat {
-  grid-column: 3;
-  justify-self: end;
 }
 
 .home-v2-listing-grid {
@@ -18442,35 +18275,21 @@ a.home-v2-byos-import:focus-visible svg:last-child {
   .home-v2-listing {
     padding: 0 20px 64px;
   }
-  .home-v2-listing-row,
-  .home-v2-listing-head {
-    --home-v2-listing-copy-max: min(15rem, calc(100vw - 11rem));
-  }
-
-  .home-v2-listing-head {
-    grid-template-columns: minmax(0, var(--home-v2-listing-copy-max)) 1fr auto;
-    gap: 12px 16px;
-    padding: 0 8px 8px;
-  }
-
   .home-v2-listing-row {
+    --home-v2-listing-copy-max: min(15rem, calc(100vw - 11rem));
     grid-template-columns: minmax(0, var(--home-v2-listing-copy-max)) 1fr auto;
     gap: 12px 16px;
     padding: 10px 8px;
   }
-  .home-v2-listing-row.has-no-stats,
-  .home-v2-listing-head.has-no-stats {
+  .home-v2-listing-row.has-no-stats {
     grid-template-columns: minmax(0, var(--home-v2-listing-copy-max)) 1fr;
   }
-  .home-v2-listing-head-icon-spacer,
   .home-v2-listing-row-icon {
     display: none;
   }
-  .home-v2-listing-head-label,
   .home-v2-listing-row-body {
     grid-column: 1;
   }
-  .home-v2-listing-head-stat,
   .home-v2-listing-row-stats {
     grid-column: 3;
   }
@@ -18479,8 +18298,7 @@ a.home-v2-byos-import:focus-visible svg:last-child {
     min-width: 0;
     font-size: 12px;
   }
-  .home-v2-listing-row.home-v2-listing-row-with-icon,
-  .home-v2-listing-head.home-v2-listing-head-with-icon {
+  .home-v2-listing-row.home-v2-listing-row-with-icon {
     grid-template-columns: minmax(0, var(--home-v2-listing-copy-max)) 1fr auto;
   }
   /* Featured rows show no download count, so their copy uses the full row width. */
@@ -18488,38 +18306,28 @@ a.home-v2-byos-import:focus-visible svg:last-child {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .home-v2-listing-head-with-icon .home-v2-listing-head-icon-spacer,
   .home-v2-listing-row-with-icon .home-v2-listing-row-icon,
-  .home-v2-listing .browse-list-head-icon-spacer,
   .home-v2-listing .browse-results-skeleton-icon {
     display: none;
   }
 
-  .home-v2-listing .browse-list-head,
   .home-v2-listing .browse-results-skeleton-row {
     --home-v2-listing-copy-max: min(15rem, calc(100vw - 11rem));
     grid-template-columns: minmax(0, var(--home-v2-listing-copy-max)) 1fr auto;
     gap: 12px 16px;
   }
 
-  .home-v2-listing .browse-list-head-category,
   .home-v2-listing .browse-results-skeleton-row .skill-list-item-taxonomy {
     display: none;
   }
 
-  .home-v2-listing-head-with-icon .home-v2-listing-head-label,
   .home-v2-listing-row-with-icon .home-v2-listing-row-body,
-  .home-v2-listing
-    .browse-list-head
-    > .browse-list-head-label:not(.browse-list-head-category):not(.browse-list-head-stat),
   .home-v2-listing .browse-results-skeleton-row .skill-list-item-body {
     grid-column: 1;
     max-width: none;
   }
 
-  .home-v2-listing-head-with-icon .home-v2-listing-head-stat,
   .home-v2-listing-row-with-icon .home-v2-listing-row-stats,
-  .home-v2-listing .browse-list-head-stat,
   .home-v2-listing .browse-results-skeleton-row .skill-list-item-meta {
     grid-column: 3;
   }
@@ -19609,22 +19417,6 @@ a[class*="rounded-full"] {
     min-height: 40px;
     padding: 4px 6px 4px 14px;
     border-radius: var(--oc-radius-control);
-  }
-
-  .browse-page .browse-list-head-publishers {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 12px;
-    padding: 0 8px 8px;
-  }
-
-  .browse-page .browse-list-head-publishers .browse-list-head-label:first-child {
-    grid-column: 1;
-  }
-
-  .browse-page .browse-list-head-publishers .browse-list-head-stat {
-    display: block;
-    grid-column: 2;
   }
 
   .browse-page .publisher-directory-list .publisher-card-list {
@@ -22615,22 +22407,11 @@ a[class*="rounded-full"] {
 }
 
 /* Shared compact skill rows on the homepage and Featured browse page. */
-.skill-listing-head,
 .home-v2-listing-row.skill-listing-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) max-content;
   column-gap: 20px;
   padding-inline: 4px;
-}
-
-.skill-listing-head {
-  padding-block: 0 10px;
-  border-bottom: 1px solid var(--oc-border-subtle);
-  color: var(--oc-text-muted);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
 }
 
 .home-v2-listing-row.skill-listing-row {

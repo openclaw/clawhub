@@ -187,7 +187,7 @@ describe("restored UI design contract", () => {
       "grid-template-columns: minmax(0, var(--home-v2-listing-copy-max)) 1fr auto;",
     );
     expect(homeMobile).toMatch(
-      /\.home-v2-listing-head-with-icon \.home-v2-listing-head-icon-spacer,\s*\.home-v2-listing-row-with-icon \.home-v2-listing-row-icon,\s*\.home-v2-listing \.browse-list-head-icon-spacer,\s*\.home-v2-listing \.browse-results-skeleton-icon\s*\{\s*display:\s*none;/,
+      /\.home-v2-listing-row-with-icon \.home-v2-listing-row-icon,\s*\.home-v2-listing \.browse-results-skeleton-icon\s*\{\s*display:\s*none;/,
     );
 
     const browseMobile = cssMediaContaining(css, "(max-width: 760px)", [
@@ -200,17 +200,6 @@ describe("restored UI design contract", () => {
     expect(browseMobile).toMatch(
       /\.skills-browse-page \.browse-results-grid \.skill-card-header,\s*\.plugins-browse-page \.browse-results-grid \.skill-card-header\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\);/,
     );
-  });
-
-  it("keeps metric headers visible when responsive category columns collapse", () => {
-    const css = styles();
-
-    for (const query of ["(max-width: 960px)", "(max-width: 760px)"]) {
-      const responsive = cssMediaContaining(css, query, [
-        ".browse-page .browse-list-head-category",
-      ]);
-      expect(responsive).not.toContain(".browse-page .browse-list-head-label:nth-of-type(3)");
-    }
   });
 
   it("keeps dashboard package names inside their rows and attention cards", () => {

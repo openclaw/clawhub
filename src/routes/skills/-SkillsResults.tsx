@@ -133,7 +133,7 @@ export function SkillsResults({
   return (
     <>
       {isLoadingSkills ? (
-        <BrowseResultsSkeleton label="Skill" showIcon={false} />
+        <BrowseResultsSkeleton showIcon={false} />
       ) : listFailed && sorted.length === 0 ? (
         <div className="empty-state" role="alert">
           <p className="empty-state-title">Skills couldn't be loaded</p>
@@ -161,11 +161,6 @@ export function SkillsResults({
         </div>
       ) : (
         <div className="browse-list-stack">
-          <div className="browse-list-head browse-list-head-no-icon" aria-hidden="true">
-            <span className="browse-list-head-label">Skill</span>
-            <span className="browse-list-head-label browse-list-head-category">Category</span>
-            <span className="browse-list-head-label browse-list-head-stat">Downloads</span>
-          </div>
           <div className="results-list">
             {sorted.map((entry) => {
               if (isTrendingSkillListEntry(entry)) {

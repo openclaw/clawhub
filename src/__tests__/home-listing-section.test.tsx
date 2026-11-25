@@ -343,7 +343,6 @@ describe("HomeListingSection", () => {
     );
     const loadingResults = screen.getByRole("status", { name: "Loading results" });
     expect(loadingResults.querySelector(".browse-results-skeleton-icon")).toBeNull();
-    expect(loadingResults.querySelector(".browse-list-head-icon-spacer")).toBeNull();
     expect(loadingResults.querySelectorAll(".skill-listing-row")).toHaveLength(6);
   });
 
@@ -587,14 +586,13 @@ describe("HomeListingSection", () => {
     expect(featuredRow?.textContent).not.toContain("120");
     expect(featuredRow?.classList.contains("has-no-stats")).toBe(true);
     expect(document.querySelector(".home-v2-listing-row-stats")).toBeNull();
-    expect(document.querySelector(".home-v2-listing-head")?.textContent).toBe("Plugin");
     expect(screen.queryByText("Downloads")).toBeNull();
 
     fireEvent.click(screen.getByRole("tab", { name: "Official" }));
-    await waitFor(() =>
-      expect(document.querySelector(".home-v2-listing-row-stats")?.textContent).toBe("120"),
-    );
-    expect(document.querySelector(".home-v2-listing-head")?.textContent).toBe("PluginDownloads");
+    const downloads = await screen.findByTitle("Downloads");
+    expect(downloads.textContent).toBe("Downloads: 120");
+    expect(downloads.querySelector(".lucide-download")).not.toBeNull();
+    expect(screen.queryByText("Downloads", { exact: true })).toBeNull();
     expect(document.querySelector(".home-v2-listing-row")?.classList.contains("has-no-stats")).toBe(
       false,
     );
@@ -612,33 +610,32 @@ describe("HomeListingSection", () => {
     expect(convexQueryMock).toHaveBeenCalledWith("featuredSkills:listPublic", expect.anything());
     expect(document.querySelector(".skill-listing-row")?.textContent).not.toContain("340");
     expect(document.querySelector(".home-v2-listing-row-stats")).toBeNull();
-    expect(document.querySelector(".skill-listing-head")?.textContent).toBe("Skill");
-    expect(screen.queryByLabelText("Downloads")).toBeNull();
+    expect(screen.queryByTitle("Downloads")).toBeNull();
 
     fireEvent.click(screen.getByRole("tab", { name: "New" }));
-    await waitFor(() => expect(screen.getByLabelText("Downloads").textContent).toBe("340"));
-    expect(document.querySelector(".skill-listing-head")?.textContent).toBe("SkillDownloads");
+    const downloads = await screen.findByTitle("Downloads");
+    expect(downloads.textContent).toBe("Downloads: 340");
+    expect(downloads.querySelector(".lucide-download")).not.toBeNull();
+    expect(screen.queryByText("Downloads", { exact: true })).toBeNull();
   });
 
-  it("keeps the Featured loading placeholders free of a Downloads column", () => {
+  it("shows metric placeholders only on tabs with downloads, without a header", () => {
     fetchPluginCatalogMock.mockReturnValue(new Promise(() => {}));
     convexQueryMock.mockReturnValue(new Promise(() => {}));
 
     render(<HomeListingSection />);
     const pluginLoading = screen.getByRole("status", { name: "Loading results" });
-    expect(pluginLoading.querySelector(".browse-list-head-stat")).toBeNull();
+    expect(pluginLoading.children).toHaveLength(1);
     expect(pluginLoading.querySelector(".skill-list-item-meta")).toBeNull();
 
     fireEvent.click(screen.getByRole("tab", { name: "Official" }));
-    expect(
-      screen
-        .getByRole("status", { name: "Loading results" })
-        .querySelector(".browse-list-head-stat")?.textContent,
-    ).toBe("Downloads");
+    const officialLoading = screen.getByRole("status", { name: "Loading results" });
+    expect(officialLoading.children).toHaveLength(1);
+    expect(officialLoading.querySelector(".skill-list-item-meta")).not.toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Skills" }));
     const skillLoading = screen.getByRole("status", { name: "Loading results" });
-    expect(skillLoading.querySelector(".skill-listing-head")?.textContent).toBe("Skill");
+    expect(skillLoading.children).toHaveLength(6);
     expect(skillLoading.querySelector(".skill-listing-row")?.children).toHaveLength(1);
   });
 
@@ -657,7 +654,7 @@ describe("HomeListingSection", () => {
         }}
       />,
     );
-    expect(document.querySelector(".home-v2-listing-row")?.textContent).toContain("7");
+    expect(screen.getByTitle("24-hour downloads").textContent).toBe("24-hour downloads: 7");
     expect(document.querySelector(".home-v2-listing-row")?.textContent).not.toContain("120");
   });
 

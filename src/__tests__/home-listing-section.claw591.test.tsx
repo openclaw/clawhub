@@ -118,15 +118,22 @@ describe("HomeListingSection", () => {
     expect(screen.getByText("29")).toBeTruthy();
     expect(screen.queryByText("17")).toBeNull();
     expect(screen.queryByText("3")).toBeNull();
-    expect(screen.getByText("Downloads")).toBeTruthy();
-    expect(screen.getAllByLabelText("24-hour downloads")).toHaveLength(2);
+    expect(screen.queryByText("Downloads", { exact: true })).toBeNull();
+    expect(screen.getByRole("link", { name: /First Skill.*24-hour downloads:\s*71/ })).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: /Second Skill.*24-hour downloads:\s*29/ }),
+    ).toBeTruthy();
     expect(screen.queryByText("24h installs")).toBeNull();
     expect(screen.queryByLabelText("24-hour installs")).toBeNull();
     expect(screen.queryByText("9K")).toBeNull();
     expect(screen.queryByText("8K")).toBeNull();
     expect(screen.queryByText("skills.sh")).toBeNull();
     expect(document.querySelector(".home-v2-listing-row-icon")).toBeNull();
-    expect(document.querySelector(".home-v2-listing-row-stats svg")).toBeNull();
+    const downloadMetrics = screen.getAllByTitle("24-hour downloads");
+    expect(downloadMetrics).toHaveLength(2);
+    for (const metric of downloadMetrics) {
+      expect(metric.querySelector(".lucide-download")?.getAttribute("aria-hidden")).toBe("true");
+    }
 
     expect(screen.queryByRole("button", { name: "Grid view" })).toBeNull();
   });
@@ -166,8 +173,9 @@ describe("HomeListingSection", () => {
     const source = sourceBadge.parentElement!;
     expect(source.firstElementChild).toBe(sourceBadge);
     expect(sourceBadge.getAttribute("title")).toBeNull();
-    expect(source.textContent).toBe("skills.sh12.3k");
-    expect(screen.getByLabelText("skills.sh lifetime installs").textContent).toBe("12.3k");
+    const metric = screen.getByTitle("skills.sh lifetime installs");
+    expect(sourceBadge.nextElementSibling).toBe(metric);
+    expect(metric.textContent).toBe("skills.sh lifetime installs: 12.3k");
 
     fireEvent.pointerMove(sourceBadge);
     expect((await screen.findByRole("tooltip")).textContent).toBe("Synced from skills.sh");
@@ -205,7 +213,9 @@ describe("HomeListingSection", () => {
 
     const sourceBadge = screen.getByText("skills.sh");
     expect(sourceBadge.getAttribute("title")).toBeNull();
-    expect(sourceBadge.parentElement?.textContent).toBe("skills.sh—");
+    const metric = screen.getByTitle("skills.sh lifetime installs");
+    expect(sourceBadge.nextElementSibling).toBe(metric);
+    expect(metric.textContent).toBe("skills.sh lifetime installs: —");
   });
 
   it("searches within the canonical Trending feed without changing source or order", async () => {

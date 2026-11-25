@@ -134,7 +134,7 @@ describe("official route", () => {
     expect(screen.queryByText("Popular publishers")).toBeNull();
   });
 
-  it("renders official organizations in the existing table without redundant badges", async () => {
+  it("renders official organizations without redundant headers or badges", async () => {
     loaderDataMock.mockReturnValue({
       page: [{ _id: "publishers:openclaw" }],
       counts: { all: 1, organizations: 1, individuals: 0 },
@@ -146,8 +146,8 @@ describe("official route", () => {
 
     render(<Component />);
 
-    expect(screen.getByText("Organization")).toBeTruthy();
-    expect(screen.getByText("Activity")).toBeTruthy();
+    expect(screen.queryByText("Organization", { exact: true })).toBeNull();
+    expect(screen.queryByText("Activity", { exact: true })).toBeNull();
     expect(screen.getByText("publishers:openclaw")).toBeTruthy();
     expect(publisherListItemMock).toHaveBeenCalledWith(
       expect.objectContaining({
