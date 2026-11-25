@@ -227,6 +227,21 @@
   border-radius: 8px;
   object-fit: contain;
 }
+/* The authored document and the footer stay together at both widths. The rail
+   comes before the document in reading order; wide layouts place it on the right. */
+@container (width > 768px) {
+  .catalog-detail__content--with-footer {
+    grid-template-areas: "main sidebar";
+  }
+  .catalog-detail__content--with-footer:has(> .catalog-detail__summary) {
+    grid-template-areas: "summary sidebar" "main sidebar";
+    grid-template-rows: auto 1fr;
+    row-gap: 32px;
+  }
+  .catalog-detail__content--with-footer > .catalog-detail__summary { grid-area: summary; }
+  .catalog-detail__content--with-footer > .catalog-detail__sidebar { grid-area: sidebar; }
+  .catalog-detail__content--with-footer > .catalog-detail__main { grid-area: main; }
+}
 @container (max-width:768px) {
   .skill-catalog-detail .skill-catalog-facts {
     display: grid;

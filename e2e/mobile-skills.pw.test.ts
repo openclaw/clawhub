@@ -84,7 +84,14 @@ test("mobile Skill pages show SKILL.md inline and keep version history separate"
 
   const readme = page.getByRole("tab", { name: "SKILL.md", exact: true });
   await expect(readme).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByRole("tabpanel", { name: "SKILL.md", exact: true })).toBeVisible();
+  const document = page.getByRole("tabpanel", { name: "SKILL.md", exact: true });
+  await expect(document).toBeVisible();
+  // On a stacked layout the rail must not appear between the document and its footer.
+  const rail = page.locator(".catalog-detail__sidebar");
+  await expect(rail).toBeVisible();
+  const [railBox, documentBox] = await Promise.all([rail.boundingBox(), document.boundingBox()]);
+  if (!railBox || !documentBox) throw new Error("Expected a rendered install rail and SKILL.md");
+  expect(railBox.y + railBox.height).toBeLessThanOrEqual(documentBox.y + 1);
   await expect(page.getByRole("tab", { name: /^(Files|Skill Card|Diff|Versions)$/ })).toHaveCount(
     0,
   );

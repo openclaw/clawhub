@@ -25,6 +25,8 @@ export function CatalogDetailLayout(props: {
   className?: string;
 }) {
   const headingId = useId();
+  const summary = props.summary && <div className="catalog-detail__summary">{props.summary}</div>;
+  const sidebar = <aside className="catalog-detail__sidebar">{props.sidebar}</aside>;
   return (
     <section className={cn("catalog-detail", props.className)} aria-labelledby={headingId}>
       {props.breadcrumb}
@@ -39,12 +41,19 @@ export function CatalogDetailLayout(props: {
           {props.publisher && <div className="catalog-detail__publisher">{props.publisher}</div>}
         </div>
       </header>
-      <div className="catalog-detail__content">
+      <div
+        className={cn(
+          "catalog-detail__content",
+          props.footer && "catalog-detail__content--with-footer",
+        )}
+      >
+        {props.footer && summary}
+        {props.footer && sidebar}
         <div className="catalog-detail__main">
-          {props.summary && <div className="catalog-detail__summary">{props.summary}</div>}
+          {!props.footer && summary}
           {props.children}
         </div>
-        <aside className="catalog-detail__sidebar">{props.sidebar}</aside>
+        {!props.footer && sidebar}
       </div>
       {props.footer}
     </section>
