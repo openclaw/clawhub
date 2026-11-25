@@ -581,9 +581,37 @@ export function BrowseCategorySidebar({
   onChange,
   disabled = false,
 }: BrowseCategorySidebarProps) {
+  const sidebarRef = useRef<HTMLElement>(null);
+  const categoriesRef = useRef<HTMLFieldSetElement>(null);
+  const [edges, setEdges] = useState({ up: false, down: false });
+
+  const updateEdges = useCallback(() => {
+    const sidebar = sidebarRef.current;
+    if (!sidebar) return;
+    const up = sidebar.scrollTop > 1;
+    const down = sidebar.scrollHeight - sidebar.clientHeight - sidebar.scrollTop > 1;
+    setEdges((current) => (current.up === up && current.down === down ? current : { up, down }));
+  }, []);
+
+  useEffect(() => {
+    updateEdges();
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const observer = new ResizeObserver(updateEdges);
+    if (sidebarRef.current) observer.observe(sidebarRef.current);
+    if (categoriesRef.current) observer.observe(categoriesRef.current);
+    return () => observer.disconnect();
+  }, [updateEdges]);
+
   return (
-    <aside className="browse-sidebar browse-category-sidebar" aria-label={ariaLabel}>
-      <fieldset className="sidebar-section">
+    <aside
+      ref={sidebarRef}
+      className="browse-sidebar browse-category-sidebar"
+      aria-label={ariaLabel}
+      data-scroll-up={edges.up || undefined}
+      data-scroll-down={edges.down || undefined}
+      onScroll={updateEdges}
+    >
+      <fieldset ref={categoriesRef} className="sidebar-section">
         <legend className="sidebar-title">Categories</legend>
         <button
           className={`sidebar-option${!value ? " is-active" : ""}`}

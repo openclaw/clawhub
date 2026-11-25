@@ -24,6 +24,34 @@ describe("BrowseControls", () => {
     expect(onChange).toHaveBeenCalledWith("voice");
   });
 
+  it("only fades the sidebar edges that have more categories to scroll to", () => {
+    render(
+      <BrowseCategorySidebar
+        ariaLabel="Plugin categories"
+        categories={PLUGIN_CATEGORIES}
+        value={undefined}
+        onChange={vi.fn()}
+      />,
+    );
+    const sidebar = screen.getByRole("complementary", { name: "Plugin categories" });
+    Object.defineProperties(sidebar, {
+      clientHeight: { configurable: true, value: 100 },
+      scrollHeight: { configurable: true, value: 200 },
+    });
+
+    fireEvent.scroll(sidebar, { target: { scrollTop: 0 } });
+    expect(sidebar.hasAttribute("data-scroll-up")).toBe(false);
+    expect(sidebar.hasAttribute("data-scroll-down")).toBe(true);
+
+    fireEvent.scroll(sidebar, { target: { scrollTop: 50 } });
+    expect(sidebar.hasAttribute("data-scroll-up")).toBe(true);
+    expect(sidebar.hasAttribute("data-scroll-down")).toBe(true);
+
+    fireEvent.scroll(sidebar, { target: { scrollTop: 100 } });
+    expect(sidebar.hasAttribute("data-scroll-up")).toBe(true);
+    expect(sidebar.hasAttribute("data-scroll-down")).toBe(false);
+  });
+
   it("renders chip-shaped placeholders while topics load", () => {
     const { container } = render(<BrowseTopicChips topics={[]} loading onChange={() => {}} />);
 
