@@ -365,13 +365,13 @@ test("publishes, polls, retries, and downloads the exact Template tarball", asyn
         ["Automations", "Daily brief", "Summarize approved sources."],
       ] as const) {
         const region = included.getByRole("region", { name: section });
+        const trigger = region.getByRole("button", { name });
+        await trigger.click();
+        const dialog = page.getByRole("dialog", { name, exact: true });
+        await expect(dialog).toContainText(evidence);
         if (section === "Automations") {
-          await region.getByText(name, { exact: true }).click();
-          await expect(region.getByText(evidence)).toBeVisible();
-          await expect(region).toContainText("Daily at 9:00 AM · UTC · Disabled");
-        } else {
-          await region.getByRole("button", { name }).click();
-          await expect(page.getByRole("dialog", { name })).toContainText(evidence);
+          await expect(dialog).toContainText("Daily at 9:00 AM · UTC · Disabled");
+          await expect(dialog.getByRole("button", { name: "Close" })).toHaveCount(1);
         }
         expect(
           await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
@@ -381,9 +381,8 @@ test("publishes, polls, retries, and downloads the exact Template tarball", asyn
             path: path.join(proofDir, `candidate-${label}-${section.toLowerCase()}.png`),
             fullPage: true,
           });
-        if (section === "Automations") await region.getByText(name, { exact: true }).click();
-        else
-          await page.getByRole("dialog", { name }).getByRole("button", { name: "Close" }).click();
+        await dialog.getByRole("button", { name: "Close" }).click();
+        await expect(trigger).toBeFocused();
       }
     }
 

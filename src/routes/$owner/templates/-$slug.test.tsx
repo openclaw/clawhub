@@ -633,8 +633,8 @@ describe("Template detail composition and interactions", () => {
     });
     try {
       renderTemplate();
-      const summary = screen.getByText("Weekday release brief", { exact: true }).closest("summary");
-      expect(summary?.textContent).toContain("Weekdays at 9:00 AM · America/Los_Angeles");
+      const trigger = screen.getByRole("button", { name: /^Weekday release brief/ });
+      expect(trigger.textContent).toContain("Weekdays at 9:00 AM · America/Los_Angeles");
     } finally {
       zone.mockRestore();
     }
@@ -904,12 +904,16 @@ describe("Template detail composition and interactions", () => {
   it("shows the declared schedule and instructions on the named automation", () => {
     renderTemplate();
     const automation = within(screen.getByRole("region", { name: "Automations" }));
-    const job = automation.getByText("Weekday release brief").closest("details")!;
-    fireEvent.click(job.querySelector("summary")!);
-    expect(job.open).toBe(true);
+    const trigger = automation.getByRole("button", { name: /^Weekday release brief/ });
+    expect(automation.queryByText("Summarize the approved release sources.")).toBeNull();
+    fireEvent.click(trigger);
+    const job = screen.getByRole("dialog", { name: "Weekday release brief" });
     expect(job.textContent).toContain("Weekdays at 9:00 AM · America/Los_Angeles · Disabled");
     expect(job.textContent).toContain("Declared schedule: 0 9 * * 1-5 · America/Los_Angeles");
     expect(job.textContent).toContain("Summarize the approved release sources.");
+    const close = within(job).getByRole("button", { name: "Close" });
+    fireEvent.click(close);
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("lists workspace skills, plugins and heartbeat work without exposing support files", () => {

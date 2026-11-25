@@ -271,6 +271,7 @@ export function TemplateDetailPage({
           </details>
         )}
         <TemplateReleaseInventory
+          documentLoading={documentLoading}
           packageName={pkg.name}
           releaseVersion={pkg.latestVersion}
           display={display}
