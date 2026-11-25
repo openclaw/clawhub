@@ -518,6 +518,8 @@ code {
 }
 
 .app-shell:has(
+    .skills-browse-page,
+    .plugins-browse-page,
     .skill-detail-page,
     .plugin-detail-page,
     .security-audit-page,
@@ -620,6 +622,8 @@ code {
 
 [data-theme-resolved="light"]
   .app-shell:has(
+    .skills-browse-page,
+    .plugins-browse-page,
     .skill-detail-page,
     .plugin-detail-page,
     .security-audit-page,
