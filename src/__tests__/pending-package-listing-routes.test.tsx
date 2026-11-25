@@ -362,12 +362,10 @@ describe.each(["plugin", "template"] as const)("canonical pending %s listing", (
           notice!.compareDocumentPosition(publicInstructions) & Node.DOCUMENT_POSITION_FOLLOWING,
         ).toBeTruthy();
       } else expect(notice).toBeNull();
-      fireEvent.click(screen.getByRole("button", { name: kind === "plugin" ? "Install" : "Add" }));
-      expect(
-        within(await screen.findByRole("dialog")).getByRole("button", {
-          name: /copy.*install command/i,
-        }),
-      ).toBeTruthy();
+      const rail = within(screen.getByRole("complementary"));
+      const install = within(rail.getByRole("article", { name: "Install" }));
+      expect(install.getByRole("button", { name: `Copy ${kind} install command` })).toBeTruthy();
+      expect(screen.queryByRole("dialog")).toBeNull();
       for (const call of [
         ...mocks.version.mock.calls,
         ...mocks.readme.mock.calls,
