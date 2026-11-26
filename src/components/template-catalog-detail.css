@@ -1,0 +1,347 @@
+/* Template-specific additions to Control UI's shared plugin detail rail:
+ * ui/src/styles/templates-catalog.css and the capability/readme blocks in plugins.css. */
+.template-catalog-detail .catalog-detail__icon {
+  padding: 5px;
+  border-radius: calc(18px * var(--detail-radius-scale));
+  background: color-mix(in srgb, var(--detail-text) 5%, transparent);
+  box-shadow: none;
+}
+.template-catalog-detail .catalog-detail__icon .marketplace-icon {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+.template-catalog-detail .catalog-detail__icon .marketplace-icon-glyph {
+  width: 60%;
+  height: 60%;
+  stroke-width: 1.55px;
+}
+.template-catalog-detail .catalog-detail__publisher a {
+  align-content: center;
+  min-height: 24px;
+  color: inherit;
+  text-decoration: none;
+}
+.template-catalog-detail .catalog-detail__publisher a:hover {
+  text-decoration: underline;
+}
+.template-catalog-detail .template-catalog-add:not(:disabled):hover {
+  background: light-dark(#a83c29, #e44c4c);
+}
+.template-catalog-category {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  height: 26px;
+  border-radius: calc(8px * var(--detail-radius-scale));
+  background: var(--detail-tone);
+  font-size: 12.5px;
+}
+.template-catalog-detail .template-catalog-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 32px;
+}
+.template-catalog-panel h2 {
+  margin: 0;
+  color: var(--detail-muted);
+  font: 500 13.5px/1.4 var(--font-body);
+  letter-spacing: 0;
+  text-transform: none;
+}
+.template-catalog-personality {
+  --template-readme-clamp: 96px;
+}
+.template-catalog-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.template-catalog-file {
+  position: relative;
+  justify-self: start;
+  padding: 2px 7px;
+  border: 0;
+  border-radius: calc(7px * var(--detail-radius-scale));
+  background: var(--detail-tone);
+  color: light-dark(#525252, #8e8e95);
+  font:
+    11.5px/1.4 "JetBrains Mono",
+    ui-monospace,
+    SFMono-Regular,
+    "SF Mono",
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace;
+  cursor: pointer;
+}
+.template-catalog-file:hover {
+  background: color-mix(in srgb, var(--detail-text) 9%, transparent);
+  color: var(--detail-text);
+}
+.template-catalog-well {
+  padding: 22px 24px 16px;
+  border-radius: calc(16px * var(--detail-radius-scale));
+  background: var(--detail-tone);
+}
+.template-catalog-well-body[data-clamped="true"]:not(:focus-within) {
+  max-height: var(--template-readme-clamp);
+  overflow: hidden;
+  mask-image: linear-gradient(black 62%, transparent 100%);
+}
+.template-catalog-well-body > p {
+  margin: 0;
+  max-width: 680px;
+  color: var(--detail-text);
+  font-size: 14.5px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+.template-catalog-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 10px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--detail-muted);
+  font: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+.template-catalog-toggle:hover {
+  color: var(--detail-text);
+}
+.template-catalog-toggle svg {
+  width: 15px;
+  height: 15px;
+}
+.template-catalog-document {
+  max-width: 680px;
+  font-size: 14.5px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.template-catalog-document :is(h1, h2, h3, h4, h5, h6) {
+  margin: 18px 0 6px;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  font-family: inherit;
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.template-catalog-document h1 {
+  font-size: 16px;
+}
+.template-catalog-document > :first-child {
+  margin-top: 0;
+}
+.template-catalog-document :is(ol, ul, li) {
+  font-size: inherit;
+  line-height: inherit;
+}
+.template-catalog-capabilities {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+}
+.template-catalog-group {
+  padding: 6px;
+  border: 0;
+  border-radius: calc(16px * var(--detail-radius-scale));
+  background: var(--detail-tone);
+}
+.template-catalog-group .template-catalog-row {
+  width: 100%;
+  font: inherit;
+  text-align: start;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 56px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: calc(12px * var(--detail-radius-scale));
+  color: var(--detail-text);
+  background: transparent;
+  list-style: none;
+  cursor: pointer;
+}
+.template-catalog-group summary::-webkit-details-marker {
+  display: none;
+}
+.template-catalog-group .template-catalog-row:hover {
+  background: var(--detail-tone);
+}
+.template-catalog-row-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  border-radius: calc(10px * var(--detail-radius-scale));
+  background: var(--detail-card);
+  color: light-dark(#525252, #8e8e95);
+}
+.template-catalog-row-icon svg {
+  width: 16px;
+  height: 16px;
+}
+.template-catalog-row-text {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  overflow-wrap: anywhere;
+}
+.template-catalog-row-text strong {
+  color: var(--detail-strong);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.template-catalog-row-text > span {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--detail-muted);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+.template-catalog-chevron {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  stroke-width: 1.6px;
+  opacity: 0.5;
+  color: var(--detail-muted);
+}
+.template-catalog-group details[open] > summary .template-catalog-chevron {
+  transform: rotate(90deg);
+}
+.template-catalog-row-details {
+  padding: 0 16px 16px;
+  color: var(--detail-muted);
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+.template-automation-dialog[data-slot="dialog-content"] {
+  width: min(640px, calc(100vw - 32px));
+  max-height: min(84dvh, 720px);
+  grid-template: auto minmax(0, 1fr) / minmax(0, 1fr);
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  border-radius: 18px;
+}
+.template-automation-dialog > header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 56px 16px 20px;
+  border-bottom: 1px solid var(--line);
+}
+.template-automation-dialog header h2 {
+  margin: 0 0 3px;
+  font: 600 16px/1.3 var(--font-body);
+}
+.template-automation-dialog header p {
+  margin: 0;
+  font-size: 13px;
+}
+.template-automation-dialog-icon {
+  display: grid;
+  flex: 0 0 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--surface-muted);
+  color: var(--ink-soft);
+}
+.template-automation-dialog-icon svg {
+  width: 18px;
+  height: 18px;
+}
+.template-automation-dialog-body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 18px 20px 20px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.template-catalog-job-message {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.template-catalog-file-dialog[data-slot="dialog-content"] {
+  grid-template-columns: minmax(0, 1fr);
+  overflow-wrap: anywhere;
+  width: min(720px, calc(100vw - 32px));
+  max-height: 84dvh;
+  overflow-y: auto;
+}
+.template-catalog-plugin-info a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.template-catalog-plugin-info p {
+  margin-top: 12px;
+}
+.template-catalog-detail :is(summary, button, a):focus-visible {
+  outline: 2px solid var(--oc-focus-ring);
+  outline-offset: 2px;
+}
+@container (max-width: 768px) {
+  .template-catalog-detail .catalog-detail__fact:has(.template-catalog-category) {
+    grid-column: 1/-1;
+  }
+}
+@container (max-width: 560px) {
+  .template-catalog-detail .catalog-detail__icon {
+    border-radius: calc(15px * var(--detail-radius-scale));
+  }
+  .template-catalog-detail .catalog-detail__publisher a {
+    margin-block: -6px;
+    padding-block: 6px;
+  }
+  .template-catalog-personality {
+    --template-readme-clamp: 120px;
+  }
+  .template-catalog-file::after {
+    position: absolute;
+    inset: -7px -4px;
+    content: "";
+  }
+  .template-catalog-toggle {
+    margin: -2px 0 -8px;
+    padding: 8px 14px 8px 0;
+  }
+  .template-catalog-group {
+    padding: 4px;
+  }
+  .template-catalog-group .template-catalog-row {
+    width: 100%;
+    font: inherit;
+    text-align: start;
+    gap: 12px;
+    padding: 10px;
+  }
+  .template-catalog-well {
+    padding: 16px;
+  }
+}

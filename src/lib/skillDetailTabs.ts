@@ -8,43 +8,39 @@ const installTabLabels = {
 } as const;
 
 export type SkillInstallTabId = keyof typeof installTabLabels;
-export type DetailTab =
-  | "readme"
-  | "skill-card"
-  | "evaluation"
-  | "files"
-  | "compare"
-  | "versions"
-  | SkillInstallTabId;
+export type DetailTab = "readme" | "evaluation" | SkillInstallTabId;
 export type SkillDetailTab = { id: DetailTab; label: string };
+
+export function skillTabFromHash(hash: string): DetailTab | null {
+  const tab = hash.replace(/^#/, "").toLowerCase();
+  switch (tab) {
+    case "readme":
+    case "evaluation":
+    case "runtime":
+    case "dependencies":
+    case "install":
+    case "links":
+      return tab;
+    default:
+      return null;
+  }
+}
 
 export function isSkillInstallTab(id: DetailTab): id is SkillInstallTabId {
   return id in installTabLabels;
 }
 
 export function buildSkillDetailTabs({
-  hasSkillCard,
   hasEvaluation,
-  showArchiveTabs,
-  versionCount,
   clawdis,
   osLabels,
 }: {
-  hasSkillCard: boolean;
   hasEvaluation: boolean;
-  showArchiveTabs: boolean;
-  versionCount: number;
   clawdis: ClawdisSkillMetadata | undefined;
   osLabels: string[];
 }): SkillDetailTab[] {
   const tabs: SkillDetailTab[] = [{ id: "readme", label: "SKILL.md" }];
   if (hasEvaluation) tabs.push({ id: "evaluation", label: "Evals" });
-  if (hasSkillCard) tabs.push({ id: "skill-card", label: "Skill Card" });
-  if (showArchiveTabs) {
-    tabs.push({ id: "files", label: "Files" });
-    if (versionCount > 1) tabs.push({ id: "compare", label: "Diff" });
-    tabs.push({ id: "versions", label: "Versions" });
-  }
   const requirements = clawdis?.requires;
   const links = clawdis?.links;
   if (

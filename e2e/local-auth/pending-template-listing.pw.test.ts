@@ -112,9 +112,11 @@ async function bounds(locator: Locator) {
   return (await locator.boundingBox())!;
 }
 
-async function checkPlacement(page: Page, version: string) {
+async function checkPlacement(page: Page, version: string, published = false) {
   const heading = page.getByText("Version " + version + " is under review", { exact: true });
-  const identity = page.getByRole("main").getByRole("link", { name: /view local user profile/i });
+  const identity = published
+    ? page.locator("main .catalog-detail__publisher a")
+    : page.getByRole("main").getByRole("link", { name: /view local user profile/i });
   const notice = page.getByRole("status").filter({ has: heading });
   await expect(notice.getByText(visibilityCopy, { exact: true })).toBeVisible();
   // The real local-user persona has no email, even when it submitted this version.
@@ -123,10 +125,18 @@ async function checkPlacement(page: Page, version: string) {
   const noticeBox = await bounds(notice);
   expect(noticeBox.y).toBeGreaterThanOrEqual(identityBox.y + identityBox.height);
   // The profile link extends past the visual edge for its hover/focus target.
-  const titleBox = await bounds(page.locator("main header").getByRole("heading", { level: 1 }));
+  const titleBox = await bounds(
+    published
+      ? page.locator(".catalog-detail__main")
+      : page.locator("main header").getByRole("heading", { level: 1 }),
+  );
   expect(Math.abs(noticeBox.x - titleBox.x)).toBeLessThanOrEqual(2);
-  expect(Math.abs(noticeBox.x - identityBox.x)).toBeLessThanOrEqual(8);
-  const tabsBox = await bounds(page.getByRole("tablist", { name: "Template contents" }));
+  if (!published) expect(Math.abs(noticeBox.x - identityBox.x)).toBeLessThanOrEqual(8);
+  const tabsBox = await bounds(
+    published
+      ? page.getByRole("region", { name: "Included in this release" })
+      : page.getByRole("tablist", { name: "Template contents" }),
+  );
   expect(noticeBox.y + noticeBox.height).toBeLessThanOrEqual(tabsBox.y);
   expect(Math.abs(noticeBox.x - tabsBox.x)).toBeLessThanOrEqual(2);
   // Compare actual rendered color channels, not class names or a specific theme token.
@@ -277,7 +287,9 @@ test("a pending Template stays on its publisher URL without changing the public 
     await expect(
       visitor.locator("main header").getByRole("heading", { name: "Hopper", level: 1 }),
     ).toBeVisible();
-    await expect(visitor.getByText("v0.1.0", { exact: true })).toBeVisible();
+    await expect(
+      visitor.getByRole("complementary").getByText("0.1.0", { exact: true }),
+    ).toBeVisible();
     await expect(visitor.getByText("Help the user organize their work.")).toBeVisible();
     await expect(visitor.getByText(visibilityCopy)).toHaveCount(0);
     await expect(visitor.getByText("Hopper session planner")).toHaveCount(0);
@@ -289,7 +301,7 @@ test("a pending Template stays on its publisher URL without changing the public 
     await page.goto(update);
     for (const [label, width, height] of sizes) {
       await page.setViewportSize({ width, height });
-      await checkPlacement(page, version);
+      await checkPlacement(page, version, true);
       await capture(page, "update-" + label);
     }
   } finally {

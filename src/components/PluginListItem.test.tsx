@@ -198,36 +198,28 @@ describe("PluginListItem", () => {
     expect(image?.getAttribute("decoding")).toBe("async");
   });
 
-  it.each(["list", "card"] as const)(
-    "uses the publisher profile image without a bundled icon in the %s variant",
-    (variant) => {
+  it.each([
+    ["list", null],
+    ["card", "https://composio.dev/favicon.ico"],
+  ] as const)(
+    "uses the standard plug rather than the publisher avatar in the %s variant without bundled artwork",
+    (variant, icon) => {
       const { container } = render(
         <PluginListItem
           item={makePlugin({
-            icon: "https://composio.dev/favicon.ico",
+            icon,
+            categories: ["models"],
             ownerImage: "https://avatars.githubusercontent.com/u/128464815?v=4",
           })}
           variant={variant}
         />,
       );
-      expect(container.querySelector("img")?.getAttribute("src")).toBe(
-        "https://avatars.githubusercontent.com/u/128464815?v=4",
-      );
+      expect(container.querySelector("img")).toBeNull();
+      expect(container.querySelector(".marketplace-icon-glyph.lucide-plug")).toBeTruthy();
     },
   );
 
-  it("falls back to the category glyph when the publisher image fails to load", () => {
-    const { container } = render(
-      <PluginListItem
-        item={makePlugin({ categories: ["models"], ownerImage: "https://example.test/broken.png" })}
-      />,
-    );
-    fireEvent.error(container.querySelector("img")!);
-    expect(container.querySelector("img")).toBeNull();
-    expect(container.querySelector(".lucide-brain")).toBeTruthy();
-  });
-
-  it("falls back to the category glyph when a bundled icon fails to load", () => {
+  it("falls back to the standard plug when a bundled icon fails to load", () => {
     render(
       <PluginListItem
         item={makePlugin({
@@ -244,7 +236,7 @@ describe("PluginListItem", () => {
 
     expect(document.querySelector(".marketplace-icon-image")).toBeNull();
     expect(
-      document.querySelector(".marketplace-icon-glyph")?.classList.contains("lucide-brain"),
+      document.querySelector(".marketplace-icon-glyph")?.classList.contains("lucide-plug"),
     ).toBe(true);
   });
 

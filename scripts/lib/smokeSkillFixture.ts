@@ -4,8 +4,9 @@ type FixtureResponse = {
 };
 
 type SkillDetail = {
-  skill: { slug: string; displayName: string; summary: string | null };
-  latestVersion: { version: string | null } | null;
+  skill: { slug: string; displayName: string; summary: string | null; updatedAt?: number };
+  latestVersion: { version: string | null; license?: string | null } | null;
+  metadata?: { os?: string[] | null } | null;
   owner: { handle: string };
 };
 

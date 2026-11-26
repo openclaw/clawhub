@@ -9,7 +9,7 @@ import {
   waitForHydration,
   withoutRecoverableReactHydrationErrors,
 } from "../helpers/runtimeErrors";
-import { signInAsLocalPersona } from "./helpers";
+import { publishedDetailTitle, signInAsLocalPersona } from "./helpers";
 
 test.skip(
   process.env.VITE_ENABLE_DEV_AUTH !== "1",
@@ -260,7 +260,10 @@ function isExpectedVersionDeletionRuntimeError(error: string) {
 }
 
 async function expectDeleteDialog(page: Parameters<typeof expectNoFatalErrorUi>[0]) {
-  const dialog = page.getByRole("dialog");
+  const dialog = page.getByRole("dialog", {
+    name: `Delete version ${OLDER_VERSION}?`,
+    exact: true,
+  });
   await expect(
     dialog.getByRole("heading", { name: `Delete version ${OLDER_VERSION}?` }),
   ).toBeVisible({ timeout: 30_000 });
@@ -275,7 +278,10 @@ async function expectDeleteDialog(page: Parameters<typeof expectNoFatalErrorUi>[
 }
 
 async function expectRestoreDialog(page: Parameters<typeof expectNoFatalErrorUi>[0]) {
-  const dialog = page.getByRole("dialog");
+  const dialog = page.getByRole("dialog", {
+    name: `Restore version ${OLDER_VERSION}?`,
+    exact: true,
+  });
   await expect(
     dialog.getByRole("heading", { name: `Restore version ${OLDER_VERSION}?` }),
   ).toBeVisible({ timeout: 30_000 });
@@ -291,9 +297,25 @@ function versionToggle(page: Parameters<typeof expectNoFatalErrorUi>[0], version
     .filter({ hasText: new RegExp(`^v${version.replaceAll(".", "\\.")}`) });
 }
 
-async function ensureVersionsTab(page: Parameters<typeof expectNoFatalErrorUi>[0]) {
+async function openVersionHistory(page: Parameters<typeof expectNoFatalErrorUi>[0]) {
   await recoverFromTransientErrorScreen(page);
-  await page.getByRole("tab", { name: "Versions" }).click({ timeout: 30_000 });
+  const isSkill = new URL(page.url()).pathname.split("/").includes("skills");
+  const dialog = page.getByRole("dialog", {
+    name: isSkill ? "Version history" : "Release details",
+    exact: true,
+  });
+  const trigger = page.getByRole("button", {
+    name: isSkill ? "Version history" : /^View release /,
+  });
+  // Radix briefly hides both from accessibility while a nested confirmation closes.
+  await expect(dialog.or(trigger).first()).toBeVisible();
+  if (await trigger.isVisible()) await trigger.click();
+  if (isSkill) {
+    await expect(dialog.getByRole("tablist")).toHaveCount(0);
+    return dialog;
+  }
+  await dialog.getByRole("tab", { name: "Versions", exact: true }).click({ timeout: 30_000 });
+  return dialog.getByRole("tabpanel", { name: "Versions", exact: true });
 }
 
 async function openDeleteDialog(page: Parameters<typeof expectNoFatalErrorUi>[0]) {
@@ -311,7 +333,7 @@ async function openDeleteDialog(page: Parameters<typeof expectNoFatalErrorUi>[0]
       await page.keyboard.press("Escape").catch(() => {});
       await page.reload({ waitUntil: "domcontentloaded" });
       await waitForHydration(page);
-      await ensureVersionsTab(page);
+      await openVersionHistory(page);
       await page.waitForTimeout(1_000 * attempt);
     }
   }
@@ -324,7 +346,10 @@ async function confirmDeleteDialog(page: Parameters<typeof expectNoFatalErrorUi>
     let deleteButton: ReturnType<typeof page.getByRole> | null = null;
     try {
       await recoverFromTransientErrorScreen(page);
-      const dialog = page.getByRole("dialog");
+      const dialog = page.getByRole("dialog", {
+        name: `Delete version ${OLDER_VERSION}?`,
+        exact: true,
+      });
       deleteButton = dialog.getByRole("button", { name: "Delete version" });
       await expect(deleteButton).toBeVisible({ timeout: 30_000 });
       await expect(deleteButton).toBeEnabled({ timeout: 30_000 });
@@ -334,7 +359,7 @@ async function confirmDeleteDialog(page: Parameters<typeof expectNoFatalErrorUi>
       await page.keyboard.press("Escape").catch(() => {});
       await page.reload({ waitUntil: "domcontentloaded" });
       await waitForHydration(page);
-      await ensureVersionsTab(page);
+      await openVersionHistory(page);
       await openDeleteDialog(page);
       await page.waitForTimeout(1_000 * attempt);
     }
@@ -344,7 +369,7 @@ async function confirmDeleteDialog(page: Parameters<typeof expectNoFatalErrorUi>
       return;
     } catch (error) {
       await recoverFromTransientErrorScreen(page).catch(() => {});
-      await ensureVersionsTab(page).catch(() => {});
+      await openVersionHistory(page).catch(() => {});
       if ((await versionToggle(page, OLDER_VERSION).count()) === 0) return;
       throw error;
     }
@@ -370,8 +395,7 @@ async function expectVersionsList(page: Parameters<typeof expectNoFatalErrorUi>[
     try {
       await waitForHydration(page).catch(() => {});
       await recoverFromTransientErrorScreen(page);
-      await ensureVersionsTab(page);
-      const versionsPanel = page.getByRole("tabpanel", { name: "Versions" });
+      const versionsPanel = await openVersionHistory(page);
       const retryButton = versionsPanel.getByRole("button", { name: "Try again" });
       if (await retryButton.isVisible({ timeout: 500 }).catch(() => false)) {
         await retryButton.click({ timeout: 5_000 });
@@ -401,7 +425,7 @@ async function expectVersionsList(page: Parameters<typeof expectNoFatalErrorUi>[
 }
 
 async function expectPublicVersionsList(page: Parameters<typeof expectNoFatalErrorUi>[0]) {
-  await ensureVersionsTab(page);
+  await openVersionHistory(page);
   await expect(versionToggle(page, OLDER_VERSION)).toBeVisible();
   await expect(versionToggle(page, LATEST_VERSION)).toBeVisible();
   await expect(page.getByRole("button", { name: /delete version/i })).toHaveCount(0);
@@ -492,7 +516,7 @@ test("owners can withdraw and restore individual non-latest skill and plugin ver
   await page.goto(skillDetailHref, { waitUntil: "domcontentloaded" });
   await waitForHydration(page);
   await recoverFromTransientErrorScreen(page);
-  await expect(page.locator(".skill-page-title")).toHaveText(skillDisplayName, { timeout: 30_000 });
+  await expect(publishedDetailTitle(page)).toHaveText(skillDisplayName, { timeout: 30_000 });
   await expectVersionsList(page);
   await page.screenshot({
     path: testInfo.outputPath("skill-version-delete-before.png"),
@@ -506,7 +530,7 @@ test("owners can withdraw and restore individual non-latest skill and plugin ver
   });
   await confirmDeleteDialog(page);
   await expect(skillDialog).toHaveCount(0);
-  await ensureVersionsTab(page);
+  await openVersionHistory(page);
   await expect(versionToggle(page, OLDER_VERSION)).toBeVisible();
   await expect(versionToggle(page, LATEST_VERSION)).toBeVisible();
   await expect(
@@ -541,7 +565,7 @@ test("owners can withdraw and restore individual non-latest skill and plugin ver
   });
   await waitForHydration(page);
   await recoverFromTransientErrorScreen(page);
-  await expect(page.locator(".skill-page-title")).toHaveText(packageDisplayName, {
+  await expect(publishedDetailTitle(page)).toHaveText(packageDisplayName, {
     timeout: 30_000,
   });
   await expectVersionsList(page);
@@ -557,7 +581,7 @@ test("owners can withdraw and restore individual non-latest skill and plugin ver
   });
   await confirmDeleteDialog(page);
   await expect(packageDialog).toHaveCount(0);
-  await ensureVersionsTab(page);
+  await openVersionHistory(page);
   await expect(versionToggle(page, OLDER_VERSION)).toBeVisible();
   await expect(versionToggle(page, LATEST_VERSION)).toBeVisible();
   await expect(
@@ -651,7 +675,7 @@ test("owners can withdraw and restore individual non-latest skill and plugin ver
     });
     await waitForHydration(publicPage);
     await recoverFromTransientErrorScreen(publicPage);
-    await expect(publicPage.locator(".skill-page-title")).toHaveText(skillDisplayName);
+    await expect(publishedDetailTitle(publicPage)).toHaveText(skillDisplayName);
     await expectPublicVersionsList(publicPage);
 
     await publicPage.goto(pluginDetailHref, {
@@ -659,7 +683,7 @@ test("owners can withdraw and restore individual non-latest skill and plugin ver
     });
     await waitForHydration(publicPage);
     await recoverFromTransientErrorScreen(publicPage);
-    await expect(publicPage.locator(".skill-page-title")).toHaveText(packageDisplayName);
+    await expect(publishedDetailTitle(publicPage)).toHaveText(packageDisplayName);
     await expectPublicVersionsList(publicPage);
     await expectNoFatalErrorUi(publicPage);
     expect(

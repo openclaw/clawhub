@@ -16,6 +16,7 @@ import {
   claimMockPrePublicationChecks,
   completeMockPrePublicationChecks,
   escapeRegExp,
+  publishedDetailTitle,
   signInAsLocalPersona,
 } from "./helpers";
 
@@ -427,9 +428,7 @@ test("plugin publish stays private until mocked TruffleHog and ClawScan pass", a
   await page.goto(buildPluginDetailHref(name), { waitUntil: "domcontentloaded" });
   await waitForHydration(page);
   await recoverFromTransientErrorScreen(page);
-  await expect(page.locator("h1.skill-page-title", { hasText: displayName })).toBeVisible({
-    timeout: 30_000,
-  });
+  await expect(publishedDetailTitle(page)).toHaveText(displayName, { timeout: 30_000 });
   await expectHealthyInspectorPage(page, errors);
 });
 

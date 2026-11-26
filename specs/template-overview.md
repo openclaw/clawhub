@@ -55,4 +55,4 @@ Unchanged local average: 1044.988 ms (five runs). Initial candidate average: 228
 
 A native local stress check expanded each of the 152 package changelogs to 120,000 bytes. The direct query reached the actual 16 MiB read limit; the HTTP action returned 200 with complete: false and empty lists. All original fixture content was restored and the temporary helper removed from source and generated API before final measurement. The unit HTTP error-boundary test simulates the same platform error and separately asserts unrelated failures propagate.
 
-Production release remains subject to exact-head review, CI and successful Test deployment, followed by the same five-run production comparison and live route verification. Backend availability alone does not activate the new path in older OpenClaw clients.
+Production release remains subject to exact-head review and CI, followed by the same five-run production comparison and live route verification. Backend availability alone does not activate the new path in older OpenClaw clients.

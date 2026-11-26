@@ -48,8 +48,25 @@ function fingerprintSaltBlock(args: { slug: string; versionLabel: string }) {
   return lines.join("\n");
 }
 
+export function publishedDetailTitle(page: Page) {
+  return page.locator("h1.skill-page-title:visible, .catalog-detail__title-row h1:visible");
+}
+
+function publishedDetailVersion(page: Page, version: string) {
+  // Match the field and its exact value in the same visible row, not release history.
+  const catalog = page
+    .locator(".catalog-detail__sidebar .catalog-detail__fact:visible")
+    .filter({ has: page.getByText("Version", { exact: true }) })
+    .getByText(version, { exact: true });
+  const legacy = page
+    .locator(".detail-sidebar-stats .sidebar-metadata-row:visible")
+    .filter({ has: page.getByText("Current version", { exact: true }) })
+    .getByText(`v${version}`, { exact: true });
+  return catalog.or(legacy);
+}
+
 async function expectPublishedDetailPage(page: Page, displayName: string) {
-  const title = page.locator(".skill-page-title");
+  const title = publishedDetailTitle(page);
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     await waitForHydration(page);
     try {
@@ -67,11 +84,7 @@ async function expectPublishedDetailCurrentVersion(
   args: { displayName: string; version: string },
 ) {
   await expectPublishedDetailPage(page, args.displayName);
-  const metadata = page.locator(".detail-sidebar-stats .sidebar-metadata");
-  await expect(metadata.getByText("Current version", { exact: true })).toBeVisible({
-    timeout: 30_000,
-  });
-  await expect(metadata.getByText(`v${args.version}`, { exact: true })).toBeVisible({
+  await expect(publishedDetailVersion(page, args.version)).toBeVisible({
     timeout: 30_000,
   });
 }
@@ -81,12 +94,10 @@ async function isPublishedDetailCurrentVersionVisible(
   args: { displayName: string; version: string },
 ) {
   await waitForHydration(page);
-  const title = page.locator(".skill-page-title");
-  const metadata = page.locator(".detail-sidebar-stats .sidebar-metadata");
+  const title = publishedDetailTitle(page);
   return (
     (await title.textContent({ timeout: 500 }).catch(() => null)) === args.displayName &&
-    (await metadata
-      .getByText(`v${args.version}`, { exact: true })
+    (await publishedDetailVersion(page, args.version)
       .isVisible({ timeout: 500 })
       .catch(() => false))
   );

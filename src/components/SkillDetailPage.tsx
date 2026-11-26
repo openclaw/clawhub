@@ -8,7 +8,6 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
-import { getActivityTrendEndDay } from "../lib/activityTrend";
 import {
   captureAnalyticsOperation,
   emitAnalytics,
@@ -21,17 +20,15 @@ import { buildSkillSecurityAuditHref } from "../lib/ownerRoute";
 import { hasPostPublishSearch } from "../lib/postPublishSearch";
 import { canManageSkill, isModerator } from "../lib/roles";
 import { handleSignInError } from "../lib/signInError";
-import { skillCardLoadKey } from "../lib/skillCards";
-import { buildSkillDetailTabs, type DetailTab } from "../lib/skillDetailTabs";
+import { buildSkillDetailTabs, skillTabFromHash, type DetailTab } from "../lib/skillDetailTabs";
 import type { SkillBySlugResult, SkillPageInitialData } from "../lib/skillPage";
 import { resolveGitHubSkillReadmeHref } from "../lib/skillReadmeLinks";
 import { clearAuthError } from "../lib/useAuthError";
 import { useAuthStatus } from "../lib/useAuthStatus";
-import { useDeferredSkillActivityTrend } from "../lib/useDeferredActivityTrend";
 import { DetailBody, DetailPageShell } from "./DetailPageShell";
-import { DetailSecuritySummary } from "./DetailSecuritySummary";
 import { GenericNotFoundPage } from "./GenericNotFoundPage";
 import { SkillDetailSkeleton } from "./skeletons/SkillDetailSkeleton";
+import { SkillCatalogOverview } from "./SkillCatalogOverview";
 import { SkillDetailPageView } from "./SkillDetailPageView";
 import { SkillDetailTabs } from "./SkillDetailTabs";
 import {
@@ -46,6 +43,8 @@ import { SkillOwnershipPanel } from "./SkillOwnershipPanel";
 import { SkillPublishSuccessDialog } from "./SkillPublishSuccessDialog";
 import { SkillRelatedSection, type RelatedSkillEntry } from "./SkillRelatedSection";
 import { SkillReportDialog } from "./SkillReportDialog";
+import { SkillVersionComparison } from "./SkillVersionComparison";
+import { SkillVersionHistory } from "./SkillVersionHistory";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 
@@ -59,36 +58,13 @@ type SkillDetailPageProps = {
   onDismissPostPublish?: () => void;
 };
 
-type SkillFile = Doc<"skillVersions">["files"][number];
-type SkillDetailVersion = NonNullable<NonNullable<SkillBySlugResult>["latestVersion"]> & {
-  generatedSkillCard?: SkillFile | null;
-};
 type GitHubBackedSkillFields = {
   installKind?: "github";
-  githubHasSkillCard?: boolean;
   githubCurrentRepo?: string | null;
   githubSourceRepo?: string | null;
   githubPath?: string | null;
   githubScanStatus?: string | null;
 };
-
-function tabFromHash(hash: string): DetailTab {
-  const normalized = hash.replace(/^#/, "").toLowerCase();
-  if (normalized === "files") return "files";
-  if (normalized === "skill-card" || normalized === "card") return "skill-card";
-  if (normalized === "evaluation") return "evaluation";
-  if (normalized === "compare" || normalized === "diff") return "compare";
-  if (normalized === "versions") return "versions";
-  if (
-    normalized === "runtime" ||
-    normalized === "dependencies" ||
-    normalized === "install" ||
-    normalized === "links"
-  ) {
-    return normalized;
-  }
-  return "readme";
-}
 
 function formatReportError(error: unknown) {
   if (error && typeof error === "object" && "data" in error) {
@@ -232,7 +208,6 @@ export function SkillDetailPage({
   const updateSummary = useMutation(api.skills.updateSummary);
   const setCatalogMetadata = useMutation(api.skills.setCatalogMetadata);
   const getReadme = useAction(api.skillReadme.getReadme);
-  const getSkillCard = useAction(api.skills.getSkillCard);
   const myPublishers = useQuery(api.publishers.listMine, me ? {} : "skip") as
     | Array<{ publisher: { _id: Id<"publishers"> }; role: string }>
     | undefined;
@@ -244,10 +219,7 @@ export function SkillDetailPage({
   const loadedReadmeVersionId = useRef<Id<"skillVersions"> | null>(
     readme !== null || readmeError !== null ? (initialResult?.latestVersion?._id ?? null) : null,
   );
-  const [skillCard, setSkillCard] = useState<string | null>(null);
-  const [skillCardError, setSkillCardError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<DetailTab>("readme");
-  const [shouldPrefetchCompare, setShouldPrefetchCompare] = useState(false);
   const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
   const [reportReason, setReportReason] = useState("");
   const [reportError, setReportError] = useState<string | null>(null);
@@ -265,7 +237,7 @@ export function SkillDetailPage({
   const skill = result?.skill;
   const hasSkill = Boolean(skill);
   const owner = result?.owner ?? null;
-  const latestVersion = (result?.latestVersion ?? null) as SkillDetailVersion | null;
+  const latestVersion = result?.latestVersion ?? null;
   const latestVersionId = latestVersion?._id ?? null;
   const githubBackedFields = skill as GitHubBackedSkillFields | null | undefined;
   const isGitHubBackedSkill = githubBackedFields?.installKind === "github" && !latestVersionId;
@@ -315,20 +287,6 @@ export function SkillDetailPage({
         }
       : "skip",
   ) as { items: RelatedSkillEntry[] } | undefined;
-
-  const versions = useQuery(
-    api.skills.listVersions,
-    skill && !isGitHubBackedSkill
-      ? { skillId: skill._id, limit: activeTab === "versions" ? 50 : 2 }
-      : "skip",
-  ) as Doc<"skillVersions">[] | undefined;
-  const shouldLoadDiffVersions = Boolean(
-    skill && (activeTab === "compare" || shouldPrefetchCompare),
-  );
-  const diffVersions = useQuery(
-    api.skills.listVersions,
-    shouldLoadDiffVersions && skill ? { skillId: skill._id, limit: 200 } : "skip",
-  ) as Doc<"skillVersions">[] | undefined;
 
   const isStarred = useQuery(
     api.stars.isStarred,
@@ -422,20 +380,8 @@ export function SkillDetailPage({
           ...(ownerHandle ? { ownerHandle } : {}),
         }).toString()}`
       : null;
-  const activityTrendOwnerHandle =
-    ownerHandle ?? liveLookupOwnerHandle ?? (owner?._id ? String(owner._id) : null);
-  const activityTrendEndDay = getActivityTrendEndDay();
   const canonicalOwnerParam =
     typeof canonicalOwner === "string" ? canonicalOwner.trim().toLowerCase() : null;
-  const { trend: activityTrend } = useDeferredSkillActivityTrend(
-    skill
-      ? {
-          slug: skill.slug,
-          endDay: activityTrendEndDay,
-          ...(activityTrendOwnerHandle ? { ownerHandle: activityTrendOwnerHandle } : {}),
-        }
-      : null,
-  );
   const wantsCanonicalRedirect = Boolean(
     ownerParam &&
     ((result?.resolvedSlug && result.resolvedSlug !== slug) ||
@@ -504,13 +450,7 @@ export function SkillDetailPage({
     api.skills.getGitHubSkillContent,
     isGitHubBackedSkill && skill ? { skillId: skill._id, kind: "readme" } : "skip",
   ) as { path: string; text: string; sourceBaseUrl?: string } | null | undefined;
-  const githubSkillCard = useQuery(
-    api.skills.getGitHubSkillContent,
-    isGitHubBackedSkill && skill && githubBackedFields?.githubHasSkillCard !== false
-      ? { skillId: skill._id, kind: "skill-card" }
-      : "skip",
-  ) as { path: string; text: string; sourceBaseUrl?: string } | null | undefined;
-  const githubSourceBaseUrl = githubReadme?.sourceBaseUrl ?? githubSkillCard?.sourceBaseUrl;
+  const githubSourceBaseUrl = githubReadme?.sourceBaseUrl;
   const readmeHrefResolver = useMemo(() => {
     if (!isGitHubBackedSkill || !githubSourceBaseUrl) return undefined;
     return (href: string) => resolveGitHubSkillReadmeHref(href, githubSourceBaseUrl);
@@ -526,24 +466,6 @@ export function SkillDetailPage({
     if (!displayedReadme) return null;
     return stripFrontmatter(displayedReadme);
   }, [displayedReadme]);
-  const latestFiles: SkillFile[] = latestVersion?.files ?? [];
-  const skillCardFile = useMemo(
-    () => latestVersion?.generatedSkillCard ?? null,
-    [latestVersion?.generatedSkillCard],
-  );
-  const hasArchiveSkillCard = Boolean(skillCardFile);
-  const hasSkillCard = hasArchiveSkillCard || Boolean(githubSkillCard);
-  const displayedSkillCard = isGitHubBackedSkill ? (githubSkillCard?.text ?? null) : skillCard;
-  const displayedSkillCardError = isGitHubBackedSkill
-    ? githubSkillCard === null
-      ? "No Skill Card available"
-      : null
-    : skillCardError;
-  const currentSkillCardKey = useMemo(
-    () => skillCardLoadKey(latestVersionId, skillCardFile),
-    [latestVersionId, skillCardFile],
-  );
-
   useEffect(() => {
     if (!wantsCanonicalRedirect || !ownerParam || !redirectSlug) return;
     const params = { owner: ownerParam, slug: redirectSlug };
@@ -565,7 +487,7 @@ export function SkillDetailPage({
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
     const syncTabFromHash = () => {
-      setActiveTab(tabFromHash(window.location.hash));
+      setActiveTab(skillTabFromHash(window.location.hash) ?? "readme");
     };
     syncTabFromHash();
     window.addEventListener("hashchange", syncTabFromHash);
@@ -574,30 +496,11 @@ export function SkillDetailPage({
     };
   }, []);
 
-  // Set of tab IDs that are currently rendered — used to validate hash-driven
-  // navigation so stale bookmarks fall back to readme rather than leaving the
-  // content pane blank.
   const detailTabs = useMemo(
-    () =>
-      buildSkillDetailTabs({
-        hasSkillCard,
-        hasEvaluation: Boolean(skillEvaluation),
-        showArchiveTabs: !isGitHubBackedSkill,
-        versionCount: versions?.length ?? 0,
-        clawdis,
-        osLabels,
-      }),
-    [clawdis, hasSkillCard, isGitHubBackedSkill, osLabels, skillEvaluation, versions],
+    () => buildSkillDetailTabs({ hasEvaluation: Boolean(skillEvaluation), clawdis, osLabels }),
+    [clawdis, osLabels, skillEvaluation],
   );
-  const validTabIds = useMemo(() => new Set(detailTabs.map((tab) => tab.id)), [detailTabs]);
-
-  useEffect(() => {
-    setActiveTab((prev) => {
-      const hashTab = typeof window === "undefined" ? "readme" : tabFromHash(window.location.hash);
-      if (hashTab !== "readme" && validTabIds.has(hashTab)) return hashTab;
-      return validTabIds.has(prev) ? prev : "readme";
-    });
-  }, [validTabIds]);
+  const visibleTab = detailTabs.some((tab) => tab.id === activeTab) ? activeTab : "readme";
 
   useEffect(() => {
     let cancelled = false;
@@ -631,36 +534,6 @@ export function SkillDetailPage({
       cancelled = true;
     };
   }, [getReadme, hasSkill, isGitHubBackedSkill, latestVersionId]);
-
-  useEffect(() => {
-    let cancelled = false;
-    // The effect owns one request per card identity. Loading/result state must
-    // not restart it and discard the request it just began.
-    if (!latestVersionId || !hasArchiveSkillCard || !currentSkillCardKey) {
-      setSkillCard(null);
-      setSkillCardError(null);
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    setSkillCard(null);
-    setSkillCardError(null);
-    void getSkillCard({ versionId: latestVersionId })
-      .then((data) => {
-        if (cancelled) return;
-        setSkillCard(data.text);
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        setSkillCardError(error instanceof Error ? error.message : "Failed to load Skill Card");
-        setSkillCard(null);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [getSkillCard, currentSkillCardKey, hasArchiveSkillCard, latestVersionId]);
 
   useEffect(() => {
     if (!skill || !activeOptimisticStar) return;
@@ -817,18 +690,6 @@ export function SkillDetailPage({
     return <GenericNotFoundPage />;
   }
 
-  const githubScanStatus =
-    !latestVersion && (displayedSkill as GitHubBackedSkillFields).installKind === "github"
-      ? (displayedSkill as GitHubBackedSkillFields).githubScanStatus
-      : null;
-  const securitySummary =
-    latestVersion || githubScanStatus ? (
-      <DetailSecuritySummary
-        auditHref={buildSkillSecurityAuditHref(ownerParam ?? ownerHandle ?? "unknown", skill.slug)}
-        llmAnalysis={latestVersion?.llmAnalysis ?? null}
-        githubScanStatus={githubScanStatus}
-      />
-    ) : null;
   const staffVisibilityAlert = staffModerationNote ? (
     <p className="skill-visibility-alert" role="status">
       <TriangleAlert size={14} aria-hidden="true" />
@@ -882,7 +743,12 @@ export function SkillDetailPage({
           </div>
           <DetailBody>
             {settingsPanel ? (
-              settingsPanel
+              <>
+                {settingsPanel}
+                {!isGitHubBackedSkill && (skill.stats.versions ?? 0) > 1 ? (
+                  <SkillVersionComparison key={skill._id} skill={skill} />
+                ) : null}
+              </>
             ) : (
               <Card>
                 <h2 className="section-title text-[1.2rem] m-0">Settings unavailable</h2>
@@ -931,8 +797,43 @@ export function SkillDetailPage({
       category={relatedCategory}
       categories={relatedCategories}
       staffVisibilityAlert={staffVisibilityAlert}
-      securityAuditSummary={securitySummary}
-      activityTrend={activityTrend}
+      securityAuditHref={
+        latestVersion || githubBackedFields?.githubScanStatus
+          ? buildSkillSecurityAuditHref(ownerParam ?? ownerHandle ?? "unknown", skill.slug)
+          : undefined
+      }
+      overview={
+        <SkillCatalogOverview
+          changelog={latestVersion?.changelog}
+          version={latestVersion?.version}
+          slug={skill.slug}
+          ownerHandle={ownerHandle}
+          resolveHref={readmeHrefResolver}
+        />
+      }
+      versionHistory={
+        !isGitHubBackedSkill && (latestVersionId || canDeleteSkillVersions) ? (
+          <SkillVersionHistory
+            key={skill._id}
+            skillId={skill._id}
+            skillSlug={skill.slug}
+            displayName={skill.displayName}
+            ownerHandle={ownerHandle}
+            latestVersionId={latestVersionId}
+            latestTaggedVersionId={skill.tags.latest ?? null}
+            canDeleteVersions={canDeleteSkillVersions}
+            nixPlugin={Boolean(nixPlugin)}
+          />
+        ) : null
+      }
+      footer={
+        <SkillRelatedSection
+          category={relatedCategory}
+          relatedSkills={relatedSkillsResult?.items ?? []}
+          isLoading={shouldLoadRelatedSkills && relatedSkillsResult === undefined}
+          variant="compact"
+        />
+      }
       newVersionHref={newVersionHref}
       settingsHref={settingsHref}
       showArchiveMetadata={!isGitHubBackedSkill}
@@ -985,37 +886,20 @@ export function SkillDetailPage({
       ) : null}
 
       <SkillDetailTabs
-        activeTab={activeTab}
+        activeTab={visibleTab}
         setActiveTab={setActiveTab}
-        onCompareIntent={() => setShouldPrefetchCompare(true)}
         readmeContent={readmeContent}
         readmeError={displayedReadmeError}
         isPendingPublication={isPendingPublication}
-        skillCardContent={displayedSkillCard}
-        skillCardError={displayedSkillCardError}
         tabs={detailTabs}
-        latestFiles={latestFiles}
-        latestVersionId={latestVersion?._id ?? null}
-        latestVersion={latestVersion?.version ?? null}
-        canDeleteVersions={canDeleteSkillVersions}
-        skill={skill as Doc<"skills">}
+        skill={skill}
         ownerHandle={ownerHandle}
-        diffVersions={diffVersions}
-        versions={versions}
-        nixPlugin={Boolean(nixPlugin)}
-        showArchiveTabs={!isGitHubBackedSkill}
         clawdis={clawdis}
         osLabels={osLabels}
         readmeHrefResolver={readmeHrefResolver}
         evaluationContent={
           skillEvaluation ? <SkillEvaluationReport result={skillEvaluation} /> : undefined
         }
-      />
-      <SkillRelatedSection
-        category={relatedCategory}
-        relatedSkills={relatedSkillsResult?.items ?? []}
-        isLoading={shouldLoadRelatedSkills && relatedSkillsResult === undefined}
-        variant="compact"
       />
     </SkillDetailPageView>
   );

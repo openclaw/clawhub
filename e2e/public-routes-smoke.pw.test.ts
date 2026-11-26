@@ -266,45 +266,55 @@ for (const route of publicRouteCases()) {
   });
 }
 
-test("plugin hero metadata retains its full-width mobile topic row", async ({ page }) => {
+for (const colorScheme of ["light", "dark"] as const) {
+  test(`shared catalog detail keeps the site body background in ${colorScheme}`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme });
+    await stubExternalMediaInVitePreview(page);
+    await page.goto("/plugins");
+    await waitForHydration(page);
+    const body = page.locator("body");
+    const siteBackground = await body.evaluate((el) => getComputedStyle(el).backgroundColor);
+    await page.goto("/plugins/@openclaw/codex");
+    await expect(page.locator(".catalog-detail")).toBeVisible();
+    await expect(body).toHaveCSS("background-color", siteBackground);
+  });
+}
+
+test("plugin catalog rail keeps browse links and audit reachable at phone and desktop widths", async ({
+  page,
+}) => {
   const errors = trackRuntimeErrors(page);
-  await page.route("**/_vercel/image?**", (route) => route.fulfill({ status: 204 }));
+  await stubExternalMediaInVitePreview(page);
   await page.goto("/plugins/@openclaw/codex", { waitUntil: "domcontentloaded" });
   await waitForHydration(page);
-  const taxonomy = page.locator('.skill-hero-taxonomy-row[aria-label="Plugin metadata"]');
-  const categories = taxonomy.getByLabel("Categories");
-  const topics = taxonomy.getByLabel("Topics");
-  const separator = taxonomy.locator(".skill-hero-taxonomy-separator").first();
-  await expect(categories).toBeVisible();
-  await expect(topics).toBeVisible();
-
-  for (const width of [320, 360, 600]) {
+  const detail = page.locator(".catalog-detail");
+  const rail = detail.locator("aside");
+  const install = rail.getByRole("article", { name: "Install" });
+  await expect(detail.getByRole("button", { name: /^(Add|Install)$/ })).toHaveCount(0);
+  await expect(rail.getByLabel("Categories").getByRole("link").first()).toBeVisible();
+  await expect(rail.getByLabel("Topics").getByRole("link").first()).toBeVisible();
+  for (const width of [320, 600, 1280]) {
     await page.setViewportSize({ width, height: 900 });
-    await expect(separator).toBeHidden();
-    const layout = await taxonomy.evaluate((row) => {
-      const category = row.querySelector('[aria-label="Categories"]')!.getBoundingClientRect();
-      const topic = row.querySelector('[aria-label="Topics"]')!.getBoundingClientRect();
-      return {
-        categoryBottom: category.bottom,
-        topicTop: topic.top,
-        topicWidth: topic.width,
-        rowWidth: row.getBoundingClientRect().width,
-        pageWidth: document.documentElement.clientWidth,
-        scrollWidth: document.documentElement.scrollWidth,
-      };
-    });
-    expect(layout.topicTop).toBeGreaterThan(layout.categoryBottom);
-    expect(Math.abs(layout.topicWidth - layout.rowWidth)).toBeLessThanOrEqual(1);
-    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.pageWidth + 1);
+    await expect(install).toBeVisible();
+    const main = await detail.locator(".catalog-detail__main").boundingBox();
+    const facts = await rail.boundingBox();
+    expect(main).not.toBeNull();
+    expect(facts).not.toBeNull();
+    if (width <= 600) expect(facts!.y).toBeGreaterThanOrEqual(main!.y + main!.height - 1);
+    else expect(facts!.x).toBeGreaterThanOrEqual(main!.x + main!.width);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      width + 1,
+    );
   }
-
-  await page.setViewportSize({ width: 1280, height: 900 });
-  await expect(separator).toBeVisible();
-  const [categoryBox, topicBox] = await Promise.all([
-    categories.boundingBox(),
-    topics.boundingBox(),
-  ]);
-  expect(Math.abs(categoryBox!.y - topicBox!.y)).toBeLessThanOrEqual(2);
+  const audit = rail.getByRole("link", { name: /^View Security Audit.+/ });
+  await expect(audit.locator(".security-audit-meter")).toBeVisible();
+  await expect(audit).not.toContainText(/Audit/);
+  await expect(audit).toHaveAttribute("href", /\/openclaw\/plugins\/codex\/security-audit(?:\?|$)/);
+  await audit.click();
+  await expect(page).toHaveURL(/\/openclaw\/plugins\/codex\/security-audit(?:\?|$)/);
+  await expect(page.getByRole("heading", { name: "Security Audit Metadata" })).toBeVisible();
   await expectHealthyPage(page, errors);
 });
 

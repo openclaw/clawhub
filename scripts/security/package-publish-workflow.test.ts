@@ -1,10 +1,14 @@
 /* @vitest-environment node */
-import { readFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
 
 type WorkflowStep = {
   "continue-on-error"?: boolean;
+  "working-directory"?: string;
   env?: Record<string, unknown>;
   id?: string;
   if?: string;
@@ -15,6 +19,76 @@ type WorkflowStep = {
 };
 
 describe("package publish reusable workflow", () => {
+  it.each([false, true])(
+    "retains checkout cleanup metadata when relocation fails=%s",
+    async (failMove) => {
+      const workflow = parseYaml(await readFile(".github/workflows/package-publish.yml", "utf8"));
+      const steps = workflow.jobs.publish.steps as WorkflowStep[];
+      const moveIndex = steps.findIndex(
+        (step) => step.name === "Move ClawHub source out of the caller workspace",
+      );
+      const installIndex = steps.findIndex(
+        (step) => step.name === "Install ClawHub CLI dependencies",
+      );
+      expect(moveIndex).toBeGreaterThan(-1);
+      expect(moveIndex).toBeLessThan(installIndex);
+      expect(steps[installIndex]?.["working-directory"]).toBe("${{ runner.temp }}/clawhub-source");
+      const move = steps[moveIndex]?.run;
+      if (!move) throw new Error("Missing tooling relocation step");
+      const root = await mkdtemp(join(tmpdir(), "package-workflow-"));
+      try {
+        const workspace = join(root, "workspace");
+        const runnerTemp = join(root, "runner-temp");
+        const checkout = join(workspace, "clawhub-source");
+        const bin = join(root, "bin");
+        await mkdir(checkout, { recursive: true });
+        await mkdir(runnerTemp);
+        await mkdir(bin);
+        const git = (args: string[]) => spawnSync("git", args, { cwd: checkout, encoding: "utf8" });
+        expect(git(["-c", "init.templateDir=", "init", "--quiet"]).status).toBe(0);
+        expect(git(["config", "--local", "clawhub.fixture", "preserved"]).status).toBe(0);
+        const config = await readFile(join(checkout, ".git", "config"));
+        await writeFile(join(checkout, "tooling.txt"), "tooling\n");
+        await writeFile(join(checkout, ".hidden"), "hidden\n");
+        if (failMove) {
+          await writeFile(join(bin, "mv"), "#!/bin/sh\nexit 42\n");
+          await chmod(join(bin, "mv"), 0o755);
+        }
+        const result = spawnSync("bash", ["-e", "-c", move], {
+          cwd: workspace,
+          env: {
+            ...process.env,
+            PATH: `${bin}:${process.env.PATH}`,
+            GITHUB_WORKSPACE: workspace,
+            RUNNER_TEMP: runnerTemp,
+          },
+        });
+        expect(result.status).toBe(failMove ? 42 : 0);
+        expect(await readFile(join(checkout, ".git", "config"))).toEqual(config);
+        expect(git(["config", "--local", "--get", "clawhub.fixture"]).stdout.trim()).toBe(
+          "preserved",
+        );
+        if (!failMove) {
+          expect(await readdir(checkout)).toEqual([".git"]);
+          expect((await readdir(join(runnerTemp, "clawhub-source"))).sort()).toEqual([
+            ".hidden",
+            "tooling.txt",
+          ]);
+          expect(await readFile(join(runnerTemp, "clawhub-source", "tooling.txt"), "utf8")).toBe(
+            "tooling\n",
+          );
+          expect(await readFile(join(runnerTemp, "clawhub-source", ".hidden"), "utf8")).toBe(
+            "hidden\n",
+          );
+        } else {
+          expect(await readFile(join(checkout, "tooling.txt"), "utf8")).toBe("tooling\n");
+        }
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
+
   it("waits for definitive publication by default", async () => {
     const workflow = parseYaml(await readFile(".github/workflows/package-publish.yml", "utf8")) as {
       jobs: {

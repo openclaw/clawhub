@@ -888,7 +888,7 @@ describe("plugins route", () => {
     expect(navigateMock).not.toHaveBeenCalled();
   });
 
-  it("renders plugin download counts in browse results", async () => {
+  it("renders plugin download counts in browse results without a header", async () => {
     loaderDataMock = {
       items: [makeCatalogItem({ stats: { downloads: 1_234, installs: 9, stars: 0, versions: 1 } })],
       nextCursor: null,
@@ -902,7 +902,7 @@ describe("plugins route", () => {
 
     expect(screen.getByRole("main").className).toContain("plugins-browse-page");
     expect(screen.getByText("1.2k")).toBeTruthy();
-    expect(document.querySelector(".browse-list-head")?.textContent).toBe("PluginDownloads");
+    expect(screen.queryByText("Downloads", { exact: true })).toBeNull();
     expect(document.querySelector(".skill-list-item-taxonomy")).toBeNull();
   });
 
@@ -916,7 +916,7 @@ describe("plugins route", () => {
     expect(screen.getByRole("heading", { name: "Plugins" })).toBeTruthy();
     expect(screen.getByRole("status", { name: "Loading results" })).toBeTruthy();
     expect(screen.queryByText("Loading results")).toBeNull();
-    expect(document.querySelector(".browse-list-head")?.textContent).toBe("PluginDownloads");
+    expect(screen.queryByText("Downloads", { exact: true })).toBeNull();
     expect(document.querySelector(".skill-list-item-taxonomy")).toBeNull();
   });
 

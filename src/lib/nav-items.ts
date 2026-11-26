@@ -201,7 +201,7 @@ export type FooterEcosystemProject = {
   label: string;
   href: string;
   blurb: string;
-  /** Logo URL from https://openclaw.ai/ecosystem assets. */
+  /** Ecosystem logo URL, usually hosted on openclaw.ai. */
   logoUrl: string;
   internal?: boolean;
 };
@@ -344,7 +344,8 @@ export const FOOTER_ECOSYSTEM_PROJECTS: FooterEcosystemProject[] = [
     label: "Peekaboo",
     href: "https://github.com/openclaw/Peekaboo",
     blurb: "macOS capture",
-    logoUrl: openclawEcosystemAsset("/ecosystem/logos/peekaboo.png"),
+    // The upstream PNG has an opaque white matte. Keep just the icon tile.
+    logoUrl: "/ecosystem/peekaboo.png",
   },
   {
     label: "cookbook",

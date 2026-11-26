@@ -119,6 +119,14 @@ it("returns complete vendor JSON through scan completion and verify, replacing s
     });
   }
   await complete(10);
+  // A finished scan still stores its report, but must not queue a generated document.
+  const cardWork = await t.run(async (ctx) => ({
+    scheduled: (await ctx.db.system.query("_scheduled_functions").collect())
+      .map((job) => job.name)
+      .filter((name) => name.endsWith(":enqueueForVersionInternal")),
+    queued: await ctx.db.query("skillCardGenerationJobs").first(),
+  }));
+  expect(cardWork).toEqual({ scheduled: [], queued: null });
   expect((await t.run((ctx) => ctx.db.get(versionId)))?.skillSpectorAnalysis).toMatchObject({
     status: "suspicious",
     inspectionStatus: "partial",

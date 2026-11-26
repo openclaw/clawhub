@@ -232,12 +232,10 @@ describe("publisher Template detail route loader", () => {
     expect(screen.getByRole("status").classList.contains("sr-only")).toBe(true);
     expect(screen.getByRole("status").closest('[aria-busy="true"]')).toBeNull();
     expect(screen.getByRole("main").getAttribute("aria-busy")).toBe("true");
-    expect(container.querySelector('[aria-hidden="true"] .template-detail-hero')).not.toBeNull();
-    expect(container.querySelector('[aria-hidden="true"] .template-detail-layout')).not.toBeNull();
+    expect(container.querySelector('[aria-hidden="true"] .catalog-detail__hero')).not.toBeNull();
+    expect(container.querySelector('[aria-hidden="true"] .catalog-detail__content')).not.toBeNull();
     expect(container.querySelector("button, a, [tabindex]")).toBeNull();
-    expect(
-      container.querySelector('[aria-hidden="true"] .template-release-inventory'),
-    ).not.toBeNull();
+    expect(container.querySelector('[aria-hidden="true"] .template-catalog-panel')).not.toBeNull();
     expect(screen.queryByRole("region", { name: "Included in this release" })).toBeNull();
   });
 
@@ -462,22 +460,6 @@ const templateContents =
   JSON.stringify(manifest) +
   "\n---\n# Release instructions\n\nRead the actual release notes.";
 
-// Computed style declarations are read-only, and jsdom 31 enforces that, so
-// layer the line-height override over the real declaration instead of assigning.
-function mockComputedLineHeight(lineHeight: string) {
-  const getStyle = window.getComputedStyle.bind(window);
-  vi.spyOn(window, "getComputedStyle").mockImplementation((...args) => {
-    const style = getStyle(...args);
-    return new Proxy(style, {
-      get(target, property) {
-        if (property === "lineHeight") return lineHeight;
-        const value: unknown = Reflect.get(target, property, target);
-        return typeof value === "function" ? value.bind(target) : value;
-      },
-    });
-  });
-}
-
 function renderTemplate(
   options: {
     status?: NonNullable<PackageDetailResponse["package"]>["scanStatus"];
@@ -520,7 +502,7 @@ describe("Template detail composition and interactions", () => {
     mocks.fetchPackageFile.mockResolvedValue("# Workspace instructions\n\nActual file contents.");
   });
 
-  it("renders the title, summary and explicit pinned preview when the published archive exceeds inventory capacity", async () => {
+  it("renders title, summary and personality without browsing files when the archive exceeds inventory capacity", async () => {
     const ordinary = packageDetail();
     ordinary.package!.scanStatus = "clean";
     const api =
@@ -552,14 +534,14 @@ describe("Template detail composition and interactions", () => {
         "CLAW.md",
         "package.json",
       ]);
-      fireEvent.click(screen.getByRole("tab", { name: "Workspace files" }));
-      fireEvent.click(screen.getByRole("button", { name: "AGENTS.md" }));
-      expect(await screen.findByRole("heading", { name: "Pinned workspace preview" })).toBeTruthy();
-      expect(mocks.fetchPackageFile).toHaveBeenLastCalledWith(
-        "@maker/release-brief",
-        "workspace/AGENTS.md",
-        "0.1.0",
-      );
+      fireEvent.click(screen.getByRole("button", { name: "SOUL.md" }));
+      expect(
+        within(screen.getByRole("dialog", { name: "SOUL.md" })).getByRole("heading", {
+          name: "Release instructions",
+        }),
+      ).toBeTruthy();
+      expect(screen.queryByText("Browse release files")).toBeNull();
+      expect(mocks.fetchPackageFile).toHaveBeenCalledTimes(2);
     } finally {
       transport.mockRestore();
     }
@@ -598,7 +580,7 @@ describe("Template detail composition and interactions", () => {
     }
   });
 
-  it("paints named release metadata and navigates workspace mappings while the opened CLAW.md is pending", async () => {
+  it("previews a named workspace skill at its pinned release while CLAW.md is pending", async () => {
     const detail = packageDetail();
     detail.package!.scanStatus = "clean";
     let finish!: (value: string) => void;
@@ -624,8 +606,8 @@ describe("Template detail composition and interactions", () => {
         .queryByRole("button", { name: "Copy template install command" })
         ?.hasAttribute("disabled") ?? true,
     ).toBe(true);
-    fireEvent.click(screen.getByRole("tab", { name: "Workspace files" }));
-    const row = screen.getByRole("button", { name: "skills/review-notes/SKILL.md" });
+    expect(screen.queryByRole("button", { name: "Browse release files" })).toBeNull();
+    const row = within(included).getByRole("button", { name: "review-notes" });
     expect(mocks.fetchPackageFile).toHaveBeenCalledTimes(1);
     fireEvent.click(row);
     expect(await screen.findByRole("heading", { name: "Actual workspace preview" })).toBeTruthy();
@@ -634,8 +616,8 @@ describe("Template detail composition and interactions", () => {
       "workspace/skills/review-notes/SKILL.md",
       "0.1.0",
     );
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
     await act(async () => finish(templateContents));
-    fireEvent.click(screen.getByRole("tab", { name: "CLAW.md" }));
     expect(
       screen
         .getByRole("button", { name: "Copy template install command" })
@@ -643,39 +625,35 @@ describe("Template detail composition and interactions", () => {
     ).toBe(false);
   });
 
-  it("uses one mobile command fallback without duplicating the rail card", () => {
-    vi.stubGlobal("matchMedia", () => ({
-      matches: true,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-    }));
+  it("keeps an automation's wall-clock time in its declared zone after hydration", () => {
+    const actual = Intl.DateTimeFormat().resolvedOptions();
+    const zone = vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockReturnValue({
+      ...actual,
+      timeZone: "America/New_York",
+    });
     try {
       renderTemplate();
-      const card = screen.getByRole("article", { name: "Install" });
-      expect(card.closest(".template-detail-main")).not.toBeNull();
-      expect(document.querySelectorAll(".skill-install-command-card")).toHaveLength(1);
-      expect(screen.getByRole("button", { name: "Copy template install command" })).toBeTruthy();
-      fireEvent.click(screen.getByRole("button", { name: "Desktop" }));
-      expect(
-        screen.getByRole("link", { name: "Install in OpenClaw" }).closest(".template-detail-main"),
-      ).not.toBeNull();
+      const trigger = screen.getByRole("button", { name: /^Weekday release brief/ });
+      expect(trigger.textContent).toContain("Weekdays at 9:00 AM · America/Los_Angeles");
     } finally {
-      vi.unstubAllGlobals();
+      zone.mockRestore();
     }
   });
 
-  it("offers the exact Template package identity and one desktop rail command card", () => {
+  it("offers CLI and desktop install directly in the sidebar without an Add or Install proxy", () => {
     renderTemplate();
-    fireEvent.click(screen.getByRole("button", { name: "Desktop" }));
-    const link = screen.getByRole("link", { name: "Install in OpenClaw" });
-    expect(link.getAttribute("href")).toBe(
-      "openclaw://templates/install?name=%40maker%2Frelease-brief",
-    );
-    expect(link.closest(".template-detail-metadata")).not.toBeNull();
-    expect(link.querySelector("svg")).toBeNull();
+    const sidebar = screen.getByRole("complementary");
     const card = screen.getByRole("article", { name: "Install" });
-    expect(card.closest(".template-detail-metadata")).not.toBeNull();
-    expect(document.querySelectorAll(".skill-install-command-card")).toHaveLength(1);
+    expect(sidebar.contains(card)).toBe(true);
+    expect(screen.queryByRole("button", { name: /^(Add|Install)$/i })).toBeNull();
+    expect(
+      within(card).getByRole("button", { name: "Copy template install command" }),
+    ).toBeTruthy();
+    fireEvent.click(within(card).getByRole("button", { name: "Desktop" }));
+    expect(
+      within(card).getByRole("link", { name: "Install in OpenClaw" }).getAttribute("href"),
+    ).toBe("openclaw://templates/install?name=%40maker%2Frelease-brief");
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it.each([
@@ -686,7 +664,12 @@ describe("Template detail composition and interactions", () => {
     { stored: ["productivity", "people"], shown: "Productivity · People" },
   ])("labels the stored category $stored", ({ stored, shown }) => {
     renderTemplate({ categories: stored });
-    expect(document.querySelector(".template-detail-category")?.textContent).toBe(shown);
+    expect(
+      Array.from(
+        document.querySelectorAll(".template-catalog-category"),
+        (chip) => chip.textContent,
+      ).join(" · ") || undefined,
+    ).toBe(shown);
   });
 
   it.each([
@@ -701,72 +684,40 @@ describe("Template detail composition and interactions", () => {
         contents:
           "---\n" + JSON.stringify({ ...manifest, categories: declared }) + "\n---\n# Brief",
       });
-      expect(document.querySelector(".template-detail-category")?.textContent).toBe(shown);
+      expect(
+        Array.from(
+          document.querySelectorAll(".template-catalog-category"),
+          (chip) => chip.textContent,
+        ).join(" · ") || undefined,
+      ).toBe(shown);
     },
   );
 
-  it("clamps overflowing descriptions and links the expand/collapse button to the full text", () => {
-    mockComputedLineHeight("20px");
-    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(100);
+  it("renders an unclamped summary and swaps the personality excerpt for the full document", () => {
     renderTemplate();
-    const button = screen.getByRole("button", { name: "Read more" });
-    const description = document.getElementById(button.getAttribute("aria-controls")!);
-    expect(description?.textContent).toBe("Summarizes releases for a new user.");
-    expect(description?.getAttribute("data-expanded")).toBe("false");
-    expect(button.getAttribute("aria-expanded")).toBe("false");
-    fireEvent.click(button);
-    expect(description?.getAttribute("data-expanded")).toBe("true");
-    expect(screen.getByRole("button", { name: "Show less" }).getAttribute("aria-expanded")).toBe(
-      "true",
+    expect(screen.getByText("Summarizes releases for a new user.")).toBeTruthy();
+    const personality = within(screen.getByRole("region", { name: "Personality" }));
+    const toggle = personality.getByRole("button", { name: "Show more" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(document.getElementById(toggle.getAttribute("aria-controls")!)?.textContent).toContain(
+      "Read the actual release notes.",
     );
-    fireEvent.click(button);
-    expect(description?.getAttribute("data-expanded")).toBe("false");
-  });
-
-  it("does not show an expand button when the description fits within two lines", () => {
-    mockComputedLineHeight("20px");
-    vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(40);
-    renderTemplate();
-    expect(screen.queryByRole("button", { name: "Read more" })).toBeNull();
-  });
-
-  it("rechecks description overflow on resize and disconnects on unmount", () => {
-    let resize = () => {};
-    const disconnect = vi.fn();
-    vi.stubGlobal(
-      "ResizeObserver",
-      class {
-        constructor(callback: () => void) {
-          resize = callback;
-        }
-        observe() {}
-        disconnect = disconnect;
-      },
-    );
-    mockComputedLineHeight("20px");
-    const height = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(40);
-    const view = renderTemplate();
-    expect(screen.queryByRole("button", { name: "Read more" })).toBeNull();
-    height.mockReturnValue(60);
-    act(() => resize());
-    expect(screen.getByRole("button", { name: "Read more" })).toBeTruthy();
-    height.mockReturnValue(40);
-    act(() => resize());
-    expect(screen.queryByRole("button", { name: "Read more" })).toBeNull();
-    view.unmount();
-    expect(disconnect).toHaveBeenCalled();
+    fireEvent.click(toggle);
+    expect(personality.getByRole("heading", { name: "Release instructions" })).toBeTruthy();
+    fireEvent.click(personality.getByRole("button", { name: "Show less" }));
+    expect(personality.queryByRole("heading", { name: "Release instructions" })).toBeNull();
   });
 
   it("shows Unavailable and neutral bars when a clean package has no release audit evidence", () => {
     renderTemplate();
-    const metadata = screen.getByRole("complementary", { name: "Template metadata" });
+    const metadata = screen.getByRole("complementary");
     expect(within(metadata).getByText("Unavailable")).toBeTruthy();
     expect(within(metadata).queryByText("Clean")).toBeNull();
     expect(metadata.querySelector(".security-audit-meter")?.getAttribute("data-level")).toBe("0");
   });
 
   it.each([
-    ["benign", "Pass", "3"],
+    ["benign", "Clean", "3"],
     ["suspicious", "Review", "2"],
     ["malicious", "Malicious", "1"],
     ["pending", "Pending", "0"],
@@ -775,7 +726,7 @@ describe("Template detail composition and interactions", () => {
     "uses actual release evidence for %s instead of the package's clean flag",
     (verdict, label, level) => {
       renderTemplate({ llmAnalysis: { status: verdict, verdict, checkedAt: 1 } });
-      const metadata = screen.getByRole("complementary", { name: "Template metadata" });
+      const metadata = screen.getByRole("complementary");
       expect(within(metadata).getByText(label)).toBeTruthy();
       expect(metadata.querySelector(".security-audit-meter")?.getAttribute("data-level")).toBe(
         level,
@@ -783,64 +734,190 @@ describe("Template detail composition and interactions", () => {
     },
   );
 
-  it("defaults to rendered CLAW.md without exposing the manifest or old instructional UI", () => {
+  it("matches the template overview and links the security verdict to this release", () => {
     renderTemplate();
-    expect(screen.getByRole("tab", { name: "CLAW.md" }).getAttribute("aria-selected")).toBe("true");
-    expect(screen.getByRole("heading", { name: "Release instructions" })).toBeTruthy();
+    expect(screen.getByRole("navigation", { name: "Breadcrumb" }).textContent).toBe(
+      "TemplatesRelease Brief",
+    );
+    expect(screen.queryByRole("tablist")).toBeNull();
+    expect(screen.getByRole("link", { name: "@maker" }).getAttribute("href")).toBe("/maker");
     expect(screen.getByText("Engineering")).toBeTruthy();
-    expect(screen.getByText("Maker")).toBeTruthy();
-    expect(screen.getByText("@maker")).toBeTruthy();
     expect(screen.queryByText(/schemaVersion/)).toBeNull();
-    expect(screen.queryByText("Add this Template")).toBeNull();
-    expect(screen.queryByText("About this Template")).toBeNull();
-    expect(screen.getByText("Unavailable")).toBeTruthy();
-    expect(screen.getByText("Nov 5, 2026")).toBeTruthy();
-    expect(screen.getByText("v0.1.0")).toBeTruthy();
-    expect(screen.queryByText("Declared contents")).toBeNull();
-    expect(screen.queryByText(/SHA-256/)).toBeNull();
-    expect(screen.getByRole("link", { name: "View Security Audit" }).getAttribute("href")).toBe(
+    const facts = within(screen.getByRole("complementary"));
+    const localDate = new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(
+      Date.UTC(2026, 10, 5),
+    );
+    expect(facts.getByText(localDate)).toBeTruthy();
+    expect(facts.getByText("0.1.0")).toBeTruthy();
+    const audit = facts.getByRole("link", { name: /View Security Audit.*Unavailable/i });
+    expect(audit.getAttribute("href")).toBe(
       "/maker/templates/release-brief/security-audit?version=0.1.0",
     );
+    expect(within(audit).getByText("Unavailable")).toBeTruthy();
+    expect(facts.queryByText(/^Audit$/i)).toBeNull();
   });
 
-  it("renders actual pinned package dependencies and automation configuration", () => {
-    renderTemplate();
-    fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
-    expect(screen.getByText("@maker/release-search")).toBeTruthy();
-    expect(screen.getByText("Version 1.2.3 · ClawHub")).toBeTruthy();
-    expect(screen.getByText("1 included skill")).toBeTruthy();
-    expect(screen.queryByText("@maker/release-alerts")).toBeNull();
-    fireEvent.click(screen.getByRole("tab", { name: "Plugins" }));
-    expect(screen.getByText("@maker/release-alerts")).toBeTruthy();
-    expect(screen.getByText("Version 2.0.0 · ClawHub")).toBeTruthy();
-    expect(screen.getByText("1 included plugin")).toBeTruthy();
-    fireEvent.click(screen.getByRole("tab", { name: "Automations" }));
-    expect(screen.getByText("Weekday release brief")).toBeTruthy();
-    expect(screen.getByText("0 9 * * 1-5")).toBeTruthy();
-    expect(screen.getByText(/America\/Los_Angeles/)).toBeTruthy();
-    expect(screen.getByText(/Paused/)).toBeTruthy();
-    expect(screen.getByText("Summarize the approved release sources.")).toBeTruthy();
-  });
-
-  it("shows bundled metadata names and paths without fabricated registry versions", () => {
+  it("reads a bundled skill's pinned SKILL.md only when its capability row opens", async () => {
     const detail = packageDetail();
     detail.package!.templateInventory = [
-      { kind: "skill", source: "bundled", path: "skills/research", name: "Bundled Research" },
-      { kind: "plugin", source: "bundled", path: "plugins/alerts" },
+      { kind: "skill", source: "bundled", name: "Research", path: "skills/research" },
     ];
     render(
       <TemplateDetailPage detail={detail} contents={templateContents} fallbackOwner="maker" />,
     );
-    fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
-    expect(screen.getByText("Bundled Research")).toBeTruthy();
-    expect(screen.getByText("skills/research")).toBeTruthy();
-    expect(screen.queryByText(/Version/)).toBeNull();
-    fireEvent.click(screen.getByRole("tab", { name: "Plugins" }));
-    expect(screen.getAllByText("plugins/alerts")).toHaveLength(2);
-    expect(screen.queryByText(/ClawHub/)).toBeNull();
+    expect(mocks.fetchPackageFile).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Research" }));
+    const dialog = within(screen.getByRole("dialog", { name: "Research" }));
+    expect(await dialog.findByRole("heading", { name: "Workspace instructions" })).toBeTruthy();
+    expect(mocks.fetchPackageFile).toHaveBeenCalledWith(
+      "@maker/release-brief",
+      "skills/research/SKILL.md",
+      "0.1.0",
+    );
   });
 
-  it("lists skills, plugins and heartbeat work delivered as workspace files in their tabs", () => {
+  const skillMetadata = {
+    slug: "release-search",
+    publisherHandle: "maker",
+    version: "1.2.3",
+    resolvedFrom: "version",
+    ok: false,
+    reasons: ["card.missing"],
+    artifact: {
+      files: [
+        {
+          path: "SKILL.md",
+          sha256: "0d01d0807cb0e9eb27ff2552a52f65ab01f690661856591b4eec023d4f93f0b9",
+        },
+      ],
+    },
+  };
+
+  it("reads the publisher's pinned SKILL.md even when no generated card exists", async () => {
+    const request = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(Response.json(skillMetadata))
+      .mockResolvedValueOnce(new Response("# Authored instructions"));
+    renderTemplate();
+    expect(request).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "@maker/release-search" }));
+    const dialog = within(screen.getByRole("dialog", { name: "@maker/release-search" }));
+    expect(await dialog.findByRole("heading", { name: "Authored instructions" })).toBeTruthy();
+    const urls = request.mock.calls.map(([input]) => {
+      if (!(input instanceof URL)) throw new Error("Expected a pinned registry URL");
+      return input;
+    });
+    expect(urls.map((u) => u.pathname)).toEqual([
+      "/api/v1/skills/release-search/verify",
+      "/api/v1/skills/release-search/file",
+    ]);
+    for (const url of urls) {
+      expect(url.searchParams.get("ownerHandle")).toBe("maker");
+      expect(url.searchParams.get("version")).toBe("1.2.3");
+    }
+    expect(urls[1].searchParams.get("path")).toBe("SKILL.md");
+    expect(urls[1].searchParams.get("preview")).toBe("1");
+  });
+
+  it.each([
+    { publisherHandle: "other" },
+    { slug: "alias-target" },
+    { version: "9.0.0" },
+    { resolvedFrom: "latest" },
+  ])("never reads a release file for mismatched registry identity: %o", async (overrides) => {
+    const request = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(Response.json({ ...skillMetadata, ...overrides }));
+    renderTemplate();
+    fireEvent.click(screen.getByRole("button", { name: "@maker/release-search" }));
+    expect(await screen.findByText("Skill preview is unavailable for this release.")).toBeTruthy();
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [404, "Missing version"],
+    [403, "Blocked"],
+    [200, "# Another publisher's instructions"],
+  ] as const)(
+    "never substitutes other bytes after a pinned file response (%s)",
+    async (status, text) => {
+      const request = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(Response.json(skillMetadata))
+        .mockResolvedValueOnce(new Response(text, { status }));
+      renderTemplate();
+      fireEvent.click(screen.getByRole("button", { name: "@maker/release-search" }));
+      expect(
+        await screen.findByText("Skill preview is unavailable for this release."),
+      ).toBeTruthy();
+      expect(request).toHaveBeenCalledTimes(2);
+      expect(
+        screen.queryByRole("heading", { name: "Another publisher's instructions" }),
+      ).toBeNull();
+    },
+  );
+
+  it("does not guess a publisher for an unqualified skill dependency", async () => {
+    const request = vi.spyOn(globalThis, "fetch");
+    renderTemplate({
+      contents: templateContents.replace("@maker/release-search", "release-search"),
+    });
+    fireEvent.click(screen.getByRole("button", { name: "release-search" }));
+    expect(await screen.findByText("Skill preview is unavailable for this release.")).toBeTruthy();
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("opens the corresponding release metadata for each row in the Plugins section", () => {
+    const workspacePath = ".openclaw/extensions/alerts/openclaw.plugin.json";
+    renderTemplate({
+      contents:
+        "---\n" +
+        JSON.stringify({
+          ...manifest,
+          plugins: [...manifest.plugins, { path: "plugins/handoff" }],
+          workspace: { files: [{ source: "workspace/alerts.json", path: workspacePath }] },
+          mcpServers: {
+            filings: {
+              url: "https://example.test/mcp",
+              transport: "streamable-http",
+              auth: "oauth",
+            },
+          },
+        }) +
+        "\n---\n# Release instructions",
+    });
+    const plugins = within(screen.getByRole("region", { name: "Plugins" }));
+    for (const [name, metadata] of [
+      ["@maker/release-alerts", "2.0.0"],
+      ["plugins/handoff", "Bundled · plugins/handoff"],
+      ["alerts", "Workspace file · " + workspacePath],
+      ["filings", "MCP server"],
+    ] as const) {
+      fireEvent.click(plugins.getByRole("button", { name: (label) => label.startsWith(name) }));
+      const dialog = screen.getByRole("dialog", { name });
+      expect(dialog.textContent).toContain(metadata);
+      fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+      expect(screen.queryByRole("dialog")).toBeNull();
+    }
+  });
+
+  it("shows the readable schedule and instructions without a duplicate cron footer", () => {
+    renderTemplate();
+    const automation = within(screen.getByRole("region", { name: "Automations" }));
+    const trigger = automation.getByRole("button", { name: /^Weekday release brief/ });
+    expect(automation.queryByText("Summarize the approved release sources.")).toBeNull();
+    fireEvent.click(trigger);
+    const job = screen.getByRole("dialog", { name: "Weekday release brief" });
+    expect(job.textContent).toContain("Weekdays at 9:00 AM · America/Los_Angeles · Disabled");
+    expect(job.textContent).not.toContain("Declared schedule:");
+    expect(job.textContent).not.toContain("0 9 * * 1-5");
+    expect(job.textContent).toContain("Summarize the approved release sources.");
+    const close = within(job).getByRole("button", { name: "Close" });
+    fireEvent.click(close);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("lists workspace skills, plugins and heartbeat work without exposing support files", () => {
     renderTemplate({
       contents:
         "---\n" +
@@ -873,33 +950,15 @@ describe("Template detail composition and interactions", () => {
         }) +
         "\n---\n# Release instructions",
     });
-    fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
-    const skills = within(screen.getByRole("list", { name: "Included skills" }));
-    expect(screen.getByText("3 included skills")).toBeTruthy();
-    expect(skills.getAllByRole("listitem").map((item) => item.textContent)).toEqual([
-      "@maker/release-searchVersion 1.2.3 · ClawHub",
-      "food-diaryWorkspace file · skills/food-diary/SKILL.md",
-      "reviewWorkspace file · .agents/skills/team/review/SKILL.md",
-    ]);
-    fireEvent.click(screen.getByRole("tab", { name: "Plugins" }));
-    expect(screen.getByText("2 included plugins")).toBeTruthy();
-    expect(
-      within(screen.getByRole("list", { name: "Included plugins" }))
-        .getAllByRole("listitem")
-        .map((item) => item.textContent),
-    ).toEqual([
-      "@maker/release-alertsVersion 2.0.0 · ClawHub",
-      "alertsWorkspace file · .openclaw/extensions/alerts/openclaw.plugin.json",
-    ]);
-    fireEvent.click(screen.getByRole("tab", { name: "Automations" }));
-    const automations = within(screen.getByRole("list", { name: "Included automations" }));
-    const jobs = automations.getAllByRole("listitem");
-    expect(jobs).toHaveLength(2);
-    expect(jobs[0].textContent).toContain("Weekday release brief");
-    expect(jobs[1].textContent).toBe(
-      "Heartbeat checklistWorkspace file · HEARTBEAT.md · Every 1h" +
-        "OpenClaw converts this checklist into interval automations when the Template is added.",
-    );
+    const buttons = (region: string) =>
+      within(screen.getByRole("region", { name: region }))
+        .getAllByRole("button")
+        .map((button) => button.textContent);
+    expect(buttons("Skills")).toEqual(["@maker/release-search", "food-diary", "review"]);
+    expect(buttons("Plugins")).toEqual(["@maker/release-alerts", "alerts"]);
+    const jobs = screen.getByRole("region", { name: "Automations" });
+    expect(jobs.textContent).toContain("Heartbeat checklistEvery 1h");
+    expect(screen.queryByRole("button", { name: "reference/automations.md" })).toBeNull();
   });
 
   it("shows workspace-file skills for a Template without declared dependencies", () => {
@@ -928,34 +987,13 @@ describe("Template detail composition and interactions", () => {
         fallbackOwner="maker"
       />,
     );
-    fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
-    expect(screen.getByText("1 included skill")).toBeTruthy();
-    expect(screen.getByText("food-diary")).toBeTruthy();
-    expect(screen.queryByText("No skills are included in this Template.")).toBeNull();
-    fireEvent.click(screen.getByRole("tab", { name: "Plugins" }));
-    expect(screen.getByText("No plugins are included in this Template.")).toBeTruthy();
-    fireEvent.click(screen.getByRole("tab", { name: "Automations" }));
-    expect(screen.getByText("No automations are included in this Template.")).toBeTruthy();
-  });
-
-  it("supports roving focus, wrapping arrow keys, Home and End with linked panels", () => {
-    renderTemplate();
-    const claw = screen.getByRole("tab", { name: "CLAW.md" });
-    fireEvent.keyDown(claw, { key: "ArrowRight" });
-    const skills = screen.getByRole("tab", { name: "Skills" });
-    expect(document.activeElement).toBe(skills);
-    expect(skills.tabIndex).toBe(0);
-    expect(claw.tabIndex).toBe(-1);
-    expect(screen.getByRole("tabpanel").id).toBe(skills.getAttribute("aria-controls"));
-    fireEvent.keyDown(skills, { key: "End" });
-    const workspace = screen.getByRole("tab", { name: "Workspace files" });
-    expect(document.activeElement).toBe(workspace);
-    fireEvent.keyDown(workspace, { key: "ArrowRight" });
-    expect(document.activeElement).toBe(claw);
-    fireEvent.keyDown(claw, { key: "ArrowLeft" });
-    expect(document.activeElement).toBe(workspace);
-    fireEvent.keyDown(workspace, { key: "Home" });
-    expect(document.activeElement).toBe(claw);
+    expect(
+      within(screen.getByRole("region", { name: "Skills" })).getByRole("button", {
+        name: "food-diary",
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Plugins" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Automations" })).toBeNull();
   });
 
   it("prefixes an unscoped package with its publisher, like a skill install", async () => {
@@ -983,7 +1021,6 @@ describe("Template detail composition and interactions", () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
     renderTemplate();
-    fireEvent.click(screen.getByRole("button", { name: "CLI" }));
     const button = screen.getByRole("button", { name: "Copy template install command" });
     fireEvent.click(button);
     await waitFor(() => expect(button.getAttribute("data-copy-state")).toBe("copied"));
@@ -1012,6 +1049,7 @@ describe("Template detail composition and interactions", () => {
   ])("blocks both install-copy actions and explains how to repair %s", (_label, contents) => {
     renderTemplate({ contents });
     const warning = screen.getByRole("status");
+    expect(screen.queryByRole("button", { name: /Browse release files|SOUL\.md/ })).toBeNull();
     expect(warning.textContent).toContain("cannot be added");
     expect(warning.textContent).toContain("publish a new version");
     expect(
@@ -1067,7 +1105,6 @@ describe("Template detail composition and interactions", () => {
       value: { writeText: vi.fn().mockRejectedValue(new Error("Denied")) },
     });
     renderTemplate();
-    fireEvent.click(screen.getByRole("button", { name: "CLI" }));
     const button = screen.getByRole("button", { name: "Copy template install command" });
     fireEvent.click(button);
     await waitFor(() => expect(button.getAttribute("data-copy-state")).toBe("failed"));
@@ -1084,23 +1121,25 @@ describe("Template detail composition and interactions", () => {
     (status, auditStatus, label, level) => {
       const summary = "Release audit details remain available.";
       renderTemplate({ status, llmAnalysis: { status: auditStatus, checkedAt: 1, summary } });
-      const install = screen.getByRole("region", { name: "Install Template" });
+      const metadata = screen.getByRole("complementary");
+      const install = within(metadata).getByRole("region", { name: "Install Template" });
+      expect(within(install).queryByRole("button", { name: "Desktop" })).toBeNull();
+      expect(screen.queryByRole("button", { name: /^(Add|Install)$/i })).toBeNull();
       expect(install.querySelector("p")).toBeNull();
       expect(install.querySelector(".template-detail-install-warning")).toBeNull();
       expect(within(install).queryByRole("alert")).toBeNull();
       expect(within(install).queryByRole("status")).toBeNull();
-      const metadata = screen.getByRole("complementary", { name: "Template metadata" });
       expect(within(metadata).getByText("Security audit")).toBeTruthy();
-      expect(within(metadata).getByText(label)).toBeTruthy();
       expect(within(metadata).getByText(summary)).toBeTruthy();
-      const link = within(metadata).getByRole("link", { name: "View Security Audit" });
-      expect(link.getAttribute("title")).toBe(summary);
+      const link = within(metadata).getByRole("link", {
+        name: new RegExp("View Security Audit.*" + label, "i"),
+      });
+      expect(within(link).getByText(label)).toBeTruthy();
+      expect(link.closest("[title]")?.getAttribute("title")).toBe(summary);
       expect(document.getElementById(link.getAttribute("aria-describedby")!)?.textContent).toBe(
         summary,
       );
-      expect(metadata.querySelector(".security-audit-meter")?.getAttribute("data-level")).toBe(
-        level,
-      );
+      expect(link.querySelector(".security-audit-meter")?.getAttribute("data-level")).toBe(level);
       expect(screen.queryByRole("button", { name: "Copy template install command" })).toBeNull();
       expect(screen.queryByRole("link", { name: "Install in OpenClaw" })).toBeNull();
       expect(document.querySelector(".skill-install-command")?.textContent).toBe(
@@ -1129,27 +1168,20 @@ describe("Template detail composition and interactions", () => {
         JSON.stringify({ schemaVersion: 1, agent: { id: "release-brief" } }) +
         "\n---\n# Managed instructions\n\nUse the published release notes.",
     });
-    fireEvent.click(screen.getByRole("tab", { name: "Workspace files" }));
-    expect(screen.queryByText("No workspace files are included in this Template.")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "SOUL.md" }));
-    const preview = screen.getByRole("region", { name: "Preview of SOUL.md" });
+    const preview = screen.getByRole("dialog", { name: "SOUL.md" });
     expect(within(preview).getByRole("heading", { name: "Managed instructions" })).toBeTruthy();
     expect(within(preview).getByText("Use the published release notes.")).toBeTruthy();
     expect(mocks.fetchPackageFile).not.toHaveBeenCalled();
   });
 
-  it("opens the selected file beside its filename and moves focus to its preview", async () => {
+  it("keeps the direct SOUL.md dialog limited to personality, with no release file browser", () => {
     renderTemplate();
-    fireEvent.click(screen.getByRole("tab", { name: "Workspace files" }));
-    for (const name of ["SOUL.md", "AGENTS.md"]) {
-      const file = screen.getByRole("button", { name });
-      fireEvent.click(file);
-      const preview = within(file.closest("li")!).getByRole("region", { name: /Preview of/ });
-      expect(document.activeElement).toBe(preview);
-      expect(file.getAttribute("aria-expanded")).toBe("true");
-      expect(file.getAttribute("aria-controls")).toBe(preview.id);
-    }
-    expect(await screen.findByRole("heading", { name: "Workspace instructions" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "SOUL.md" }));
+    const preview = within(screen.getByRole("dialog", { name: "SOUL.md" }));
+    expect(preview.getByRole("heading", { name: "Release instructions" })).toBeTruthy();
+    expect(preview.queryByRole("button", { name: "Browse release files" })).toBeNull();
+    expect(preview.queryByRole("tablist")).toBeNull();
   });
 
   it("keeps explicit SOUL.md archive previews when the document body is empty", async () => {
@@ -1163,9 +1195,7 @@ describe("Template detail composition and interactions", () => {
         }) +
         "\n---\n   \n",
     });
-    fireEvent.click(screen.getByRole("tab", { name: "Workspace files" }));
-    expect(screen.getAllByRole("button", { name: "SOUL.md" })).toHaveLength(1);
-    fireEvent.click(screen.getByRole("button", { name: "SOUL.md" }));
+    fireEvent.click(await screen.findByRole("button", { name: "SOUL.md" }));
     expect(await screen.findByRole("heading", { name: "Workspace instructions" })).toBeTruthy();
     expect(mocks.fetchPackageFile).toHaveBeenCalledWith(
       "@maker/release-brief",
@@ -1174,70 +1204,39 @@ describe("Template detail composition and interactions", () => {
     );
   });
 
-  it("reads real workspace source files only after selection and pins their version", async () => {
-    renderTemplate();
+  it.each([null, "   "])(
+    "does not replace unavailable explicit SOUL.md with the manifest or a file browser (%s)",
+    async (soul) => {
+      mocks.fetchPackageFile.mockResolvedValue(soul);
+      const withSoul = {
+        ...manifest,
+        workspace: { bootstrapFiles: { "SOUL.md": { source: "workspace/SOUL.md" } } },
+      };
+      await act(async () => {
+        renderTemplate({
+          contents: "---\n" + JSON.stringify(withSoul) + "\n---\n# Not the explicit SOUL",
+        });
+      });
+      expect(mocks.fetchPackageFile).toHaveBeenCalledWith(
+        "@maker/release-brief",
+        "workspace/SOUL.md",
+        "0.1.0",
+      );
+      expect(screen.queryByRole("region", { name: "Personality" })).toBeNull();
+      expect(screen.queryByRole("button", { name: /Browse release files|SOUL\.md/ })).toBeNull();
+      expect(screen.getByRole("button", { name: "@maker/release-search" })).toBeTruthy();
+    },
+  );
+
+  it("has no personality or file browser when a valid Template has no SOUL.md", () => {
+    renderTemplate({ contents: "---\n" + JSON.stringify(manifest) + "\n---\n   " });
+    expect(screen.queryByRole("region", { name: "Personality" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "SOUL.md" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Browse release files" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Release files" })).toBeNull();
+    expect(screen.getByRole("button", { name: "@maker/release-search" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Copy template install command" })).toBeTruthy();
     expect(mocks.fetchPackageFile).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("tab", { name: "Workspace files" }));
-    fireEvent.click(screen.getByRole("button", { name: "AGENTS.md" }));
-    expect(await screen.findByRole("heading", { name: "Workspace instructions" })).toBeTruthy();
-    expect(mocks.fetchPackageFile).toHaveBeenCalledWith(
-      "@maker/release-brief",
-      "workspace/AGENTS.md",
-      "0.1.0",
-    );
-    mocks.fetchPackageFile.mockResolvedValueOnce("Checklist from the archive.");
-    fireEvent.click(screen.getByRole("button", { name: "notes/checklist.txt" }));
-    expect(await screen.findByText("Checklist from the archive.")).toBeTruthy();
-  });
-
-  it("keeps file failures and unavailable previews distinct and supports retry", async () => {
-    mocks.fetchPackageFile
-      .mockRejectedValueOnce(new Error("Network unavailable"))
-      .mockResolvedValueOnce(null);
-    renderTemplate();
-    fireEvent.click(screen.getByRole("tab", { name: "Workspace files" }));
-    fireEvent.click(screen.getByRole("button", { name: "AGENTS.md" }));
-    expect(await screen.findByRole("alert")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
-    expect(await screen.findByText("File preview is unavailable for this release.")).toBeTruthy();
-  });
-
-  it("does not let a stale file response overwrite the current selection", async () => {
-    let resolveFirst!: (contents: string) => void;
-    mocks.fetchPackageFile
-      .mockImplementationOnce(
-        () =>
-          new Promise((resolve) => {
-            resolveFirst = resolve;
-          }),
-      )
-      .mockResolvedValueOnce("Current checklist");
-    renderTemplate();
-    fireEvent.click(screen.getByRole("tab", { name: "Workspace files" }));
-    fireEvent.click(screen.getByRole("button", { name: "AGENTS.md" }));
-    expect(screen.getByRole("status").textContent).toBe("Loading file…");
-    fireEvent.click(screen.getByRole("button", { name: "notes/checklist.txt" }));
-    expect(await screen.findByText("Current checklist")).toBeTruthy();
-    await act(async () => resolveFirst("# Stale workspace instructions"));
-    expect(screen.queryByText("Stale workspace instructions")).toBeNull();
-  });
-
-  it("distinguishes unavailable manifests from valid empty sections", () => {
-    const { unmount } = renderTemplate({ contents: null });
-    expect(screen.getByText(/Template instructions are unavailable/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
-    expect(screen.getByText(/manifest is unavailable/)).toBeTruthy();
-    unmount();
-    renderTemplate({
-      contents:
-        "---\n" +
-        JSON.stringify({ schemaVersion: 1, agent: { id: "empty" } }) +
-        "\n---\n# Empty template",
-    });
-    fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
-    expect(
-      within(screen.getByRole("tabpanel")).getByText("No skills are included in this Template."),
-    ).toBeTruthy();
   });
 });
 

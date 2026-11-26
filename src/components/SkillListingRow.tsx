@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { Download } from "lucide-react";
 import type { HomeSkillListingEntry } from "../lib/homeListingData";
 import { formatCompactStat } from "../lib/numberFormat";
 import { presentationTitle } from "../lib/presentationTitle";
@@ -6,15 +7,6 @@ import { PUBLIC_CATALOG_NAME_PREVIEW_LENGTH, truncateText } from "../lib/truncat
 import { Badge } from "./ui/badge";
 import { Skeleton } from "./ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
-
-export function SkillListingHead({ showDownloads = true }: { showDownloads?: boolean }) {
-  return (
-    <div className="skill-listing-head" aria-hidden="true">
-      <span>Skill</span>
-      {showDownloads ? <span>Downloads</span> : null}
-    </div>
-  );
-}
 
 export function SkillListingSkeleton({
   count = 6,
@@ -25,7 +17,6 @@ export function SkillListingSkeleton({
 }) {
   return (
     <div role="status" aria-label="Loading results">
-      <SkillListingHead showDownloads={showDownloads} />
       {Array.from({ length: count }, (_, index) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholder count
         <div key={index} className="home-v2-listing-row skill-listing-row">
@@ -95,7 +86,9 @@ export function SkillListingRow({
             </Tooltip>
           ) : null}
           {showDownloads ? (
-            <span aria-label={metricLabel} title={metricLabel}>
+            <span title={metricLabel}>
+              <Download size={14} aria-hidden="true" />
+              <span className="sr-only">{metricLabel}: </span>
               {typeof downloads === "number" ? formatCompactStat(downloads) : "—"}
             </span>
           ) : null}

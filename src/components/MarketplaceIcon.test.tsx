@@ -15,7 +15,7 @@ describe("MarketplaceIcon", () => {
     beforeEach(() => vi.stubEnv("VITE_CONVEX_URL", "https://catalog.convex.cloud"));
     afterEach(() => vi.unstubAllEnvs());
 
-    it("uses the configured storage origin and preserves the original artwork padding", () => {
+    it("uses the configured storage origin for bundled artwork", () => {
       const { container } = render(
         <MarketplaceIcon
           kind="plugin"
@@ -24,9 +24,9 @@ describe("MarketplaceIcon", () => {
           rasterAssetUrl={storageUrl}
         />,
       );
-      expect(container.querySelector(".marketplace-icon-openclaw img")?.getAttribute("src")).toBe(
-        storageUrl,
-      );
+      expect(
+        container.querySelector(".marketplace-icon-image-backed img")?.getAttribute("src"),
+      ).toBe(storageUrl);
     });
 
     it("falls back to the original icon once, then a glyph without retrying failed sources", () => {
@@ -42,7 +42,7 @@ describe("MarketplaceIcon", () => {
       expect(container.querySelector("img")?.getAttribute("src")).toBe(openclawIcon);
       fireEvent.error(container.querySelector("img")!);
       expect(container.querySelector("img")).toBeNull();
-      expect(container.querySelector(".marketplace-icon-glyph")).toBeTruthy();
+      expect(container.querySelector(".marketplace-icon-glyph.lucide-plug")).toBeTruthy();
       rerender(
         <MarketplaceIcon
           kind="plugin"
@@ -185,61 +185,14 @@ describe("MarketplaceIcon", () => {
     },
   );
 
-  it.each(["xs", "sm", "md"] as const)(
-    "insets the shared OpenClaw plugin artwork at %s size",
-    (size) => {
-      const { container } = render(
-        <MarketplaceIcon
-          kind="plugin"
-          label="Lobster"
-          imageUrl={openclawIcon}
-          size={size}
-          tone="muted"
-        />,
-      );
-      expect(container.querySelector(".marketplace-icon-openclaw img")?.getAttribute("src")).toBe(
-        openclawIcon,
-      );
-    },
-  );
-
-  it("does not inset unrelated plugin logos, publisher avatars, or skill icons", () => {
-    const { container, rerender } = render(
-      <MarketplaceIcon
-        kind="plugin"
-        label="Lobster"
-        imageUrl={"/api/v1/skill-icons/" + "a".repeat(64)}
-      />,
-    );
-    expect(container.querySelector(".marketplace-icon-openclaw")).toBeNull();
-    rerender(
-      <MarketplaceIcon
-        kind="plugin"
-        label="OpenClaw"
-        publisherImageUrl="https://example.com/avatar.png"
-      />,
-    );
-    expect(container.querySelector(".marketplace-icon-openclaw")).toBeNull();
-    rerender(<MarketplaceIcon kind="skill" label="Lobster" imageUrl={openclawIcon} />);
-    expect(container.querySelector(".marketplace-icon-openclaw")).toBeNull();
-  });
-
-  it("removes the artwork treatment when the image fails or changes", () => {
-    const { container, rerender } = render(
+  it("removes the image-backed treatment when plugin artwork fails", () => {
+    const { container } = render(
       <MarketplaceIcon kind="plugin" label="Lobster" imageUrl={openclawIcon} />,
     );
+    expect(container.querySelector(".marketplace-icon-image-backed img")).toBeTruthy();
     fireEvent.error(container.querySelector("img")!);
-    expect(container.querySelector(".marketplace-icon-openclaw")).toBeNull();
-    expect(container.querySelector(".marketplace-icon-glyph")).toBeTruthy();
-    rerender(
-      <MarketplaceIcon
-        kind="plugin"
-        label="Lobster"
-        imageUrl={"/api/v1/skill-icons/" + "b".repeat(64)}
-      />,
-    );
-    expect(container.querySelector("img")).toBeTruthy();
-    expect(container.querySelector(".marketplace-icon-openclaw")).toBeNull();
+    expect(container.querySelector(".marketplace-icon-image-backed")).toBeNull();
+    expect(container.querySelector(".marketplace-icon-glyph.lucide-plug")).toBeTruthy();
   });
 
   it("renders hosted skill icons before the category fallback", () => {
@@ -270,24 +223,14 @@ describe("MarketplaceIcon", () => {
   it("renders only hosted bundled plugin icons, falling back for remote URLs", () => {
     const hostedIcon = `/api/v1/skill-icons/${"c".repeat(64)}`;
     const { container, rerender } = render(
-      <MarketplaceIcon
-        kind="plugin"
-        label="WhatsApp"
-        categorySlug="channels"
-        imageUrl={hostedIcon}
-      />,
+      <MarketplaceIcon kind="plugin" label="WhatsApp" imageUrl={hostedIcon} />,
     );
     expect(container.querySelector("img")?.getAttribute("src")).toBe(hostedIcon);
     rerender(
-      <MarketplaceIcon
-        kind="plugin"
-        label="WhatsApp"
-        categorySlug="channels"
-        imageUrl="https://example.com/icon.png"
-      />,
+      <MarketplaceIcon kind="plugin" label="WhatsApp" imageUrl="https://example.com/icon.png" />,
     );
     expect(container.querySelector("img")).toBeNull();
-    expect(container.querySelector("svg.marketplace-icon-glyph")).toBeTruthy();
+    expect(container.querySelector("svg.marketplace-icon-glyph.lucide-plug")).toBeTruthy();
   });
 
   it("ignores legacy skill custom-icon values", () => {

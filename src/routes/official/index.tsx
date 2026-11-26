@@ -240,10 +240,6 @@ function OfficialIndex() {
             </div>
           ) : (
             <div className="browse-list-stack">
-              <div className="browse-list-head browse-list-head-publishers" aria-hidden="true">
-                <span className="browse-list-head-label">Organization</span>
-                <span className="browse-list-head-label browse-list-head-stat">Activity</span>
-              </div>
               <div className="publisher-directory-list">
                 {publishers.map((publisher) => (
                   <PublisherListItem

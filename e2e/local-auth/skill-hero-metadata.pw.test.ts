@@ -41,6 +41,40 @@ function seedMetadataSkill() {
   }
 }
 
+test.describe("skill date hydration", () => {
+  test.use({ locale: "en-GB", timezoneId: "America/Los_Angeles" });
+
+  test("hydrates the UTC skill date before showing the visitor's local date", async ({ page }) => {
+    seedMetadataSkill();
+    const errors = trackRuntimeErrors(page);
+    const response = await page.goto(buildSkillDetailHref("local", "local-agentic-risk-demo"));
+    expect(response?.status()).toBe(200);
+    const selector = '[aria-label="Skill metadata"] time[datetime]';
+    const server = await page.evaluate(
+      ({ html, selector: timeSelector }) => {
+        const time = new DOMParser().parseFromString(html, "text/html").querySelector(timeSelector);
+        return { iso: time?.getAttribute("datetime"), label: time?.textContent };
+      },
+      { html: await response!.text(), selector },
+    );
+    expect(server.iso).toBeTruthy();
+    const date = new Date(server.iso!);
+    expect(server.label).toBe(
+      new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: "UTC" }).format(date),
+    );
+    await waitForHydration(page);
+    const time = page.locator(selector);
+    await expect(time).toHaveAttribute("datetime", server.iso!);
+    await expect(time).toHaveText(
+      new Intl.DateTimeFormat("en-GB", {
+        dateStyle: "medium",
+        timeZone: "America/Los_Angeles",
+      }).format(date),
+    );
+    await expectHealthyPage(page, errors);
+  });
+});
+
 test("owner metadata save persists categories and topics after reload", async ({ page }) => {
   seedMetadataSkill();
   const errors = trackRuntimeErrors(page);
@@ -77,7 +111,9 @@ test("owner metadata save persists categories and topics after reload", async ({
 
   await page.goto(detailHref, { waitUntil: "domcontentloaded" });
   await waitForHydration(page);
-  const metadata = page.getByLabel("Skill metadata");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const metadata = page.getByLabel("Skill taxonomy");
+  await expect(metadata).toBeVisible();
   const persisted = expect.configure({ soft: true });
   await persisted
     .poll(async () => (await metadata.locator(".skill-category-meta-link").allInnerTexts()).sort())

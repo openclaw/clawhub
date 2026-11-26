@@ -568,7 +568,7 @@ describe("SkillsIndex", () => {
       expect(screen.queryByText(/\d+ loaded/)).toBeNull();
       const loadingResults = screen.getByRole("status", { name: "Loading results" });
       expect(loadingResults.querySelector(".browse-results-skeleton-icon")).toBeNull();
-      expect(loadingResults.querySelector(".browse-list-head-icon-spacer")).toBeNull();
+      expect(loadingResults.children).toHaveLength(1);
       expect(loadingResults.querySelectorAll(".skill-card-header-no-icon")).toHaveLength(0);
       expect(loadingResults.querySelectorAll(".skill-list-item-no-icon")).toHaveLength(6);
       expect(screen.queryByText("No skills found")).toBeNull();
@@ -931,7 +931,7 @@ describe("SkillsIndex", () => {
     expect(titles).toEqual(["Native Find", "Find Skills"]);
     expect(screen.getByText("skills.sh")).toBeTruthy();
     expect(document.querySelector(".marketplace-icon-skill")).toBeNull();
-    expect(document.querySelector(".browse-list-head-icon-spacer")).toBeNull();
+    expect(screen.queryByText("Downloads", { exact: true })).toBeNull();
   });
 
   it("keeps native and external results in a list for old grid links", async () => {
@@ -1372,7 +1372,7 @@ describe("SkillsIndex", () => {
 
       const loadingResults = screen.getByRole("status", { name: "Loading results" });
       expect(loadingResults.querySelector(".browse-results-skeleton-icon")).toBeNull();
-      expect(loadingResults.querySelector(".browse-list-head-icon-spacer")).toBeNull();
+      expect(loadingResults.children).toHaveLength(1);
       expect(loadingResults.querySelectorAll(".skill-card-header-no-icon")).toHaveLength(0);
       expect(loadingResults.querySelectorAll(".skill-list-item-no-icon")).toHaveLength(2);
       expect(screen.queryByText(/Loading/)).toBeNull();

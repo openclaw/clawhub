@@ -1,0 +1,387 @@
+/* Control UI's catalog-detail reading column (plugins.css + sidebar-markdown.css).
+   The shared catalog shell supplies the reading measure, face, and theme inks. */
+.plugin-catalog-overview {
+  --plugin-readme-clamp: 170px;
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 32px;
+  color: var(--detail-text);
+  font-size: 14px;
+}
+
+.plugin-catalog-overview .catalog-section {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+  scroll-margin-top: var(--site-header-height);
+}
+
+.plugin-catalog-overview .catalog-label {
+  margin: 0;
+  color: var(--detail-muted);
+  font: 500 13.5px/1.4 var(--font-body);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.plugin-catalog-overview .catalog-group {
+  min-width: 0;
+  padding: 6px;
+  overflow: hidden;
+  border-radius: calc(16px * var(--detail-radius-scale, 1));
+  corner-shape: superellipse(1.5);
+  background: var(--detail-tone);
+}
+
+.plugin-catalog-overview .catalog-row {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 56px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: calc(12px * var(--detail-radius-scale, 1));
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+}
+
+.plugin-catalog-overview :is(button, summary).catalog-row {
+  cursor: pointer;
+  transition: background 120ms ease-out;
+}
+.plugin-catalog-overview :is(button, summary).catalog-row:hover {
+  background: var(--detail-tone);
+}
+.plugin-catalog-overview :is(button, summary).catalog-row:focus-visible {
+  outline: 2px solid transparent;
+  outline-offset: -2px;
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 80%, transparent);
+}
+
+.plugin-catalog-overview .catalog-icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  place-items: center;
+  overflow: hidden;
+  border-radius: calc(10px * var(--detail-radius-scale, 1));
+  background: var(--detail-card);
+  color: light-dark(#525252, #8e8e95);
+}
+.plugin-catalog-overview .catalog-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.plugin-catalog-overview .catalog-row-text {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  overflow-wrap: anywhere;
+}
+.plugin-catalog-overview .catalog-row-title {
+  color: var(--detail-strong);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.plugin-catalog-overview .catalog-row-description {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--detail-muted);
+  font-size: 13.5px;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.plugin-catalog-overview .catalog-chevron {
+  display: flex;
+  flex: 0 0 auto;
+  align-self: center;
+  color: var(--detail-muted);
+  opacity: 0.5;
+}
+.plugin-catalog-overview .catalog-chevron svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 1.6px;
+}
+.plugin-catalog-overview .catalog-disclosure summary {
+  list-style: none;
+}
+.plugin-catalog-overview .catalog-disclosure summary::-webkit-details-marker {
+  display: none;
+}
+.plugin-catalog-overview .catalog-disclosure[open] .catalog-chevron {
+  transform: rotate(90deg);
+}
+.plugin-catalog-overview .catalog-server-details {
+  padding: 0 16px 16px;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.plugin-catalog-overview .catalog-server-details dl {
+  display: grid;
+  grid-template-columns: minmax(112px, 1fr) minmax(0, 3fr);
+  gap: 8px 16px;
+  margin: 0;
+}
+.plugin-catalog-overview .catalog-server-details :is(p, dt) {
+  color: var(--detail-muted);
+}
+.plugin-catalog-overview .catalog-server-details :is(dd, p) {
+  margin: 0;
+}
+.plugin-catalog-overview .catalog-server-details dl + p {
+  margin-top: 12px;
+}
+
+.plugin-catalog-overview .catalog-readme-well {
+  min-width: 0;
+  padding: 22px 24px;
+  border-radius: calc(16px * var(--detail-radius-scale, 1));
+  background: var(--detail-tone);
+}
+.plugin-catalog-overview .catalog-readme-well:has(> .catalog-readme-toggle:not([hidden])) {
+  padding-bottom: 16px;
+}
+.plugin-catalog-overview
+  .catalog-readme-well[data-clamped="true"]
+  > .catalog-readme-body:not(:focus-within) {
+  max-height: var(--plugin-readme-clamp);
+  overflow: hidden;
+  mask-image: linear-gradient(black 62%, transparent 100%);
+}
+.plugin-catalog-overview .catalog-readme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 10px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--detail-muted);
+  font: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+.plugin-catalog-overview .catalog-readme-toggle[hidden] {
+  display: none;
+}
+.plugin-catalog-overview .catalog-readme-toggle:hover {
+  color: var(--detail-text);
+}
+.plugin-catalog-overview .catalog-readme-toggle svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* Use the public site's sanitized Markdown renderer and asset proxy, with the
+   catalog's document typography instead of the public tab's full-page styles. */
+.plugin-catalog-overview .catalog-markdown {
+  max-width: none;
+  color: var(--detail-text);
+  font: 400 14px/1.6 var(--font-body);
+  overflow-wrap: anywhere;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
+}
+.plugin-catalog-overview .catalog-markdown :is(h1, h2, h3, h4, h5, h6) {
+  border: 0;
+  font-family: inherit;
+}
+/* Control UI displays document H1s at H2 rank under its Readme heading. */
+.plugin-catalog-overview .catalog-markdown :is(h1, h2) {
+  margin: 1.4em 0 0.5em;
+  padding-bottom: 0.25em;
+  font-size: 1.35em;
+  font-weight: 650;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+}
+.plugin-catalog-overview .catalog-markdown h3 {
+  margin: 1.2em 0 0.4em;
+  font-size: 1.15em;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+.plugin-catalog-overview .catalog-markdown :is(h1, h2, h3) {
+  scroll-margin-top: 80px;
+  text-wrap: balance;
+}
+.plugin-catalog-overview .catalog-markdown :is(h4, h5, h6) {
+  margin: 1em 0 0.35em;
+  color: var(--detail-strong);
+  font-size: 1em;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.plugin-catalog-overview .catalog-markdown :is(p, ul, ol, blockquote, table, details, figure) {
+  margin: 0;
+}
+.plugin-catalog-overview .catalog-markdown p + :is(p, ul, ol, blockquote, table, details, figure) {
+  margin-top: 0.75em;
+}
+.plugin-catalog-overview .catalog-markdown :is(ul, ol) {
+  padding-inline-start: 1.6em;
+}
+.plugin-catalog-overview .catalog-markdown li {
+  margin: 0;
+  padding: 0;
+}
+.plugin-catalog-overview .catalog-markdown li::marker {
+  color: inherit;
+  font: inherit;
+}
+.plugin-catalog-overview .catalog-markdown li + li {
+  margin-top: 0.3em;
+}
+.plugin-catalog-overview .catalog-markdown li > :is(p, ul, ol) {
+  margin-top: 0.25em;
+}
+.plugin-catalog-overview .catalog-markdown .task-list-item {
+  list-style: none;
+}
+.plugin-catalog-overview .catalog-markdown .task-list-item > input {
+  margin-inline-end: 0.4em;
+  vertical-align: middle;
+}
+.plugin-catalog-overview .catalog-markdown a {
+  color: light-dark(#ad3623, #ff5c5c);
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+  text-underline-offset: 2px;
+}
+.plugin-catalog-overview .catalog-markdown a:hover {
+  text-decoration-color: currentColor;
+}
+.plugin-catalog-overview .catalog-markdown :not(pre) > code {
+  padding: 0.15em 0.4em;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-muted);
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  white-space: pre-wrap;
+}
+.plugin-catalog-overview .catalog-markdown .markdown-code-block {
+  margin-top: 0.75em;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-muted);
+}
+.plugin-catalog-overview .catalog-markdown .markdown-code-block pre {
+  padding: 14px 16px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.plugin-catalog-overview .catalog-markdown blockquote {
+  margin-top: 0.75em;
+  margin-inline-start: 0;
+  padding: 8px 14px;
+  border-inline-start: 3px solid var(--line);
+  border-radius: 0 6px 6px 0;
+  background: color-mix(in srgb, var(--detail-text) 3%, transparent);
+  color: var(--detail-muted);
+}
+.plugin-catalog-overview .catalog-markdown blockquote blockquote {
+  margin-top: 8px;
+}
+.plugin-catalog-overview .catalog-markdown table {
+  display: block;
+  width: 100%;
+  margin-top: 0.75em;
+  overflow-x: auto;
+  border: 0;
+  border-collapse: collapse;
+  border-radius: 0;
+  font-size: 13px;
+  table-layout: auto;
+}
+.plugin-catalog-overview .catalog-markdown :is(th, td) {
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  text-align: start;
+  vertical-align: top;
+}
+.plugin-catalog-overview .catalog-markdown th {
+  background: var(--surface-muted);
+  color: var(--detail-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.plugin-catalog-overview .catalog-markdown tbody tr:hover {
+  background: var(--hover-bg);
+}
+.plugin-catalog-overview .catalog-markdown img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: 420px;
+  margin: 0.75em 0 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  object-fit: contain;
+}
+.plugin-catalog-overview .catalog-markdown hr {
+  margin: 1.5em 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+.plugin-catalog-overview .catalog-markdown strong {
+  color: var(--detail-strong);
+  font-weight: 600;
+}
+.plugin-catalog-overview .catalog-markdown details {
+  margin-top: 0.75em;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.plugin-catalog-overview .catalog-markdown summary {
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  user-select: none;
+}
+.plugin-catalog-overview .catalog-markdown summary:hover {
+  background: var(--hover-bg);
+}
+.plugin-catalog-overview .catalog-markdown details[open] > :not(summary) {
+  padding: 0 12px 10px;
+}
+.plugin-catalog-overview .catalog-markdown > :first-child {
+  margin-top: 0;
+}
+
+@container (max-width: 560px) {
+  .plugin-catalog-overview .catalog-group {
+    padding: 4px;
+  }
+  .plugin-catalog-overview .catalog-row {
+    gap: 12px;
+    padding: 10px;
+  }
+  .plugin-catalog-overview .catalog-readme-well {
+    padding: 16px;
+  }
+  .plugin-catalog-overview .catalog-readme-toggle {
+    margin: -2px 0 -8px;
+    padding: 8px 14px 8px 0;
+  }
+}

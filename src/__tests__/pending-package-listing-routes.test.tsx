@@ -346,8 +346,8 @@ describe.each(["plugin", "template"] as const)("canonical pending %s listing", (
       });
       render(<RouterProvider router={await listingRouter(kind)} />);
       expect(await screen.findByRole("heading", { name: "Public brief" })).toBeTruthy();
-      expect(screen.getByRole("heading", { name: "Published instructions" })).toBeTruthy();
-      expect(screen.getByRole("button", { name: /copy.*install command/i })).toBeTruthy();
+      const publicInstructions = screen.getByText("Published instructions", { exact: true });
+      expect(publicInstructions).toBeTruthy();
       expect(screen.queryByText(pending.displayName)).toBeNull();
       expect(screen.queryByText(pending.summary)).toBeNull();
       expect(Boolean(screen.queryByText(auditEmailCopy, { exact: false }))).toBe(
@@ -356,20 +356,16 @@ describe.each(["plugin", "template"] as const)("canonical pending %s listing", (
       const notice = screen.queryByText("Version 1.2.0 is under review");
       if (viewer === "submitter" || viewer === "inspecting staff") {
         expect(notice).toBeTruthy();
-        const publisher = screen.getByRole("link", { name: "View Maker Studio profile" });
-        const tabs = screen.getByRole("tablist", {
-          name: kind === "plugin" ? "Plugin detail tabs" : "Template contents",
-        });
+        const main = document.querySelector(".catalog-detail__main")!;
+        expect(main.contains(notice)).toBe(true);
         expect(
-          publisher.compareDocumentPosition(notice!) & Node.DOCUMENT_POSITION_FOLLOWING,
+          notice!.compareDocumentPosition(publicInstructions) & Node.DOCUMENT_POSITION_FOLLOWING,
         ).toBeTruthy();
-        expect(
-          notice!.compareDocumentPosition(tabs) & Node.DOCUMENT_POSITION_FOLLOWING,
-        ).toBeTruthy();
-        expect(
-          notice!.closest(kind === "plugin" ? ".skill-hero-main" : ".template-detail-main"),
-        ).not.toBeNull();
       } else expect(notice).toBeNull();
+      const rail = within(screen.getByRole("complementary"));
+      const install = within(rail.getByRole("article", { name: "Install" }));
+      expect(install.getByRole("button", { name: `Copy ${kind} install command` })).toBeTruthy();
+      expect(screen.queryByRole("dialog")).toBeNull();
       for (const call of [
         ...mocks.version.mock.calls,
         ...mocks.readme.mock.calls,

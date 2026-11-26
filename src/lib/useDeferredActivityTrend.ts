@@ -1,7 +1,6 @@
 import { useConvex } from "convex/react";
 import { useEffect, useState } from "react";
 import { api } from "../../convex/_generated/api";
-import { convexHttp } from "../convex/client";
 import { isActivityTrend, type ActivityTrend } from "./activityTrend";
 
 const ACTIVITY_TREND_FALLBACK_DELAY_MS = 750;
@@ -17,19 +16,13 @@ type DeferredActivityTrendResult = {
   trend: ActivityTrend | null;
 };
 
-function useDeferredActivityTrend(
-  kind: "skill" | "package",
-  name: string | null,
-  endDay: number | null,
-  ownerHandle?: string,
+export function useDeferredPackageActivityTrend(
+  params: { name: string; endDay: number } | null,
 ): DeferredActivityTrendResult {
   const convex = useConvex();
-  const key =
-    name && endDay !== null
-      ? kind === "skill"
-        ? `skill:${name}:${ownerHandle ?? ""}:${endDay}`
-        : `package:${name}:${endDay}`
-      : null;
+  const name = params?.name ?? null;
+  const endDay = params?.endDay ?? null;
+  const key = name && endDay !== null ? `package:${name}:${endDay}` : null;
   const [state, setState] = useState<DeferredActivityTrendState>({
     key: null,
     loading: false,
@@ -46,15 +39,7 @@ function useDeferredActivityTrend(
     setState({ key, loading: true, trend: null });
 
     const handle = setTimeout(() => {
-      const request =
-        kind === "skill"
-          ? // Skill trends are public; a one-shot read must not wait for a live socket.
-            // Packages retain the viewer-aware client for non-public packages.
-            convexHttp.query(
-              api.skills.getActivityTrendForSlug,
-              ownerHandle ? { slug: name, ownerHandle, endDay } : { slug: name, endDay },
-            )
-          : convex.query(api.packages.getActivityTrendForName, { name, endDay });
+      const request = convex.query(api.packages.getActivityTrendForName, { name, endDay });
       void request.then(
         (value) => {
           if (cancelled) return;
@@ -71,34 +56,10 @@ function useDeferredActivityTrend(
       cancelled = true;
       clearTimeout(handle);
     };
-  }, [convex, endDay, key, kind, name, ownerHandle]);
+  }, [convex, endDay, key, name]);
 
   return {
     loading: key !== null && (state.key !== key || state.loading),
     trend: state.key === key ? state.trend : null,
   };
-}
-
-export function useDeferredSkillActivityTrend(
-  params: {
-    slug: string;
-    ownerHandle?: string;
-    endDay: number;
-  } | null,
-): DeferredActivityTrendResult {
-  return useDeferredActivityTrend(
-    "skill",
-    params?.slug ?? null,
-    params?.endDay ?? null,
-    params?.ownerHandle,
-  );
-}
-
-export function useDeferredPackageActivityTrend(
-  params: {
-    name: string;
-    endDay: number;
-  } | null,
-): DeferredActivityTrendResult {
-  return useDeferredActivityTrend("package", params?.name ?? null, params?.endDay ?? null);
 }

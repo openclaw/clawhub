@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Binoculars, CloudOff, Loader2, Moon, Plus, X } from "lucide-react";
+import { Binoculars, CloudOff, Download, Loader2, Moon, Plus, X } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import { convexHttp } from "../convex/client";
@@ -42,7 +42,7 @@ import {
 import { MarketplaceIcon } from "./MarketplaceIcon";
 import { OfficialBadge } from "./OfficialBadge";
 import { BrowseResultsSkeleton } from "./skeletons/BrowseResultsSkeleton";
-import { SkillListingHead, SkillListingRow, SkillListingSkeleton } from "./SkillListingRow";
+import { SkillListingRow, SkillListingSkeleton } from "./SkillListingRow";
 
 const LISTING_PAGE_SIZE = HOME_LISTING_PAGE_SIZE;
 const LISTING_SEARCH_DEBOUNCE_MS = 220;
@@ -151,6 +151,8 @@ function HomeListingPluginRow({
 }) {
   const name = presentationTitle(plugin.displayName, plugin.name);
   const pluginHref = buildPluginDetailHref(plugin.name, { ownerHandle: plugin.ownerHandle });
+  const trendingDownloads = plugin.trending24h?.downloads;
+  const downloadLabel = trendingDownloads == null ? "Downloads" : "24-hour downloads";
 
   return (
     <Link
@@ -160,14 +162,7 @@ function HomeListingPluginRow({
       }`}
     >
       <span className="home-v2-listing-row-icon" aria-hidden="true">
-        <MarketplaceIcon
-          kind="plugin"
-          label={name}
-          imageUrl={plugin.icon}
-          publisherImageUrl={plugin.ownerImage}
-          categorySlug={plugin.categories?.[0]}
-          size="sm"
-        />
+        <MarketplaceIcon kind="plugin" label={name} imageUrl={plugin.icon} size="sm" />
       </span>
       <div className="home-v2-listing-row-body">
         <div className="home-v2-listing-row-title">
@@ -184,9 +179,11 @@ function HomeListingPluginRow({
         </p>
       </div>
       {showDownloads ? (
-        <div className="home-v2-listing-row-stats" aria-label="Downloads">
-          <span>
-            {formatCompactStat(plugin.trending24h?.downloads ?? plugin.stats?.downloads ?? 0)}
+        <div className="home-v2-listing-row-stats">
+          <span title={downloadLabel}>
+            <Download size={14} aria-hidden="true" />
+            <span className="sr-only">{downloadLabel}: </span>
+            {formatCompactStat(trendingDownloads ?? plugin.stats?.downloads ?? 0)}
           </span>
         </div>
       ) : null}
@@ -665,29 +662,11 @@ export function HomeListingSection({
         </BrowseSearchPanel>
       </div>
 
-      {activeStatus === "idle" && activeItems.length > 0 ? (
-        kind === "skills" ? (
-          <SkillListingHead showDownloads={showDownloads} />
-        ) : (
-          <div
-            className={`home-v2-listing-head${
-              kind === "plugins" ? " home-v2-listing-head-with-icon" : ""
-            }`}
-            aria-hidden="true"
-          >
-            {kind === "plugins" ? <span className="home-v2-listing-head-icon-spacer" /> : null}
-            <span className="home-v2-listing-head-label">Plugin</span>
-            {showDownloads ? <span className="home-v2-listing-head-stat">Downloads</span> : null}
-          </div>
-        )
-      ) : null}
-
       {activeStatus === "loading" ? (
         kind === "skills" ? (
           <SkillListingSkeleton showDownloads={showDownloads} />
         ) : (
           <BrowseResultsSkeleton
-            label="Plugin"
             showIcon={kind === "plugins"}
             variant="list"
             showStats={showDownloads}
