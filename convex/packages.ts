@@ -983,7 +983,7 @@ async function toDashboardPackageListItem(
   if (pkg.softDeletedAt) return null;
   const release = await getDashboardRelease(ctx, pkg);
   const scanStatus = dashboardScanStatus(pkg, release);
-  const inspectorAttention = await getInspectorAttentionForRelease(ctx, release?._id);
+  const inspectorAttention = await getInspectorAttentionForRelease(ctx, pkg.family, release?._id);
   return {
     _id: pkg._id,
     name: pkg.name,
@@ -1018,6 +1018,7 @@ async function toDashboardPackageListItem(
 
 async function getInspectorAttentionForRelease(
   ctx: DbReaderCtx,
+  family: Doc<"packages">["family"],
   latestReleaseId?: Id<"packageReleases">,
 ): Promise<{
   count: number;
@@ -1028,7 +1029,7 @@ async function getInspectorAttentionForRelease(
   };
 }> {
   if (!latestReleaseId) return { count: 0, apiRetirements: [] };
-  const findings = await takeAuthorRemediationWarningsByRelease(ctx, latestReleaseId, 101);
+  const findings = await takeAuthorRemediationWarningsByRelease(ctx, family, latestReleaseId, 101);
   const apiRetirements = collectPluginApiRetirements(findings);
   const otherFindings = findings.filter((finding) => !pluginApiRetirement(finding));
   const count = Math.min(otherFindings.length, 100);
@@ -2289,7 +2290,12 @@ export const listPackageInspectorFindingsPublic = query({
 
     if (!pkg.latestReleaseId) return [];
     const limit = Math.max(1, Math.min(args.limit ?? 50, 100));
-    const warnings = await takeAuthorRemediationWarningsByRelease(ctx, pkg.latestReleaseId, limit);
+    const warnings = await takeAuthorRemediationWarningsByRelease(
+      ctx,
+      pkg.family,
+      pkg.latestReleaseId,
+      limit,
+    );
     return warnings.map(toPublicPackageInspectorFinding);
   },
 });
@@ -2312,7 +2318,7 @@ export const getPackageInspectorValidationSummaryPublic = query({
     }
 
     const findings = pkg.latestReleaseId
-      ? await takeAuthorRemediationWarningsByRelease(ctx, pkg.latestReleaseId, 100)
+      ? await takeAuthorRemediationWarningsByRelease(ctx, pkg.family, pkg.latestReleaseId, 100)
       : [];
     const errorFindings = findings.filter((finding) => {
       const kind =
@@ -2357,13 +2363,19 @@ export const listPackageInspectorWarningsForManager = query({
     }
     if (!releaseId) return [];
     const limit = Math.max(1, Math.min(args.limit ?? 50, 100));
-    const warnings = await takeAuthorRemediationWarningsByRelease(ctx, releaseId, limit);
+    const warnings = await takeAuthorRemediationWarningsByRelease(
+      ctx,
+      pkg.family,
+      releaseId,
+      limit,
+    );
     return warnings.map(toPublicPackageInspectorFinding);
   },
 });
 
 async function takeAuthorRemediationWarningsByRelease(
   ctx: DbReaderCtx,
+  family: Doc<"packages">["family"],
   releaseId: Id<"packageReleases">,
   limit: number,
 ) {
@@ -2372,11 +2384,12 @@ async function takeAuthorRemediationWarningsByRelease(
     .withIndex("by_release_created", (q) => q.eq("releaseId", releaseId))
     .order("desc")
     .take(authorRemediationScanLimit(limit));
-  return findings.filter(hasStoredAuthorRemediation).slice(0, limit);
+  return selectPackageValidationFindings(family, findings, limit);
 }
 
 async function takeExactNightlyAuthorRemediationWarningsByRelease(
   ctx: DbReaderCtx,
+  family: Doc<"packages">["family"],
   releaseId: Id<"packageReleases">,
   inspectorVersion: string,
   targetOpenClawVersion: string,
@@ -2394,7 +2407,17 @@ async function takeExactNightlyAuthorRemediationWarningsByRelease(
     )
     .order("desc")
     .take(authorRemediationScanLimit(limit));
-  return findings.filter(hasStoredAuthorRemediation).slice(0, limit);
+  return selectPackageValidationFindings(family, findings, limit);
+}
+
+function selectPackageValidationFindings(
+  family: Doc<"packages">["family"],
+  findings: Doc<"packageInspectorWarnings">[],
+  limit: number,
+) {
+  return filterPackageInspectorFindingsForFamily(family, findings)
+    .filter(hasStoredAuthorRemediation)
+    .slice(0, limit);
 }
 
 function authorRemediationScanLimit(limit: number) {
@@ -3598,7 +3621,9 @@ export const listPluginValidationReportPageInternal = internalQuery({
             warning.inspectorVersion === nightlyScanState.inspectorVersion &&
             warning.targetOpenClawVersion === nightlyScanState.targetOpenClawVersion),
       );
-      const findings = warnings.map(normalizePackageValidationFinding);
+      const findings = filterPackageInspectorFindingsForFamily(digest.family, warnings).map(
+        normalizePackageValidationFinding,
+      );
       const status = findings.some((finding) => finding.severity === "error")
         ? ("error" as const)
         : findings.length > 0
@@ -10126,12 +10151,13 @@ export const getPackageInspectorEmailContextInternal = internalQuery({
       args.inspectorVersion && args.targetOpenClawVersion
         ? await takeExactNightlyAuthorRemediationWarningsByRelease(
             ctx,
+            pkg.family,
             release._id,
             args.inspectorVersion,
             args.targetOpenClawVersion,
             100,
           )
-        : await takeAuthorRemediationWarningsByRelease(ctx, release._id, 100);
+        : await takeAuthorRemediationWarningsByRelease(ctx, pkg.family, release._id, 100);
     const hardErrors = findings.filter((finding) => finding.findingKind === "error");
     if (hardErrors.length === 0) return null;
     const notificationCompleted = await hasCompletedPackageInspectorNotification(ctx, {
