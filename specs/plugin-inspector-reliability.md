@@ -81,6 +81,13 @@ preparation errors. Those were reported to publishers as plugin breakage.
   `inspector-tool-failure`, never `error`.
 - Owner email stays with reviewed notification runs of the bulk scan;
   release scans never notify.
+- Finding applicability follows the package family on reads as well as ingestion.
+  Bundle plugins omit `package-json-missing` and `package-openclaw-entry-missing`
+  from dashboard, validation, report and email-context results, including retained
+  publish and legacy rows. This does not rewrite stored findings or change security,
+  publication or installability decisions. The report selects completed scan identity
+  and the nightly tuple from raw history before filtering its displayed findings;
+  failed attempts and legacy completion evidence keep their existing meaning.
 
 The earlier publish-time design (a 512 MiB Convex Node action, a ClawHub
 prepared OpenClaw `latest` target cache, and a 120 s caller budget) is retired.
