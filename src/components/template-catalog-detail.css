@@ -29,9 +29,6 @@
 .template-catalog-detail .catalog-detail__publisher a:hover {
   text-decoration: underline;
 }
-.template-catalog-detail .template-catalog-add:not(:disabled):hover {
-  background: light-dark(#a83c29, #e44c4c);
-}
 .template-catalog-category {
   display: inline-flex;
   align-items: center;

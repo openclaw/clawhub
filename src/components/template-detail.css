@@ -17,14 +17,6 @@
   margin-bottom: 40px;
 }
 
-.template-detail-category {
-  margin: 0 0 18px;
-  color: var(--oc-text-muted);
-  font-size: 12px;
-  font-weight: 520;
-  line-height: 12px;
-}
-
 .template-detail-hero h1 {
   margin: 0;
   font-family: inherit;
@@ -40,36 +32,6 @@
   font-size: 14px;
   line-height: 1.4;
   overflow-wrap: anywhere;
-}
-
-.template-detail-description[data-expanded="false"] {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-}
-
-.template-detail-description-toggle {
-  display: block;
-  margin-top: 6px;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--ink-soft);
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.template-detail-description-toggle:hover {
-  color: var(--ink);
-  text-decoration: underline;
-}
-
-.template-detail-description-toggle:focus-visible {
-  outline: 2px solid var(--ink-soft);
-  outline-offset: 4px;
-  border-radius: 2px;
 }
 
 .template-detail-publisher {
@@ -91,13 +53,11 @@
   align-items: start;
 }
 
-.template-detail-main,
-.template-detail-metadata {
+.template-detail-main {
   min-width: 0;
 }
 
 /* Keep the review notice in the content column, adjacent to its publisher. */
-.template-detail-hero:has(+ .template-detail-layout .pending-package-notice),
 .template-detail-main > .template-detail-hero:has(+ .pending-package-notice) {
   margin-bottom: 18px;
 }
@@ -114,38 +74,8 @@
   min-height: 54px;
 }
 
-.template-detail-metadata {
-  display: grid;
-  gap: 24px;
-}
-
 .template-detail-install {
   min-width: 0;
-}
-
-.template-release-inventory {
-  margin: 0 0 20px;
-}
-.template-release-inventory h2 {
-  margin: 0 0 8px;
-  font-size: 15px;
-}
-.template-release-inventory dl {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.5;
-}
-.template-release-inventory dl > div {
-  display: grid;
-  grid-template-columns: 78px minmax(0, 1fr);
-  gap: 8px;
-}
-.template-release-inventory dt {
-  color: var(--ink-soft);
-}
-.template-release-inventory dd {
-  margin: 0;
-  overflow-wrap: anywhere;
 }
 
 .template-detail-tabs {
@@ -196,36 +126,6 @@
   display: none;
 }
 
-.template-detail-metadata .sidebar-metadata-compact > .sidebar-metadata-row:first-child {
-  min-height: 69.188px;
-  gap: 12px;
-  padding-bottom: 16px;
-}
-
-.template-detail-metadata .sidebar-metadata-label {
-  font-family: inherit;
-  font-size: 13.76px;
-  font-weight: 700;
-  line-height: 16.512px;
-}
-
-.template-detail-metadata .sidebar-metadata-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  column-gap: 32px;
-}
-
-.template-detail-metadata .sidebar-metadata-grid .sidebar-metadata-row + .sidebar-metadata-row {
-  padding-left: 2px;
-}
-
-.template-detail-metadata .sidebar-metadata-value {
-  font-family: inherit;
-  font-size: 16px;
-  font-weight: 700;
-  line-height: 21.6px;
-  overflow-wrap: anywhere;
-}
-
 .template-detail-original {
   margin-top: 18px;
   font-size: 14px;
@@ -250,29 +150,7 @@
   }
 }
 
-.template-detail-skeleton .animate-pulse {
-  background-color: color-mix(in srgb, var(--line) 60%, var(--surface-muted));
-}
-
-.template-skeleton-install-mobile {
-  display: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .template-detail-skeleton .animate-pulse {
-    animation: none;
-  }
-}
-
 @media (max-width: 900px) {
-  .template-skeleton-install-mobile {
-    display: block;
-  }
-
-  .template-skeleton-install-desktop {
-    display: none;
-  }
-
   .template-detail-page {
     padding: 36px 20px 48px;
   }
@@ -286,15 +164,7 @@
     row-gap: 36px;
   }
 
-  .template-detail-metadata {
-    grid-row: auto;
-  }
-
   .template-detail-panel {
     padding: 20px;
-  }
-
-  .template-detail-main > .template-detail-install {
-    margin-bottom: 36px;
   }
 }
