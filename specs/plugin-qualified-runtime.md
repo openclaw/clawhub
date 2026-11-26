@@ -1,11 +1,11 @@
-# ClawScan 0.4.0 consumer runtime candidate
+# ClawScan 0.4.0 qualified consumer runtime
 
-Status: draft candidate for the ClawScan 0.4.0 source and immutable runtime.
-The source/image update requires native consumer qualification before landing.
-Test and production promotion remain separate; this does not authorize branch
-promotion, live worker rollout, historical rewrite, bulk requeue or data migration.
+Status: the fixed Template passed native consumer qualification on Test with the
+ClawScan 0.4.0 source and immutable runtime. Production promotion remains separate.
+This proof does not authorize production rollout, historical rewrite, bulk requeue
+or data migration.
 
-## Candidate binding
+## Qualified binding
 
 - Merged ClawScan source: 9bc83753a6f1af7ff077917262190ada0152891b ([PR #223](https://github.com/openclaw/clawscan/pull/223)).
 - Source tree: c08631fa26a49ac711b828a4ead389ded92b2fa5.
@@ -30,7 +30,7 @@ source/image binding remain fail-closed. Historical readers remain supported.
 
 Use a disposable isolated runner with RUNNER_TEMP, GITHUB_ENV and GITHUB_PATH
 set as in Actions. Both optional-source and default installation now select the
-same candidate source:
+same qualified source:
 
 ```sh
 sh scripts/security/install-clawscan.sh 9bc83753a6f1af7ff077917262190ada0152891b
@@ -63,10 +63,10 @@ lease tokens, old reports or Endor evidence enter this caller context. Skills
 retain their existing context behavior. The producer inserts that explicit caller
 context into its evidence-only prompt, rather than reading outer metadata.json.
 
-## Candidate evidence and limits
+## Qualification evidence and limits
 
 Both native image builds and the complete manifest publication passed for the
-candidate. Independent registry readback verified the immutable index bytes,
+release. Independent registry readback verified the immutable index bytes,
 both platform manifests/configs and the exact source revision. The retained
 manifest artifact agrees with that readback and both native smoke proofs.
 
@@ -84,9 +84,8 @@ clean subprocesses; the failed AIG checks passed after installing the same
 verified Python distribution at its standard Actions prefix. No source or test
 expectation changed for that runner repair.
 
-These checks make no provider calls. Full native Template consumer qualification
-remains required before landing; image publication, SDK tests and admission
-checks do not establish provider or production acceptance.
+These installer and admission checks made no provider calls. The separate native
+Template qualification below provides the provider-backed consumer proof.
 
 The final tag image was separately pulled by immutable digest on a fresh Ubuntu
 24.04 amd64 Testbox. Its source/version labels, MCP CLI, AIG MCP 0.2.0 and Codex
@@ -94,6 +93,54 @@ The final tag image was separately pulled by immutable digest on a fresh Ubuntu
 SkillSpector 2.12.0 and OpenAI SDK 2.54.0; those image packages do not replace the
 separately locked host scanner environments. Testbox workflow:
 https://github.com/openclaw/clawhub/actions/runs/45566877707.
+
+### Native Template qualification
+
+The fixed, nonpublishing Template passed on protected `next` at
+`5c3f4d023e61c353108fd55baa7618c72cf2cd6f` on November 26, 2026:
+https://github.com/openclaw/clawhub/actions/runs/45797945124.
+The workflow verified that Test served this exact revision after successful
+[CI](https://github.com/openclaw/clawhub/actions/runs/45796634441) and
+[Deploy Test](https://github.com/openclaw/clawhub/actions/runs/45796634335) runs.
+The publication step was skipped. The native scanners and judge used real provider
+calls with the source, image, profile and fixture selected by the workflow.
+
+The bounded receipt records:
+
+- `schemaVersion=clawhub-template-native-qualification-v1`,
+  `mode=nonpublishing`, `status=passed` and `failure=null`.
+- `workerRevision=5c3f4d023e61c353108fd55baa7618c72cf2cd6f`, with the
+  source and immutable image in the qualified binding above.
+- `profile=clawhub-template`, `targetKind=template`,
+  `sourceAndBinaryVerified=true`, `secretGate=clean`,
+  `nativeEvidence=completed` and `verdict=benign`.
+- `fixtureSha256=dbddf643c90ef169d2518f46709092206d3ff95c08bd6357c29392e92d8ab012`,
+  equal to the independently hashed committed fixture, and `fixtureUnchanged=true`.
+- `artifactSha256=896a2fbe1ca70b477526542889d748209dcbcb6cd5af70f16a3fcf23fac85f64`.
+- `workspaceRemoved=true`. Cleanup used `method=scoped_privileged` after
+  `initialError=EACCES`, with `finalError=null`.
+
+The reviewed main candidate at `03271bd6f0c9c307cb8e0e131bdb85699053757b`
+matches all 208 selected scanner, schema, fixture, setup and runtime-closure files
+in the qualified Test revision. Their aggregate SHA256 is
+`29d91bf5eec53a77f62c2f8897eecb5bc24398e7bb40ca4f24aeb453fd13ea2f`.
+The selection excludes only `scripts/security/package-publish-workflow.test.ts`
+and `scripts/security/skill-publish-workflow.test.ts`, which the qualification does
+not execute. It includes scanner installers, locks, fixtures and all schema inputs.
+The aggregate hashes sorted rows of relative path, NUL, file SHA256 and newline.
+
+Main alone includes the UI font `@fontsource-variable/instrument-sans@5.3.0`.
+After removing exactly that manifest declaration, root lock declaration and
+dependency-free lock node, the complete manifest and all 1,045 remaining lock nodes
+match. The font has no reference in the qualified input set. Canonically sorted
+JSON hashes are `0fa13d18b734e512dec496c561b806488aac603783a68d52ec1dbdb1bcc317cb`
+for the manifest and `16dd3a7e1b443d0ed1912699200bf9c1b1cb6f5e3698a9e177177610e2d9de17`
+for the lock. Independent review verified this bounded difference.
+
+This proof covers one fixed Template and the native consumer contract. It does not
+establish corpus accuracy, full-registry publication or production execution.
+The [Test integration](https://github.com/openclaw/clawhub/pull/4970) preserved
+the existing Connections commits on `next`. No production deployment occurred.
 
 ### Historical provider qualification
 
