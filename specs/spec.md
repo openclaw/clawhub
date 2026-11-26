@@ -251,6 +251,11 @@ Local fixture data lives in `convex/devSeed.ts` and `fixtures/public-corpus/`.
 - Account settings: name + delete account (permanent, non-recoverable; published skills stay public).
 - Admin: user role management + badge approvals + audit log.
 
+Skill and plugin version rows keep version/date and expand controls on the first
+mobile row, followed by any tags, release badges, and download actions without
+overlap. Desktop keeps the shared column layout. Keyboard expansion and version
+download links work in both layouts.
+
 Management view selection defaults to Publisher abuse when `view` is absent or
 unsupported, including raw search values retained by the router. A selected
 skill takes precedence over a selected plugin; both take precedence over `view`.
