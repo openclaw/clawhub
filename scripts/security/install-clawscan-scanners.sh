@@ -101,7 +101,7 @@ else
   uv pip install --python "$venv/bin/python" --require-hashes -r "$script_dir/aig-worker-requirements.txt"
   uv pip install --python "$venv/bin/python" --no-deps "$source_dir/skill-scan"
 fi
-uv pip install --python "$venv/bin/python" "pytest==9.0.2"
+uv pip install --python "$venv/bin/python" --require-hashes -r "$script_dir/$scanner-test-requirements.txt"
 if [ "$scanner" = skillspector ]; then
   PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 "$venv/bin/python" -m pytest -q "$script_dir/test_skillspector_serialization.py"
 fi

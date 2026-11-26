@@ -35,7 +35,7 @@ function step(job: WorkflowJob, name: string) {
 }
 
 describe("Test Template canary prepublication workflow", () => {
-  it("only dispatches from main for one exact Test canary attempt", async () => {
+  it("keeps publication on main and qualification bound to the fixed Test backend", async () => {
     const workflow = await readWorkflow(
       ".github/workflows/test-template-canary-prepublication.yml",
     );
@@ -59,12 +59,9 @@ describe("Test Template canary prepublication workflow", () => {
 
     const validation = workflow.jobs["validate-request"];
     expect(validation.environment).toBeUndefined();
-    expect(step(validation, "Require main and an explicit bounded mode")?.run).toContain(
-      '"$GITHUB_REF" != "refs/heads/main"',
-    );
-    expect(step(validation, "Require main and an explicit bounded mode")?.run).toContain(
-      '"$ATTEMPT_ID" =~ ^[a-z0-9]{32}$',
-    );
+    expect(
+      step(validation, "Require a protected branch and an explicit bounded mode")?.run,
+    ).toContain('"$ATTEMPT_ID" =~ ^[a-z0-9]{32}$');
 
     const check = workflow.jobs["check-test-attempt"];
     expect(check.needs).toBe("validate-request");
@@ -80,7 +77,7 @@ describe("Test Template canary prepublication workflow", () => {
     expect(targetGuard?.run).toContain('"$build_sha" != "$GITHUB_SHA"');
 
     const worker = step(check, "Run exact Test Template publish checks");
-    expect(worker?.if).toBe("inputs.mode == 'publication'");
+    expect(worker?.if).toBe("inputs.mode == 'publication' && github.ref == 'refs/heads/main'");
     expect(worker?.env?.CONVEX_DEPLOY_KEY).toBe("${{ secrets.CONVEX_DEPLOY_KEY }}");
     expect(worker?.env?.OPENAI_API_KEY).toBe("${{ secrets.OPENAI_API_KEY }}");
     expect(worker?.run).toContain('.name == "@openclaw/hosted-e2e-canary"');
@@ -150,6 +147,10 @@ describe("Test Template canary prepublication workflow", () => {
   it.each([
     ["publication", "a".repeat(32), "refs/heads/main", true],
     ["qualification", "", "refs/heads/main", true],
+    ["qualification", "", "refs/heads/next", true],
+    ["publication", "a".repeat(32), "refs/heads/next", false],
+    ["qualification", "a".repeat(32), "refs/heads/next", false],
+    ["qualification", "", "refs/tags/next", false],
     ["publication", "", "refs/heads/main", false],
     ["publication", "$(arbitrary command)", "refs/heads/main", false],
     ["qualification", "a".repeat(32), "refs/heads/main", false],
@@ -163,7 +164,7 @@ describe("Test Template canary prepublication workflow", () => {
     );
     const script = step(
       workflow.jobs["validate-request"],
-      "Require main and an explicit bounded mode",
+      "Require a protected branch and an explicit bounded mode",
     )!.run!;
     const result = spawnSync("bash", ["-c", script], {
       env: {
@@ -171,9 +172,43 @@ describe("Test Template canary prepublication workflow", () => {
         MODE: String(mode),
         ATTEMPT_ID: String(attempt),
         GITHUB_REF: String(ref),
+        GITHUB_REPOSITORY: "openclaw/clawhub",
+        GITHUB_REF_PROTECTED: "true",
       },
       encoding: "utf8",
     });
     expect(result.status === 0).toBe(allowed);
   });
+  it.each([
+    ["GITHUB_REPOSITORY", "other/clawhub"],
+    ["GITHUB_REPOSITORY", undefined],
+    ["GITHUB_REF_PROTECTED", "false"],
+    ["GITHUB_REF_PROTECTED", undefined],
+  ])(
+    "rejects missing or invalid authority metadata %s=%s before Test access",
+    async (key, value) => {
+      const workflow = await readWorkflow(
+        ".github/workflows/test-template-canary-prepublication.yml",
+      );
+      const script = step(
+        workflow.jobs["validate-request"],
+        "Require a protected branch and an explicit bounded mode",
+      )!.run!;
+      for (const ref of ["refs/heads/main", "refs/heads/next"]) {
+        const result = spawnSync("bash", ["-c", script], {
+          env: {
+            PATH: process.env.PATH,
+            MODE: "qualification",
+            ATTEMPT_ID: "",
+            GITHUB_REF: ref,
+            GITHUB_REPOSITORY: "openclaw/clawhub",
+            GITHUB_REF_PROTECTED: "true",
+            [key]: value,
+          },
+          encoding: "utf8",
+        });
+        expect(result.status).toBe(1);
+      }
+    },
+  );
 });
