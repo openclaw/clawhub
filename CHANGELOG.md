@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Scanner qualification: allow the fixed nonpublishing Template check from protected `next` after Test deploys that exact commit. Publication remains main-only, with no new credentials or selectable fixtures.
+
 - Scanner runtime: prepare the ClawScan 0.4.0 source and released immutable image binding for host skills, whole plugins and Templates, preserving exact source and binary checks.
 
 - Skill publishing: keep reusable-workflow tooling out of repository-root skills while preserving checkout cleanup.

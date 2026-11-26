@@ -116,7 +116,10 @@ export async function qualifyTestTemplate(
   try {
     if (
       args.length ||
-      process.env.GITHUB_REF !== "refs/heads/main" ||
+      process.env.GITHUB_REPOSITORY !== "openclaw/clawhub" ||
+      process.env.GITHUB_REF_PROTECTED !== "true" ||
+      (process.env.GITHUB_REF !== "refs/heads/main" &&
+        process.env.GITHUB_REF !== "refs/heads/next") ||
       !receipt.workerRevision ||
       process.env.CONVEX_URL !== "https://academic-chihuahua-392.convex.cloud" ||
       !process.env.OPENAI_API_KEY?.trim() ||

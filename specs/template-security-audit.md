@@ -111,9 +111,14 @@ for the exact-SHA Deploy Test integration gate. The default `mode=publication`
 still requires one existing exact pending canary attempt and proves finalization.
 No attempt is created, inferred, or selected as a fallback.
 
-Both modes require main, the fixed Test deployment `academic-chihuahua-392`,
-`CLAWHUB_ENV=test`, and its deployed backend SHA equal to `GITHUB_SHA`. The
-qualification step receives only existing model API credentials, never the
+Both modes require `openclaw/clawhub` and GitHub's protected-ref metadata.
+Publication remains restricted to `main`; nonpublishing qualification accepts
+only `main` or `next`. Both require the fixed Test deployment
+`academic-chihuahua-392`, `CLAWHUB_ENV=test`, and its deployed backend SHA equal
+to `GITHUB_SHA`. Checkout uses that workflow commit, with no alternate ref input.
+Branch protection does not imply an enforced review: review the exact integration
+patch before merging to `next`, because that push automatically deploys Test.
+The qualification step receives only existing model API credentials, never the
 Convex deploy key or worker token. Target verification uses the Test deploy key
 in its separate read-only step. There are no new permissions, tokens, arbitrary
 source/command/path inputs, registry/database/upload/queue/moderation writes,
@@ -170,14 +175,22 @@ suspicious or malicious result remains a completed native verdict but fails this
 known benign fixture check; it does not change normal publication policy. No
 operational failure becomes clean, and no retry seeks a preferred verdict.
 
-After Deploy Test succeeds for the exact new main SHA, an authorized operator runs
-the command below. Test deploys from `next` (see `specs/deploy.md`), so that run
-exists only when `next` is at the same commit; otherwise this workflow fails
-closed at its backend SHA check.
+After exact-SHA CI and Deploy Test succeed for the reviewed `next` integration,
+an authorized operator runs the command below. Recheck the current `next` SHA
+before dispatch and verify the workflow's `head_sha` afterward. Test deploys
+from `next` (see `specs/deploy.md`); the backend SHA check fails closed if Test
+has moved. A `main` dispatch remains valid only when Test serves that same SHA.
+
+When qualifying a separate main PR, compare the actual scanner source, fixture,
+installer and setup inputs, schema build inputs, package manifests and frozen
+lockfile with the qualified integration. Record both worker SHAs and any reviewed
+differences. Matching pins alone do not prove equivalent consumer execution.
+Keep unrelated `next` changes on `next`; this gate does not authorize production
+promotion or merging `next` into `main`.
 
 ```sh
-gh workflow run test-template-canary-prepublication.yml \
-  --repo openclaw/clawhub --ref main -f mode=qualification
+ghx workflow run test-template-canary-prepublication.yml \
+  --repo openclaw/clawhub --ref next -f mode=qualification
 ```
 
 The final log JSON uses `schemaVersion=clawhub-template-native-qualification-v1`:
@@ -185,7 +198,7 @@ The final log JSON uses `schemaVersion=clawhub-template-native-qualification-v1`
 - `mode=nonpublishing`; `status=passed|failed`; `failure` is null or a bounded
   stage enum (configuration, deadline, runtime, fixture, secrets, native_execution,
   native_evidence, unexpected_verdict, artifact_changed, cleanup, docker_cleanup).
-- `workerRevision` identifies the checked-out main SHA. `source` and `image`
+- `workerRevision` identifies the checked-out workflow SHA. `source` and `image`
   give the reviewed pins above; `profile=clawhub-template` and
   `targetKind=template` declare the required lane, not success on their own.
 - `sourceAndBinaryVerified`, `secretGate=clean`,
