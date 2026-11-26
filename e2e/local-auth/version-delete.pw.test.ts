@@ -432,6 +432,180 @@ async function expectPublicVersionsList(page: Parameters<typeof expectNoFatalErr
   await expect(page.getByRole("button", { name: /restore/i })).toHaveCount(0);
 }
 
+for (const viewport of [
+  { width: 1280, height: 900 },
+  { width: 390, height: 844 },
+  { width: 320, height: 720 },
+]) {
+  for (const kind of ["skill", "plugin"] as const) {
+    test(`${kind} version rows keep their controls readable at ${viewport.width}px`, async ({
+      page,
+    }, testInfo) => {
+      await page.setViewportSize(viewport);
+      const errors = trackRuntimeErrors(page);
+      const pageErrors: string[] = [];
+      page.on("pageerror", (error) => pageErrors.push(error.message));
+      const suffix = uniqueSuffix();
+      const fixture = seedVersionDeletionFixture({
+        skillSlug: `pw-version-layout-${suffix}`,
+        skillDisplayName: "Version Layout Skill",
+        packageName: `@local-user/pw-version-layout-${suffix}`,
+        packageDisplayName: "Version Layout Plugin",
+      });
+      await signInAsLocalPersona(page, "user");
+
+      await page.goto(
+        kind === "skill"
+          ? buildSkillDetailHref(fixture.handle, fixture.skillSlug)
+          : buildPluginDetailHref(fixture.packageName, { ownerHandle: fixture.handle }),
+        { waitUntil: "domcontentloaded" },
+      );
+      await waitForHydration(page);
+      await openVersionHistory(page);
+      const rows = page.locator(".skill-version-release");
+      await expect(rows).toHaveCount(2);
+      // Wait for the real dialog animation before measuring its rendered controls.
+      await page.getByRole("dialog").evaluate(async (dialog) => {
+        await Promise.all(
+          dialog.getAnimations({ subtree: true }).map((animation) => animation.finished),
+        );
+      });
+      const layouts = await rows.evaluateAll((elements) =>
+        elements.map((row) => {
+          const rect = (target: string | Element | Range) => {
+            const bounds = (
+              typeof target === "string" ? row.querySelector(target)! : target
+            ).getBoundingClientRect();
+            return {
+              left: bounds.left,
+              right: bounds.right,
+              top: bounds.top,
+              bottom: bounds.bottom,
+              width: bounds.width,
+              height: bounds.height,
+            };
+          };
+          const summary = row.querySelector(".skill-version-release-summary")!;
+          return {
+            summary: rect(".skill-version-release-summary"),
+            overflows: summary.scrollWidth > summary.clientWidth + 1,
+            version: rect(".skill-version-release-version"),
+            date: rect(".skill-version-release-meta"),
+            actions: Array.from(
+              row.querySelectorAll(
+                ".skill-version-release-actions > a, .skill-version-release-actions > button",
+              ),
+            ).map((control) => {
+              const text = document.createRange();
+              text.selectNodeContents(control);
+              return { ...rect(control), text: control.textContent?.trim() ? rect(text) : null };
+            }),
+            cells: ["toggle", "scan", "tags", "actions", "chevron-button"]
+              .filter((name) => row.querySelector(`.skill-version-release-${name}`))
+              .map((name) => ({ name, ...rect(`.skill-version-release-${name}`) }))
+              .filter((cell) => cell.width > 0 && cell.height > 0),
+          };
+        }),
+      );
+      await testInfo.attach("version-row-layout", {
+        body: JSON.stringify({ viewport, kind, layouts }),
+        contentType: "application/json",
+      });
+      for (const layout of layouts) {
+        expect(layout.overflows).toBe(false);
+        expect(layout.summary.left).toBeGreaterThanOrEqual(0);
+        expect(layout.summary.right).toBeLessThanOrEqual(viewport.width);
+        expect(layout.version.height).toBeLessThan(30);
+        expect(layout.date.height).toBeLessThan(30);
+        expect(layout.version.width).toBeGreaterThan(70);
+        for (const [index, cell] of layout.cells.entries()) {
+          expect(cell.left).toBeGreaterThanOrEqual(layout.summary.left);
+          expect(cell.right).toBeLessThanOrEqual(layout.summary.right);
+          for (const other of layout.cells.slice(index + 1)) {
+            const overlapWidth =
+              Math.min(cell.right, other.right) - Math.max(cell.left, other.left);
+            const overlapHeight =
+              Math.min(cell.bottom, other.bottom) - Math.max(cell.top, other.top);
+            expect(
+              overlapWidth > 1 && overlapHeight > 1,
+              `${cell.name} overlaps ${other.name}`,
+            ).toBe(false);
+          }
+        }
+        const actions = layout.cells.find((cell) => cell.name === "actions")!;
+        for (const [index, control] of layout.actions.entries()) {
+          expect(control.left).toBeGreaterThanOrEqual(actions.left - 1);
+          expect(control.right).toBeLessThanOrEqual(actions.right + 1);
+          expect(control.top).toBeGreaterThanOrEqual(actions.top - 1);
+          expect(control.bottom).toBeLessThanOrEqual(actions.bottom + 1);
+          if (control.text) {
+            expect(control.text.left).toBeGreaterThanOrEqual(control.left - 1);
+            expect(control.text.right).toBeLessThanOrEqual(control.right + 1);
+          }
+          for (const other of layout.actions.slice(index + 1)) {
+            expect(
+              Math.min(control.right, other.right) - Math.max(control.left, other.left) > 1 &&
+                Math.min(control.bottom, other.bottom) - Math.max(control.top, other.top) > 1,
+              "Version actions overlap",
+            ).toBe(false);
+          }
+        }
+        const toggle = layout.cells.find((cell) => cell.name === "toggle")!;
+        const chevron = layout.cells.find((cell) => cell.name === "chevron-button")!;
+        if (viewport.width < 760) {
+          expect(toggle.width).toBeGreaterThan(120);
+          expect(Math.abs(chevron.top - toggle.top)).toBeLessThan(15);
+          let previousBottom = toggle.bottom;
+          for (const cell of layout.cells.filter(
+            (cell) => cell.name !== "toggle" && cell.name !== "chevron-button",
+          )) {
+            expect(cell.top).toBeGreaterThanOrEqual(previousBottom);
+            previousBottom = cell.bottom;
+          }
+        } else {
+          for (const [index, cell] of layout.cells.entries()) {
+            if (index) expect(cell.left).toBeGreaterThanOrEqual(layout.cells[index - 1]!.right);
+          }
+        }
+      }
+      await expect(versionToggle(page, LATEST_VERSION)).toBeVisible();
+      const latest = rows.filter({ has: versionToggle(page, LATEST_VERSION) });
+      await expect(latest.getByText(/^latest$/i)).toBeVisible();
+      const download = latest.getByRole("link", {
+        name:
+          kind === "skill"
+            ? `Download version v${LATEST_VERSION}`
+            : `Download .zip for v${LATEST_VERSION}`,
+      });
+      const downloadUrl = new URL((await download.getAttribute("href"))!, page.url());
+      expect(downloadUrl.searchParams.get("version")).toBe(LATEST_VERSION);
+      expect(downloadUrl.pathname).toBe(
+        kind === "skill"
+          ? "/api/v1/download"
+          : `/api/v1/packages/${encodeURIComponent(fixture.packageName)}/download`,
+      );
+      if (kind === "skill") {
+        expect(downloadUrl.searchParams.get("slug")).toBe(fixture.skillSlug);
+        expect(downloadUrl.searchParams.get("ownerHandle")).toBe(fixture.handle);
+      }
+      const toggle = versionToggle(page, LATEST_VERSION);
+      await toggle.focus();
+      await page.keyboard.press("Enter");
+      await expect(toggle).toHaveAttribute("aria-expanded", "true");
+      const changelog = latest.locator(".skill-version-release-changelog");
+      await expect(changelog).toHaveAttribute("id", (await toggle.getAttribute("aria-controls"))!);
+      await expect(changelog).toBeVisible();
+      const chevron = latest.getByRole("button", { name: `Hide changelog for v${LATEST_VERSION}` });
+      await chevron.focus();
+      await page.keyboard.press("Space");
+      await expect(toggle).toHaveAttribute("aria-expanded", "false");
+      await page.screenshot({ path: testInfo.outputPath(`${kind}-${viewport.width}.png`) });
+      expect(pageErrors).toEqual([]);
+      expect(errors).toEqual([]);
+    });
+  }
+}
+
 test("owners can withdraw and restore individual non-latest skill and plugin versions", async ({
   baseURL,
   browser,

@@ -8510,7 +8510,7 @@ a.skills-sh-security-audit-row:focus-visible {
   min-height: 22px;
 }
 
-.skill-versions-list-plugins .skill-version-release-scan {
+:where(.skill-versions-list-plugins) .skill-version-release-scan {
   grid-column: 2;
 }
 
@@ -8525,11 +8525,11 @@ a.skills-sh-security-audit-row:focus-visible {
   min-height: 22px;
 }
 
-.skill-versions-list-skills .skill-version-release-tags {
+:where(.skill-versions-list-skills) .skill-version-release-tags {
   grid-column: 2;
 }
 
-.skill-versions-list-plugins .skill-version-release-tags {
+:where(.skill-versions-list-plugins) .skill-version-release-tags {
   grid-column: 3;
 }
 
@@ -8544,11 +8544,11 @@ a.skills-sh-security-audit-row:focus-visible {
   justify-self: end;
 }
 
-.skill-versions-list-skills .skill-version-release-actions {
+:where(.skill-versions-list-skills) .skill-version-release-actions {
   grid-column: 3;
 }
 
-.skill-versions-list-plugins .skill-version-release-actions {
+:where(.skill-versions-list-plugins) .skill-version-release-actions {
   grid-column: 4;
 }
 
@@ -8587,11 +8587,11 @@ a.skills-sh-security-audit-row:focus-visible {
   white-space: nowrap;
 }
 
-.skill-versions-list-skills .skill-version-release-chevron-button {
+:where(.skill-versions-list-skills) .skill-version-release-chevron-button {
   grid-column: 4;
 }
 
-.skill-versions-list-plugins .skill-version-release-chevron-button {
+:where(.skill-versions-list-plugins) .skill-version-release-chevron-button {
   grid-column: 5;
 }
 
@@ -8663,11 +8663,8 @@ a.skills-sh-security-audit-row:focus-visible {
 
   .skill-version-release-actions {
     grid-column: 1 / -1;
-  }
-
-  .skill-version-release-actions {
+    flex-wrap: wrap;
     justify-content: flex-start;
-    padding-left: 74px;
   }
 
   .skill-version-release-actions:empty {

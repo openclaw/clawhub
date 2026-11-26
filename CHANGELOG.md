@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Version history: keep skill and plugin versions, dates, release tags, and download controls readable without overlapping on mobile.
+
 - Skill publishing: keep reusable-workflow tooling out of repository-root skills while preserving checkout cleanup.
 
 - Package publishing: exclude reusable-workflow tooling from local root packages while preserving checkout cleanup.
