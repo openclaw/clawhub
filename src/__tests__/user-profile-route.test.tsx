@@ -1,6 +1,7 @@
 /* @vitest-environment jsdom */
 
 import { fireEvent, render, screen, within } from "@testing-library/react";
+import { getFunctionName } from "convex/server";
 import type { ComponentType, ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -119,6 +120,12 @@ describe("user profile route", () => {
 
     render(<Component />);
 
+    expect(
+      queryMock.mock.calls.find(
+        ([query]) => getFunctionName(query as never) === "publishers:listMine",
+      )?.[1],
+    ).toEqual("skip");
+
     const stats = screen.getByLabelText("Publisher stats");
     expect(within(stats).getByText("42")).toBeTruthy();
     expect(within(stats).getByText(/downloads/i)).toBeTruthy();
@@ -164,13 +171,13 @@ describe("user profile route", () => {
     authStatusMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
-      me: { handle: "nvidia" },
+      me: { _id: "users:owner" },
     });
-    queryMock.mockImplementation((_query, args: Record<string, unknown> | "skip") => {
+    queryMock.mockImplementation((query, args: Record<string, unknown> | "skip") => {
       if (args === "skip") return undefined;
       if ("publisherHandle" in args) return { publisher: personalPublisher, members: [] };
       if ("kind" in args) return null;
-      if (Object.keys(args).length === 0) {
+      if (getFunctionName(query) === "publishers:listMine") {
         return [{ publisher: { handle: "nvidia", kind: "user" }, role: "owner" }];
       }
       return personalPublisher;
@@ -182,6 +189,11 @@ describe("user profile route", () => {
     render(<Component />);
 
     const editProfile = screen.getByRole("link", { name: "Edit profile" });
+    expect(
+      queryMock.mock.calls.find(
+        ([query]) => getFunctionName(query as never) === "publishers:listMine",
+      )?.[1],
+    ).toEqual({ includePublishedItems: false });
     const add = screen.getByRole("link", { name: "Add" });
 
     expect(

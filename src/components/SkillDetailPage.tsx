@@ -208,9 +208,10 @@ export function SkillDetailPage({
   const updateSummary = useMutation(api.skills.updateSummary);
   const setCatalogMetadata = useMutation(api.skills.setCatalogMetadata);
   const getReadme = useAction(api.skillReadme.getReadme);
-  const myPublishers = useQuery(api.publishers.listMine, me ? {} : "skip") as
-    | Array<{ publisher: { _id: Id<"publishers"> }; role: string }>
-    | undefined;
+  const myPublishers = useQuery(
+    api.publishers.listMine,
+    me ? { includePublishedItems: false } : "skip",
+  ) as Array<{ publisher: { _id: Id<"publishers"> }; role: string }> | undefined;
 
   const [{ text: readme, error: readmeError }, setReadmeResult] = useState({
     text: initialData?.readme ?? null,

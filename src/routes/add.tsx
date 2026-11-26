@@ -52,9 +52,10 @@ const emptyPluginPublishSearch = {
 export function AddPage() {
   const { isAuthenticated, isLoading, me } = useAuthStatus();
   const search = Route.useSearch();
-  const memberships = useQuery(api.publishers.listMine, me ? {} : "skip") as
-    | PublisherOwnerMembership[]
-    | undefined;
+  const memberships = useQuery(
+    api.publishers.listMine,
+    me ? { includePublishedItems: false } : "skip",
+  ) as PublisherOwnerMembership[] | undefined;
   const [kind, setKind] = useState<AddKind>(search.kind);
   const [ownerHandle, setOwnerHandle] = useState(search.ownerHandle ?? "");
   const [pluginFamily, setPluginFamily] = useState<PluginFamily | null>(null);
