@@ -29,12 +29,17 @@ reviewed ClawScan profile, not by those local evaluator environment variables.
 
 ## Source and transport boundary
 
+The ClawScan 0.4.0 draft selects source
+`9bc83753a6f1af7ff077917262190ada0152891b`; its image and native qualification
+status are recorded in `plugin-qualified-runtime.md`. The earlier transport
+migration below is historical evidence, not approval of the new runtime.
+
 The previously installed ClawScan npm 0.2.0 profile hardcoded GPT-5.5. Stock
 SkillSpector and AIG installations also used older defaults and Chat Completions
 paths. Environment-only changes cannot implement this policy: official GPT-6.1
 Sol function/tool calls require Responses rather than Chat Completions.
 
-`clawscan-source-commit.txt` pins merged ClawScan commit
+During that migration, `clawscan-source-commit.txt` pinned merged ClawScan commit
 `e14f9960cc290d47f99fd3416b0589bbc0080f24`. The
 workflow installer fetches that exact commit, verifies HEAD, builds its Go CLI
 with Go 1.27.3, and retains the matching source tree for host scanner installation.
@@ -87,7 +92,15 @@ real-adapter tests as that ClawScan revision's runtime image:
 - The source pins are read from the reviewed ClawScan Dockerfile and checked as
   full commit IDs, so host/image implementations cannot silently drift. Patch
   applicability and the real installed adapter tests are mandatory install gates.
-- The maintained resolver is pinned to uv 0.13.5. Pytest 9.0.2 is test-only. Source
+- The maintained resolver is pinned to uv 0.13.5. Pytest 9.0.2 is test-only; its
+  complete dependency set is pinned with wheel hashes in scanner-specific
+  `*-test-requirements.txt` files. These preserve the observed host inventories:
+  AIG uses packaging 26.3 and Pygments 2.21.0; SkillSpector keeps packaging 26.2
+  and Pygments 2.20.0 from its runtime lock. Test-tool installation must not
+  silently resolve newer dependencies before the adapter checks. Private installer
+  copies must include the source verifier, runtime and test locks, and serialization
+  probe from the same consumer checkout; original-runtime receipts include their
+  hashes. Recovery-approved diagnostic consumer revisions remain frozen. Source
   revisions and runtime dependencies are pinned; Python isolated-build backend
   dependencies are not claimed to be fully hash-reproducible. The AIG hash lock
   additionally admits the published macOS arm64 CPython 3.12 wheels for `jiter`

@@ -1,11 +1,11 @@
 # Shared installer-only qualification binding. Sourced after script_dir is set.
-# Host producer: merged openclaw/clawscan#155; ordinary profiles unchanged.
-# Scanner-tools tree/image retained from runtime run 42292655384, not rebuilt
-# for a host-only profile change. Verify both exact trees before installation.
-qualified_source_commit=56bf1d9e3bd5247a0622acef8699dc69a10f2938
-qualified_source_tree=92d8daba5c181560b4a73e71557b8d54e67e62b9
-qualified_runtime_tree=ddfec1285eaf19beb3043e9e5ad043a0d274cb53
-qualified_runtime_image=ghcr.io/openclaw/clawscan-runtime@sha256:d494938b84a9f0da40504f611eec472d4637c755b5cef87b123daf8a2014545c
+# ClawScan 0.4.0 candidate from merged openclaw/clawscan#223.
+# Both native architectures and immutable index: runtime run 45565644265.
+# Verify the matching host and scanner-tools trees before installation.
+qualified_source_commit=9bc83753a6f1af7ff077917262190ada0152891b
+qualified_source_tree=c08631fa26a49ac711b828a4ead389ded92b2fa5
+qualified_runtime_tree=9f1aa0ad7bba119153550651bb74c1ab4576808a
+qualified_runtime_image=ghcr.io/openclaw/clawscan-runtime@sha256:c7723e88a47f4ff61530a7f3140b0c72f51293ab8514435c7c3aeb518a8000b1
 
 select_clawscan_source() {
   default_commit=$(cat "$script_dir/clawscan-source-commit.txt")

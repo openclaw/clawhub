@@ -83,6 +83,8 @@ let workspace = "";
 let nativeReport = report();
 beforeEach(() => {
   vi.stubEnv("GITHUB_REF", "refs/heads/main");
+  vi.stubEnv("GITHUB_REPOSITORY", "openclaw/clawhub");
+  vi.stubEnv("GITHUB_REF_PROTECTED", "true");
   vi.stubEnv("GITHUB_SHA", "c".repeat(40));
   vi.stubEnv("CONVEX_URL", "https://academic-chihuahua-392.convex.cloud");
   for (const key of ["OPENAI_API_KEY", "CODEX_API_KEY", "LLM_API_KEY"])
@@ -143,30 +145,34 @@ afterEach(() => {
 });
 
 describe("fixed nonpublishing Template native qualification", () => {
-  it("accepts only completed native evidence, binds pins, preserves bytes and removes its workspace", async () => {
-    const receipt = await qualifyTestTemplate([]);
-    expect(receipt).toMatchObject({
-      schemaVersion: "clawhub-template-native-qualification-v1",
-      status: "passed",
-      failure: null,
-      mode: "nonpublishing",
-      source: QUALIFIED_PLUGIN_SOURCE,
-      image: QUALIFIED_PLUGIN_IMAGE,
-      profile: "clawhub-template",
-      targetKind: "template",
-      sourceAndBinaryVerified: true,
-      secretGate: "clean",
-      nativeEvidence: "completed",
-      verdict: "benign",
-      fixtureUnchanged: true,
-      workspaceRemoved: true,
-    });
-    expect(receipt.artifactSha256).toMatch(/^[a-f0-9]{64}$/);
-    expect(receipt.fixtureSha256).toMatch(/^[a-f0-9]{64}$/);
-    expect(JSON.stringify(receipt)).not.toContain("private-test-placeholder");
-    await expect(access(workspace)).rejects.toThrow();
-    expect(runNativeClawScan).toHaveBeenCalledTimes(1);
-  });
+  it.each(["main", "next"])(
+    "accepts completed evidence from protected %s, binds pins and cleans up",
+    async (branch) => {
+      vi.stubEnv("GITHUB_REF", `refs/heads/${branch}`);
+      const receipt = await qualifyTestTemplate([]);
+      expect(receipt).toMatchObject({
+        schemaVersion: "clawhub-template-native-qualification-v1",
+        status: "passed",
+        failure: null,
+        mode: "nonpublishing",
+        source: QUALIFIED_PLUGIN_SOURCE,
+        image: QUALIFIED_PLUGIN_IMAGE,
+        profile: "clawhub-template",
+        targetKind: "template",
+        sourceAndBinaryVerified: true,
+        secretGate: "clean",
+        nativeEvidence: "completed",
+        verdict: "benign",
+        fixtureUnchanged: true,
+        workspaceRemoved: true,
+      });
+      expect(receipt.artifactSha256).toMatch(/^[a-f0-9]{64}$/);
+      expect(receipt.fixtureSha256).toMatch(/^[a-f0-9]{64}$/);
+      expect(JSON.stringify(receipt)).not.toContain("private-test-placeholder");
+      await expect(access(workspace)).rejects.toThrow();
+      expect(runNativeClawScan).toHaveBeenCalledTimes(1);
+    },
+  );
   it.each(["--attempt-id", "--source", "--command", "--path"])(
     "rejects supplied %s without fallback",
     async (arg) => {
@@ -179,6 +185,11 @@ describe("fixed nonpublishing Template native qualification", () => {
   );
   it.each([
     ["GITHUB_REF", "refs/heads/other"],
+    ["GITHUB_REF", "refs/tags/next"],
+    ["GITHUB_REPOSITORY", "other/clawhub"],
+    ["GITHUB_REPOSITORY", ""],
+    ["GITHUB_REF_PROTECTED", "false"],
+    ["GITHUB_REF_PROTECTED", ""],
     ["GITHUB_SHA", "main"],
     ["CONVEX_URL", "https://other.convex.cloud"],
     ["OPENAI_API_KEY", ""],

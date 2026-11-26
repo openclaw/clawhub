@@ -7,8 +7,8 @@ import { QUALIFIED_PLUGIN_IMAGE, QUALIFIED_PLUGIN_SOURCE } from "./clawscan-plug
 
 export type TemplateScanRuntime = ReviewedClawScanRuntime & { command: string };
 
-// The host Go producer embeds/selects this profile. Only the unchanged scanner
-// tools execute inside the already-qualified immutable Docker image. Bind both
+// The host Go producer embeds/selects this profile. Matching scanner tools
+// execute inside the source-bound immutable Docker image. Bind both
 // lanes to the same reviewed source; artifact text cannot select a revision.
 const REVIEWED_TEMPLATE_RUNTIME: ReviewedClawScanRuntime = {
   source: QUALIFIED_PLUGIN_SOURCE,

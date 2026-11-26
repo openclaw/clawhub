@@ -1,18 +1,23 @@
-# Activated image-only plugin consumer runtime
+# ClawScan 0.4.0 consumer runtime candidate
 
-Status: this PR activates the scanner-report-only Codex EvidenceOnly profile in
-the default source pin and both security-worker workflows. Merging does not itself
-perform the separate parent-owned exact-SHA Deploy Test → production rollout or
-30-minute monitoring. No historical rewrite, bulk requeue or data migration.
+Status: draft candidate for the ClawScan 0.4.0 source and immutable runtime.
+The source/image update requires native consumer qualification before landing.
+Test and production promotion remain separate; this does not authorize branch
+promotion, live worker rollout, historical rewrite, bulk requeue or data migration.
 
-## Current qualified binding
+## Candidate binding
 
-- Merged ClawScan source: 80d11a34a97a9181213c806fc3013123360f9012 (producer #152).
-- Source tree: dae6e848e052bb95f60da4af98efbe579f64c0bc.
-- Runtime tree: ddfec1285eaf19beb3043e9e5ad043a0d274cb53.
-- Immutable image: ghcr.io/openclaw/clawscan-runtime@sha256:d494938b84a9f0da40504f611eec472d4637c755b5cef87b123daf8a2014545c.
+- Merged ClawScan source: 9bc83753a6f1af7ff077917262190ada0152891b ([PR #223](https://github.com/openclaw/clawscan/pull/223)).
+- Source tree: c08631fa26a49ac711b828a4ead389ded92b2fa5.
+- Runtime tree: 9f1aa0ad7bba119153550651bb74c1ab4576808a.
+- Immutable image: ghcr.io/openclaw/clawscan-runtime@sha256:c7723e88a47f4ff61530a7f3140b0c72f51293ab8514435c7c3aeb518a8000b1.
 - Native amd64/arm64 publication and installed CLI qualification:
-  https://github.com/openclaw/clawscan/actions/runs/42292655384.
+  https://github.com/openclaw/clawscan/actions/runs/45565644265.
+
+This is the verified v0.4.0 tag image for the exact release source. Its retained
+manifest and independent registry readback bind both native platforms and their
+provenance to that source. Filesystem layers differ from the earlier main build;
+the tag image passed its own consumer runtime checks below.
 
 Plugins run one whole-artifact AIG MCP audit in that immutable Docker image.
 Skills use SkillSpector plus AIG; the shared judge reads scanner reports only.
@@ -25,17 +30,17 @@ source/image binding remain fail-closed. Historical readers remain supported.
 
 Use a disposable isolated runner with RUNNER_TEMP, GITHUB_ENV and GITHUB_PATH
 set as in Actions. Both optional-source and default installation now select the
-same approved merged source (source56 is no longer accepted):
+same candidate source:
 
 ```sh
-sh scripts/security/install-clawscan.sh 80d11a34a97a9181213c806fc3013123360f9012
+sh scripts/security/install-clawscan.sh 9bc83753a6f1af7ff077917262190ada0152891b
 # Apply CLAWSCAN_SOURCE_DIR and PATH emitted through the Actions files before
 # invoking the scanner installer; keep that retained source checkout clean.
 sh scripts/security/install-clawscan-scanners.sh aig-mcp \
-  80d11a34a97a9181213c806fc3013123360f9012
+  9bc83753a6f1af7ff077917262190ada0152891b
 
 docker run --rm --pull never --network none --entrypoint /bin/sh \
-  ghcr.io/openclaw/clawscan-runtime@sha256:d494938b84a9f0da40504f611eec472d4637c755b5cef87b123daf8a2014545c \
+  ghcr.io/openclaw/clawscan-runtime@sha256:c7723e88a47f4ff61530a7f3140b0c72f51293ab8514435c7c3aeb518a8000b1 \
   -ec 'aig-mcp-scan --help >/dev/null; codex --help >/dev/null'
 ```
 
@@ -58,7 +63,43 @@ lease tokens, old reports or Endor evidence enter this caller context. Skills
 retain their existing context behavior. The producer inserts that explicit caller
 context into its evidence-only prompt, rather than reading outer metadata.json.
 
-## Current evidence and limits
+## Candidate evidence and limits
+
+Both native image builds and the complete manifest publication passed for the
+candidate. Independent registry readback verified the immutable index bytes,
+both platform manifests/configs and the exact source revision. The retained
+manifest artifact agrees with that readback and both native smoke proofs.
+
+The real installer passed against the same host source and earlier main-build
+image `sha256:5036a4a3d62175f85092c20736cba96c89ecc45b9ddf74e8ba7a0462d8b396ed`
+on an isolated Ubuntu 24.04 amd64 Testbox with Python
+3.12.16 and Go 1.27.3: 24 historical judge tests, 212 SkillSpector tests and 259
+AIG adapter tests. The immutable image passed its network-disabled MCP CLI and
+Codex version checks. Both worker lanes accepted the real clean source and its
+VCS-bound host binary for plugin and Template dispatch. Testbox workflow:
+https://github.com/openclaw/clawhub/actions/runs/45563945160.
+
+An initial relocated Python setup loaded the host's older shared library in
+clean subprocesses; the failed AIG checks passed after installing the same
+verified Python distribution at its standard Actions prefix. No source or test
+expectation changed for that runner repair.
+
+These checks make no provider calls. Full native Template consumer qualification
+remains required before landing; image publication, SDK tests and admission
+checks do not establish provider or production acceptance.
+
+The final tag image was separately pulled by immutable digest on a fresh Ubuntu
+24.04 amd64 Testbox. Its source/version labels, MCP CLI, AIG MCP 0.2.0 and Codex
+0.164.0 passed with container networking disabled. The root image reports
+SkillSpector 2.12.0 and OpenAI SDK 2.54.0; those image packages do not replace the
+separately locked host scanner environments. Testbox workflow:
+https://github.com/openclaw/clawhub/actions/runs/45566877707.
+
+### Historical provider qualification
+
+The following evidence belongs to the earlier producer
+80d11a34a97a9181213c806fc3013123360f9012 and image
+d494938b84a9f0da40504f611eec472d4637c755b5cef87b123daf8a2014545c.
 
 Actual clean merged-source installer and 24 isolated compatibility tests passed.
 Real exact-image inert skill and plugin runs completed their native scanners,

@@ -134,8 +134,11 @@ export async function installOriginalRuntime(
   for (const file of [
     "install-clawscan.sh",
     "install-clawscan-scanners.sh",
+    "clawscan-install-source.sh",
     "aig-worker-requirements.txt",
     "skillspector-pydantic-requirements.txt",
+    "aig-test-requirements.txt",
+    "skillspector-test-requirements.txt",
     "test_skillspector_serialization.py",
   ])
     await copyFile(new URL(file, import.meta.url), join(installer, file));
@@ -269,6 +272,7 @@ export async function installOriginalRuntime(
       "verified original logical files; original compressed archive identity not claimed",
       "fresh private HOME/CODEX_HOME; host scanners; no Docker image used",
       "reviewed Pydantic compatibility set applied over the upstream dependency lock",
+      "scanner-specific test tools pinned to observed versions and wheel hashes",
     ],
     runtimeImage: "N/A",
     runtimeMode: "reviewed-host-scanners-sandbox-off",
@@ -296,7 +300,12 @@ export async function installOriginalRuntime(
       ),
     },
     installerSha256: hash(await readFile(join(installer, "install-clawscan-scanners.sh"))),
+    sourceVerifierSha256: hash(await readFile(join(installer, "clawscan-install-source.sh"))),
     aigRequirementsSha256: hash(await readFile(join(installer, "aig-worker-requirements.txt"))),
+    aigTestRequirementsSha256: hash(await readFile(join(installer, "aig-test-requirements.txt"))),
+    skillspectorTestRequirementsSha256: hash(
+      await readFile(join(installer, "skillspector-test-requirements.txt")),
+    ),
     skillspectorPydanticRequirementsSha256: hash(
       await readFile(join(installer, "skillspector-pydantic-requirements.txt")),
     ),
