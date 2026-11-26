@@ -62,9 +62,10 @@ export function SkillSecurityAuditRoutePage({
   );
   const requestSkillRescan = useMutation(api.securityScan.requestSkillRescan);
   const { me } = useAuthStatus();
-  const myPublishers = useQuery(api.publishers.listMine, me ? {} : "skip") as
-    | Array<{ publisher: { _id: string }; role: string }>
-    | undefined;
+  const myPublishers = useQuery(
+    api.publishers.listMine,
+    me ? { includePublishedItems: false } : "skip",
+  ) as Array<{ publisher: { _id: string }; role: string }> | undefined;
   const result = liveResult === undefined ? initialData?.result : liveResult;
   const skill = result?.skill;
   const latestVersion = result?.latestVersion;

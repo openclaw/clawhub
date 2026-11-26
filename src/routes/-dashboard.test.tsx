@@ -51,6 +51,8 @@ const mocks = vi.hoisted(() => ({
 
 const writeTextMock = vi.fn();
 
+vi.mock("@convex-dev/auth/react", () => ({ useAuthActions: () => ({ signIn: vi.fn() }) }));
+
 vi.mock("convex/react", () => ({
   useQuery: (...args: unknown[]) => mocks.useQuery(...args),
   usePaginatedQuery: (...args: unknown[]) => mocks.usePaginatedQuery(...args),
@@ -394,11 +396,29 @@ describe("Dashboard rows", () => {
 
     renderDashboard();
 
+    expect(
+      mocks.useQuery.mock.calls.find(
+        ([query]) => getFunctionName(query as never) === "publishers:listMine",
+      )?.[1],
+    ).toEqual({ includePublishedItems: false });
+
     expect(mocks.usePaginatedQuery).toHaveBeenCalledWith(
       expect.anything(),
       { ownerPublisherId: "publishers:local" },
       { initialNumItems: 50 },
     );
+  });
+
+  it("skips publisher memberships while signed out", () => {
+    mocks.useAuthStatus.mockReturnValue({ isAuthenticated: false, isLoading: false, me: null });
+    arrangeDashboard({});
+    renderDashboard();
+    expect(
+      mocks.useQuery.mock.calls.find(
+        ([query]) => getFunctionName(query as never) === "publishers:listMine",
+      )?.[1],
+    ).toEqual("skip");
+    expect(screen.getByText("Sign in to access your dashboard.")).toBeTruthy();
   });
 
   it("advances past an empty filtered skill page", async () => {

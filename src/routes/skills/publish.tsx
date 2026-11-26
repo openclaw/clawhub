@@ -151,9 +151,10 @@ export function Upload() {
   const [status, setStatus] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const publisherMemberships = useQuery(api.publishers.listMine, me ? {} : "skip") as
-    | PublisherOwnerMembership[]
-    | undefined;
+  const publisherMemberships = useQuery(
+    api.publishers.listMine,
+    me ? { includePublishedItems: false } : "skip",
+  ) as PublisherOwnerMembership[] | undefined;
   const [ownerHandle, setOwnerHandle] = useState(searchOwnerHandle ?? "");
   const ownerTouchedRef = useRef(false);
   // Owner migration opt-in: when updating an existing skill under a different

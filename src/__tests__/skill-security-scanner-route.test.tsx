@@ -88,6 +88,12 @@ describe("skill security audit route", () => {
 
     render(<Component />);
 
+    expect(
+      useQueryMock.mock.calls.find(
+        ([query]) => getFunctionName(query as never) === "publishers:listMine",
+      )?.[1],
+    ).toEqual("skip");
+
     expect(screen.queryByText("Loading security audit...")).toBeNull();
     const loadingRegion = screen.getByRole("status", { name: "Loading security audit" });
     expect(loadingRegion.getAttribute("aria-busy")).toBe("true");
@@ -100,8 +106,8 @@ describe("skill security audit route", () => {
     useAuthStatusMock.mockReturnValue({
       me: { _id: "users:moderator", role: "moderator" },
     });
-    useQueryMock.mockImplementation((_ref: unknown, args: unknown) => {
-      if (args === "skip" || (args && Object.keys(args as Record<string, unknown>).length === 0)) {
+    useQueryMock.mockImplementation((ref: unknown, args: unknown) => {
+      if (args === "skip" || getFunctionName(ref as never) === "publishers:listMine") {
         return [];
       }
       return {
@@ -126,6 +132,12 @@ describe("skill security audit route", () => {
     const Component = route.__config.component as ComponentType;
 
     render(<Component />);
+
+    expect(
+      useQueryMock.mock.calls.find(
+        ([query]) => getFunctionName(query as never) === "publishers:listMine",
+      )?.[1],
+    ).toEqual({ includePublishedItems: false });
 
     expect(screen.getByRole("button", { name: "Download security audit" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Rescan" }));
@@ -167,7 +179,7 @@ describe("skill security audit route", () => {
       me: { _id: "users:moderator", role: "moderator" },
     });
     useQueryMock.mockImplementation((ref: unknown, args: unknown) => {
-      if (args === "skip" || (args && Object.keys(args as Record<string, unknown>).length === 0)) {
+      if (args === "skip" || getFunctionName(ref as never) === "publishers:listMine") {
         return [];
       }
       const name = getFunctionName(ref as Parameters<typeof getFunctionName>[0]);
@@ -221,4 +233,36 @@ describe("skill security audit route", () => {
       }),
     );
   });
+
+  it.each(["owner", "admin", "publisher"])(
+    "preserves %s rescan visibility with membership summaries",
+    async (role) => {
+      useAuthStatusMock.mockReturnValue({ me: { _id: "users:member", role: "user" } });
+      useQueryMock.mockImplementation((ref: unknown, args: unknown) => {
+        if (args === "skip") return undefined;
+        if (getFunctionName(ref as never) === "publishers:listMine") {
+          return [{ publisher: { _id: "publishers:org" }, role }];
+        }
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: paramsMock.slug,
+            displayName: loaderDataMock.displayName,
+            ownerUserId: "users:owner",
+            ownerPublisherId: "publishers:org",
+          },
+          latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
+          owner: { _id: "publishers:org", handle: "local" },
+        };
+      });
+      const Component = (await loadRoute()).__config.component as ComponentType;
+      render(<Component />);
+      expect(
+        useQueryMock.mock.calls.find(
+          ([query]) => getFunctionName(query as never) === "publishers:listMine",
+        )?.[1],
+      ).toEqual({ includePublishedItems: false });
+      expect(Boolean(screen.queryByRole("button", { name: "Rescan" }))).toBe(role !== "publisher");
+    },
+  );
 });

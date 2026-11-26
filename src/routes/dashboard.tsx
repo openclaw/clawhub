@@ -68,9 +68,10 @@ export function Dashboard() {
   const sort: DashboardSortKey = search.sort ?? "updated";
   const view: DashboardView = search.view ?? "list";
 
-  const publishers = useQuery(api.publishers.listMine, me ? {} : "skip") as
-    | DashboardPublisherEntry[]
-    | undefined;
+  const publishers = useQuery(
+    api.publishers.listMine,
+    me ? { includePublishedItems: false } : "skip",
+  ) as DashboardPublisherEntry[] | undefined;
   const [selectedPublisherId, setSelectedPublisherId] = useState<string>("");
   const [loadTimedOut, setLoadTimedOut] = useState(false);
 

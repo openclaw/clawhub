@@ -118,9 +118,26 @@ describe("Upload route", () => {
   it("links to the skill docs", () => {
     render(<Upload />);
 
+    expect(
+      useQueryMock.mock.calls.find(
+        ([query]) => getFunctionName(query as never) === "publishers:listMine",
+      )?.[1],
+    ).toEqual({ includePublishedItems: false });
+
     const guideLink = screen.getByRole("link", { name: /Skill docs/i });
     expect(guideLink.getAttribute("href")).toBe("https://docs.openclaw.ai/clawhub/skill-format");
     expect(guideLink.getAttribute("target")).toBe("_blank");
+  });
+
+  it("skips publisher memberships while signed out", () => {
+    useAuthStatusMock.mockReturnValue({ isAuthenticated: false, isLoading: false, me: null });
+    render(<Upload />);
+    expect(
+      useQueryMock.mock.calls.find(
+        ([query]) => getFunctionName(query as never) === "publishers:listMine",
+      )?.[1],
+    ).toEqual("skip");
+    expect(screen.getByText("Sign in to publish a skill")).toBeTruthy();
   });
 
   it("marks license acceptance as required after selecting skill files", async () => {

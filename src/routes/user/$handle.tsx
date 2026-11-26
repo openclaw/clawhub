@@ -599,7 +599,7 @@ export function PublisherProfilePage({
 
   const myPublisherMemberships = useQuery(
     api.publishers.listMine,
-    isAuthenticated ? {} : "skip",
+    isAuthenticated ? { includePublishedItems: false } : "skip",
   ) as Array<{ publisher: { handle: string; kind: "user" | "org" }; role: string }> | undefined;
 
   const viewerCanSeeMemberRoles = useMemo(() => {

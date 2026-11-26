@@ -37,3 +37,11 @@ The publisher profile lists the two kinds on separate tabs. `publishers.getProfi
 `publishers.listPublishedPage` applies the same split. `kind: "plugin"` returns every package family except templates, and `kind: "template"` returns only templates, linked at `/<publisher>/templates/<slug>`.
 
 The website shows the Templates tab only when the profile response carries `templates`. A website build that is newer than the deployed backend therefore keeps the previous two tabs and never sends the `template` kind to a backend that would reject it.
+
+## Membership-only UI reads
+
+The dashboard, Add page, skill publishing, skill detail, skill security audit, and publisher profile request `publishers.listMine` with `includePublishedItems: false`. They need publisher identity, membership roles, and counters, not the published inventory. Their existing authentication guards and owner-selection rules stay unchanged.
+
+Complete stored counters let these summary reads avoid loading skill and package rows. Publishers with incomplete legacy counters still use the existing catalog fallback. The API default continues to include the full inventory for callers that need it.
+
+Plugin publishing has not adopted the summary option. The publisher profile's separate display-manifest query also remains an inventory read; neither is covered by this optimization.

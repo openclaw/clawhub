@@ -277,6 +277,12 @@ describe("SkillDetailPage", () => {
 
     render(<SkillDetailPage slug="weather" initialData={initialData} />);
 
+    expect(
+      useQueryMock.mock.calls.find(
+        ([query]) => getFunctionName(query as never) === "publishers:listMine",
+      )?.[1],
+    ).toEqual("skip");
+
     expect(screen.getByRole("tab", { name: "SKILL.md", selected: true })).toBeTruthy();
     const readme = within(screen.getByRole("tabpanel", { name: "SKILL.md" }));
     expect(await readme.findByRole("heading", { name: "Publisher guide" })).toBeTruthy();
@@ -1691,6 +1697,11 @@ describe("SkillDetailPage", () => {
     const { unmount } = render(<SkillDetailPage slug="weather" />);
 
     const settingsLink = await screen.findByRole("link", { name: /settings/i });
+    expect(
+      useQueryMock.mock.calls.find(
+        ([query]) => getFunctionName(query as never) === "publishers:listMine",
+      )?.[1],
+    ).toEqual({ includePublishedItems: false });
     expect(settingsLink.getAttribute("href")).toBe("/steipete/skills/weather/settings");
     expect(screen.queryByText(/Owner tools/i)).toBeNull();
     expect(screen.queryByText("Compare versions")).toBeNull();
@@ -2021,9 +2032,9 @@ describe("SkillDetailPage", () => {
       isLoading: false,
       me: { _id: "users:publisher-member", role: "user" },
     });
-    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+    useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
-      if (args === undefined) {
+      if (getFunctionName(fn as never) === "publishers:listMine") {
         return [{ publisher: { _id: "publishers:steipete" }, role: "publisher" }];
       }
       if (args && typeof args === "object" && "skillId" in args) return false;
