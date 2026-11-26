@@ -36,15 +36,24 @@ execution is an operational failure, never an invented malicious verdict.
 Suspicious findings retain the existing publication behavior; malicious blocks.
 Secret scanning, claim/lease/fingerprint checks and Docker cleanup remain gates.
 
-## Qualified host producer and scanner tools
+## Candidate host producer and scanner tools
 
-Both workers bind Template dispatch to merged ClawScan source
-`56bf1d9e3bd5247a0622acef8699dc69a10f2938` ([ClawScan #155](https://github.com/openclaw/clawscan/pull/155)),
-source tree `92d8daba5c181560b4a73e71557b8d54e67e62b9`.
-Its ordinary skill/plugin profiles are unchanged. The native scanner-tools tree
-`ddfec1285eaf19beb3043e9e5ad043a0d274cb53` is identical to the previously
-qualified image
+The ClawScan 0.4.0 draft binds both workers to merged source
+`9bc83753a6f1af7ff077917262190ada0152891b` ([ClawScan #223](https://github.com/openclaw/clawscan/pull/223)),
+source tree `c08631fa26a49ac711b828a4ead389ded92b2fa5`, runtime tree
+`9f1aa0ad7bba119153550651bb74c1ab4576808a`, and immutable image
+`ghcr.io/openclaw/clawscan-runtime@sha256:c7723e88a47f4ff61530a7f3140b0c72f51293ab8514435c7c3aeb518a8000b1`.
+Version-tag image publication, real host installation and both workers'
+source/binary admission are verified without provider calls. The final tag image
+also passed its separate offline consumer runtime checks. Full native consumer
+qualification remains pending. See `plugin-qualified-runtime.md`.
+
+The previous binding was source `56bf1d9e3bd5247a0622acef8699dc69a10f2938`
+([ClawScan #155](https://github.com/openclaw/clawscan/pull/155)), source tree
+`92d8daba5c181560b4a73e71557b8d54e67e62b9`, runtime tree
+`ddfec1285eaf19beb3043e9e5ad043a0d274cb53`, and image
 `ghcr.io/openclaw/clawscan-runtime@sha256:d494938b84a9f0da40504f611eec472d4637c755b5cef87b123daf8a2014545c`.
+That earlier source and its measured evidence remain historical records.
 
 ClawHub runs the installed **host Go binary**, which embeds/selects the built-in
 Template profile and dispatches AIG/Codex commands inside the scanner-tools
@@ -102,9 +111,14 @@ for the exact-SHA Deploy Test integration gate. The default `mode=publication`
 still requires one existing exact pending canary attempt and proves finalization.
 No attempt is created, inferred, or selected as a fallback.
 
-Both modes require main, the fixed Test deployment `academic-chihuahua-392`,
-`CLAWHUB_ENV=test`, and its deployed backend SHA equal to `GITHUB_SHA`. The
-qualification step receives only existing model API credentials, never the
+Both modes require `openclaw/clawhub` and GitHub's protected-ref metadata.
+Publication remains restricted to `main`; nonpublishing qualification accepts
+only `main` or `next`. Both require the fixed Test deployment
+`academic-chihuahua-392`, `CLAWHUB_ENV=test`, and its deployed backend SHA equal
+to `GITHUB_SHA`. Checkout uses that workflow commit, with no alternate ref input.
+Branch protection does not imply an enforced review: review the exact integration
+patch before merging to `next`, because that push automatically deploys Test.
+The qualification step receives only existing model API credentials, never the
 Convex deploy key or worker token. Target verification uses the Test deploy key
 in its separate read-only step. There are no new permissions, tokens, arbitrary
 source/command/path inputs, registry/database/upload/queue/moderation writes,
@@ -161,14 +175,22 @@ suspicious or malicious result remains a completed native verdict but fails this
 known benign fixture check; it does not change normal publication policy. No
 operational failure becomes clean, and no retry seeks a preferred verdict.
 
-After Deploy Test succeeds for the exact new main SHA, an authorized operator runs
-the command below. Test deploys from `next` (see `specs/deploy.md`), so that run
-exists only when `next` is at the same commit; otherwise this workflow fails
-closed at its backend SHA check.
+After exact-SHA CI and Deploy Test succeed for the reviewed `next` integration,
+an authorized operator runs the command below. Recheck the current `next` SHA
+before dispatch and verify the workflow's `head_sha` afterward. Test deploys
+from `next` (see `specs/deploy.md`); the backend SHA check fails closed if Test
+has moved. A `main` dispatch remains valid only when Test serves that same SHA.
+
+When qualifying a separate main PR, compare the actual scanner source, fixture,
+installer and setup inputs, schema build inputs, package manifests and frozen
+lockfile with the qualified integration. Record both worker SHAs and any reviewed
+differences. Matching pins alone do not prove equivalent consumer execution.
+Keep unrelated `next` changes on `next`; this gate does not authorize production
+promotion or merging `next` into `main`.
 
 ```sh
-gh workflow run test-template-canary-prepublication.yml \
-  --repo openclaw/clawhub --ref main -f mode=qualification
+ghx workflow run test-template-canary-prepublication.yml \
+  --repo openclaw/clawhub --ref next -f mode=qualification
 ```
 
 The final log JSON uses `schemaVersion=clawhub-template-native-qualification-v1`:
@@ -176,7 +198,7 @@ The final log JSON uses `schemaVersion=clawhub-template-native-qualification-v1`
 - `mode=nonpublishing`; `status=passed|failed`; `failure` is null or a bounded
   stage enum (configuration, deadline, runtime, fixture, secrets, native_execution,
   native_evidence, unexpected_verdict, artifact_changed, cleanup, docker_cleanup).
-- `workerRevision` identifies the checked-out main SHA. `source` and `image`
+- `workerRevision` identifies the checked-out workflow SHA. `source` and `image`
   give the reviewed pins above; `profile=clawhub-template` and
   `targetKind=template` declare the required lane, not success on their own.
 - `sourceAndBinaryVerified`, `secretGate=clean`,

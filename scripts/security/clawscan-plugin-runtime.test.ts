@@ -137,7 +137,7 @@ describe("qualified immutable plugin runtime policy", () => {
     expect((await readFile("scripts/security/clawscan-source-commit.txt", "utf8")).trim()).toBe(
       QUALIFIED_PLUGIN_SOURCE,
     );
-    expect(shell).toContain("qualified_source_tree=92d8daba5c181560b4a73e71557b8d54e67e62b9");
-    expect(shell).toContain("qualified_runtime_tree=ddfec1285eaf19beb3043e9e5ad043a0d274cb53");
+    expect(shell).toContain("qualified_source_tree=c08631fa26a49ac711b828a4ead389ded92b2fa5");
+    expect(shell).toContain("qualified_runtime_tree=9f1aa0ad7bba119153550651bb74c1ab4576808a");
   });
 });

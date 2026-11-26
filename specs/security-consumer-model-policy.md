@@ -29,12 +29,17 @@ reviewed ClawScan profile, not by those local evaluator environment variables.
 
 ## Source and transport boundary
 
+The ClawScan 0.4.0 draft selects source
+`9bc83753a6f1af7ff077917262190ada0152891b`; its image and native qualification
+status are recorded in `plugin-qualified-runtime.md`. The earlier transport
+migration below is historical evidence, not approval of the new runtime.
+
 The previously installed ClawScan npm 0.2.0 profile hardcoded GPT-5.5. Stock
 SkillSpector and AIG installations also used older defaults and Chat Completions
 paths. Environment-only changes cannot implement this policy: official GPT-6.1
 Sol function/tool calls require Responses rather than Chat Completions.
 
-`clawscan-source-commit.txt` pins merged ClawScan commit
+During that migration, `clawscan-source-commit.txt` pinned merged ClawScan commit
 `e14f9960cc290d47f99fd3416b0589bbc0080f24`. The
 workflow installer fetches that exact commit, verifies HEAD, builds its Go CLI
 with Go 1.27.3, and retains the matching source tree for host scanner installation.
