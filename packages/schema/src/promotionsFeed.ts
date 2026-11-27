@@ -1,4 +1,5 @@
 import { type inferred, type } from "arktype";
+import { assertFeedTiming, serializeFeedEnvelope } from "./feedEnvelope.js";
 
 const HttpsUrlSchema = type("string").narrow((value, ctx) => {
   try {
@@ -65,18 +66,7 @@ export function parsePromotionsFeed(value: unknown): PromotionsFeed {
   if (feed.schemaVersion !== PROMOTIONS_FEED_SCHEMA_VERSION) {
     throw new Error(`Unsupported promotions feed schema version: ${feed.schemaVersion}`);
   }
-  if (feed.sequence < 0 || !Number.isSafeInteger(feed.sequence)) {
-    throw new Error("Promotions feed sequence must be a non-negative integer");
-  }
-  if (
-    !Number.isFinite(Date.parse(feed.generatedAt)) ||
-    !Number.isFinite(Date.parse(feed.expiresAt))
-  ) {
-    throw new Error("Promotions feed timestamps must be valid ISO dates");
-  }
-  if (Date.parse(feed.expiresAt) <= Date.parse(feed.generatedAt)) {
-    throw new Error("Promotions feed expiresAt must be after generatedAt");
-  }
+  assertFeedTiming(feed, "Promotions");
   for (const entry of feed.entries) {
     if (entry.endsAt <= entry.startsAt) {
       throw new Error(`Promotions feed entry "${entry.slug}" has an inverted window`);
@@ -113,13 +103,5 @@ export function serializePromotionsFeed(feed: PromotionsFeed): string {
       ...(entry.docsUrl === undefined ? {} : { docsUrl: entry.docsUrl }),
       ...(entry.launchPageUrl === undefined ? {} : { launchPageUrl: entry.launchPageUrl }),
     }));
-  return JSON.stringify({
-    schemaVersion: parsed.schemaVersion,
-    id: parsed.id,
-    generatedAt: parsed.generatedAt,
-    sequence: parsed.sequence,
-    expiresAt: parsed.expiresAt,
-    ...(parsed.description === undefined ? {} : { description: parsed.description }),
-    entries,
-  });
+  return serializeFeedEnvelope(parsed, entries);
 }

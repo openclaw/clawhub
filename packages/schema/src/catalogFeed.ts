@@ -1,4 +1,5 @@
 import { type inferred, type } from "arktype";
+import { assertFeedTiming, serializeFeedEnvelope } from "./feedEnvelope.js";
 
 export const CatalogFeedStateSchema = type(
   '"available"|"recommended"|"disabled"|"blocked"|"deprecated"',
@@ -96,18 +97,7 @@ export function parseCatalogFeed(value: unknown): CatalogFeed {
   if (feed.schemaVersion !== CATALOG_FEED_SCHEMA_VERSION) {
     throw new Error(`Unsupported catalog feed schema version: ${feed.schemaVersion}`);
   }
-  if (feed.sequence < 0 || !Number.isSafeInteger(feed.sequence)) {
-    throw new Error("Catalog feed sequence must be a non-negative integer");
-  }
-  if (
-    !Number.isFinite(Date.parse(feed.generatedAt)) ||
-    !Number.isFinite(Date.parse(feed.expiresAt))
-  ) {
-    throw new Error("Catalog feed timestamps must be valid ISO dates");
-  }
-  if (Date.parse(feed.expiresAt) <= Date.parse(feed.generatedAt)) {
-    throw new Error("Catalog feed expiresAt must be after generatedAt");
-  }
+  assertFeedTiming(feed, "Catalog");
   for (const entry of feed.entries) {
     if (
       entry.featuredAt !== undefined &&
@@ -164,13 +154,5 @@ export function serializeCatalogFeed(feed: CatalogFeed): string {
           })),
       },
     }));
-  return JSON.stringify({
-    schemaVersion: parsed.schemaVersion,
-    id: parsed.id,
-    generatedAt: parsed.generatedAt,
-    sequence: parsed.sequence,
-    expiresAt: parsed.expiresAt,
-    ...(parsed.description === undefined ? {} : { description: parsed.description }),
-    entries,
-  });
+  return serializeFeedEnvelope(parsed, entries);
 }
