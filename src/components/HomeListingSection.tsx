@@ -145,14 +145,20 @@ function HomeListingResults({
 function HomeListingPluginRow({
   plugin,
   showDownloads,
+  showFeaturedPublisherArt,
 }: {
   plugin: PackageListItem;
   showDownloads: boolean;
+  showFeaturedPublisherArt: boolean;
 }) {
   const name = presentationTitle(plugin.displayName, plugin.name);
   const pluginHref = buildPluginDetailHref(plugin.name, { ownerHandle: plugin.ownerHandle });
   const trendingDownloads = plugin.trending24h?.downloads;
   const downloadLabel = trendingDownloads == null ? "Downloads" : "24-hour downloads";
+  const publisherFallback =
+    showFeaturedPublisherArt && plugin.featuredAt != null
+      ? { handle: plugin.ownerHandle, image: plugin.ownerImage, official: plugin.ownerOfficial }
+      : undefined;
 
   return (
     <Link
@@ -162,7 +168,13 @@ function HomeListingPluginRow({
       }`}
     >
       <span className="home-v2-listing-row-icon" aria-hidden="true">
-        <MarketplaceIcon kind="plugin" label={name} imageUrl={plugin.icon} size="sm" />
+        <MarketplaceIcon
+          kind="plugin"
+          label={name}
+          imageUrl={plugin.icon}
+          publisherFallback={publisherFallback}
+          size="sm"
+        />
       </span>
       <div className="home-v2-listing-row-body">
         <div className="home-v2-listing-row-title">
@@ -737,6 +749,7 @@ export function HomeListingSection({
                 key={plugin.name}
                 plugin={plugin}
                 showDownloads={showDownloads}
+                showFeaturedPublisherArt={tab === "featured" && !isSearchMode}
               />
             ))}
           </div>
