@@ -12,8 +12,7 @@ import { useMemo, useState, type CSSProperties } from "react";
 import {
   HOME_PLUGIN_SHORTCUTS,
   HOME_SKILL_APPS,
-  homePluginShortcutIcon,
-  homeSkillAppIcon,
+  homeAppIcon,
   SKILLS_BROWSE_SEARCH,
   simpleIconUrl,
   type HomeAppIcon,
@@ -64,7 +63,7 @@ function HomeAppsCompactSkill({ app }: { app: HomeSkillApp }) {
       title={app.description}
     >
       <span className="home-v2-apps-tile-icon" aria-hidden="true">
-        <HomeAppsIconMark icon={homeSkillAppIcon(app)} id={app.id} />
+        <HomeAppsIconMark icon={homeAppIcon(app.id)} id={app.id} />
       </span>
       <span className="home-v2-apps-tile-copy">
         <span className="home-v2-apps-tile-name">{app.name}</span>
@@ -83,7 +82,7 @@ function HomeAppsCompactPlugin({ plugin: shortcut }: { plugin: HomePluginShortcu
       title={shortcut.description}
     >
       <span className="home-v2-apps-tile-icon" aria-hidden="true">
-        <HomeAppsIconMark icon={homePluginShortcutIcon(shortcut)} id={shortcut.id} />
+        <HomeAppsIconMark icon={homeAppIcon(shortcut.id)} id={shortcut.id} />
       </span>
       <span className="home-v2-apps-tile-copy">
         <span className="home-v2-apps-tile-name">{shortcut.name}</span>
