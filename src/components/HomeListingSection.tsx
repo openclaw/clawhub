@@ -678,11 +678,7 @@ export function HomeListingSection({
         kind === "skills" ? (
           <SkillListingSkeleton showDownloads={showDownloads} />
         ) : (
-          <BrowseResultsSkeleton
-            showIcon={kind === "plugins"}
-            variant="list"
-            showStats={showDownloads}
-          />
+          <BrowseResultsSkeleton showIcon={kind === "plugins"} showStats={showDownloads} />
         )
       ) : null}
 

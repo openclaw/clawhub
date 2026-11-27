@@ -740,7 +740,7 @@ export function PublisherProfilePage({
                 </div>
               </div>
             </div>
-            <BrowseResultsSkeleton count={6} variant="list" />
+            <BrowseResultsSkeleton count={6} />
           </div>
         </Container>
       </main>
@@ -962,7 +962,7 @@ export function PublisherProfilePage({
               aria-label="Publisher catalog"
             >
               {isLoadingCatalog ? (
-                <BrowseResultsSkeleton count={6} variant="list" />
+                <BrowseResultsSkeleton count={6} />
               ) : catalogGroups.length > 1 ? (
                 <PublisherGroupedCatalog
                   groups={catalogGroups}

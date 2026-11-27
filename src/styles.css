@@ -2816,110 +2816,6 @@ code {
   margin-top: auto;
 }
 
-.browse-results-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.browse-page .browse-results-grid .skill-card {
-  display: grid;
-  min-height: 0;
-  align-content: start;
-  gap: 12px;
-  padding: 16px;
-  border: 1px solid var(--line);
-  border-radius: var(--hv2-radius-lg, var(--r-md));
-  background: color-mix(in srgb, var(--surface) 94%, transparent);
-  color: inherit;
-  box-shadow: none;
-  transition:
-    border-color 0.16s ease,
-    background 0.16s ease,
-    transform 0.16s ease;
-}
-
-.browse-page .browse-results-grid .skill-card:hover {
-  border-color: color-mix(in srgb, var(--ink-soft) 22%, var(--line));
-  background: color-mix(in srgb, var(--surface) 98%, transparent);
-  box-shadow: none;
-  transform: none;
-}
-
-.browse-page .browse-results-grid .skill-card-header {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-
-.browse-page .browse-results-grid .skill-card-header-no-icon {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.browse-page .browse-results-grid .skill-card-header .marketplace-icon {
-  --marketplace-icon-accent: var(--ink-soft) !important;
-  --marketplace-icon-wash: transparent !important;
-  width: 34px;
-  height: 34px;
-  border-radius: var(--oc-radius-inset);
-  background: color-mix(in srgb, var(--ink) 4%, transparent) !important;
-  border: 1px solid color-mix(in srgb, var(--ink) 7%, transparent) !important;
-  color: color-mix(in srgb, var(--ink-soft) 88%, transparent);
-  box-shadow: none;
-  transform: none;
-}
-
-.browse-page .browse-results-grid .skill-card-header .marketplace-icon-glyph {
-  width: 17px;
-  height: 17px;
-}
-
-/* Preserve package artwork colors while keeping skill imagery subdued. */
-.browse-page
-  .browse-results-grid
-  .skill-card-header
-  .marketplace-icon:not(.marketplace-icon-plugin, .marketplace-icon-template)
-  .marketplace-icon-image {
-  filter: grayscale(1) brightness(1.18);
-}
-
-.browse-page .browse-results-grid .skill-card-title {
-  min-width: 0;
-  overflow: hidden;
-  font-family: inherit;
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.25;
-  letter-spacing: -0.01em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  -webkit-line-clamp: unset;
-}
-
-.browse-page .browse-results-grid .skill-card-identity,
-.browse-page .browse-results-grid .skill-card-owner-row {
-  overflow: hidden;
-}
-
-.browse-page .browse-results-grid .official-badge svg {
-  width: 16px;
-  height: 16px;
-}
-
-.browse-page .browse-results-grid .skill-card-summary {
-  min-height: calc(1.5em * 2);
-  color: var(--ink-soft);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.browse-page .browse-results-grid .skill-card-tags {
-  align-items: center;
-  gap: 7px;
-  min-height: 0;
-}
-
 .skill-card-tag-category {
   display: inline-flex;
   align-items: center;
@@ -2940,12 +2836,6 @@ code {
   width: 1px;
   height: 12px;
   background: color-mix(in srgb, var(--line) 82%, transparent);
-}
-
-.browse-page .browse-results-grid .skill-card-footer {
-  margin-top: auto;
-  padding-top: 12px;
-  border-top: 1px solid color-mix(in srgb, var(--line) 65%, transparent);
 }
 
 .skill-card-bottom-row {
@@ -2975,71 +2865,6 @@ code {
 
 .skill-card-category svg {
   flex: 0 0 auto;
-}
-
-.browse-page .browse-results-grid .skill-card-grid-meta {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: center;
-  min-width: 0;
-}
-
-.browse-page .browse-results-grid .skill-card-grid-meta > .user-badge {
-  grid-column: 1 / -1;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--hv2-text-tertiary, var(--ink-soft));
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 1.25;
-}
-
-.browse-page .browse-results-grid .skill-card-grid-meta .user-avatar {
-  width: 20px;
-  height: 20px;
-}
-
-.browse-page .browse-results-grid .skill-card-grid-meta .user-handle {
-  max-width: 24ch;
-  color: inherit;
-  font-family: inherit;
-  font-size: inherit;
-}
-
-.browse-page .browse-results-grid .skill-card-grid-meta .skill-stats-triplet {
-  grid-column: 2;
-  grid-row: 1;
-  justify-self: end;
-  gap: 16px;
-  color: var(--hv2-text-tertiary, var(--ink-soft));
-  font-size: 12px;
-  line-height: 1.25;
-  white-space: nowrap;
-}
-
-.browse-page .browse-results-grid .skill-list-item-meta {
-  justify-content: flex-start;
-  min-width: 0;
-  max-width: none;
-  margin-top: 0;
-  text-align: left;
-}
-
-@media (max-width: 960px) {
-  .browse-results-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 560px) {
-  .browse-results-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-.skill-card-spaced-footer .skill-card-footer {
-  margin-top: auto;
 }
 
 .skill-stats-triplet,
@@ -11802,8 +11627,7 @@ a.agentic-risk-finding-title:focus-visible {
   gap: 5px;
 }
 
-.plugin-card-meta svg,
-.browse-results-grid .skill-stats-triplet svg {
+.plugin-card-meta svg {
   opacity: 0.45;
 }
 
@@ -13554,15 +13378,8 @@ body:has(.browse-page-borderless-header) .navbar {
   }
 
   .browse-page .skill-list-item > .marketplace-icon,
-  .skills-browse-page .browse-results-grid .skill-card-header > .marketplace-icon,
-  .plugins-browse-page .browse-results-grid .skill-card-header > .marketplace-icon,
   .browse-page .browse-results-skeleton-icon {
     display: none;
-  }
-
-  .skills-browse-page .browse-results-grid .skill-card-header,
-  .plugins-browse-page .browse-results-grid .skill-card-header {
-    grid-template-columns: minmax(0, 1fr);
   }
 
   .browse-page .skill-list-item-body {
