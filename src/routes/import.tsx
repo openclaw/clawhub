@@ -5,6 +5,7 @@ import {
   PLATFORM_SKILL_LICENSE_NAME,
 } from "clawhub-schema/licenseConstants";
 import { useAction, useQueries } from "convex/react";
+import type { FunctionReturnType } from "convex/server";
 import {
   Check,
   CheckCircle2,
@@ -80,52 +81,11 @@ export const Route = createFileRoute("/import")({
   component: ImportGitHub,
 });
 
-type Candidate = {
-  path: string;
-  readmePath: string;
-  name: string | null;
-  description: string | null;
-};
+type CandidatePreview = FunctionReturnType<typeof api.githubImport.previewGitHubImportCandidate>;
 
-type CandidatePreview = {
-  resolved: {
-    owner: string;
-    repo: string;
-    ref: string;
-    commit: string;
-    path: string;
-    repoUrl: string;
-    originalUrl: string;
-  };
-  candidate: Candidate;
-  defaults: {
-    selectedPaths: string[];
-    slug: string;
-    displayName: string;
-    version: string;
-    tags: string[];
-  };
-  files: Array<{ path: string; size: number; defaultSelected: boolean }>;
-};
-
-type OwnedGitHubRepo = {
-  owner: string;
-  name: string;
-  repoName: string;
-  repoFullName: string;
-  fullName: string;
-  htmlUrl: string;
-  candidatePath: string;
-  skillPath: string;
-  pushedAt: string | null;
-  updatedAt: string | null;
-  language: string | null;
-  fork: boolean;
-  archived: boolean;
-  disabled: boolean;
-  importable: boolean;
-  unavailableReason: string | null;
-};
+type OwnedGitHubRepo = FunctionReturnType<
+  typeof api.githubImport.listOwnedPublicGitHubRepos
+>["repos"][number];
 
 type ReviewDraft = {
   repo: OwnedGitHubRepo;
@@ -346,7 +306,7 @@ export function ImportGitHub() {
         });
         if (requestId !== repoLoadSeq.current) return;
 
-        const fetchedRepos = (result.repos ?? []) as OwnedGitHubRepo[];
+        const fetchedRepos = result.repos ?? [];
         const nextRepos = append
           ? mergeRepoLists(reposRef.current, fetchedRepos)
           : expandDevMockSkillRepos(fetchedRepos);
@@ -516,10 +476,10 @@ export function ImportGitHub() {
       for (let index = 0; index < nextQueue.length; index += 1) {
         const repo = nextQueue[index] as OwnedGitHubRepo;
         setReviewLoadStatus(`Preparing ${index + 1} of ${nextQueue.length}`);
-        const result = (await previewCandidate({
+        const result = await previewCandidate({
           url: repo.htmlUrl,
           candidatePath: repo.candidatePath,
-        })) as CandidatePreview;
+        });
         const selected: Record<string, boolean> = {};
         for (const file of result.files) selected[file.path] = file.defaultSelected;
         const slug = nextNumericSlug(result.defaults.slug, usedSlugs);
