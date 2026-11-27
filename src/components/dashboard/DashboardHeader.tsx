@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { ChevronsUpDown, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { addSearchParams } from "../../lib/addRoutes";
 import { Button } from "../ui/button";
 import { DashboardPublisherSelect } from "./DashboardPublisherSelect";
@@ -34,8 +34,6 @@ export function DashboardHeader({
                   publishers={publishers}
                   value={activePublisherId}
                   onValueChange={onPublisherChange}
-                  triggerClassName="dashboard-welcome-publisher-trigger"
-                  triggerIcon={<ChevronsUpDown className="h-4 w-4 opacity-50" />}
                 />
               </div>
             </div>
