@@ -1,7 +1,9 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { FunctionReturnType } from "convex/server";
 import { ConvexError } from "convex/values";
 import type { ReactNode } from "react";
 import { vi } from "vitest";
+import type { api } from "../../convex/_generated/api";
 import { ImportGitHub } from "../routes/import";
 
 vi.mock("@tanstack/react-router", () => ({
@@ -32,7 +34,9 @@ vi.mock("../lib/useAuthStatus", () => ({
   useAuthStatus: () => useAuthStatusMock(),
 }));
 
-function createRepoCandidate(name: string) {
+function createRepoCandidate(
+  name: string,
+): FunctionReturnType<typeof api.githubImport.listOwnedPublicGitHubRepos>["repos"][number] {
   const fullName = `octo/${name}`;
   return {
     owner: "octo",
@@ -41,6 +45,7 @@ function createRepoCandidate(name: string) {
     repoFullName: fullName,
     fullName,
     htmlUrl: `https://github.com/${fullName}`,
+    defaultBranch: null,
     candidatePath: "",
     skillPath: "SKILL.md",
     pushedAt: null,
@@ -49,6 +54,7 @@ function createRepoCandidate(name: string) {
     fork: false,
     archived: false,
     disabled: false,
+    visibility: "public",
     importable: true,
     unavailableReason: null,
   };
