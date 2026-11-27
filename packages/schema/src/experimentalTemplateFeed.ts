@@ -1,5 +1,6 @@
 import { type inferred, type } from "arktype";
 import { CatalogFeedPublisherTrustSchema, CatalogFeedStateSchema } from "./catalogFeed.js";
+import { assertFeedTiming, serializeFeedEnvelope } from "./feedEnvelope.js";
 import { TemplateManifestSummarySchema } from "./templates.js";
 
 export const EXPERIMENTAL_TEMPLATE_FEED_SCHEMA_VERSION = 1;
@@ -57,18 +58,7 @@ export function parseExperimentalTemplateFeed(value: unknown): ExperimentalTempl
   if (feed.id !== EXPERIMENTAL_TEMPLATE_FEED_ID) {
     throw new Error(`Unsupported experimental Template feed id: ${feed.id}`);
   }
-  if (feed.sequence < 0 || !Number.isSafeInteger(feed.sequence)) {
-    throw new Error("Experimental Template feed sequence must be a non-negative integer");
-  }
-  if (
-    !Number.isFinite(Date.parse(feed.generatedAt)) ||
-    !Number.isFinite(Date.parse(feed.expiresAt))
-  ) {
-    throw new Error("Experimental Template feed timestamps must be valid ISO dates");
-  }
-  if (Date.parse(feed.expiresAt) <= Date.parse(feed.generatedAt)) {
-    throw new Error("Experimental Template feed expiresAt must be after generatedAt");
-  }
+  assertFeedTiming(feed, "Experimental Template");
   for (const entry of feed.entries) {
     if (entry.publisher.trust !== "official") {
       throw new Error("Experimental Template feed publisher trust must be official");
@@ -156,13 +146,5 @@ export function serializeExperimentalTemplateFeed(feed: ExperimentalTemplateFeed
           })),
       },
     }));
-  return JSON.stringify({
-    schemaVersion: parsed.schemaVersion,
-    id: parsed.id,
-    generatedAt: parsed.generatedAt,
-    sequence: parsed.sequence,
-    expiresAt: parsed.expiresAt,
-    ...(parsed.description === undefined ? {} : { description: parsed.description }),
-    entries,
-  });
+  return serializeFeedEnvelope(parsed, entries);
 }
