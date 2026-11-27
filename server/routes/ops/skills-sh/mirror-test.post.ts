@@ -2,14 +2,12 @@ import { getVercelOidcToken } from "@vercel/oidc";
 import { defineEventHandler, getHeader, readBody } from "h3";
 import { resolveConvexProxyEnv } from "../../../convexProxy";
 import {
-  buildSkillsShMirrorProofSnapshotId,
   fetchSkillsShMirrorBatch,
   fetchSkillsShMirrorControlledBatch,
   getSkillsShCatalogProductionSourcePolicy,
   getSkillsShCatalogTestSourcePolicy,
   measureSkillsShMirrorProofSource,
   measureSkillsShTrendingSource,
-  parseSkillsShMirrorProofSnapshotId,
   skillsShSourceRetryAfterSeconds,
 } from "../../../skillsShCatalogSource";
 import {
@@ -17,6 +15,10 @@ import {
   enrichSkillsShMirrorClassifications,
   type SkillsShMirrorClassificationState,
 } from "../../../skillsShMirrorClassification";
+import {
+  buildSkillsShMirrorProofSnapshotId,
+  parseSkillsShMirrorProofSnapshotId,
+} from "../../../skillsShMirrorProof";
 
 const ROUTE_CONFIG = {
   test: {

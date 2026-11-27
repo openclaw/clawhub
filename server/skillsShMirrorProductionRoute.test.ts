@@ -25,15 +25,18 @@ vi.mock("./convexProxy", () => ({
   resolveConvexProxyEnv: (...args: unknown[]) => resolveConvexProxyEnvMock(...args),
 }));
 
-vi.mock("./skillsShCatalogSource", () => ({
+vi.mock("./skillsShMirrorProof", () => ({
   buildSkillsShMirrorProofSnapshotId: (...args: unknown[]) => buildProofSnapshotIdMock(...args),
+  parseSkillsShMirrorProofSnapshotId: (...args: unknown[]) => parseProofSnapshotIdMock(...args),
+}));
+
+vi.mock("./skillsShCatalogSource", () => ({
   fetchSkillsShMirrorBatch: vi.fn(),
   fetchSkillsShMirrorControlledBatch: vi.fn(),
   getSkillsShCatalogProductionSourcePolicy: (...args: unknown[]) => productionPolicyMock(...args),
   getSkillsShCatalogTestSourcePolicy: vi.fn(),
   measureSkillsShMirrorProofSource: (...args: unknown[]) => measureProofSourceMock(...args),
   measureSkillsShTrendingSource: vi.fn(),
-  parseSkillsShMirrorProofSnapshotId: (...args: unknown[]) => parseProofSnapshotIdMock(...args),
   skillsShSourceRetryAfterSeconds: vi.fn(() => null),
 }));
 
