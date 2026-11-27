@@ -19,7 +19,6 @@ import { api } from "../../convex/_generated/api";
 import type { PublicPackageDocLike } from "../../convex/lib/packageReadProjection";
 import { getPluginBrowseSnapshotKind } from "../../convex/lib/pluginBrowseSnapshot";
 import type { llmAnalysisValidator } from "../../convex/schema";
-import { hasOwnProperty } from "./hasOwnProperty";
 import { publicApiUrl } from "./publicApiUrl";
 import {
   fetchInitialPublicPluginCatalog,
@@ -107,16 +106,9 @@ export type PackageVersionDetail = {
   } | null;
 };
 
-type PluginFamily = "code-plugin" | "bundle-plugin";
 type PackageCatalogSort = "updated" | "recommended" | "downloads" | "trending";
 
 type PluginCatalogResult = {
-  items: PackageListItem[];
-  nextCursor: string | null;
-  totalCount?: number | null;
-};
-
-type PackageCatalogBrowseResponse = {
   items: PackageListItem[];
   nextCursor: string | null;
   totalCount?: number | null;
@@ -316,76 +308,6 @@ async function fetchFastCategorySnapshot(url: URL, signal?: AbortSignal) {
   }
 }
 
-export async function fetchPackages(params: {
-  q?: string;
-  cursor?: string;
-  family?: "skill" | "code-plugin" | "bundle-plugin";
-  isOfficial?: boolean;
-  featured?: boolean;
-  createdAfter?: number;
-  category?: string;
-  topic?: string;
-  officialFirst?: boolean;
-  curated?: boolean;
-  excludedScanStatuses?: Array<"clean" | "suspicious" | "malicious" | "pending" | "not-run">;
-  sort?: PackageCatalogSort;
-  limit?: number;
-  signal?: AbortSignal;
-  viewerMode?: PackageApiViewerMode;
-}) {
-  if (params.q?.trim()) {
-    const url = await packageApiUrl(`${ApiRoutes.packages}/search`);
-    url.searchParams.set("q", params.q.trim());
-    if (typeof params.limit === "number") url.searchParams.set("limit", String(params.limit));
-    if (params.family) url.searchParams.set("family", params.family);
-    if (typeof params.isOfficial === "boolean") {
-      url.searchParams.set("isOfficial", String(params.isOfficial));
-    }
-    if (params.featured) url.searchParams.set("featured", "true");
-    if (typeof params.createdAfter === "number") {
-      url.searchParams.set("createdAfter", String(params.createdAfter));
-    }
-    if (params.category) url.searchParams.set("category", params.category);
-    if (params.topic) url.searchParams.set("topic", params.topic);
-    if (params.officialFirst) url.searchParams.set("officialFirst", "true");
-    if (params.curated && !params.q?.trim()) url.searchParams.set("curated", "true");
-    return await fetchJson<{
-      results: Array<{
-        score: number;
-        package: PackageListItem;
-      }>;
-    }>(url, params.signal, params.viewerMode);
-  }
-
-  const route =
-    params.family === "code-plugin"
-      ? ApiRoutes.codePlugins
-      : params.family === "bundle-plugin"
-        ? ApiRoutes.bundlePlugins
-        : ApiRoutes.packages;
-  const url = await packageApiUrl(route);
-  if (params.cursor) url.searchParams.set("cursor", params.cursor);
-  if (typeof params.limit === "number") url.searchParams.set("limit", String(params.limit));
-  if (params.family === "skill") url.searchParams.set("family", "skill");
-  if (typeof params.isOfficial === "boolean") {
-    url.searchParams.set("isOfficial", String(params.isOfficial));
-  }
-  if (params.featured) url.searchParams.set("featured", "true");
-  if (params.category) url.searchParams.set("category", params.category);
-  if (params.topic) url.searchParams.set("topic", params.topic);
-  if (params.officialFirst) url.searchParams.set("officialFirst", "true");
-  if (params.curated && !params.q?.trim()) url.searchParams.set("curated", "true");
-  if (params.excludedScanStatuses?.length) {
-    url.searchParams.set("excludeScanStatus", params.excludedScanStatuses.join(","));
-  }
-  if (params.sort) url.searchParams.set("sort", params.sort);
-  return await fetchJson<{ items: PackageListItem[]; nextCursor: string | null }>(
-    url,
-    params.signal,
-    params.viewerMode,
-  );
-}
-
 const TEMPLATE_PAGE_SIZE = 20;
 
 // A newly started Convex deployment can accept reads before its ranked search
@@ -509,7 +431,6 @@ export async function fetchPluginCatalog(params: {
   q?: string;
   searchSource?: "clawhub-web";
   cursor?: string;
-  family?: PluginFamily;
   isOfficial?: boolean;
   featured?: boolean;
   createdAfter?: number;
@@ -523,39 +444,6 @@ export async function fetchPluginCatalog(params: {
   signal?: AbortSignal;
   viewerMode?: PackageApiViewerMode;
 }): Promise<PluginCatalogResult> {
-  if (params.family) {
-    const response = await fetchPackages({
-      q: params.q,
-      cursor: params.cursor,
-      family: params.family,
-      isOfficial: params.isOfficial,
-      featured: params.featured,
-      createdAfter: params.createdAfter,
-      category: params.category,
-      topic: params.topic,
-      officialFirst: params.officialFirst,
-      curated: params.curated,
-      excludedScanStatuses: params.excludedScanStatuses,
-      sort: params.sort,
-      limit: params.limit,
-      signal: params.signal,
-      viewerMode: params.viewerMode,
-    });
-    if (hasOwnProperty(response, "results") && Array.isArray(response.results)) {
-      return {
-        items: response.results.map((entry) => entry?.package).filter(Boolean),
-        nextCursor: null,
-      };
-    }
-
-    const browseResponse = response as PackageCatalogBrowseResponse;
-    return {
-      items: browseResponse?.items ?? [],
-      nextCursor: browseResponse?.nextCursor ?? null,
-      totalCount: browseResponse?.totalCount ?? null,
-    };
-  }
-
   if (params.q?.trim()) {
     const url = await packageApiUrl(`${ApiRoutes.plugins}/search`);
     url.searchParams.set("q", params.q.trim());
