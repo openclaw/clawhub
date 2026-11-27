@@ -5,7 +5,7 @@ import { dirname, resolve } from "node:path";
 import {
   SKILLS_SH_MIRROR_CONTROLLED_EXTERNAL_IDS,
   parseSkillsShMirrorProofSnapshotId,
-} from "../../server/skillsShCatalogSource";
+} from "../../server/skillsShMirrorProof";
 import {
   buildMirrorStepRequest,
   createMirrorProofClient,

@@ -55,15 +55,18 @@ vi.mock("@vercel/oidc", () => ({
   getVercelOidcToken: (...args: unknown[]) => getVercelOidcTokenMock(...args),
 }));
 
-vi.mock("./skillsShCatalogSource", () => ({
+vi.mock("./skillsShMirrorProof", () => ({
   buildSkillsShMirrorProofSnapshotId: (...args: unknown[]) => buildProofSnapshotIdMock(...args),
+  parseSkillsShMirrorProofSnapshotId: (...args: unknown[]) => parseProofSnapshotIdMock(...args),
+}));
+
+vi.mock("./skillsShCatalogSource", () => ({
   fetchSkillsShCatalogPage: (...args: unknown[]) => fetchPageMock(...args),
   fetchSkillsShMirrorBatch: (...args: unknown[]) => fetchBatchMock(...args),
   fetchSkillsShMirrorControlledBatch: (...args: unknown[]) => fetchControlledBatchMock(...args),
   getSkillsShCatalogTestSourcePolicy: (...args: unknown[]) => sourcePolicyMock(...args),
   measureSkillsShMirrorProofSource: (...args: unknown[]) => measureProofSourceMock(...args),
   measureSkillsShTrendingSource: (...args: unknown[]) => measureTrendingSourceMock(...args),
-  parseSkillsShMirrorProofSnapshotId: (...args: unknown[]) => parseProofSnapshotIdMock(...args),
   skillsShSourceRetryAfterSeconds: (...args: unknown[]) => sourceRetryAfterMock(...args),
 }));
 
