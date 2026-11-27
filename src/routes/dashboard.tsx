@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { usePaginatedQuery, useQuery } from "convex/react";
-import { ChevronsUpDown, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
@@ -209,8 +209,6 @@ export function Dashboard() {
           publishers={resolvedPublishers}
           value={activePublisherId}
           onValueChange={setSelectedPublisherId}
-          triggerClassName="dashboard-welcome-publisher-trigger"
-          triggerIcon={<ChevronsUpDown className="h-4 w-4 opacity-50" />}
         />
       </div>
     ) : null;

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { ChevronsUpDown } from "lucide-react";
 import { MarketplaceIcon } from "../MarketplaceIcon";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import type { DashboardPublisherEntry } from "./types";
@@ -7,40 +7,25 @@ type DashboardPublisherSelectProps = {
   publishers: DashboardPublisherEntry[];
   value: string;
   onValueChange: (publisherId: string) => void;
-  triggerClassName?: string;
-  size?: "sm" | "default";
-  variant?: "default" | "identity";
-  triggerIcon?: ReactNode;
 };
 
 export function DashboardPublisherSelect({
   publishers,
   value,
   onValueChange,
-  triggerClassName,
-  size = "sm",
-  variant = "default",
-  triggerIcon,
 }: DashboardPublisherSelectProps) {
   const selected = publishers.find((entry) => entry.publisher?._id === value) ?? null;
-  const isIdentity = variant === "identity";
 
   return (
     <Select value={value} onValueChange={onValueChange}>
       <SelectTrigger
         aria-label="Dashboard publisher"
-        size={isIdentity ? "sm" : size}
-        icon={triggerIcon}
-        className={
-          triggerClassName ?? (isIdentity ? "dashboard-header-publisher-trigger" : "min-w-[160px]")
-        }
+        size="sm"
+        icon={<ChevronsUpDown className="h-4 w-4 opacity-50" />}
+        className="dashboard-welcome-publisher-trigger"
       >
         {selected?.publisher ? (
-          isIdentity ? (
-            <IdentityPublisherLabel publisher={selected.publisher} />
-          ) : (
-            <PublisherOption publisher={selected.publisher} />
-          )
+          <PublisherOption publisher={selected.publisher} />
         ) : (
           <SelectValue placeholder="Select publisher" />
         )}
@@ -59,18 +44,6 @@ export function DashboardPublisherSelect({
           ))}
       </SelectContent>
     </Select>
-  );
-}
-
-function IdentityPublisherLabel({
-  publisher,
-}: {
-  publisher: NonNullable<DashboardPublisherEntry["publisher"]>;
-}) {
-  return (
-    <span className="dashboard-header-publisher-label">
-      <span className="dashboard-header-handle">@{publisher.handle}</span>
-    </span>
   );
 }
 
