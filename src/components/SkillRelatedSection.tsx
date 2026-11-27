@@ -17,7 +17,6 @@ type SkillRelatedSectionProps = {
   category: SkillCategory | null;
   relatedSkills: RelatedSkillEntry[];
   isLoading: boolean;
-  variant?: "default" | "compact";
 };
 
 function ownerLabel(entry: RelatedSkillEntry) {
@@ -38,15 +37,13 @@ export function SkillRelatedSection({
   category,
   relatedSkills,
   isLoading,
-  variant = "default",
 }: SkillRelatedSectionProps) {
   const visibleSkills = relatedSkills.slice(0, 5);
   if (!category || (!isLoading && visibleSkills.length === 0)) return null;
-  const isCompact = variant === "compact";
 
   return (
     <footer
-      className={`related-skills-section${isCompact ? " related-skills-section-compact" : ""}`}
+      className="related-skills-section related-skills-section-compact"
       aria-labelledby="related-skills-heading"
     >
       <div className="related-skills-header">
@@ -95,9 +92,7 @@ export function SkillRelatedSection({
                   <span className="related-skill-copy">
                     <span className="related-skill-title-line">
                       <span className="related-skill-name">{displayName}</span>
-                      {isCompact ? (
-                        <span className="related-skill-owner-inline">@{owner}</span>
-                      ) : null}
+                      <span className="related-skill-owner-inline">@{owner}</span>
                     </span>
                     {entry.skill.summary ? (
                       <span className="related-skill-summary">
@@ -105,18 +100,12 @@ export function SkillRelatedSection({
                       </span>
                     ) : null}
                   </span>
-                  {isCompact ? (
-                    <span
-                      className="related-skill-stats"
-                      aria-label={`${entry.skill.stats.downloads.toLocaleString()} downloads`}
-                    >
-                      {formattedStats.downloads}
-                    </span>
-                  ) : (
-                    <span className="related-skill-owner">
-                      {owner}/{entry.skill.slug}
-                    </span>
-                  )}
+                  <span
+                    className="related-skill-stats"
+                    aria-label={`${entry.skill.stats.downloads.toLocaleString()} downloads`}
+                  >
+                    {formattedStats.downloads}
+                  </span>
                 </a>
               );
             })}
