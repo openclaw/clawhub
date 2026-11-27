@@ -1199,6 +1199,7 @@ function PluginDetailPageContent({ name, loaderData, pendingNotice }: PluginDeta
             kind={isPlugin ? "plugin" : "skill"}
             label={title}
             imageUrl={pkg.icon}
+            publisherFallback={isPlugin ? owner : null}
             tone="muted"
           />
         }

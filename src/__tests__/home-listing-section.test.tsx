@@ -75,12 +75,14 @@ const featuredPlugin = {
 
 function initialPluginListing({
   items = [featuredPlugin],
+  tab = "featured",
 }: {
   items?: PackageListItem[];
+  tab?: "featured" | "official";
 } = {}) {
   return {
     kind: "plugins" as const,
-    tab: "featured" as const,
+    tab,
     categorySlugs: [] as [],
     fetchLimit: 20 as const,
     items,
@@ -150,13 +152,14 @@ describe("HomeListingSection", () => {
     });
   });
 
-  it("keeps an official publisher logo separate from featured plugin artwork", () => {
+  it("labels a featured publisher fallback, preserves plugin artwork, and stops after errors", () => {
     const plugin = {
       ...featuredPlugin,
       name: "@demo/demo-plugin",
       ownerHandle: "demo",
       ownerImage: "https://example.com/publisher-logo.png",
       ownerOfficial: true,
+      featuredAt: 100,
       channel: "official" as const,
       isOfficial: true,
     };
@@ -167,8 +170,8 @@ describe("HomeListingSection", () => {
     const { unmount } = render(listing(null));
     const missing = screen.getByRole("link", { name: /Demo Plugin/ });
     expect(missing.getAttribute("href")).toBe("/demo/plugins/demo-plugin");
-    expect(missing.querySelector(".marketplace-icon-glyph.lucide-plug")).toBeTruthy();
-    expect(missing.querySelector(".marketplace-icon-image")).toBeNull();
+    expect(missing.querySelector("img")?.getAttribute("src")).toBe(plugin.ownerImage);
+    expect(screen.getByTitle("Official publisher logo: @demo")).toBeTruthy();
     unmount();
 
     render(listing(plugin.icon));
@@ -176,9 +179,39 @@ describe("HomeListingSection", () => {
     const image = branded.querySelector(".marketplace-icon-image");
     expect(image?.getAttribute("src")).toBe(plugin.icon);
     expect(image).not.toBeNull();
+    expect(screen.queryByTitle("Official publisher logo: @demo")).toBeNull();
     fireEvent.error(image!);
+    const publisherImage = branded.querySelector("img");
+    expect(publisherImage?.getAttribute("src")).toBe(plugin.ownerImage);
+    fireEvent.error(publisherImage!);
+    expect(screen.queryByTitle("Official publisher logo: @demo")).toBeNull();
     expect(branded.querySelector(".marketplace-icon-glyph.lucide-plug")).toBeTruthy();
     expect(branded.querySelector(".marketplace-icon-image")).toBeNull();
+  });
+
+  it.each([
+    ["not curated", { featuredAt: undefined }, "featured"],
+    ["unofficial publisher", { ownerOfficial: false }, "featured"],
+    ["missing publisher identity", { ownerHandle: null }, "featured"],
+    ["missing logo", { ownerImage: null }, "featured"],
+    ["untrusted URL scheme", { ownerImage: "http://example.com/logo.png" }, "featured"],
+    ["non-featured tab", {}, "official"],
+  ] as const)("keeps the plug for %s", (_reason, overrides, tab) => {
+    const plugin = {
+      ...featuredPlugin,
+      icon: null,
+      ownerHandle: "demo",
+      ownerImage: "https://example.com/publisher-logo.png",
+      ownerOfficial: true,
+      featuredAt: 100,
+      channel: "official" as const,
+      isOfficial: true,
+      ...overrides,
+    };
+    render(<HomeListingSection initialListing={initialPluginListing({ items: [plugin], tab })} />);
+    const row = screen.getByRole("link", { name: /Demo Plugin/ });
+    expect(row.querySelector(".marketplace-icon-glyph.lucide-plug")).toBeTruthy();
+    expect(row.querySelector("img")).toBeNull();
   });
 
   it("renders kind and its tabs on the left, secondary controls on the right, and only lists", async () => {

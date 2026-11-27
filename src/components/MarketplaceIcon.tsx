@@ -1,3 +1,4 @@
+import { Building2 } from "lucide-react";
 import { Fragment, useEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
 import { getSkillIconCategoryForSkill } from "../lib/categories";
 import { getCategoryIconComponent, UNRESOLVED_SKILL_CATEGORY_ICON } from "../lib/categoryIcons";
@@ -9,6 +10,8 @@ type MarketplaceIconProps = {
   label: string;
   imageUrl?: string | null;
   rasterAssetUrl?: string | null;
+  /** The catalog’s resolved owner, never package-supplied artwork. */
+  publisherFallback?: { handle?: string | null; image?: string | null; official?: boolean } | null;
   skill?: {
     categories?: readonly string[] | null;
     inferredCategories?: readonly string[] | null;
@@ -40,6 +43,7 @@ export function MarketplaceIcon({
   label,
   imageUrl,
   rasterAssetUrl,
+  publisherFallback,
   skill,
   size = "sm",
   tone = "default",
@@ -48,7 +52,7 @@ export function MarketplaceIcon({
   const [failedImageUrls, setFailedImageUrls] = useState<string[]>([]);
   useEffect(() => {
     setFailedImageUrls((failed) => (failed.length ? [] : failed));
-  }, [imageUrl, rasterAssetUrl]);
+  }, [imageUrl, rasterAssetUrl, publisherFallback?.image]);
 
   const skillCategory = kind === "skill" && skill ? getSkillIconCategoryForSkill(skill) : null;
   const Icon =
@@ -66,11 +70,20 @@ export function MarketplaceIcon({
     isConfiguredStorageUrl(rasterAssetUrl)
       ? rasterAssetUrl
       : null;
-  // Try the verified raster, then the original sandboxed endpoint once. Retain
-  // both failures so errors cannot alternate indefinitely between the sources.
+  const publisherUrl =
+    kind === "plugin" &&
+    publisherFallback?.official === true &&
+    publisherFallback.handle &&
+    publisherFallback.image &&
+    isHttpsProfileImage(publisherFallback.image)
+      ? publisherFallback.image
+      : null;
+  // Keep failed URLs so the raster, hosted icon, and publisher logo cannot cycle.
   const visibleImageUrl =
-    [directRasterUrl, supportedImageUrl].find((url) => url && !failedImageUrls.includes(url)) ??
-    null;
+    [directRasterUrl, supportedImageUrl, publisherUrl].find(
+      (url) => url && !failedImageUrls.includes(url),
+    ) ?? null;
+  const showingPublisher = visibleImageUrl !== null && visibleImageUrl === publisherUrl;
 
   useEffect(() => {
     // SSR images can fail before React attaches onError. Recover the completed
@@ -113,6 +126,14 @@ export function MarketplaceIcon({
               )
             }
           />
+          {showingPublisher && publisherFallback ? (
+            <span
+              className="marketplace-icon-publisher-mark"
+              title={`Official publisher logo: @${publisherFallback.handle}`}
+            >
+              <Building2 />
+            </span>
+          ) : null}
         </Fragment>
       ) : (
         <Icon className="marketplace-icon-glyph" strokeWidth={1.8} />
@@ -142,6 +163,15 @@ function TemplateArtworkPlaceholder({
 
 function isHostedSkillPresentationIcon(value: string | null | undefined) {
   return /^\/api\/v1\/skill-icons\/[a-f\d]{64}$/u.test(value ?? "");
+}
+
+function isHttpsProfileImage(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password;
+  } catch {
+    return false;
+  }
 }
 
 function isConfiguredStorageUrl(value: string | null | undefined) {

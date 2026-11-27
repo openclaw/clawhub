@@ -610,6 +610,45 @@ describe("plugin detail route", () => {
     expect(fetchPackageVersions).toHaveBeenCalledTimes(2);
   });
 
+  it("falls back from plugin artwork to the official owner’s JPEG, then to the plug", async () => {
+    const { PluginDetailPage } = await import("../routes/plugins/$name");
+    const icon = "/api/v1/skill-icons/" + "a".repeat(64);
+    const logo = "https://publisher.example/logo.jpg?v=3";
+    const data = {
+      ...loaderDataMock,
+      detail: {
+        package: { ...loaderDataMock.detail.package!, icon },
+        owner: { handle: "demo", displayName: "Demo", official: true, image: logo },
+      },
+    };
+    const { container, rerender } = render(
+      <PluginDetailPage name="demo-plugin" loaderData={data} />,
+    );
+    const art = container.querySelector(".catalog-detail__icon")!;
+    expect(art.querySelector("img")?.getAttribute("src")).toBe(icon);
+    expect(art.querySelector(".marketplace-icon-publisher-mark")).toBeNull();
+    fireEvent.error(art.querySelector("img")!);
+    expect(art.querySelector("img")?.getAttribute("src")).toBe(logo);
+    expect(art.querySelector(".marketplace-icon-publisher-mark")).toBeTruthy();
+    fireEvent.error(art.querySelector("img")!);
+    expect(art.querySelector(".lucide-plug")).toBeTruthy();
+    rerender(
+      <PluginDetailPage
+        name="demo-plugin"
+        loaderData={{
+          ...data,
+          detail: {
+            ...data.detail,
+            package: { ...data.detail.package, icon: null },
+            owner: { ...data.detail.owner, official: false },
+          },
+        }}
+      />,
+    );
+    expect(art.querySelector("img")).toBeNull();
+    expect(art.querySelector(".lucide-plug")).toBeTruthy();
+  });
+
   it("aborts and discards a stale first release-history request after navigation", async () => {
     let resolveFirstPage!: (page: Awaited<ReturnType<typeof fetchPackageVersions>>) => void;
     const firstPage = new Promise<Awaited<ReturnType<typeof fetchPackageVersions>>>((resolve) => {

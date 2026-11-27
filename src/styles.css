@@ -14607,6 +14607,29 @@ a.search-empty-action {
   height: 17px;
 }
 
+.marketplace-icon:has(.marketplace-icon-publisher-mark) {
+  position: relative;
+}
+
+.marketplace-icon-publisher-mark {
+  position: absolute;
+  inset-inline-end: 0;
+  inset-block-end: 0;
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border-start-start-radius: 4px;
+  background: #222;
+  color: #fff;
+  pointer-events: auto;
+}
+
+.marketplace-icon-publisher-mark svg {
+  width: 10px;
+  height: 10px;
+}
+
 .home-v2-listing-row-stats svg {
   opacity: 0.45;
 }
