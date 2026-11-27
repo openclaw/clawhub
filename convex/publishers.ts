@@ -3073,7 +3073,7 @@ export const listMembers = query({
     );
     return {
       publisher: await toPublicPublisherWithOfficial(ctx, visible.publisher),
-      members: items.filter(Boolean),
+      members: items.filter((item): item is NonNullable<typeof item> => Boolean(item)),
     };
   },
 });

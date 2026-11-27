@@ -132,6 +132,67 @@ describe("user profile route", () => {
     expect(within(stats).queryByText("installs")).toBeNull();
   });
 
+  it("shows member identities and official badges without exposing roles to visitors", async () => {
+    const fallback = queryMock.getMockImplementation();
+    queryMock.mockImplementation((query, args) => {
+      if (getFunctionName(query) === "publishers:listMembers") {
+        return {
+          publisher,
+          members: [
+            {
+              role: "owner",
+              user: {
+                _id: "users:owner",
+                handle: "owner",
+                displayName: "Org owner",
+                image: null,
+                official: true,
+              },
+            },
+            {
+              role: "admin",
+              user: {
+                _id: "users:admin",
+                handle: null,
+                displayName: null,
+                image: null,
+                official: false,
+              },
+            },
+          ],
+        };
+      }
+      return fallback?.(query, args);
+    });
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+    render(<Component />);
+
+    fireEvent(
+      screen.getByRole("button", { name: "Show 2 members" }),
+      new MouseEvent("pointerdown", { bubbles: true, button: 0, ctrlKey: false }),
+    );
+    const menu = await screen.findByRole("menu", { name: "Show 2 members" });
+    expect(within(menu).getByText("Org owner")).toBeTruthy();
+    expect(within(menu).getByLabelText("Official")).toBeTruthy();
+    expect(within(menu).getByText("User")).toBeTruthy();
+    expect(within(menu).queryByText("owner", { exact: true })).toBeNull();
+    expect(within(menu).queryByText("admin", { exact: true })).toBeNull();
+  });
+
+  it.each([undefined, null])("renders the profile while members are %s", async (members) => {
+    const fallback = queryMock.getMockImplementation();
+    queryMock.mockImplementation((query, args) =>
+      getFunctionName(query) === "publishers:listMembers" ? members : fallback?.(query, args),
+    );
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+    render(<Component />);
+
+    expect(screen.getByLabelText("Publisher profile")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Show .* members/ })).toBeNull();
+  });
+
   it("renders profile actions menu with report option", async () => {
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;

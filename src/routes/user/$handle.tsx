@@ -3,6 +3,7 @@ import { createFileRoute, Link, notFound, redirect } from "@tanstack/react-route
 import { normalizeCatalogTopic } from "clawhub-schema/catalogMetadata";
 import { ConvexHttpClient } from "convex/browser";
 import { usePaginatedQuery, useQuery } from "convex/react";
+import type { FunctionReturnType } from "convex/server";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -56,7 +57,6 @@ import { buildPublisherProfileHref, isLegacyPublisherProfileHandle } from "../..
 import type { PackageListItem } from "../../lib/packageApi";
 import { packageNameFromPublisherPluginRoute } from "../../lib/pluginRoutes";
 import type {
-  PublicPublisher,
   PublicPublisherCatalogDisplay,
   PublicPublisherCatalogItem,
   PublicPublisherProfileItem,
@@ -100,20 +100,6 @@ export const Route = createFileRoute("/user/$handle")({
   },
   component: PublisherProfile,
 });
-
-type PublisherMemberResult = {
-  publisher: PublicPublisher | null;
-  members: Array<{
-    role: "owner" | "admin" | "publisher";
-    user: {
-      _id: string;
-      handle: string | null;
-      displayName: string | null;
-      image: string | null;
-      official: boolean;
-    };
-  }>;
-};
 
 type ProfileCatalogTab = "skills" | "plugins" | "templates" | "stars";
 type ProfileCatalogSort = "downloads" | "recent" | "stars";
@@ -278,7 +264,9 @@ function PublisherProfileBio({ bio }: { bio: string }) {
   );
 }
 
-type PublisherMemberEntry = PublisherMemberResult["members"][number];
+type PublisherMemberEntry = NonNullable<
+  FunctionReturnType<typeof api.publishers.listMembers>
+>["members"][number];
 
 type PublisherStatCard = {
   key: string;
@@ -592,10 +580,7 @@ export function PublisherProfilePage({
     catalogTab === "skills" ? { handle, sort: apiSort, kind: "skill" } : "skip",
   ) as PublicPublisherCatalogDisplay | null | undefined;
 
-  const members = useQuery(api.publishers.listMembers, { publisherHandle: handle }) as
-    | PublisherMemberResult
-    | null
-    | undefined;
+  const members = useQuery(api.publishers.listMembers, { publisherHandle: handle });
 
   const myPublisherMemberships = useQuery(
     api.publishers.listMine,
