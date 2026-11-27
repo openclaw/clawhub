@@ -8,29 +8,18 @@ const CJK_EXTENDER_RE = /[\u30fc\u3005]/;
 
 const hasSegmenter = typeof Intl !== "undefined" && "Segmenter" in Intl;
 
-let zhSegmenter: Intl.Segmenter | null = null;
-let jaSegmenter: Intl.Segmenter | null = null;
-let koSegmenter: Intl.Segmenter | null = null;
+type CJKLanguage = "zh" | "ja" | "ko";
+const segmenterLocales = { zh: "zh-CN", ja: "ja", ko: "ko" };
+const segmenters: Record<CJKLanguage, Intl.Segmenter | null> = {
+  zh: null,
+  ja: null,
+  ko: null,
+};
 
-function getZhSegmenter(): Intl.Segmenter {
-  if (!zhSegmenter) {
-    zhSegmenter = new Intl.Segmenter("zh-CN", { granularity: "word" });
-  }
-  return zhSegmenter;
-}
-
-function getJaSegmenter(): Intl.Segmenter {
-  if (!jaSegmenter) {
-    jaSegmenter = new Intl.Segmenter("ja", { granularity: "word" });
-  }
-  return jaSegmenter;
-}
-
-function getKoSegmenter(): Intl.Segmenter {
-  if (!koSegmenter) {
-    koSegmenter = new Intl.Segmenter("ko", { granularity: "word" });
-  }
-  return koSegmenter;
+function getSegmenter(language: CJKLanguage): Intl.Segmenter {
+  return (segmenters[language] ??= new Intl.Segmenter(segmenterLocales[language], {
+    granularity: "word",
+  }));
 }
 
 /**
@@ -58,7 +47,7 @@ function normalize(value: string) {
  * Detect the primary CJK language in a text
  * Returns 'zh' for Chinese, 'ja' for Japanese, 'ko' for Korean, or null
  */
-function detectCJKLanguage(text: string): "zh" | "ja" | "ko" | null {
+function detectCJKLanguage(text: string): CJKLanguage | null {
   const chineseCount = (text.match(/[\u4e00-\u9fff\u3400-\u4dbf]/g) || []).length;
   const hiraganaCount = (text.match(/[\u3040-\u309f]/g) || []).length;
   const katakanaCount = (text.match(/[\u30a0-\u30ff]/g) || []).length;
@@ -85,17 +74,7 @@ function segmentCJK(text: string): string[] {
   const lang = detectCJKLanguage(text);
   if (!lang) return [];
 
-  let segmenter: Intl.Segmenter;
-  switch (lang) {
-    case "ja":
-      segmenter = getJaSegmenter();
-      break;
-    case "ko":
-      segmenter = getKoSegmenter();
-      break;
-    default:
-      segmenter = getZhSegmenter();
-  }
+  const segmenter = getSegmenter(lang);
 
   const segments: string[] = [];
   for (const { segment, isWordLike } of segmenter.segment(text)) {
@@ -188,9 +167,3 @@ export function matchesAllTokens(
     candidateTokens.some((candidateToken) => matcher(candidateToken, queryToken)),
   );
 }
-
-export const __test = {
-  normalize,
-  detectCJKLanguage,
-  segmentCJKByChar,
-};

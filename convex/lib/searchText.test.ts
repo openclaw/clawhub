@@ -1,12 +1,25 @@
 /* @vitest-environment node */
 
-import { describe, expect, it } from "vitest";
-import {
-  __test,
-  matchesExactTokens,
-  matchesExploratoryTokenPrefixes,
-  tokenize,
-} from "./searchText";
+import { describe, expect, it, vi } from "vitest";
+import { matchesExactTokens, matchesExploratoryTokenPrefixes, tokenize } from "./searchText";
+
+async function withSegmenter(
+  descriptor: PropertyDescriptor | null,
+  check: (tokenizeText: typeof tokenize) => void,
+) {
+  const descriptors: PropertyDescriptorMap = Object.getOwnPropertyDescriptors(Intl);
+  if (descriptor) descriptors.Segmenter = descriptor;
+  else delete descriptors.Segmenter;
+  vi.stubGlobal("Intl", Object.defineProperties({}, descriptors));
+  vi.resetModules();
+  try {
+    const isolated = await import("./searchText");
+    check(isolated.tokenize);
+  } finally {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  }
+}
 
 describe("searchText", () => {
   it("tokenize lowercases and splits on punctuation", () => {
@@ -62,10 +75,6 @@ describe("searchText", () => {
     );
   });
 
-  it("normalize uses lowercase", () => {
-    expect(__test.normalize("AbC")).toBe("abc");
-  });
-
   // CJK (Chinese, Japanese, Korean) support tests
   describe("CJK tokenization", () => {
     it("tokenizes Chinese text using Intl.Segmenter", () => {
@@ -108,12 +117,14 @@ describe("searchText", () => {
       expect(tokenize("時々")).toEqual(["時々"]);
     });
 
-    it("keeps the marks attached when Intl.Segmenter is unavailable", () => {
-      // segmentCJKByChar is the no-Segmenter fallback. Emitting ー or 々 on their own
-      // would leave one-character tokens that exploratory matching discards.
-      expect(__test.segmentCJKByChar("データベース")).toEqual(["デー", "タ", "ベー", "ス"]);
-      expect(__test.segmentCJKByChar("人々")).toEqual(["人々"]);
-      expect(__test.segmentCJKByChar("時々の記録")).toEqual(["時々", "の", "記", "録"]);
+    it("keeps the marks attached when Intl.Segmenter is unavailable", async () => {
+      await withSegmenter(null, (tokenizeText) => {
+        expect("Segmenter" in Intl).toBe(false);
+        expect(tokenizeText("データベース")).toEqual(["デー", "タ", "ベー", "ス"]);
+        expect(tokenizeText("人々")).toEqual(["人々"]);
+        expect(tokenizeText("時々の記録")).toEqual(["時々", "の", "記", "録"]);
+        expect(tokenizeText("React 中文 안녕")).toEqual(["react", "中", "文", "안", "녕"]);
+      });
     });
 
     it("matches Japanese query tokens against Japanese skill names", () => {
@@ -140,11 +151,59 @@ describe("searchText", () => {
       expect(tokenize("!!!")).toEqual([]);
     });
 
-    it("detects CJK language correctly", () => {
-      expect(__test.detectCJKLanguage("中文")).toBe("zh");
-      expect(__test.detectCJKLanguage("こんにちは")).toBe("ja");
-      expect(__test.detectCJKLanguage("안녕하세요")).toBe("ko");
-      expect(__test.detectCJKLanguage("hello")).toBeNull();
+    it("selects language precedence and lazily reuses each locale", async () => {
+      const NativeSegmenter = Intl.Segmenter;
+      const calls: Array<ConstructorParameters<typeof Intl.Segmenter>> = [];
+      class RecordingSegmenter extends NativeSegmenter {
+        constructor(...args: ConstructorParameters<typeof Intl.Segmenter>) {
+          super(...args);
+          calls.push(args);
+        }
+      }
+      await withSegmenter({ value: RecordingSegmenter }, (tokenizeText) => {
+        expect(calls).toEqual([]);
+        expect(tokenizeText("HELLO")).toEqual(["hello"]);
+        expect(calls).toEqual([]);
+        tokenizeText("中文こんにちは안녕");
+        tokenizeText("中文안녕");
+        tokenizeText("中文");
+        expect(calls).toEqual([
+          ["ja", { granularity: "word" }],
+          ["ko", { granularity: "word" }],
+          ["zh-CN", { granularity: "word" }],
+        ]);
+        tokenizeText("こんにちは");
+        tokenizeText("안녕하세요");
+        tokenizeText("中文搜索");
+        expect(calls).toHaveLength(3);
+      });
+    });
+
+    it("retries a locale constructor after it throws", async () => {
+      const NativeSegmenter = Intl.Segmenter;
+      const failure = new Error("segmenter initialization failed");
+      let attempts = 0;
+      class RetrySegmenter extends NativeSegmenter {
+        constructor(...args: ConstructorParameters<typeof Intl.Segmenter>) {
+          attempts += 1;
+          if (attempts === 1) throw failure;
+          super(...args);
+        }
+      }
+      await withSegmenter({ value: RetrySegmenter }, (tokenizeText) => {
+        expect(() => tokenizeText("中文")).toThrow(failure);
+        expect(tokenizeText("中文")).toEqual(["中文"]);
+        expect(tokenizeText("中文")).toEqual(["中文"]);
+        expect(attempts).toBe(2);
+      });
+    });
+
+    it("preserves a present but undefined Segmenter failure", async () => {
+      await withSegmenter({ value: undefined }, (tokenizeText) => {
+        expect("Segmenter" in Intl).toBe(true);
+        expect(tokenizeText("HELLO")).toEqual(["hello"]);
+        expect(() => tokenizeText("中文")).toThrow(TypeError);
+      });
     });
   });
 });
