@@ -110,62 +110,16 @@ export const Route = createFileRoute("/settings")({
   component: Settings,
 });
 
-type ApiToken = {
-  _id: Id<"apiTokens">;
-  label: string;
-  prefix: string;
-  createdAt: number;
-  lastUsedAt?: number;
-  revokedAt?: number;
-};
+type ApiToken = FunctionReturnType<typeof api.tokens.listMine>[number];
 
 type PublisherMembership = {
-  publisher: {
-    _id: Id<"publishers">;
-    handle: string;
-    displayName: string;
-    kind: "user" | "org";
-    image?: string | null;
-    imageStorageId?: Id<"_storage"> | null;
-    bio?: string | null;
-    githubHandle?: string | null;
-    githubOrgId?: string | null;
-    githubVerifiedAt?: number | null;
-    official?: boolean;
-    stats?: {
-      skills: number;
-      packages: number;
-      installs: number;
-      downloads: number;
-      stars: number;
-    };
-  };
-  role: "owner" | "admin" | "publisher";
+  publisher: FunctionReturnType<typeof api.publishers.listMine>[number]["publisher"];
+  role: Doc<"publisherMembers">["role"];
 };
 
-type GitHubOrgMembershipsResult = {
-  syncedAt: number | null;
-  truncated: boolean;
-  memberships: Array<{
-    githubOrgId: string;
-    login: string;
-    avatarUrl: string | null;
-    role: "admin" | "member";
-    syncedAt: number;
-  }>;
-};
-
-type PublisherDeletionInventory = {
-  handle: string;
-  stats: {
-    skills: number;
-    packages: number;
-  };
-  publishedItems: Array<{
-    kind: "skill" | "plugin";
-    displayName: string;
-  }>;
-};
+type PublisherDeletionInventory = FunctionReturnType<
+  typeof api.publishers.getDeletionInventory
+>[number];
 
 type OrgMembersResult = {
   publisher: { _id: Id<"publishers">; handle: string } | null;
@@ -189,38 +143,9 @@ type InviteResponseState = {
   action: "accept" | "decline";
 };
 
-type GitHubSkillSource = {
-  _id: Id<"githubSkillSources">;
-  repo: string;
-  ownerPublisher?: {
-    _id: Id<"publishers">;
-    handle: string;
-    displayName: string;
-  } | null;
-  defaultBranch?: string;
-  lastSyncStatus?: "ok" | "failed" | "skipped";
-  lastSyncError?: string;
-  lastSyncErrorAt?: number;
-  displayManifestStatus?: "ok" | "missing" | "invalid" | "failed";
-  displayManifestFetchedAt?: number;
-  displayManifestCommit?: string;
-  lastSyncIssues?: NonNullable<Doc<"githubSkillSources">["lastSyncIssues"]>;
-  lastSyncInvalidSkills?: Array<{
-    slug: string;
-    path: string;
-    displayName: string;
-    error: string;
-  }>;
-  skills: Array<{
-    _id: Id<"skills">;
-    slug: string;
-    displayName: string;
-    githubPath?: string;
-    githubCurrentStatus?: "present" | "missing" | "unknown";
-  }>;
-  createdAt: number;
-  updatedAt: number;
-};
+type GitHubSkillSource = FunctionReturnType<
+  typeof api.githubSkillSources.listForManageableOfficialPublishers
+>[number];
 
 const navigationGroups: Array<{
   items: Array<{
@@ -282,9 +207,7 @@ export function Settings() {
   const { mode: themeMode, setMode: setThemeMode } = useThemeMode();
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const shouldLoadAccountScopedQueries = Boolean(me) && !isDeletingAccount;
-  const tokens = useQuery(api.tokens.listMine, shouldLoadAccountScopedQueries ? {} : "skip") as
-    | Array<ApiToken>
-    | undefined;
+  const tokens = useQuery(api.tokens.listMine, shouldLoadAccountScopedQueries ? {} : "skip");
   const createToken = useMutation(api.tokens.create);
   const revokeToken = useMutation(api.tokens.revoke);
   const publisherMemberships = useQuery(
@@ -294,7 +217,7 @@ export function Settings() {
   const githubOrgMemberships = useQuery(
     api.githubOrgMemberships.listMine,
     shouldLoadAccountScopedQueries ? {} : "skip",
-  ) as GitHubOrgMembershipsResult | undefined;
+  );
   const rolloutCapabilities = useQuery(api.rolloutCapabilities.getPublicCapabilities, {});
   const createOrg = useMutation(api.publishers.createOrg);
   const deleteOrg = useMutation(api.publishers.deleteOrg);
@@ -417,11 +340,11 @@ export function Settings() {
       selectedOrg.role !== "publisher"
       ? { publisherId: selectedOrg.publisher._id }
       : "skip",
-  ) as Array<PublisherInvite> | undefined;
+  );
   const myInvites = useQuery(
     api.publishers.listMyInvites,
     shouldLoadAccountScopedQueries && activeView === "organizations" ? {} : "skip",
-  ) as Array<PublisherInvite> | undefined;
+  );
   const githubSources = useQuery(
     api.githubSkillSources.listForManageableOfficialPublishers,
     shouldLoadAccountScopedQueries &&
@@ -429,7 +352,7 @@ export function Settings() {
       canConfigureGitHubSources
       ? {}
       : "skip",
-  ) as GitHubSkillSource[] | undefined;
+  );
   const deletionInventory = useQuery(
     api.publishers.getDeletionInventory,
     shouldLoadAccountScopedQueries && deleteOrgDialogOpen && selectedOrg
@@ -437,7 +360,7 @@ export function Settings() {
       : shouldLoadAccountScopedQueries && deleteDialogOpen
         ? {}
         : "skip",
-  ) as PublisherDeletionInventory[] | undefined;
+  );
 
   useEffect(() => {
     if (requestedRepo) setGithubRepo(requestedRepo);
