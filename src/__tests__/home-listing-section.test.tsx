@@ -2,6 +2,7 @@
 
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { PackageListItem } from "../lib/packageApi";
 
 const navigateMock = vi.fn();
 const convexQueryMock = vi.fn();
@@ -75,7 +76,7 @@ const featuredPlugin = {
 function initialPluginListing({
   items = [featuredPlugin],
 }: {
-  items?: (typeof featuredPlugin)[];
+  items?: PackageListItem[];
 } = {}) {
   return {
     kind: "plugins" as const,
@@ -147,6 +148,37 @@ describe("HomeListingSection", () => {
       ],
       nextCursor: null,
     });
+  });
+
+  it("keeps an official publisher logo separate from featured plugin artwork", () => {
+    const plugin = {
+      ...featuredPlugin,
+      name: "@demo/demo-plugin",
+      ownerHandle: "demo",
+      ownerImage: "https://example.com/publisher-logo.png",
+      ownerOfficial: true,
+      channel: "official" as const,
+      isOfficial: true,
+    };
+    const listing = (icon: string | null) => (
+      <HomeListingSection initialListing={initialPluginListing({ items: [{ ...plugin, icon }] })} />
+    );
+
+    const { unmount } = render(listing(null));
+    const missing = screen.getByRole("link", { name: /Demo Plugin/ });
+    expect(missing.getAttribute("href")).toBe("/demo/plugins/demo-plugin");
+    expect(missing.querySelector(".marketplace-icon-glyph.lucide-plug")).toBeTruthy();
+    expect(missing.querySelector(".marketplace-icon-image")).toBeNull();
+    unmount();
+
+    render(listing(plugin.icon));
+    const branded = screen.getByRole("link", { name: /Demo Plugin/ });
+    const image = branded.querySelector(".marketplace-icon-image");
+    expect(image?.getAttribute("src")).toBe(plugin.icon);
+    expect(image).not.toBeNull();
+    fireEvent.error(image!);
+    expect(branded.querySelector(".marketplace-icon-glyph.lucide-plug")).toBeTruthy();
+    expect(branded.querySelector(".marketplace-icon-image")).toBeNull();
   });
 
   it("renders kind and its tabs on the left, secondary controls on the right, and only lists", async () => {
