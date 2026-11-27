@@ -6,11 +6,8 @@ import {
 } from "clawhub-schema/catalogMetadata";
 import { useEffect, useState } from "react";
 import { getUserFacingConvexError } from "../lib/convexError";
-import {
-  CatalogMetadataFields,
-  formatCatalogTopicsInput,
-  parseCatalogTopicsInput,
-} from "./CatalogMetadataFields";
+import { CatalogMetadataFields } from "./CatalogMetadataFields";
+import { getCatalogTopicLabels } from "./CatalogTopicInput";
 import { Button } from "./ui/button";
 
 type CatalogMetadataEditorProps = {
@@ -53,17 +50,17 @@ export function CatalogMetadataEditor({
 }: CatalogMetadataEditorProps) {
   const sanitizedInitialCategories = sanitizeInitialCategories(kind, initialCategories);
   const [categories, setCategories] = useState(sanitizedInitialCategories);
-  const [topics, setTopics] = useState(formatCatalogTopicsInput(initialTopics ?? []));
+  const [topics, setTopics] = useState(initialTopics ?? []);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const serializedInitialCategories = JSON.stringify(sanitizedInitialCategories);
   const serializedInitialTopics = JSON.stringify(initialTopics ?? []);
-  const topicCount = parseCatalogTopicsInput(topics).length;
+  const topicCount = getCatalogTopicLabels(topics).length;
 
   useEffect(() => {
     // Convex updates can recreate equivalent arrays; reset only when their values change.
     setCategories(JSON.parse(serializedInitialCategories) as string[]);
-    setTopics(formatCatalogTopicsInput(JSON.parse(serializedInitialTopics) as string[]));
+    setTopics(JSON.parse(serializedInitialTopics) as string[]);
   }, [serializedInitialCategories, serializedInitialTopics]);
 
   async function handleSave() {
@@ -77,7 +74,7 @@ export function CatalogMetadataEditor({
               categories: categories.length ? categories : [INTERNAL_UNCATEGORIZED_CATEGORY],
             }
           : {}),
-        topics: parseCatalogTopicsInput(topics),
+        topics: getCatalogTopicLabels(topics),
       });
     } catch (saveError) {
       setError(getUserFacingConvexError(saveError, "Could not save catalog metadata."));

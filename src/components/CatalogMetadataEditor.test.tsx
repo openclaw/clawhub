@@ -3,7 +3,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { CatalogMetadataEditor } from "./CatalogMetadataEditor";
-import { formatCatalogTopicsInput, parseCatalogTopicsInput } from "./CatalogMetadataFields";
 
 function selectCategory(name: string) {
   const trigger = screen.getByRole("button", { name: "Categories" });
@@ -18,10 +17,43 @@ function closeCategoryMenu() {
 }
 
 describe("CatalogMetadataEditor", () => {
-  it("round-trips topic labels containing commas and quotes", () => {
-    const topics = ["CI, CD", 'He said "ship"', "Calendar"];
+  it("saves legacy labels with their spelling and punctuation while trimming empty labels", async () => {
+    const onSave = vi.fn(async () => {});
+    render(
+      <CatalogMetadataEditor
+        kind="skill"
+        topics={[" CI, CD ", 'He said "ship"', "", "   ", "GPU Development"]}
+        onSave={onSave}
+      />,
+    );
 
-    expect(parseCatalogTopicsInput(formatCatalogTopicsInput(topics))).toEqual(topics);
+    expect(screen.getByText("3 topics")).toBeTruthy();
+    expect(screen.getByText("#ci, cd")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith({
+        categories: ["other"],
+        topics: ["CI, CD", 'He said "ship"', "GPU Development"],
+      }),
+    );
+  });
+
+  it("updates committed labels on new source values without discarding an uncommitted draft", () => {
+    const onSave = vi.fn(async () => {});
+    const { rerender } = render(
+      <CatalogMetadataEditor kind="skill" topics={["old topic"]} onSave={onSave} />,
+    );
+    const input = screen.getByLabelText("Topics");
+    fireEvent.change(input, { target: { value: "my draft" } });
+
+    rerender(<CatalogMetadataEditor kind="skill" topics={["new topic"]} onSave={onSave} />);
+
+    expect(screen.queryByText("#old topic")).toBeNull();
+    expect(screen.getByText("#new topic")).toBeTruthy();
+    expect((input as HTMLInputElement).value).toBe("my draft");
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(screen.getByText("#my-draft")).toBeTruthy();
   });
 
   it("shows the Templates Research glyph in the skill category picker", () => {

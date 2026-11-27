@@ -5,12 +5,25 @@ import { useState } from "react";
 import { describe, expect, it } from "vitest";
 import { CatalogTopicInput } from "./CatalogTopicInput";
 
-function TopicInputHarness({ initialValue = "" }: { initialValue?: string }) {
+function TopicInputHarness({ initialValue = [] }: { initialValue?: string[] }) {
   const [value, setValue] = useState(initialValue);
   return <CatalogTopicInput id="topics" value={value} onChange={setValue} />;
 }
 
 describe("CatalogTopicInput", () => {
+  it("keeps an IME draft uncommitted until a non-composing Enter", () => {
+    render(<TopicInputHarness />);
+    const input = screen.getByLabelText("Topics");
+    fireEvent.change(input, { target: { value: "日本語" } });
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+    expect(screen.queryByText("#日本語")).toBeNull();
+    expect((input as HTMLInputElement).value).toBe("日本語");
+
+    fireEvent.keyDown(input, { key: "Enter", isComposing: false });
+    expect(screen.getByText("#日本語")).toBeTruthy();
+    expect((input as HTMLInputElement).value).toBe("");
+  });
+
   it("allows typing a multi-word topic before Enter commits its slug", () => {
     render(<TopicInputHarness />);
 
@@ -40,7 +53,7 @@ describe("CatalogTopicInput", () => {
   });
 
   it("normalizes topic chips to lowercase", () => {
-    render(<TopicInputHarness initialValue='"CI, CD", GPU Development' />);
+    render(<TopicInputHarness initialValue={["CI, CD", "GPU Development"]} />);
 
     expect(screen.getByText("#ci, cd")).toBeTruthy();
     expect(screen.getByText("#gpu development")).toBeTruthy();
@@ -57,7 +70,7 @@ describe("CatalogTopicInput", () => {
   });
 
   it("removes topic chips with their remove button or Backspace", () => {
-    render(<TopicInputHarness initialValue="email, calendar" />);
+    render(<TopicInputHarness initialValue={["email", "calendar"]} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Remove email topic" }));
     expect(screen.queryByText("#email")).toBeNull();
@@ -68,7 +81,7 @@ describe("CatalogTopicInput", () => {
   });
 
   it("preserves existing multi-word and comma-containing topics", () => {
-    render(<TopicInputHarness initialValue='"CI, CD", GPU development' />);
+    render(<TopicInputHarness initialValue={["CI, CD", "GPU development"]} />);
 
     expect(screen.getByText("#ci, cd")).toBeTruthy();
     expect(screen.getByText("#gpu development")).toBeTruthy();
@@ -76,7 +89,13 @@ describe("CatalogTopicInput", () => {
 
   it("uses keyword vocabulary consistently", () => {
     function KeywordHarness() {
-      const [value, setValue] = useState("email, calendar, search, automation, productivity");
+      const [value, setValue] = useState([
+        "email",
+        "calendar",
+        "search",
+        "automation",
+        "productivity",
+      ]);
       return (
         <CatalogTopicInput id="keywords" value={value} vocabulary="keywords" onChange={setValue} />
       );
@@ -95,7 +114,7 @@ describe("CatalogTopicInput", () => {
         <span id="keyword-count">0 of 5 keywords used</span>
         <CatalogTopicInput
           id="keywords"
-          value=""
+          value={[]}
           describedBy="keyword-count"
           vocabulary="keywords"
           onChange={() => {}}

@@ -522,7 +522,16 @@ describe("plugins publish route", () => {
     expect(publishRelease).not.toHaveBeenCalled();
   });
 
-  it("prefills and preserves topics when publishing a new plugin version", async () => {
+  it.each([
+    { label: "existing labels", incoming: ["GPU development"], expected: ["GPU development"] },
+    {
+      label: "punctuation and blank legacy labels",
+      incoming: [" CI, CD ", "", ' He said "ship" '],
+      expected: ["CI, CD", 'He said "ship"'],
+    },
+    { label: "multiple blank labels", incoming: ["", " "], expected: [] },
+    { label: "one blank label", incoming: [" "], expected: undefined },
+  ])("preserves untouched $label in plugin publish payloads", async ({ incoming, expected }) => {
     useSearchMock.mockReturnValue({
       ownerHandle: "vintageayu",
       name: "demo-plugin",
@@ -540,7 +549,7 @@ describe("plugins publish route", () => {
             name: "demo-plugin",
             displayName: "Demo Plugin",
             categories: ["tools"],
-            topics: ["GPU development"],
+            topics: incoming,
           },
           latestRelease: { version: "1.2.3" },
           suggestedCategories: [],
@@ -555,8 +564,13 @@ describe("plugins publish route", () => {
     renderPublishRoute();
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Remove GPU development keyword" })).toBeTruthy();
+      expect((screen.getByPlaceholderText("Plugin name") as HTMLInputElement).value).toBe(
+        "demo-plugin",
+      );
     });
+    expect(screen.queryAllByRole("button", { name: /^Remove .* keyword$/ })).toHaveLength(
+      expected?.length ?? 0,
+    );
     expect(screen.queryByRole("button", { name: "Categories" })).toBeNull();
 
     const packageJson = withRelativePath(
@@ -591,11 +605,12 @@ describe("plugins publish route", () => {
     await waitFor(() => {
       expect(publishRelease).toHaveBeenCalledTimes(1);
     });
-    expect(publishRelease).toHaveBeenCalledWith({
-      payload: expect.objectContaining({
-        topics: ["GPU development"],
-      }),
-    });
+    const payload = publishRelease.mock.calls[0]?.[0].payload;
+    if (expected === undefined) {
+      expect(payload).not.toHaveProperty("topics");
+    } else {
+      expect(payload.topics).toEqual(expected);
+    }
     expect(publishRelease.mock.calls[0]?.[0].payload).not.toHaveProperty("categories");
   });
 

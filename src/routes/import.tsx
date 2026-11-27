@@ -31,10 +31,8 @@ import {
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import { GitHubIcon as GitHubMark, XIcon } from "../components/BrandIcons";
-import {
-  CatalogMetadataFields,
-  parseCatalogTopicsInput,
-} from "../components/CatalogMetadataFields";
+import { CatalogMetadataFields } from "../components/CatalogMetadataFields";
+import { getCatalogTopicLabels, hasCatalogTopicInput } from "../components/CatalogTopicInput";
 import { Container } from "../components/layout/Container";
 import { SignInPrompt } from "../components/SignInPrompt";
 import { ImportGitHubSkeleton } from "../components/skeletons/ProtectedPageSkeletons";
@@ -138,7 +136,7 @@ type ReviewDraft = {
   version: string;
   tags: string;
   categories: string[];
-  topics: string;
+  topics: string[];
 };
 
 type SlugAvailabilityResult =
@@ -535,7 +533,7 @@ export function ImportGitHub() {
           version: result.defaults.version,
           tags: (result.defaults.tags ?? ["latest"]).join(","),
           categories: [],
-          topics: "",
+          topics: [],
         };
       }
       setReviewDrafts(drafts);
@@ -580,7 +578,9 @@ export function ImportGitHub() {
       version: draft.version.trim(),
       tags: tagList,
       ...(draft.categories.length ? { categories: draft.categories } : {}),
-      ...(draft.topics.trim() ? { topics: parseCatalogTopicsInput(draft.topics) } : {}),
+      ...(hasCatalogTopicInput(draft.topics)
+        ? { topics: getCatalogTopicLabels(draft.topics) }
+        : {}),
       acceptLicenseTerms: acceptedLicenseTerms,
     });
   };
