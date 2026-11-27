@@ -198,12 +198,13 @@ publish.
 ClawHub uses the bundled `assets/icon.png` for plugin catalog artwork. Manifest
 `icon` URLs and paths are ignored. If your npm package uses a `files` allowlist,
 include the asset there and check `npm pack --dry-run` to confirm it will ship.
-Missing or invalid artwork falls back to the plugin category glyph.
+If the artwork is missing, invalid, or fails to load, ClawHub shows the generic
+plug icon. A publisher profile logo or a skill icon does not supply plugin artwork,
+even for an official publisher.
 
-Existing releases with only a manifest icon URL also use the category glyph.
-Publish a new release containing `assets/icon.png` to restore custom artwork.
-ClawHub validates and hosts the bundled PNG; an external image URL is not a
-supported substitute.
+To add or replace plugin artwork, publish a new release containing a valid
+`assets/icon.png`. ClawHub validates and hosts the bundled PNG; a manifest icon
+URL or an external image is not a supported substitute.
 
 Maintainers can repair existing latest releases with
 `maintenance:repairPluginIconsInternal` after deploying bundled icon support.
