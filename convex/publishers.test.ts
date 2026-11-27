@@ -1,10 +1,12 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { describe, expect, it, vi } from "vitest";
+import type { FunctionReturnType } from "convex/server";
+import { describe, expect, expectTypeOf, it, vi } from "vitest";
 import { createActiveSkillSeedDefaults } from "../src/__tests__/helpers/activeSkillSeed";
 import { createMockDb } from "../src/__tests__/helpers/convexDb";
 import { getTestHandler } from "../src/__tests__/helpers/convexHandler";
 import { chainEq, indexedUnique } from "../src/__tests__/helpers/convexQuery";
 import { createPackageSeedDefaults } from "../src/__tests__/helpers/packageSeed";
+import type { api } from "./_generated/api";
 import {
   assertCanManageOwnedResource,
   ensurePersonalPublisherForUser,
@@ -305,10 +307,7 @@ const listStarredPageHandler = getTestHandler<
 
 const listMembersHandler = getTestHandler<
   { publisherHandle: string },
-  {
-    publisher: unknown;
-    members: Array<unknown>;
-  } | null
+  FunctionReturnType<typeof api.publishers.listMembers>
 >(listMembers);
 
 const getProfileByHandleHandler = getTestHandler<{ handle: string }>(getProfileByHandle);
@@ -1181,6 +1180,106 @@ describe("home official creator summaries", () => {
 });
 
 describe("publishers membership controls", () => {
+  it("exposes non-null member entries while preserving nullable query results", () => {
+    type Result = FunctionReturnType<typeof api.publishers.listMembers>;
+    type Member = NonNullable<Result>["members"][number];
+    expectTypeOf<Member>().not.toBeAny();
+    expectTypeOf<Extract<Member, null>>().toEqualTypeOf<never>();
+    expectTypeOf<Extract<Result, null>>().toEqualTypeOf<null>();
+  });
+
+  it("keeps active members in membership order with complete identity fields", async () => {
+    const publisher = makeOrgPublisherIdentity("member-proof", "Member proof");
+    const personalPublisher = makeUserPublisherIdentity("owner-profile", "Owner", {
+      linkedUserId: "users:owner",
+    });
+    const users = [
+      { _id: "users:owner", handle: "owner", displayName: "Owner", image: "owner.png" },
+      { _id: "users:deleted", deletedAt: 1 },
+      { _id: "users:deactivated", deactivatedAt: 1 },
+      { _id: "users:admin", name: "Admin" },
+      { _id: "users:publisher" },
+    ];
+    const memberships = [
+      { userId: "users:owner", role: "owner" },
+      { userId: "users:missing", role: "publisher" },
+      { userId: "users:deleted", role: "admin" },
+      { userId: "users:deactivated", role: "publisher" },
+      { userId: "users:admin", role: "admin" },
+      { userId: "users:publisher", role: "publisher" },
+    ];
+    const db = createMockDb();
+    db.get.mockImplementation(async (id: string) => users.find((user) => user._id === id) ?? null);
+    db.query.mockImplementation((table: string) => ({
+      withIndex: (index: string, buildQuery: (q: unknown) => unknown) => {
+        const fields = captureIndexFields(buildQuery);
+        if (table === "publishers" && index === "by_handle") {
+          expect(fields).toEqual({ handle: publisher.handle });
+          return { unique: async () => publisher };
+        }
+        if (table === "publisherMembers" && index === "by_publisher") {
+          expect(fields).toEqual({ publisherId: publisher._id });
+          return { collect: async () => memberships };
+        }
+        if (table === "publishers" && index === "by_linked_user") {
+          return {
+            unique: async () => (fields.linkedUserId === "users:owner" ? personalPublisher : null),
+          };
+        }
+        if (table === "officialPublishers" && index === "by_publisher") {
+          return {
+            unique: async () =>
+              fields.publisherId === personalPublisher._id ? { _id: "official:owner" } : null,
+          };
+        }
+        throw new Error(`unexpected ${table} index ${index}`);
+      },
+    }));
+
+    const result = await listMembersHandler({ db }, { publisherHandle: publisher.handle });
+
+    expect(result?.publisher).toMatchObject({
+      _id: publisher._id,
+      handle: publisher.handle,
+      displayName: publisher.displayName,
+    });
+    expect(result?.members).toEqual([
+      {
+        role: "owner",
+        user: {
+          _id: "users:owner",
+          handle: "owner",
+          personalPublisherHandle: "owner-profile",
+          displayName: "Owner",
+          image: "owner.png",
+          official: true,
+        },
+      },
+      {
+        role: "admin",
+        user: {
+          _id: "users:admin",
+          handle: null,
+          personalPublisherHandle: null,
+          displayName: "Admin",
+          image: null,
+          official: false,
+        },
+      },
+      {
+        role: "publisher",
+        user: {
+          _id: "users:publisher",
+          handle: null,
+          personalPublisherHandle: null,
+          displayName: null,
+          image: null,
+          official: false,
+        },
+      },
+    ]);
+  });
+
   it("lets an org owner delete an org and cascade owned resources", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
     const patch = vi.fn();

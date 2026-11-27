@@ -121,20 +121,6 @@ type PublisherDeletionInventory = FunctionReturnType<
   typeof api.publishers.getDeletionInventory
 >[number];
 
-type OrgMembersResult = {
-  publisher: { _id: Id<"publishers">; handle: string } | null;
-  members: Array<{
-    role: "owner" | "admin" | "publisher";
-    user: {
-      _id: Id<"users">;
-      handle: string | null;
-      personalPublisherHandle?: string | null;
-      displayName: string | null;
-      image: string | null;
-    };
-  }>;
-};
-
 type PublisherInvite = FunctionReturnType<typeof api.publishers.listMyInvites>[number];
 type PublisherInviteRole = PublisherInvite["role"];
 
@@ -331,7 +317,7 @@ export function Settings() {
       selectedOrg.role !== "publisher"
       ? { publisherHandle: selectedOrg.publisher.handle }
       : "skip",
-  ) as OrgMembersResult | null | undefined;
+  );
   const pendingInvites = useQuery(
     api.publishers.listInvitesForPublisher,
     shouldLoadAccountScopedQueries &&
