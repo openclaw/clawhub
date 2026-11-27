@@ -6,7 +6,7 @@ import {
 import { ChevronDown, Lightbulb, Sparkles } from "lucide-react";
 import { PLUGIN_CATEGORIES, SKILL_CATEGORIES } from "../lib/categories";
 import { getCategoryIconComponent } from "../lib/categoryIcons";
-import { CatalogTopicInput, parseCatalogTopicsInput } from "./CatalogTopicInput";
+import { CatalogTopicInput, getCatalogTopicLabels } from "./CatalogTopicInput";
 import { Button } from "./ui/button";
 import {
   DropdownMenu,
@@ -16,8 +16,6 @@ import {
 } from "./ui/dropdown-menu";
 import { Label } from "./ui/label";
 
-export { formatCatalogTopicsInput, parseCatalogTopicsInput } from "./CatalogTopicInput";
-
 type CatalogMetadataFieldsProps = {
   kind: "skill" | "plugin";
   idPrefix?: string;
@@ -25,10 +23,10 @@ type CatalogMetadataFieldsProps = {
   showCategories?: boolean;
   categories: string[];
   suggestedCategories?: string[];
-  topics: string;
+  topics: readonly string[];
   disabled?: boolean;
   onCategoriesChange?: (value: string[]) => void;
-  onTopicsChange: (value: string) => void;
+  onTopicsChange: (value: string[]) => void;
 };
 
 export function CatalogMetadataFields({
@@ -182,10 +180,10 @@ export function CatalogMetadataFields({
                 aria-live="polite"
               >
                 <span aria-hidden="true">
-                  {parseCatalogTopicsInput(topics).length}/{CATALOG_TOPIC_LIMIT}
+                  {getCatalogTopicLabels(topics).length}/{CATALOG_TOPIC_LIMIT}
                 </span>
                 <span className="sr-only">
-                  {parseCatalogTopicsInput(topics).length} of {CATALOG_TOPIC_LIMIT} keywords used
+                  {getCatalogTopicLabels(topics).length} of {CATALOG_TOPIC_LIMIT} keywords used
                 </span>
               </span>
             ) : null}

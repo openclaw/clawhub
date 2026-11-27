@@ -8,11 +8,8 @@ import semver from "semver";
 import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
 import { MAX_PUBLISH_FILE_BYTES, MAX_PUBLISH_TOTAL_BYTES } from "../../../convex/lib/publishLimits";
-import {
-  CatalogMetadataFields,
-  formatCatalogTopicsInput,
-  parseCatalogTopicsInput,
-} from "../../components/CatalogMetadataFields";
+import { CatalogMetadataFields } from "../../components/CatalogMetadataFields";
+import { getCatalogTopicLabels, hasCatalogTopicInput } from "../../components/CatalogTopicInput";
 import { EmptyState } from "../../components/EmptyState";
 import { Container } from "../../components/layout/Container";
 import {
@@ -205,7 +202,7 @@ export function PublishPluginRoute() {
   const [version, setVersion] = useState(search.nextVersion ?? "0.1.0");
   const { changelog, editChangelog, invalidateChangelog, startChangelogPreview } =
     useChangelogPreview();
-  const [topics, setTopics] = useState("");
+  const [topics, setTopics] = useState<string[]>([]);
   const topicsTouchedRef = useRef(false);
   const [sourceRepo, setSourceRepo] = useState(search.sourceRepo ?? "");
   const [sourceCommit, setSourceCommit] = useState("");
@@ -430,8 +427,13 @@ export function PublishPluginRoute() {
   useEffect(() => {
     if (!existing?.package) return;
     if (!topicsTouchedRef.current) {
-      const nextTopics = formatCatalogTopicsInput(existing.package.topics ?? []);
-      setTopics((current) => (current === nextTopics ? current : nextTopics));
+      const nextTopics = existing.package.topics ?? [];
+      setTopics((current) =>
+        current.length === nextTopics.length &&
+        current.every((topic, index) => topic === nextTopics[index])
+          ? current
+          : nextTopics,
+      );
     }
   }, [existing]);
 
@@ -938,8 +940,8 @@ export function PublishPluginRoute() {
                             family,
                             version: version.trim(),
                             changelog: changelog.trim(),
-                            ...(topics.trim() || topicsTouchedRef.current
-                              ? { topics: parseCatalogTopicsInput(topics) }
+                            ...(hasCatalogTopicInput(topics) || topicsTouchedRef.current
+                              ? { topics: getCatalogTopicLabels(topics) }
                               : {}),
                             ...(sourceRepo.trim() && sourceCommit.trim()
                               ? {

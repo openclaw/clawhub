@@ -407,6 +407,35 @@ describe("Import route", () => {
     expect(Object.hasOwn(args, "icon")).toBe(false);
   });
 
+  it("publishes committed topic chips as an ordered array", async () => {
+    useQueriesMock.mockImplementation((queries: Record<string, unknown>) =>
+      Object.fromEntries(
+        Object.keys(queries).map((key) => [
+          key,
+          { available: true, reason: "available", message: null, url: null },
+        ]),
+      ),
+    );
+    importSkill.mockResolvedValue({ slug: "taken-skill" });
+    render(<ImportGitHub />);
+    await screen.findByRole("checkbox");
+    fireEvent.click(screen.getByRole("button", { name: /review selected/i }));
+    await screen.findByDisplayValue("taken-skill");
+    const input = screen.getByLabelText("Topics");
+    for (const value of ["CI, CD", "GPU Development"]) {
+      fireEvent.change(input, { target: { value } });
+      fireEvent.keyDown(input, { key: "Enter" });
+    }
+    fireEvent.click(screen.getByLabelText(/I have the rights/i));
+    fireEvent.click(screen.getByRole("button", { name: /publish selected/i }));
+
+    await waitFor(() =>
+      expect(importSkill).toHaveBeenCalledWith(
+        expect.objectContaining({ topics: ["ci-cd", "gpu-development"] }),
+      ),
+    );
+  });
+
   it("surfaces preview errors instead of staying in the loading state", async () => {
     previewCandidate.mockRejectedValueOnce(new Error("GitHub tree is too large"));
 

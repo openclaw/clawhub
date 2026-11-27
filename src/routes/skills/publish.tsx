@@ -26,11 +26,8 @@ import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
 import { MAX_PUBLISH_FILE_BYTES, MAX_PUBLISH_TOTAL_BYTES } from "../../../convex/lib/publishLimits";
 import { GitHubIcon as GitHubLogo } from "../../components/BrandIcons";
-import {
-  CatalogMetadataFields,
-  formatCatalogTopicsInput,
-  parseCatalogTopicsInput,
-} from "../../components/CatalogMetadataFields";
+import { CatalogMetadataFields } from "../../components/CatalogMetadataFields";
+import { getCatalogTopicLabels, hasCatalogTopicInput } from "../../components/CatalogTopicInput";
 import { EmptyState } from "../../components/EmptyState";
 import { Container } from "../../components/layout/Container";
 import {
@@ -134,7 +131,7 @@ export function Upload() {
   const [version, setVersion] = useState("1.0.0");
   const [tags, setTags] = useState("latest");
   const [categories, setCategories] = useState<string[]>([]);
-  const [topics, setTopics] = useState("");
+  const [topics, setTopics] = useState<string[]>([]);
   const [summary, setSummary] = useState("");
   const [uploadedSkillSummary, setUploadedSkillSummary] = useState<string | undefined>();
   const [acceptedLicenseTerms, setAcceptedLicenseTerms] = useState(false);
@@ -327,8 +324,13 @@ export function Upload() {
       );
     }
     if (!topicsTouchedRef.current) {
-      const nextTopics = formatCatalogTopicsInput(existing.skill.topics ?? []);
-      setTopics((current) => (current === nextTopics ? current : nextTopics));
+      const nextTopics = existing.skill.topics ?? [];
+      setTopics((current) =>
+        current.length === nextTopics.length &&
+        current.every((topic, index) => topic === nextTopics[index])
+          ? current
+          : nextTopics,
+      );
     }
     const nextVersion = semver.inc(existing.latestVersion.version, "patch");
     if (nextVersion && !dirtyFields.version) setVersion(nextVersion);
@@ -716,8 +718,8 @@ export function Upload() {
         acceptLicenseTerms: acceptedLicenseTerms,
         tags: parsedTags,
         ...(categories.length || categoriesTouchedRef.current ? { categories } : {}),
-        ...(topics.trim() || topicsTouchedRef.current
-          ? { topics: parseCatalogTopicsInput(topics) }
+        ...(hasCatalogTopicInput(topics) || topicsTouchedRef.current
+          ? { topics: getCatalogTopicLabels(topics) }
           : {}),
         ...(trimmedSummary || summaryTouchedRef.current ? { summary: trimmedSummary } : {}),
         files: uploaded,

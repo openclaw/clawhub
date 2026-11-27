@@ -5,51 +5,24 @@ import { cn } from "../lib/utils";
 
 type CatalogTopicInputProps = {
   id: string;
-  value: string;
+  value: readonly string[];
   disabled?: boolean;
   describedBy?: string;
   vocabulary?: "topics" | "keywords";
-  onChange: (value: string) => void;
+  onChange: (value: string[]) => void;
 };
 
 function formatCatalogTopicChip(value: string) {
   return value.normalize("NFKC").toLocaleLowerCase("en-US");
 }
 
-export function parseCatalogTopicsInput(value: string) {
-  const topics: string[] = [];
-  let current = "";
-  let quoted = false;
-
-  // Parse one CSV-style record so quoted topic labels can contain commas.
-  for (let index = 0; index < value.length; index += 1) {
-    const character = value[index];
-    if (character === '"') {
-      if (quoted && value[index + 1] === '"') {
-        current += '"';
-        index += 1;
-      } else if (quoted) {
-        quoted = false;
-      } else if (!current.trim()) {
-        quoted = true;
-      } else {
-        current += character;
-      }
-    } else if (character === "," && !quoted) {
-      topics.push(current.trim());
-      current = "";
-    } else {
-      current += character;
-    }
-  }
-  topics.push(current.trim());
-  return topics.filter(Boolean);
+export function getCatalogTopicLabels(values: readonly string[]) {
+  return values.map((value) => value.trim()).filter(Boolean);
 }
 
-export function formatCatalogTopicsInput(values: readonly string[]) {
-  return values
-    .map((topic) => (/[,"]/.test(topic) ? `"${topic.replaceAll('"', '""')}"` : topic))
-    .join(", ");
+export function hasCatalogTopicInput(values: readonly string[]) {
+  // Multiple blank legacy labels had a nonblank CSV separator and submitted an empty array.
+  return values.length > 1 || values.some((value) => value.trim().length > 0);
 }
 
 export function CatalogTopicInput({
@@ -63,7 +36,7 @@ export function CatalogTopicInput({
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState("");
-  const topics = parseCatalogTopicsInput(value);
+  const topics = getCatalogTopicLabels(value);
   const limitReached = topics.length >= CATALOG_TOPIC_LIMIT;
   const usesKeywordVocabulary = vocabulary === "keywords";
   const itemLabel = usesKeywordVocabulary ? "keyword" : "topic";
@@ -77,13 +50,13 @@ export function CatalogTopicInput({
       (existingTopic) => normalizeCatalogTopic(existingTopic) === topicSlug,
     );
     if (!duplicate) {
-      onChange(formatCatalogTopicsInput([...topics, topicSlug ?? topic]));
+      onChange([...topics, topicSlug ?? topic]);
     }
     setDraft("");
   }
 
   function removeTopic(index: number) {
-    onChange(formatCatalogTopicsInput(topics.filter((_, topicIndex) => topicIndex !== index)));
+    onChange(topics.filter((_, topicIndex) => topicIndex !== index));
     inputRef.current?.focus();
   }
 
