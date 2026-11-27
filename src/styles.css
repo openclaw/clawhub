@@ -2347,26 +2347,12 @@ code {
   margin-bottom: var(--space-4);
 }
 
-.skill-summary-block {
-  margin-bottom: var(--space-4);
-  display: grid;
-  gap: 8px;
-  justify-items: start;
-}
-
-.skill-summary-line {
-  margin-bottom: 0;
-  overflow-wrap: anywhere;
-}
-
-.skill-summary-line a,
 .plugin-summary a {
   color: var(--accent);
   text-decoration: underline;
   text-underline-offset: 0.15em;
 }
 
-.skill-summary-line .skill-summary-inline-code,
 .plugin-summary .skill-summary-inline-code {
   padding: 0.12em 0.35em;
   border-radius: var(--r-xs);
@@ -2403,33 +2389,6 @@ code {
 
 .plugin-summary {
   overflow-wrap: anywhere;
-}
-
-.skill-summary-line.line-clamp-2 {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
-
-.skill-summary-toggle {
-  appearance: none;
-  border: 0;
-  padding: 0;
-  background: transparent;
-  color: color-mix(in srgb, var(--ink-soft) 76%, var(--bg));
-  font: inherit;
-  font-size: 12px;
-  font-weight: 650;
-  line-height: 1.2;
-  cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.skill-summary-toggle:hover,
-.skill-summary-toggle:focus-visible {
-  color: var(--ink);
 }
 
 .grid {
@@ -2980,8 +2939,7 @@ code {
   font-size: 0.9rem;
 }
 
-.skill-hero-title > .section-subtitle,
-.skill-summary-block > .section-subtitle {
+.skill-hero-title > .section-subtitle {
   font-size: 14px;
   line-height: 1.4;
 }
@@ -4449,10 +4407,6 @@ code {
   margin-top: 12px;
 }
 
-.skill-hero-title > .skill-summary-block:has(+ .skill-hero-creator) {
-  margin-bottom: 0;
-}
-
 .skill-hero-creator .user-badge,
 .skill-hero-creator .user-badge-link {
   display: inline-grid;
@@ -4586,16 +4540,6 @@ code {
   text-wrap: balance;
 }
 
-.skill-title-actions {
-  display: flex;
-  flex: 0 0 auto;
-  gap: 10px;
-  margin-left: auto;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-}
-
 .skill-management-toolbar {
   display: flex;
   align-items: center;
@@ -4661,13 +4605,6 @@ code {
 .skill-management-toolbar-action:hover svg,
 .skill-management-toolbar-action:focus-visible svg {
   color: color-mix(in srgb, var(--ink) 72%, var(--ink-soft));
-}
-
-.skill-title-badges {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  align-self: center;
 }
 
 .skill-hero-taxonomy-row {
@@ -4824,16 +4761,6 @@ code {
     flex: 0 0 auto;
     background: color-mix(in srgb, var(--ink-soft) 28%, transparent);
   }
-}
-
-.skill-hero-note {
-  font-size: 0.9rem;
-  color: var(--ink);
-  max-width: 560px;
-  padding: 8px 12px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.18);
 }
 
 .skill-visibility-alert {
@@ -5119,8 +5046,7 @@ a.skills-sh-security-audit-row:focus-visible {
   display: contents;
 }
 
-.detail-mobile-master-tab-list,
-.detail-mobile-master-stats {
+.detail-mobile-master-tab-list {
   display: none;
 }
 
@@ -5624,13 +5550,6 @@ a.skills-sh-security-audit-row:focus-visible {
   font-weight: 520;
 }
 
-.skill-hero-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-}
-
 .official-badge-icon {
   color: currentColor;
 }
@@ -6129,12 +6048,6 @@ a.skills-sh-security-audit-row:focus-visible {
     gap: 10px;
   }
 
-  .skill-hero-layout.has-sidebar .skill-summary-block {
-    max-width: none;
-    margin-bottom: 0;
-    gap: 4px;
-  }
-
   .skill-hero-lower {
     grid-template-columns: 1fr;
   }
@@ -6337,10 +6250,6 @@ a.skills-sh-security-audit-row:focus-visible {
     gap: 10px;
   }
 
-  :is(.skill-detail-page, .plugin-detail-page) .skill-summary-block {
-    margin-top: 4px;
-  }
-
   :is(.skill-detail-page, .plugin-detail-page) .skill-hero-creator {
     margin-top: 18px;
   }
@@ -6357,23 +6266,6 @@ a.skills-sh-security-audit-row:focus-visible {
   .skill-detail-page .skill-hero-creator .user-badge-link {
     flex: 1 1 auto;
     min-width: 0;
-  }
-
-  .skill-detail-page .skill-hero-creator-star {
-    display: flex;
-    flex: 0 0 auto;
-    align-items: center;
-    margin-left: auto;
-  }
-
-  .skill-detail-page .skill-hero-creator-star .skill-sidebar-star-action {
-    min-height: 0;
-    justify-content: flex-end;
-  }
-
-  .skill-detail-page .skill-hero-creator-star .skill-sidebar-star-action:hover,
-  .skill-detail-page .skill-hero-creator-star .skill-sidebar-star-action:focus-visible {
-    text-decoration: none;
   }
 
   .skill-detail-page .skill-hero-lower.has-sidebar {
@@ -6456,17 +6348,6 @@ a.skills-sh-security-audit-row:focus-visible {
     gap: 14px;
     width: 100%;
     min-width: 0;
-  }
-
-  .detail-mobile-master-stats {
-    display: grid;
-    gap: 0;
-    width: 100%;
-    min-width: 0;
-    padding: var(--detail-mobile-surface-padding);
-    border: var(--detail-mobile-surface-border);
-    border-radius: var(--detail-mobile-surface-radius);
-    background: var(--detail-mobile-surface-bg);
   }
 
   .skill-detail-page .skill-detail-tabs-card.detail-mobile-tabs .tab-header {
@@ -8622,10 +8503,6 @@ a.skills-sh-security-audit-row:focus-visible {
 
   .related-skills-header {
     flex-direction: column;
-  }
-
-  .skill-hero-layout.has-sidebar .skill-summary-block {
-    max-width: none;
   }
 
   .skill-hero-sidebar {
@@ -11164,23 +11041,8 @@ a.agentic-risk-finding-title:focus-visible {
     line-height: 1.12;
   }
 
-  .skill-hero-note {
-    font-size: 0.82rem;
-  }
-
   .skill-hero-title-row {
     align-items: flex-start;
-  }
-
-  .skill-title-actions {
-    width: 100%;
-    margin-left: 0;
-    justify-content: flex-start;
-  }
-
-  .skill-title-actions [data-slot="button"] {
-    flex: 1 1 0;
-    justify-content: center;
   }
 
   .skill-install-command-header {
