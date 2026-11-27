@@ -832,7 +832,6 @@ export function SkillDetailPage({
           category={relatedCategory}
           relatedSkills={relatedSkillsResult?.items ?? []}
           isLoading={shouldLoadRelatedSkills && relatedSkillsResult === undefined}
-          variant="compact"
         />
       }
       newVersionHref={newVersionHref}

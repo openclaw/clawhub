@@ -3,23 +3,24 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
-import { makePublicSkill } from "../__tests__/helpers/publicCatalog";
+import { makePublicPublisher, makePublicSkill } from "../__tests__/helpers/publicCatalog";
 import type { PublicSkill } from "../lib/publicUser";
 import { SkillRelatedSection } from "./SkillRelatedSection";
+
+const category = {
+  slug: "productivity",
+  label: "Productivity",
+  icon: "list-checks",
+  keywords: ["task"],
+};
 
 describe("SkillRelatedSection", () => {
   it("shows only the plain download count in compact related rows", () => {
     const { container } = render(
       <SkillRelatedSection
-        category={{
-          slug: "productivity",
-          label: "Productivity",
-          icon: "list-checks",
-          keywords: [],
-        }}
+        category={category}
         relatedSkills={[{ skill: makeSkill(), ownerHandle: "creator" }]}
         isLoading={false}
-        variant="compact"
       />,
     );
 
@@ -31,9 +32,88 @@ describe("SkillRelatedSection", () => {
     expect(container.querySelector(".lucide-bookmark")).toBeNull();
     expect(container.querySelector(".lucide-download")).toBeNull();
   });
+
+  it.each([
+    { ownerHandle: " creator ", owner: null, label: "creator", href: "/creator/skills/related" },
+    {
+      ownerHandle: null,
+      owner: makePublicPublisher({ handle: " team " }),
+      label: "team",
+      href: "/team/skills/related",
+    },
+    {
+      ownerHandle: null,
+      owner: null,
+      label: "publishers:owner",
+      href: "/publishers%3Aowner/skills/related",
+    },
+  ])(
+    "keeps the owner label and canonical row link for $label",
+    ({ ownerHandle, owner, label, href }) => {
+      render(
+        <SkillRelatedSection
+          category={category}
+          relatedSkills={[{ skill: makeSkill(), ownerHandle, owner }]}
+          isLoading={false}
+        />,
+      );
+      expect(screen.getByText(`@${label}`)).toBeTruthy();
+      expect(screen.getByRole("link", { name: /Related Skill/ }).getAttribute("href")).toBe(href);
+      expect(screen.getByRole("link", { name: "More in Productivity" }).getAttribute("href")).toBe(
+        "/skills?category=productivity",
+      );
+    },
+  );
+
+  it("keeps three complete skeleton rows while related results are loading", () => {
+    const { container } = render(
+      <SkillRelatedSection
+        category={category}
+        relatedSkills={[{ skill: makeSkill() }]}
+        isLoading
+      />,
+    );
+    expect(screen.getByRole("heading", { name: "Related skills" })).toBeTruthy();
+    expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
+    expect(container.querySelectorAll(".related-skill-row-skeleton")).toHaveLength(3);
+    expect(container.querySelectorAll(".related-skill-owner-skeleton")).toHaveLength(3);
+    expect(container.querySelectorAll(".related-skill-icon-skeleton")).toHaveLength(3);
+    expect(screen.queryByRole("link", { name: /Related Skill/ })).toBeNull();
+  });
+
+  it("keeps input ordering, limits rows to five, and truncates long summaries", () => {
+    const summary = "A".repeat(90);
+    const relatedSkills = Array.from({ length: 6 }, (_, index) => ({
+      skill: makeSkill({
+        _id: `skills:${index}` as Id<"skills">,
+        slug: `related-${index}`,
+        displayName: `Related ${index}`,
+        summary,
+      }),
+      ownerHandle: "creator",
+    }));
+    const { container } = render(
+      <SkillRelatedSection category={category} relatedSkills={relatedSkills} isLoading={false} />,
+    );
+    expect(
+      Array.from(container.querySelectorAll(".related-skill-name"), (node) => node.textContent),
+    ).toEqual(["Related 0", "Related 1", "Related 2", "Related 3", "Related 4"]);
+    expect(screen.queryByText("Related 5")).toBeNull();
+    expect(screen.getAllByText(`${"A".repeat(79)}…`)).toHaveLength(5);
+    expect(container.querySelector('[aria-busy="false"]')).not.toBeNull();
+  });
+
+  it.each([
+    { category: null, relatedSkills: [{ skill: makeSkill() }], isLoading: false },
+    { category: null, relatedSkills: [], isLoading: true },
+    { category, relatedSkills: [], isLoading: false },
+  ])("does not render without a category or settled results %#", (props) => {
+    const { container } = render(<SkillRelatedSection {...props} />);
+    expect(container.innerHTML).toBe("");
+  });
 });
 
-function makeSkill(): PublicSkill {
+function makeSkill(overrides: Partial<PublicSkill> = {}): PublicSkill {
   return makePublicSkill({
     _id: "skills:related" as Id<"skills">,
     slug: "related",
@@ -46,5 +126,6 @@ function makeSkill(): PublicSkill {
       comments: 0,
       installs: 7_300,
     },
+    ...overrides,
   });
 }
