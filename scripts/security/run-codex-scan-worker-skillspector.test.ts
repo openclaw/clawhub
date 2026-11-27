@@ -465,15 +465,26 @@ ${trapExit ? "trap 'exit 1' TERM; while true; do sleep 30; done" : "exec sleep 3
 
 it("gives successive bundled roots their own timeout within the preparation budget", async () => {
   const roots = ["skills/first", "skills/second", "skills/third"];
-  const { run, handoff } = await fixture(
-    `sleep 0.9
-${writeReport(findings)}`,
-    roots,
-  );
-  vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS", "1500");
-  // Two waves need >= 1.8s together, but each child fits its 1.5s budget.
-  // A shared 1.5s deadline would still kill the third root.
+  const { run, handoff } = await fixture(writeReport(findings), roots);
+  const originalRun = workerCommand.runWorkerCommand;
+  const childBudgets: number[] = [];
+  let now = Date.now();
+  let advancedClock = false;
+  vi.spyOn(Date, "now").mockImplementation(() => now);
+  vi.spyOn(workerCommand, "runWorkerCommand").mockImplementation(async (command, args, options) => {
+    if (command === "skillspector") childBudgets.push(options.timeoutMs);
+    const result = await originalRun(command, args, options);
+    if (command === "skillspector" && !advancedClock) {
+      // Cross one root's budget before admitting the next wave, without
+      // making real subprocesses race a short sleep against their timeout.
+      now += 6000;
+      advancedClock = true;
+    }
+    return result;
+  });
+  vi.stubEnv("CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS", "5000");
   await expect(run()).rejects.toThrow("exited 23");
+  expect(childBudgets).toEqual([5000, 5000, 5000]);
   expect(JSON.parse(await readFile(handoff, "utf8"))).toMatchObject({
     applicable: true,
     status: "suspicious",
