@@ -3,7 +3,6 @@ import { Skeleton } from "../ui/skeleton";
 type BrowseResultsSkeletonProps = {
   count?: number;
   showIcon?: boolean;
-  variant?: "list" | "grid";
   showCategoryColumn?: boolean;
   downloadsOnly?: boolean;
   /** Set false where the loaded rows show no download count, so loading matches them. */
@@ -13,45 +12,10 @@ type BrowseResultsSkeletonProps = {
 export function BrowseResultsSkeleton({
   count = 6,
   showIcon = true,
-  variant = "list",
   showCategoryColumn = true,
   downloadsOnly = false,
   showStats = true,
 }: BrowseResultsSkeletonProps) {
-  if (variant === "grid") {
-    return (
-      <div className="grid browse-results-grid" role="status" aria-label="Loading results">
-        {Array.from({ length: count }, (_, i) => (
-          <div
-            // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholder count
-            key={i}
-            className="card skill-card skill-card-spaced-footer"
-          >
-            <div className={`skill-card-header${showIcon ? "" : " skill-card-header-no-icon"}`}>
-              {showIcon ? (
-                <Skeleton className="browse-results-skeleton-icon h-[34px] w-[34px] rounded-[var(--oc-radius-inset)]" />
-              ) : null}
-              <div className="skill-card-identity">
-                <Skeleton className="h-5 w-40 max-w-full" />
-                <Skeleton className="h-4 w-24 max-w-full" />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-4 w-5/6" />
-            </div>
-            <div className="skill-card-footer">
-              <div className="skill-card-grid-meta">
-                <Skeleton className="h-4 w-24 max-w-full" />
-                <Skeleton className="h-4 w-20 max-w-full" />
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    );
-  }
-
   return (
     <div className="browse-list-stack" role="status" aria-label="Loading results">
       <div className="results-list">
