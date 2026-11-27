@@ -28,12 +28,11 @@ import {
   fetchPackageVersions,
   fetchPluginCatalog,
   fetchTemplateCatalog,
-  fetchPackages,
   getPackageDownloadPath,
   PackageApiError,
 } from "./packageApi";
 
-describe("fetchPackages", () => {
+describe("package API reads", () => {
   beforeEach(() => {
     vi.stubEnv("VITE_CONVEX_SITE_URL", "");
     initialPublicCatalogMock.mockRejectedValue(new Error("Public reader unavailable"));
@@ -52,46 +51,21 @@ describe("fetchPackages", () => {
     vi.unstubAllEnvs();
   });
 
-  it("omits retired execution and capability filters when using /packages/search", async () => {
+  it("omits retired execution and capability filters from plugin search", async () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(new Response(JSON.stringify({ results: [] }), { status: 200 }));
 
-    await fetchPackages({
+    await fetchPluginCatalog({
       q: "demo",
-      family: "code-plugin",
       executesCode: true,
       capabilityTag: "tools",
       limit: 12,
       isOfficial: true,
-    } as Parameters<typeof fetchPackages>[0] & { executesCode?: boolean; capabilityTag?: string });
-
-    const requestUrl = fetchMock.mock.calls[0]?.[0];
-    if (typeof requestUrl !== "string") {
-      throw new Error("Expected fetch to be called with a string URL");
-    }
-    const url = new URL(requestUrl);
-    expect(url.pathname).toBe("/api/v1/packages/search");
-    expect(url.searchParams.get("q")).toBe("demo");
-    expect(url.searchParams.get("family")).toBe("code-plugin");
-    expect(url.searchParams.has("executesCode")).toBe(false);
-    expect(url.searchParams.has("capabilityTag")).toBe(false);
-    expect(url.searchParams.get("limit")).toBe("12");
-    expect(url.searchParams.get("isOfficial")).toBe("true");
-  });
-
-  it("forwards skill family on package listings", async () => {
-    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(
-        new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }),
-      );
-
-    await fetchPackages({
-      family: "skill",
-      limit: 12,
+    } as Parameters<typeof fetchPluginCatalog>[0] & {
+      executesCode?: boolean;
+      capabilityTag?: string;
     });
 
     const requestUrl = fetchMock.mock.calls[0]?.[0];
@@ -99,12 +73,16 @@ describe("fetchPackages", () => {
       throw new Error("Expected fetch to be called with a string URL");
     }
     const url = new URL(requestUrl);
-    expect(url.pathname).toBe("/api/v1/packages");
-    expect(url.searchParams.get("family")).toBe("skill");
+    expect(url.pathname).toBe("/api/v1/plugins/search");
+    expect(url.searchParams.get("q")).toBe("demo");
+    expect(url.searchParams.has("family")).toBe(false);
+    expect(url.searchParams.has("executesCode")).toBe(false);
+    expect(url.searchParams.has("capabilityTag")).toBe(false);
     expect(url.searchParams.get("limit")).toBe("12");
+    expect(url.searchParams.get("isOfficial")).toBe("true");
   });
 
-  it("forwards opaque cursors on package listing requests", async () => {
+  it("forwards opaque cursors on plugin listing requests", async () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
@@ -112,7 +90,7 @@ describe("fetchPackages", () => {
         new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }),
       );
 
-    await fetchPackages({
+    await fetchPluginCatalog({
       cursor: "pkgpage:test",
       limit: 12,
     });
@@ -122,12 +100,12 @@ describe("fetchPackages", () => {
       throw new Error("Expected fetch to be called with a string URL");
     }
     const url = new URL(requestUrl);
-    expect(url.pathname).toBe("/api/v1/packages");
+    expect(url.pathname).toBe("/api/v1/plugins");
     expect(url.searchParams.get("cursor")).toBe("pkgpage:test");
     expect(url.searchParams.get("limit")).toBe("12");
   });
 
-  it("omits retired execution and capability filters on package listings", async () => {
+  it("omits retired execution and capability filters on plugin listings", async () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
@@ -135,19 +113,22 @@ describe("fetchPackages", () => {
         new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }),
       );
 
-    await fetchPackages({
+    await fetchPluginCatalog({
       isOfficial: false,
       executesCode: false,
       capabilityTag: "storage",
       limit: 7,
-    } as Parameters<typeof fetchPackages>[0] & { executesCode?: boolean; capabilityTag?: string });
+    } as Parameters<typeof fetchPluginCatalog>[0] & {
+      executesCode?: boolean;
+      capabilityTag?: string;
+    });
 
     const requestUrl = fetchMock.mock.calls[0]?.[0];
     if (typeof requestUrl !== "string") {
       throw new Error("Expected fetch to be called with a string URL");
     }
     const url = new URL(requestUrl);
-    expect(url.pathname).toBe("/api/v1/packages");
+    expect(url.pathname).toBe("/api/v1/plugins");
     expect(url.searchParams.get("isOfficial")).toBe("false");
     expect(url.searchParams.has("executesCode")).toBe(false);
     expect(url.searchParams.has("capabilityTag")).toBe(false);
@@ -294,12 +275,11 @@ describe("fetchPackages", () => {
         new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }),
       );
 
-    await fetchPackages({
-      family: "bundle-plugin",
+    await fetchPluginCatalog({
       limit: 12,
     });
 
-    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://app.example/api/v1/bundle-plugins?limit=12");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://app.example/api/v1/plugins?limit=12");
     expect(fetchMock.mock.calls[0]?.[1]?.headers).toEqual({ Accept: "application/json" });
   });
 
@@ -529,14 +509,12 @@ describe("fetchPackages", () => {
 
   it.each([
     { viewerMode: "request" },
-    { family: "code-plugin" },
     { q: "matrix" },
     { cursor: "next-page" },
     { isOfficial: true },
     { featured: true },
     { category: "channels", curated: true, sort: "downloads", cursor: "curated-next" },
     { category: "channels", curated: true, sort: "downloads", topic: "matrix" },
-    { category: "channels", curated: true, sort: "downloads", family: "code-plugin" },
     { category: "channels", curated: true, sort: "downloads", limit: 100 },
     { category: "other", curated: true, sort: "downloads" },
     { topic: "Matrix" },
@@ -648,7 +626,7 @@ describe("fetchPackages", () => {
       new Response("Unauthorized", { status: 401 }),
     );
 
-    await expect(fetchPackages({ family: "code-plugin" })).rejects.toMatchObject({
+    await expect(fetchPluginCatalog({})).rejects.toMatchObject({
       message:
         "Sign in required. If this ClawHub account was deleted, banned, or disabled, it cannot access private packages.",
       status: 401,
@@ -657,7 +635,7 @@ describe("fetchPackages", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response("Package not found", { status: 404 }),
     );
-    await expect(fetchPackages({ family: "code-plugin" })).rejects.toMatchObject({
+    await expect(fetchPluginCatalog({})).rejects.toMatchObject({
       message: "Package not found or not visible to this account.",
       status: 404,
     });
@@ -669,7 +647,7 @@ describe("fetchPackages", () => {
       new Response("Trusted publisher config is not set for this package", { status: 403 }),
     );
 
-    await expect(fetchPackages({ family: "code-plugin" })).rejects.toMatchObject({
+    await expect(fetchPluginCatalog({})).rejects.toMatchObject({
       message: "Trusted publisher config is not set for this package",
       status: 403,
     });
